@@ -34,6 +34,17 @@ const appLoop = [
   "Validate the result and export MusicXML, MXL, MSCZ, MIDI, or private embeds where the path is available.",
 ];
 
+const screenshotHighlights = [
+  {
+    title: "Score editor",
+    text: "Rendered score workspace with notation tools, playback controls, and export-focused validation context.",
+  },
+  {
+    title: "AI assistant",
+    text: "Contextual edit requests stay visible beside the score, with changes reviewed before the workflow continues.",
+  },
+];
+
 function Eyebrow({ children }: { children: ReactNode }) {
   return (
     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4f46ff]">
@@ -94,6 +105,41 @@ export default function LandingPage() {
               <p>No public promise of perfect PDF/photo conversion or support for every file.</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="border-b border-[#e2e5e3] bg-white">
+        <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 lg:px-10">
+          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
+            <div>
+              <Eyebrow>Product screenshots</Eyebrow>
+              <h2 className="mt-4 text-3xl font-semibold leading-tight text-[#111312] sm:text-4xl">
+                See the score editor and AI assistant working together.
+              </h2>
+              <p className="mt-5 text-base leading-7 text-[#4b5551]">
+                This is the current web alpha workspace: a rendered score editor on the left, notation controls across the top, and an AI assistant panel on the right showing an applied transposition edit.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {screenshotHighlights.map((item) => (
+                <div key={item.title} className="rounded-md border border-[#e0e4e2] bg-[#fafbfb] p-4">
+                  <h3 className="text-sm font-semibold text-[#111312]">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#5b6662]">{item.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <figure className="mt-8 overflow-hidden rounded-md border border-[#d9dcff] bg-[#f7f8f8] shadow-[0_24px_80px_-52px_rgba(79,70,255,0.55)]">
+            <img
+              src="/screenshots/ai-edit-preview.png"
+              alt="nex-note web alpha showing the score editor and AI assistant"
+              className="block h-auto w-full"
+            />
+            <figcaption className="border-t border-[#e1e4f6] bg-white px-4 py-3 text-xs leading-5 text-[#5b6662]">
+              Current web alpha screenshot: score editor, notation toolbar, playback controls, and AI assistant applying a transposition edit.
+            </figcaption>
+          </figure>
         </div>
       </section>
 
