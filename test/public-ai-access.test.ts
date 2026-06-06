@@ -29,6 +29,15 @@ test('AI provider endpoints are disabled by default on public hosts', () => {
   assert.match(PUBLIC_AI_DISABLED_MESSAGE, /public web alpha/i);
 });
 
+test('public host headers stay disabled even when the app server URL is localhost', () => {
+  const req = new NextRequest('http://127.0.0.1:3031/api/chat', {
+    headers: { host: 'nex-note.com' },
+  });
+
+  assert.equal(isLocalAiRequest(req), false);
+  assert.equal(isAiEnabledForRequest(req), false);
+});
+
 test('public AI can only be enabled through an explicit server env flag', () => {
   process.env.NEX_NOTE_ENABLE_PUBLIC_AI = 'true';
   const req = new NextRequest('https://nex-note.com/api/chat');
