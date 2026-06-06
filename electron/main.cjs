@@ -472,6 +472,21 @@ async function startDevServer() {
   return url;
 }
 
+function resolveRendererUrl(serverUrl) {
+  const url = new URL(serverUrl);
+  const isRootPath = url.pathname === '' || url.pathname === '/';
+
+  if (isRootPath) {
+    url.pathname = '/nex-note-app';
+  }
+
+  if (url.pathname === '/nex-note-app' && !url.searchParams.has('locale')) {
+    url.searchParams.set('locale', 'en');
+  }
+
+  return url.toString();
+}
+
 function createApplicationMenu() {
   applicationMenu = Menu.buildFromTemplate(buildApplicationMenuTemplate());
   Menu.setApplicationMenu(applicationMenu);
@@ -491,7 +506,8 @@ function updateApplicationMenuState(nextState) {
 }
 
 async function createWindow() {
-  const url = app.isPackaged ? await startPackagedServer() : await startDevServer();
+  const serverUrl = app.isPackaged ? await startPackagedServer() : await startDevServer();
+  const url = resolveRendererUrl(serverUrl);
   const icon = getAssetPath(process.platform === 'darwin' ? 'Icon-nexnote.icns' : 'app-icon.png');
   rendererReady = false;
 
