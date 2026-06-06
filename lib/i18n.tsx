@@ -1188,9 +1188,11 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 function readInitialLocale() {
   if (typeof window === 'undefined') return DEFAULT_LOCALE;
+  const urlLocale = normalizeLocale(new URLSearchParams(window.location?.search ?? '').get('locale'));
+  if (urlLocale) return urlLocale;
   const stored = normalizeLocale(window.localStorage?.getItem(LOCALE_STORAGE_KEY));
   if (stored) return stored;
-  return detectLocale(window.navigator?.languages ?? [window.navigator?.language].filter(Boolean) as string[]);
+  return DEFAULT_LOCALE;
 }
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {

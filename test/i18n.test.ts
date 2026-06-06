@@ -47,6 +47,9 @@ test.beforeEach(() => {
     localStorage: storage,
     window: {
       localStorage: storage,
+      location: {
+        search: '',
+      },
       navigator: {
         language: 'en-US',
         languages: ['en-US'],
@@ -111,6 +114,80 @@ test('language setting persists, updates html lang, and changes visible labels',
   assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'es');
   assert.match(collectText(renderer!.root), /Bienvenido a nex-note/);
   assert.equal(renderer!.root.findAllByType('a')[0].props.href, '/docs/user-manual.es.md');
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
+test('i18n provider starts in English when no saved language exists', async () => {
+  Object.assign(globalThis, {
+    window: {
+      localStorage: storage,
+      navigator: {
+        language: 'de-AT',
+        languages: ['de-AT', 'de', 'en-US'],
+      },
+    },
+  });
+  let renderer: ReturnType<typeof create> | null = null;
+
+  await act(async () => {
+    renderer = create(
+      React.createElement(I18nProvider, null,
+        React.createElement(WelcomeScreen, {
+          onCreateBlankScore() {},
+          onChooseTemplate() {},
+          onOpenFile() {},
+          onFileSelected() {},
+          onOpenLibraryScore() {},
+        }),
+      ),
+    );
+  });
+
+  assert.match(collectText(renderer!.root), /Welcome to nex-note/);
+  assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'en');
+  assert.equal(storage.getItem(LOCALE_STORAGE_KEY), 'en');
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
+test('locale query parameter overrides saved language for preview links', async () => {
+  storage.setItem(LOCALE_STORAGE_KEY, 'de');
+  Object.assign(globalThis, {
+    window: {
+      localStorage: storage,
+      location: {
+        search: '?locale=en',
+      },
+      navigator: {
+        language: 'de-AT',
+        languages: ['de-AT', 'de', 'en-US'],
+      },
+    },
+  });
+  let renderer: ReturnType<typeof create> | null = null;
+
+  await act(async () => {
+    renderer = create(
+      React.createElement(I18nProvider, null,
+        React.createElement(WelcomeScreen, {
+          onCreateBlankScore() {},
+          onChooseTemplate() {},
+          onOpenFile() {},
+          onFileSelected() {},
+          onOpenLibraryScore() {},
+        }),
+      ),
+    );
+  });
+
+  assert.match(collectText(renderer!.root), /Welcome to nex-note/);
+  assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'en');
+  assert.equal(storage.getItem(LOCALE_STORAGE_KEY), 'en');
 
   await act(async () => {
     renderer?.unmount();
