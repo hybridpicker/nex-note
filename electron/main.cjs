@@ -9,9 +9,6 @@ const APP_NAME = 'Nex Note';
 
 app.setName(APP_NAME);
 app.commandLine.appendSwitch('force-renderer-accessibility');
-if (typeof app.setAccessibilitySupportEnabled === 'function') {
-  app.setAccessibilitySupportEnabled(true);
-}
 
 let mainWindow = null;
 let nextProcess = null;
@@ -588,6 +585,9 @@ if (!singleInstanceLock) {
 
   app.whenReady().then(async () => {
     app.setName(APP_NAME);
+    if (typeof app.setAccessibilitySupportEnabled === 'function') {
+      app.setAccessibilitySupportEnabled(true);
+    }
     app.setAboutPanelOptions({
       applicationName: APP_NAME,
       applicationVersion: app.getVersion(),
