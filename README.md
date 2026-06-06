@@ -57,6 +57,12 @@ The core value is:
 - Export `.mxl`, `.abc`, MIDI-backed playback output, and practice-pack JSON.
 - Package the local app as a macOS Electron shell.
 
+## First Paid Workflow
+
+Bring your private score/tab archive into nex-note. Use AI-assisted edit/arrange with preview-before-apply. Validate and export MusicXML/MXL/MSCZ/MIDI. Publish private embeds for students, members, or collaborators.
+
+Founder testing is focused on this loop rather than a hosted SaaS workflow. The public test website explains the app, collects founder build requests, and exposes `/nex-note-app` as a web alpha preview only.
+
 ## Alpha Limits
 
 - AI output quality depends heavily on the selected provider and model.
@@ -182,7 +188,28 @@ The build writes to `dist/macos`, which is ignored by Git. The app bundle is usu
 open "$PWD/dist/macos/mac-arm64/Nex Note.app"
 ```
 
-Current desktop status: useful for local testing, not yet a polished signed/notarized distribution.
+Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
+
+Founder build path:
+
+```bash
+git switch devel
+npm install
+npm run electron:build
+```
+
+Expected local outputs are under `dist/macos`, including a `.app` bundle and packaged macOS archive/disk image when Electron Builder completes.
+
+## Founder Test File Intake
+
+Founder testers should submit only files they are allowed to process:
+
+- scores they own
+- scores they created themselves
+- scores they are licensed to process
+- public-domain scores
+
+Do not submit copyrighted files without permission. For compatibility tracking, use [Founder test file intake](./docs/founder-test-file-intake.md). Private local fixtures can be stored under `private-fixtures/`, which is ignored by Git.
 
 ## Branch And Version Workflow
 
@@ -244,6 +271,9 @@ Known final-release blockers: notarization, signing identity selection, final ic
 - [Documentation guide](./docs/README.md)
 - [Release readiness summary](./docs/final-release-readiness-summary.md)
 - [Execution tracker](./docs/execution-tracker.md)
+- [Launch plan](./docs/launch-plan.md)
+- [Founder test file intake](./docs/founder-test-file-intake.md)
+- [Founder outreach](./docs/founder-outreach.md)
 - [Architecture blueprint](./docs/architecture-blueprint.md)
 - [Manual test plan](./docs/user-visible-audible-test-plan.md)
 - [Contributing](./CONTRIBUTING.md)
@@ -257,6 +287,6 @@ Known final-release blockers: notarization, signing identity selection, final ic
 
 ## License
 
-The source code is licensed under the MIT License - see [LICENSE](./LICENSE).
+The current source code is licensed under `AGPL-3.0-or-later` - see [LICENSE](./LICENSE), [NOTICE](./NOTICE), and [TRADEMARKS.md](./TRADEMARKS.md). Older MIT copies remain under their original license.
 
-The project name "Nex Note", logo, screenshots, and other brand assets are not granted as part of the MIT code license. Do not use them to imply endorsement or to distribute a confusingly similar product without permission.
+The project name "Nex Note", logo, screenshots, and other brand assets are not granted as part of the AGPL code license. Do not use them to imply endorsement or to distribute a confusingly similar product without permission.

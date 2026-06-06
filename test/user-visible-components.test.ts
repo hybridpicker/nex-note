@@ -589,8 +589,7 @@ test('NotationToolbar exposes active-note controls when a note is selected', () 
   const texts = root.findAll((node) => typeof node.children?.[0] === 'string').map((node) => String(node.children.join('')));
   assert.ok(texts.includes('Active'));
   assert.ok(texts.includes('C4'));
-  assert.ok(texts.includes('m.1 st.1 v.1'));
-  assert.ok(texts.some((text) => text.includes('M1 · Staff 1 · Voice 1')));
+  assert.ok(root.findAllByProps({ title: 'C4 · Piano · M1 · Staff 1 · Voice 1 · 0/4' }).length > 0);
 
   act(() => {
     renderer?.unmount();
@@ -1009,8 +1008,7 @@ test('NotationToolbar exposes GuitarPro-style string and fret entry', () => {
   assert.deepEqual(toggledTechniques, ['palm-mute', 'slide']);
   const texts = root.findAll((node) => typeof node.children?.[0] === 'string').map((node) => String(node.children.join('')));
   assert.ok(texts.includes('6/12 F2'));
-  assert.ok(texts.includes('m.1 st.1 v.1 str.6 fr.3'));
-  assert.ok(texts.some((text) => text.includes('M1 · Staff 1 · Voice 1 · String 6 · Fret 3')));
+  assert.ok(root.findAllByProps({ title: 'C4 · Piano · M1 · Staff 1 · Voice 1 · 0/4 · String 6 · Fret 3' }).length > 0);
   assert.ok(root.findAllByProps({ 'data-testid': 'guitar-tab-mini-grid' }).length > 0);
 
   act(() => {

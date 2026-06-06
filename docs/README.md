@@ -10,6 +10,9 @@ This directory mixes current status docs, architecture docs, validation material
 - Keyboard shortcuts: [keyboard-shortcuts.md](./keyboard-shortcuts.md)
 - Contributor workflow: [CONTRIBUTING.md](../CONTRIBUTING.md)
 - Current implementation and release state: [execution-tracker.md](./execution-tracker.md)
+- Post-AGPL 0.0.1 launch plan: [launch-plan.md](./launch-plan.md)
+- Founder test file intake: [founder-test-file-intake.md](./founder-test-file-intake.md)
+- Founder outreach: [founder-outreach.md](./founder-outreach.md)
 - AlmaLinux 9 test-domain finalization: [almalinux9-finalize-domain.md](./almalinux9-finalize-domain.md)
 
 ## Current Source Of Truth
@@ -40,6 +43,15 @@ This directory mixes current status docs, architecture docs, validation material
 - [ai-song-source-catalogs.md](./ai-song-source-catalogs.md)
   - Architecture and QA specification for rights-safe known-song catalog import
   - Source-provider candidates, license gate rules, and required tests before enabling
+
+- [launch-plan.md](./launch-plan.md)
+  - Current six-step plan after AGPL 0.0.1 relaunch and HTTPS test-domain deployment
+
+- [founder-test-file-intake.md](./founder-test-file-intake.md)
+  - Rights-safe real file intake rules and compatibility tracking template
+
+- [founder-outreach.md](./founder-outreach.md)
+  - Founder messages, interview questions, and validation criteria
 
 ## Architecture And Design
 

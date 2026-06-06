@@ -54,3 +54,7 @@ next-env.d.ts
 # generated local artifacts
 artifacts/**/*.log
 artifacts/**/*.omr
+
+# private founder/tester score fixtures
+/private-fixtures/
+/test/private-fixtures/
