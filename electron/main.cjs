@@ -8,6 +8,10 @@ const path = require('node:path');
 const APP_NAME = 'Nex Note';
 
 app.setName(APP_NAME);
+app.commandLine.appendSwitch('force-renderer-accessibility');
+if (typeof app.setAccessibilitySupportEnabled === 'function') {
+  app.setAccessibilitySupportEnabled(true);
+}
 
 let mainWindow = null;
 let nextProcess = null;
