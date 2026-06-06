@@ -217,11 +217,27 @@ Do not submit copyrighted files without permission. For compatibility tracking, 
 ## Branch And Version Workflow
 
 - `devel` is the active development branch for local app work, Electron/macOS packaging, and alpha hardening.
-- `main` holds published alpha snapshots.
+- `main` is the live website/web-alpha deployment branch for `https://nex-note.com`.
+- The AlmaLinux server checks `origin/main` every 10 minutes and, when a newer commit exists, pulls, installs dependencies, runs `npm run build`, restarts PM2 process `nex-note-web`, and saves PM2.
 - Versions use the `0.0.x` alpha series.
 - The first public alpha is `0.0.1`.
 - After a finished development cycle is merged from `devel` into `main`, bump to the next patch version, for example `0.0.2`.
 - Keep version bumps in `package.json` and `package-lock.json` together.
+
+Typical website deployment flow:
+
+```bash
+git switch devel
+# work, test, commit
+git push origin devel
+
+git switch main
+git merge --ff-only devel
+git push origin main
+git switch devel
+```
+
+Pushing `main` updates the website/web alpha after the next server watcher run. macOS app artifacts are still built and distributed separately.
 
 ## Testing
 
