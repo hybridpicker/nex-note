@@ -1,0 +1,130 @@
+{
+  "name": "nex-note",
+  "version": "0.0.1",
+  "description": "Private score archive, AI editor, and embeddable music workspace.",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "author": "Nex Note",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs --webpack",
+    "dev:debug": "NEXT_PUBLIC_DEBUG=true node scripts/dev-server.mjs --webpack",
+    "dev:doctor": "NEXT_PUBLIC_DEBUG=true NEXT_PUBLIC_DOCTOR=live node scripts/dev-server.mjs --webpack --visual-debug",
+    "dev:visual-debug": "node scripts/dev-server.mjs --webpack --visual-debug",
+    "dev:turbo": "node scripts/dev-server.mjs --turbo",
+    "build": "next build --webpack",
+    "postbuild": "node scripts/sync-standalone-assets.mjs",
+    "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:prep": "node scripts/prepare-electron-package.mjs",
+    "electron:build": "npm run build && npm run electron:prep && electron-builder --mac",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
+    "start": "next start",
+    "test": "tsx --test test/**/*.test.ts",
+    "test:roundtrip": "tsx --test test/roundtrip-diff.test.ts",
+    "test:coverage": "node --experimental-test-coverage --import tsx --test test/**/*.test.ts",
+    "test:coverage:check": "node --experimental-test-coverage --test-coverage-lines=75 --test-coverage-branches=70 --test-coverage-functions=80 --import tsx --test test/**/*.test.ts",
+    "test:e2e": "playwright test --project smoke --project regression",
+    "test:e2e:smoke": "playwright test --project smoke",
+    "test:e2e:regression": "playwright test --project regression",
+    "test:e2e:notation-tools": "playwright test e2e/notation-tools.spec.ts --project regression",
+    "test:e2e:semantic-grid-fuzz": "NEX_SEMANTIC_GRID_FUZZ=1 playwright test e2e/semantic-grid-fuzz.spec.ts --project regression",
+    "test:e2e:semantic-grid-fuzz:headed": "NEX_SEMANTIC_GRID_FUZZ=1 playwright test e2e/semantic-grid-fuzz.spec.ts --project regression --headed",
+    "test:e2e:doctor": "NEX_SEMANTIC_GRID_FUZZ=1 playwright test e2e/semantic-grid-fuzz.spec.ts e2e/exhaustive-mouse-grid.spec.ts --project regression",
+    "arrangement:eval": "node --import tsx scripts/eval-critic.tsx",
+    "harness:capture-real-cli": "node scripts/capture-real-cli-harness.mjs",
+    "harness:metrics": "node scripts/harness-metrics.js",
+    "harness:assistant-catalog": "node --import tsx scripts/run-assistant-task-catalog.tsx",
+    "benchmark": "node --env-file=.env.local scripts/benchmark-ollama.mjs",
+    "benchmark:quick": "node --env-file=.env.local scripts/benchmark-ollama.mjs --quick"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.2",
+    "@coderline/alphatab": "^1.8.2",
+    "@google/generative-ai": "^0.24.1",
+    "@tonejs/midi": "^2.0.28",
+    "@xmldom/xmldom": "^0.9.10",
+    "jszip": "^3.10.1",
+    "next": "16.2.6",
+    "opensheetmusicdisplay": "^1.9.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "soundfont-player": "^0.12.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "electron": "^41.4.0",
+    "electron-builder": "^26.8.1",
+    "react-test-renderer": "^19.2.4",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "8.5.14"
+  },
+  "build": {
+    "appId": "app.nex-note.desktop",
+    "productName": "Nex Note",
+    "asar": false,
+    "npmRebuild": false,
+    "files": [
+      "electron/**/*",
+      "assets/**/*",
+      ".next/standalone/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "assets/Icon-nexnote.icns",
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "fileAssociations": [
+      {
+        "name": "Nex Note project",
+        "ext": [
+          "nxn"
+        ],
+        "role": "Editor"
+      },
+      {
+        "name": "Score import",
+        "ext": [
+          "pdf",
+          "png",
+          "jpg",
+          "jpeg",
+          "tif",
+          "tiff",
+          "webp",
+          "bmp",
+          "heic",
+          "heif",
+          "mxl",
+          "xml",
+          "musicxml",
+          "mscz",
+          "mid",
+          "midi",
+          "gp",
+          "gp4",
+          "gp5",
+          "gp6",
+          "gpx"
+        ],
+        "role": "Editor"
+      }
+    ],
+    "directories": {
+      "output": "dist/macos"
+    }
+  }
+}

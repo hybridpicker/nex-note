@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 28" fill="none">
+  <ellipse cx="7.5" cy="21" rx="5.2" ry="3.6" fill="currentColor" transform="rotate(-22 7.5 21)"/>
+  <line x1="12" y1="20" x2="12" y2="3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M12 3.5 C16.8 4.8 17.8 7.8 15 10.4 C16.5 9 16.2 6.5 12 5.2 Z" fill="currentColor"/>
+</svg>

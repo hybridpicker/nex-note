@@ -1,0 +1,339 @@
+@import "tailwindcss";
+
+@keyframes nex-note-ghost-jump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+:root {
+  --background: #f7f8fa;
+  --foreground: #0b0f14;
+  --font-geist-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-geist-mono: "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* nex-note brand system */
+  --color-nex-ink: #0b0f14;
+  --color-nex-accent: #4f46ff;
+  --color-nex-accent-hover: #3f38e8;
+  --color-nex-purple: #7c3aed;
+  --color-nex-cyan: #00d6c6;
+  --color-nex-accent-muted: #ecebff;
+  --color-nex-surface: #f7f8fa;
+  --color-nex-surface-2: #ffffff;
+  --color-nex-border: #e6e9ef;
+  --color-nex-sidebar: #ffffff;
+  --color-nex-sidebar-fg: #596174;
+  --color-nex-sidebar-border: #e6e9ef;
+  --color-nex-score-bg: #eef1f6;
+  --color-nex-toolbar-bg: #ffffff;
+  --color-nex-header-bg: #ffffff;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans);
+}
+
+.nex-brand-toolbar {
+  border-color: rgb(230 233 239 / 0.92);
+  background: rgb(255 255 255 / 0.94);
+  box-shadow: 0 18px 50px -34px rgb(11 15 20 / 0.46), inset 0 1px 0 rgb(255 255 255 / 0.86);
+}
+
+.nex-brand-button {
+  color: #596174;
+}
+
+.nex-brand-button:hover {
+  background: #f7f8fa;
+  color: #0b0f14;
+}
+
+.nex-brand-divider {
+  background: #e6e9ef;
+}
+
+.nex-brand-active {
+  background: linear-gradient(135deg, #4f46ff 0%, #7c3aed 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 24px -16px rgb(79 70 255 / 0.8);
+}
+
+.nex-note-electron .nex-electron-hidden {
+  display: none !important;
+}
+
+html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
+  display: none !important;
+}
+
+.nex-note-input-tools--sidebar .nex-note-tool-divider {
+  display: none;
+}
+
+.nex-note-input-tools--sidebar {
+  padding-bottom: 4.5rem;
+  scrollbar-gutter: stable;
+}
+
+.nex-note-sidebar-section {
+  overflow: clip;
+  border: 1px solid #e6e9ef;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 8px 22px -20px rgb(11 15 20 / 0.38);
+}
+
+.nex-note-sidebar-section-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.625rem;
+  text-align: left;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nex-note-sidebar-section-toggle:hover {
+  background: #f7f8fa;
+}
+
+.nex-note-sidebar-section-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.45rem;
+  border-top: 1px solid #e6e9ef;
+  background: linear-gradient(180deg, #f8fafc 0%, #f4f6fa 100%);
+  padding: 0.5rem 0.55rem;
+}
+
+.nex-note-sidebar-section-label,
+.nex-note-sidebar-section-summary {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.nex-note-sidebar-section-summary {
+  line-height: 1.2;
+}
+
+.nex-note-input-tools--sidebar .nex-note-tool-group,
+.nex-note-input-tools--sidebar form,
+.nex-note-input-tools--sidebar [data-testid="step-input-panel"],
+.nex-note-input-tools--sidebar [aria-label="Guitar fret input"],
+.nex-note-input-tools--sidebar .nex-note-active-summary {
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.nex-note-input-tools--sidebar .nex-note-tool-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(2rem, 1fr));
+}
+
+.nex-note-input-tools--sidebar .nex-note-tool-group > button,
+.nex-note-input-tools--sidebar form > button {
+  width: 100%;
+  min-width: 2rem;
+}
+
+.nex-note-input-tools--sidebar .nex-note-tool-group > button:disabled,
+.nex-note-input-tools--sidebar form > button:disabled {
+  background: #eef2f7;
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.nex-note-input-tools--sidebar .nex-note-active-summary {
+  margin-left: 0;
+  padding-left: 0;
+  align-items: stretch;
+}
+
+.nex-note-input-tools--sidebar .nex-note-active-summary > div {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.nex-note-input-tools--sidebar input[aria-label="Chord symbol"] {
+  flex: 1 1 8rem;
+}
+
+.nex-left-tools-shell {
+  position: relative;
+  z-index: 20;
+  min-height: 0;
+  flex-shrink: 0;
+  background: #ffffff;
+  transition: width 200ms ease, flex-basis 200ms ease, transform 200ms ease;
+}
+
+.nex-left-tools-shell--expanded {
+  width: clamp(19.5rem, 28vw, 24rem);
+  flex-basis: clamp(19.5rem, 28vw, 24rem);
+}
+
+.nex-left-tools-shell--collapsed {
+  width: 2rem;
+  flex-basis: 2rem;
+}
+
+.nex-left-tools-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  width: clamp(19.5rem, 28vw, 24rem);
+  flex-direction: column;
+  overflow: visible;
+  border-right: 1px solid #e6e9ef;
+  background: #ffffff;
+  box-shadow: 18px 0 48px -42px rgb(11 15 20 / 0.5);
+}
+
+.nex-left-tools-header {
+  display: flex;
+  height: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e6e9ef;
+  background: #ffffff;
+  padding: 0 0.5rem 0 0.75rem;
+}
+
+.nex-left-tools-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: visible;
+}
+
+.nex-left-tools-rail {
+  display: flex;
+  height: 100%;
+  width: 2rem;
+  flex-direction: column;
+  align-items: center;
+  border-right: 1px solid #e6e9ef;
+  background: #ffffff;
+  padding-top: 0.5rem;
+}
+
+.nex-left-tools-toggle {
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: #94a3b8;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.nex-left-tools-toggle:hover,
+.nex-left-tools-toggle:focus-visible {
+  background: #f7f8fa;
+  color: #0b0f14;
+  outline: none;
+}
+
+.nex-left-tools-toggle:focus-visible {
+  box-shadow: 0 0 0 2px rgb(79 70 255 / 0.28);
+}
+
+.nex-left-tools-rail-label {
+  margin-top: 0.5rem;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: #94a3b8;
+  font-size: 0.5625rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+@media print {
+  html,
+  body {
+    height: auto;
+    background: #ffffff !important;
+  }
+
+  .nex-app-shell {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  .nex-app-shell > header,
+  .nex-workspace-panel,
+  .nex-left-tools-shell,
+  .nex-edit-palette,
+  .nex-print-view .nex-score-column > :first-child {
+    display: none !important;
+  }
+
+  .nex-score-column,
+  .nex-score-stage,
+  .nex-print-preview-shell,
+  .nex-print-preview {
+    background: #ffffff !important;
+    border: 0 !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  .nex-score-stage,
+  .nex-print-preview-shell {
+    padding: 0 !important;
+  }
+
+  .nex-print-preview-shell > div {
+    max-width: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .nex-print-preview-shell > div > :first-child {
+    display: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .nex-score-stage {
+    position: relative;
+  }
+
+  .nex-left-tools-shell--expanded {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: min(21.5rem, calc(100vw - 3rem));
+    flex-basis: auto;
+  }
+
+  .nex-left-tools-shell--expanded .nex-left-tools-panel {
+    width: min(21.5rem, calc(100vw - 3rem));
+  }
+
+  .nex-left-tools-shell--collapsed {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2rem;
+    flex-basis: auto;
+  }
+}

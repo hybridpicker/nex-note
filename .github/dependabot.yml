@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # gl is a native WebGL addon inside opensheetmusicdisplay.
+      # It is never loaded at runtime — OSMD is imported client-side only
+      # via next/dynamic with ssr:false. node-tar vulnerabilities in its
+      # build toolchain (node-gyp) cannot be triggered at runtime.
+      - dependency-name: "gl"
+      - dependency-name: "tar"
+      - dependency-name: "node-gyp"

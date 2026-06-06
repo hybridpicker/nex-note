@@ -1,0 +1,194 @@
+# nex-note User Manual
+
+Updated: 2026-05-13. This manual covers the current user-facing features in nex-note. Keyboard and mouse shortcuts are documented separately in [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+
+Languages: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
+
+## What nex-note is
+
+nex-note is a MusicXML editor for MuseScore-style workflows. You can import scores, edit notation directly in the browser, ask the AI assistant for changes, play the score back, and export to MXL, MusicXML-adjacent formats, or nex-note project files.
+
+## Start and Files
+
+The welcome screen provides these entry points:
+
+| Feature | Description |
+| --- | --- |
+| New score | Creates a new blank score. |
+| Choose template | Opens the score setup dialog with instruments, templates, and score metadata. |
+| Open file | Imports a local file. |
+| Drag and drop upload | Loads files through the upload zone. |
+| Recent files | Reopens recently imported files. |
+| Library | Opens locally stored scores. |
+
+Supported import formats include `.musicxml`, `.xml`, `.mxl`, `.pdf`, image files (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.webp`, `.bmp`, `.heic`, `.heif`), `.mscz`, GuitarPro files (`.gp`, `.gp4`, `.gp5`, `.gp6`, `.gpx`), and `.nxn` project files. PDF/image import needs Audiveris; MSCZ, GuitarPro, MIDI, and best-effort ABC workflows depend on MuseScore CLI.
+
+When importing, nex-note shows where editable `.nxn` project files will be stored. You confirm the suggested folder or deliberately choose a different location. It creates or reuses a `nex-note-projects` folder there and saves every opened or converted file as an additional `.nxn` working copy. Original files are not modified and continue to appear in Recent Files and the Library with their original format.
+
+## Creating a New Score
+
+The New Score dialog has three tabs:
+
+| Area | Features |
+| --- | --- |
+| Choose instruments | Search, filter by family, add, remove, and reorder instruments. |
+| Create from template | Start from predefined ensembles. |
+| Score information | Set title, subtitle, composer, arranger, key, time signature, and beat unit. |
+
+The selected instrument order becomes the staff order in the score.
+
+## Main Workspace
+
+| Area | Purpose |
+| --- | --- |
+| Score view | Rendered notation, selection, navigation, ghost-note targets, and playback cursor. |
+| Notation toolbar | Undo/redo, playback, tempo, metronome, note input, lead mode, drag-transpose mode, and layout cleanup. |
+| Note input toolbar | Durations, accidentals, articulations, voices, insert/overwrite, chord symbols, rests, copy/paste/delete. |
+| Edit palette | Selection, transposition, articulations, dynamics, ties/slurs, and barlines. |
+| Workspace panel | AI, Library, and Inspector tabs; can be collapsed. |
+| Footer controls | Navigator, Find/Go to, zoom, and score view mode. |
+
+## Language and Help
+
+The header includes a compact language selector. nex-note supports Deutsch, English, Français, Español, and 中文. The selected language is stored locally, restored on the next launch, and updates the UI without a reload. The **Manual** link opens the manual matching the selected language.
+
+## Selection and Navigation
+
+Click a note to select it and hear a short preview. Click empty space to clear selection. Use `Shift+Click` for ranges and `Cmd/Ctrl+Click` for additive selection. Arrow keys move between notes, `Shift+Arrow` extends selection, `Cmd/Ctrl+ArrowLeft/Right` jumps by measure, and `Alt/Option+ArrowUp/Down` moves vertically between voices or staves at the same timestamp.
+
+Find/Go to opens from the footer or `Cmd/Ctrl+F`. It accepts measure/page-style targets such as measure numbers and `p2`.
+
+## Note Input
+
+Turn note input on with the toolbar button or `N`.
+
+| Feature | Description |
+| --- | --- |
+| Durations | `1` to `7` select 64th through whole note; `8` and `9` are reserved for breve/longa and currently leave the active duration unchanged. |
+| Dotted notes | `.` toggles dotted duration. |
+| Pitch entry | `A` to `G` enter or change notes. |
+| Rests | `R` or `0` inserts a rest using the active duration. |
+| Repeat last input | `R` repeats the last entered note when note input has an active previous note. |
+| Voices | Toolbar or `Cmd/Ctrl+Alt/Option+1...4`. |
+| Insert/overwrite | `I` switches entry behavior. |
+| Chords | Chord input mode or `Shift+A...G` adds chord tones. |
+| Cursor insert | `Cmd/Ctrl+Shift+A...G` inserts explicitly at the cursor. |
+| Octaves | `Shift+ArrowUp/Down` or `Cmd/Ctrl+ArrowUp/Down`. |
+| Step keyboard | `P` toggles a compact QWERTY step keyboard and enables Note Input if needed. |
+
+During mouse entry, the ghost note shows where the next note will be placed. `Shift` prefers insert placement; `Alt/Option` prefers chord placement.
+While the step keyboard is active, `Z S X D C V G B H N J M` enter `C4` through `B4`, and `Q 2 W 3 E R 5 T 6 Y 7 U` enter `C5` through `B5`, all through the same semantic note-insert path as normal pitch entry. Press `P` again or `Escape` to leave that mode.
+
+## Guitar TAB Input
+
+The guitar view lives in the note input toolbar. Enable `Note Input` or press `N`, select a note or cursor position, then click `TAB`.
+
+| Feature | Description |
+| --- | --- |
+| Tuning | Standard, Drop D, DADGAD, and Open G are available directly. |
+| Strings | String buttons or `Alt/Option+1...6` choose the active string. |
+| Frets | Fret buttons or number keys set the fret; two digits are accepted as a two-digit fret. |
+| Mini TAB | Shows the active note's stored string/fret data as a compact TAB grid. |
+| Techniques | Hammer-on, pull-off, slide, bend, vibrato, palm mute, let ring, dead note, harmonic, and pick direction can be toggled. |
+
+String, fret, tuning, and guitar techniques are stored as semantic note data. MusicXML import and export preserve them through technical notation so GuitarPro and MuseScore workflows are not reduced to pitch-only data.
+
+## Pitch, Accidentals, and Duration
+
+Select a note and use `A` to `G`, the active-note buttons, arrow-key transposition, or the Edit Palette. `ArrowUp/Down` transposes chromatically. `Q/W` halve or double duration; `Shift+Q/W` do the dotted-aware versions. Accidentals can be selected in the toolbar, with `-` for flat, `=` for natural, `+` for sharp, `Alt/Option+-` for double-flat, and `Alt/Option+=` for double-sharp.
+
+## Articulations, Dynamics, Ties, and Slurs
+
+| Area | Features |
+| --- | --- |
+| Articulations | Staccato, staccatissimo, accent, marcato, tenuto, fermata. |
+| Dynamics | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
+| Tie | Links to the next same-pitch note. Shortcut: `T`. |
+| Slur | Spans the selection or the next note. Shortcut: `S`. |
+| Grace note | Adds a grace note at the selection. Shortcut: `/`. |
+| Tuplets | Triplet and quintuplet via toolbar/palette or `Cmd/Ctrl+3` and `Cmd/Ctrl+5`. |
+
+Some notation marks may be visual-only depending on playback support.
+Direction and placement editing remains intentionally conservative: the Inspector now exposes semantic placement for staff text, expression text, dynamics, and already-existing slur spans, while direction placement for wedges and ottavas remains roundtrip-safe in the core/import/export path. nex-note still does not expose tie-direction or articulation-placement flips until those semantics are modeled explicitly in core.
+
+## Barlines, Repeats, and Slashes
+
+The Edit Palette can set regular, double, final, start repeat, and end repeat barlines at the selected measure. The Inspector adds start/end repeats and first/second endings. The Note Input toolbar can insert a rhythmic slash or fill the current measure with slashes (`Cmd/Ctrl+/`).
+
+## Chord Symbols, Lyrics, and Text
+
+With a note selected, `Cmd/Ctrl+K` opens an inline harmony cursor directly at the score position. Existing chord symbols load for quick overwrite, `Enter` applies, and `Escape` cancels. Without a note selection, `Cmd/Ctrl+K` still opens the Command Center. The Inspector adds rehearsal marks, staff text, expressions, dynamics, and lyric lines. Staff text and expression text can be placed above or below the staff, selected-note dynamics now preload both the current semantic value and placement when available, and an existing slur selected as a semantic span can be flipped above or below without leaving the command path. Pressing `Enter` in rehearsal, staff-text, lyric, or dynamic fields still applies the edit directly through the command path.
+
+## Inspector
+
+The Inspector is the structured editor for score-wide and measure-level commands:
+
+| Section | Features |
+| --- | --- |
+| Selection | Range transposition, clear articulations, toggle staccato/accent, add `mf`, toggle slur, and above/below placement for an existing selected slur span. |
+| Score Setup | Title, subtitle, composer, arranger. |
+| Key | C, G, D, A, F, and Bb major presets. |
+| Repeats & Endings | Start repeat, end repeat, first ending, second ending. |
+| Time & Clef | 4/4, 3/4, 6/8, 2/2; treble, bass, alto clefs. |
+| Measure | Insert/delete measure, system break, page break, staff spacing. |
+| Text & Rehearsal | Rehearsal marks, staff text vs expression text, and above/below placement for text and dynamics. |
+| Lyrics | Attach lyrics to selected notes. |
+| Parts & Instruments | Part name, abbreviation, instrument name, transposition, part extraction, layout presets. |
+
+Part extraction opens an individual part as its own working score.
+
+## Edit Palette
+
+The left palette can be expanded, collapsed, or used as an icon rail. It contains selection tools, transposition by octave/semitone/whole step/perfect fifth, articulations, dynamics, ties/slurs, and barlines. Tools are disabled until a compatible note or range is selected.
+
+The Command Center also indexes common palette edits such as transposition, ties/slurs, staccato/accent/tenuto, dynamics, final/repeat barlines, and note-input voice switching, with the same disabled-state reasons as the palette. For chord workflows, `Cmd/Ctrl+K` opens inline harmony entry when a note is selected; without a note selection, the same shortcut still opens the Command Center.
+Selection and tie/slur palette actions now expose the same shortcut hints on hover as their keyboard commands.
+
+## Playback
+
+Playback includes play/pause (`Space`), stop, tempo slider, metronome, progress-bar seeking, and a score cursor. If playback is stopped and a note is selected, Play starts from that note. MIDI and soundfont loading can take a short moment the first time.
+
+## AI Assistant
+
+The AI tab accepts natural language in supported languages. It can change key or tempo, remove dynamics, add chord symbols, generate practice-oriented edits, and operate on the current selection when context is clear.
+
+Risky edits enter a preview/confirm state with affected measures, risks, and validator notes. Type `apply` to accept or `cancel` to discard. Local chat commands include `undo`, `redo`, `apply`, `confirm`, `yes`, `cancel`, `no`, and their German equivalents.
+
+## AI Providers and Benchmarks
+
+nex-note supports Ollama, Claude, Gemini, and Benchmark mode. Ollama models can be selected from the discovered list or added as a custom `model:tag`. Benchmark mode compares provider results, latency, XML validity, and operations. CLI benchmarks are available through `npm run benchmark` and `npm run benchmark:quick`.
+
+## Library and Recent Files
+
+The Library stores loaded scores locally in browser storage. You can open scores, mark favorites, filter by title or format, see score statistics, remove individual scores, or clear the library. Recent Files provides fast access to recently opened files.
+
+For faster reopening, nex-note uses the `.nxn` working copy in the selected `nex-note-projects` folder. The Library stores only metadata and the working-copy filename; the actual `.nxn` project state lives as a file in the selected folder. If the project folder is moved or deleted, source files remain unchanged; nex-note will need to import or convert them again next time.
+
+## Export and Save
+
+| Feature | Result |
+| --- | --- |
+| Save as library score | Stores the current score in the local library. |
+| Save project `.nxn` | Downloads an editable nex-note project. |
+| Export compressed MusicXML | Downloads `.mxl`. |
+| Export ABC notation | Downloads `.abc` using MuseScore CLI or fallback exporter. |
+| Export practice pack | Creates a JSON practice pack. |
+| Print view / Print score | Opens page preview or browser print. |
+
+MXL is the main round-trip format for MuseScore, Finale, Dorico, and Sibelius.
+
+## Layout and View
+
+Use zoom controls, view mode, Navigator, Find/Go to, AI layout cleanup, system/page breaks, staff spacing, and part layout presets (`Compact`, `Balanced`, `Roomy`, `Choir`) to prepare readable pages.
+
+## Undo, Redo, and History
+
+Undo is `Cmd/Ctrl+Z`; redo is `Cmd/Ctrl+Shift+Z` or `Cmd/Ctrl+Y`. History is command-based and bounded, so very old edits can drop out after many changes.
+
+## Debug and Bug Reports
+
+In debug mode, `Report bug` exports a bundle with score data, runtime state, recent actions, and Markdown/JSON reports. Doctor Mode and visual debug tools help diagnose note input, rhythm, layout, and semantic-grid issues.
+
+## Known Limits
+
+AI quality depends on the selected provider and model. PDF/image import depends on Audiveris. MSCZ, GuitarPro, MIDI, and best ABC output depend on MuseScore CLI. Some notation marks may be visual-only for playback. Some MuseScore/Finale shortcuts are still missing; see [keyboard-shortcuts.md](./keyboard-shortcuts.md).

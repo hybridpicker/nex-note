@@ -1,0 +1,299 @@
+import { DOMParser, XMLSerializer, type Document as XmlDocument, type Element as XmlElement } from '@xmldom/xmldom';
+import { cleanMuseScoreStderr } from './musescore-cli';
+
+type XmlEl = XmlElement;
+
+export { cleanMuseScoreStderr };
+
+export function formatMuseScoreMidiExportError(input: {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  stderr: string;
+  timeoutMs: number;
+}) {
+  const cleanedStderr = cleanMuseScoreStderr(input.stderr);
+  const reason = input.code === null
+    ? `timed out after ${Math.round(input.timeoutMs / 1000)}s${input.signal ? ` (${input.signal})` : ''}`
+    : `exited with code ${input.code}`;
+  return `MuseScore MIDI export failed: ${reason}${cleanedStderr ? `: ${cleanedStderr}` : ''}`;
+}
+
+function directChildrenByTag(parent: XmlEl, tag: string) {
+  const matches: XmlEl[] = [];
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const child = parent.childNodes[i];
+    if (child.nodeType === 1 && (child as XmlEl).tagName === tag) matches.push(child as XmlEl);
+  }
+  return matches;
+}
+
+function directChildText(parent: XmlEl, tag: string) {
+  return directChildrenByTag(parent, tag)[0]?.textContent ?? null;
+}
+
+function notePitchKey(note: XmlEl) {
+  const pitch = directChildrenByTag(note, 'pitch')[0];
+  if (!pitch) return null;
+  const step = directChildText(pitch, 'step') ?? 'C';
+  const alter = directChildText(pitch, 'alter') ?? '0';
+  const octave = directChildText(pitch, 'octave') ?? '4';
+  return `${step}:${alter}:${octave}`;
+}
+
+function hasDirectTieType(note: XmlEl, type: 'start' | 'stop') {
+  return directChildrenByTag(note, 'tie').some((tie) => tie.getAttribute('type') === type);
+}
+
+function hasNotationTiedType(note: XmlEl, type: 'start' | 'stop') {
+  return directChildrenByTag(note, 'notations')
+    .some((notations) => Array.from(notations.getElementsByTagName('tied')).some((tied) => tied.getAttribute('type') === type));
+}
+
+function removeTieStartMarkers(note: XmlEl) {
+  for (const tie of directChildrenByTag(note, 'tie')) {
+    if (tie.getAttribute('type') === 'start') note.removeChild(tie);
+  }
+  for (const notations of directChildrenByTag(note, 'notations')) {
+    const tiedToRemove = Array.from(notations.getElementsByTagName('tied')).filter((tied) => tied.getAttribute('type') === 'start');
+    for (const tied of tiedToRemove) tied.parentNode?.removeChild(tied);
+    if (!notations.childNodes.length) notations.parentNode?.removeChild(notations);
+  }
+}
+
+function stripMalformedTieStarts(doc: XmlDocument) {
+  let removed = 0;
+  for (const part of Array.from(doc.getElementsByTagName('part'))) {
+    const notes = Array.from(part.getElementsByTagName('note'));
+    for (let index = 0; index < notes.length; index++) {
+      const note = notes[index];
+      if (!hasDirectTieType(note, 'start') && !hasNotationTiedType(note, 'start')) continue;
+
+      const staff = directChildText(note, 'staff') ?? '1';
+      const voice = directChildText(note, 'voice') ?? '1';
+      const pitchKey = notePitchKey(note);
+      if (!pitchKey) continue;
+
+      let nextMatch: XmlEl | null = null;
+      for (let nextIndex = index + 1; nextIndex < notes.length; nextIndex++) {
+        const candidate = notes[nextIndex];
+        if ((directChildText(candidate, 'staff') ?? '1') !== staff) continue;
+        if ((directChildText(candidate, 'voice') ?? '1') !== voice) continue;
+        const candidatePitch = notePitchKey(candidate);
+        if (!candidatePitch) continue;
+        if (candidatePitch === pitchKey) {
+          nextMatch = candidate;
+          break;
+        }
+      }
+
+      const hasMatchingStop = nextMatch
+        ? (hasDirectTieType(nextMatch, 'stop') || hasNotationTiedType(nextMatch, 'stop'))
+        : false;
+
+      if (!hasMatchingStop) {
+        removeTieStartMarkers(note);
+        removed++;
+      }
+    }
+  }
+  return removed;
+}
+
+function removeDirectChildrenByTag(parent: XmlEl, tag: string) {
+  const toRemove = directChildrenByTag(parent, tag);
+  for (const child of toRemove) {
+    parent.removeChild(child);
+  }
+  return toRemove.length;
+}
+
+function stripPlaybackMetadata(doc: XmlDocument) {
+  let removedTranspose = 0;
+  let removedInstrumentSound = 0;
+  let removedMidiDevice = 0;
+  let removedMidiInstrument = 0;
+  let removedVirtualInstrument = 0;
+
+  for (const scorePart of Array.from(doc.getElementsByTagName('score-part'))) {
+    for (const scoreInstrument of Array.from(scorePart.getElementsByTagName('score-instrument'))) {
+      removedInstrumentSound += removeDirectChildrenByTag(scoreInstrument, 'instrument-sound');
+      removedVirtualInstrument += removeDirectChildrenByTag(scoreInstrument, 'virtual-instrument');
+    }
+    removedMidiDevice += removeDirectChildrenByTag(scorePart, 'midi-device');
+    removedMidiInstrument += removeDirectChildrenByTag(scorePart, 'midi-instrument');
+  }
+
+  for (const part of Array.from(doc.getElementsByTagName('part'))) {
+    const firstMeasure = Array.from(part.getElementsByTagName('measure'))[0] as XmlEl | undefined;
+    const attributes = firstMeasure
+      ? directChildrenByTag(firstMeasure, 'attributes')[0]
+      : undefined;
+    if (!attributes) continue;
+    removedTranspose += removeDirectChildrenByTag(attributes, 'transpose');
+  }
+
+  return {
+    removedTranspose,
+    removedInstrumentSound,
+    removedMidiDevice,
+    removedMidiInstrument,
+    removedVirtualInstrument,
+  };
+}
+
+function normalizeName(value: string | null | undefined) {
+  return (value ?? '').trim();
+}
+
+function tabBaseName(value: string) {
+  return value
+    .replace(/\b(tab|tablature)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function scorePartDisplayName(scorePart: XmlEl) {
+  return normalizeName(directChildText(scorePart, 'part-name'))
+    || normalizeName(scorePart.getElementsByTagName('instrument-name')[0]?.textContent)
+    || normalizeName(scorePart.getAttribute('id'));
+}
+
+function partHasTabNotation(part: XmlEl | undefined) {
+  if (!part) return false;
+  return Array.from(part.getElementsByTagName('staff-type')).some((entry) => /tab/i.test(entry.textContent ?? ''))
+    || Array.from(part.getElementsByTagName('clef')).some((entry) => /tab/i.test(entry.getElementsByTagName('sign')[0]?.textContent ?? ''));
+}
+
+function isTabScorePart(scorePart: XmlEl, part: XmlEl | undefined) {
+  const name = scorePartDisplayName(scorePart);
+  return /\b(tab|tablature)\b/i.test(name) || partHasTabNotation(part);
+}
+
+interface PlaybackInstrument {
+  name: string;
+  midiProgram: number;
+}
+
+const PLAYBACK_INSTRUMENTS: Array<{ pattern: RegExp; instrument: PlaybackInstrument }> = [
+  { pattern: /\bpiano\b/i, instrument: { name: 'Piano', midiProgram: 1 } },
+  { pattern: /\borgan\b/i, instrument: { name: 'Organ', midiProgram: 20 } },
+  { pattern: /\bharp\b/i, instrument: { name: 'Harp', midiProgram: 47 } },
+  { pattern: /\bviolin\b/i, instrument: { name: 'Violin', midiProgram: 41 } },
+  { pattern: /\bviola\b/i, instrument: { name: 'Viola', midiProgram: 42 } },
+  { pattern: /\b(cello|violoncello)\b/i, instrument: { name: 'Cello', midiProgram: 43 } },
+  { pattern: /\b(double bass|contrabass|string bass)\b/i, instrument: { name: 'Double Bass', midiProgram: 44 } },
+  { pattern: /\bflute\b/i, instrument: { name: 'Flute', midiProgram: 74 } },
+  { pattern: /\boboe\b/i, instrument: { name: 'Oboe', midiProgram: 69 } },
+  { pattern: /\bclarinet\b/i, instrument: { name: 'Clarinet', midiProgram: 72 } },
+  { pattern: /\bbassoon\b/i, instrument: { name: 'Bassoon', midiProgram: 71 } },
+  { pattern: /\b(alto sax|alto saxophone|saxophone)\b/i, instrument: { name: 'Alto Saxophone', midiProgram: 66 } },
+  { pattern: /\btrumpet\b/i, instrument: { name: 'Trumpet', midiProgram: 57 } },
+  { pattern: /\b(horn|french horn)\b/i, instrument: { name: 'French Horn', midiProgram: 61 } },
+  { pattern: /\btrombone\b/i, instrument: { name: 'Trombone', midiProgram: 58 } },
+  { pattern: /\btuba\b/i, instrument: { name: 'Tuba', midiProgram: 59 } },
+  { pattern: /\b(soprano|alto|tenor|bass|voice|vocal|choir)\b/i, instrument: { name: 'Voice', midiProgram: 53 } },
+  { pattern: /\b(guitar|tab|tablature)\b/i, instrument: { name: 'Guitar', midiProgram: 25 } },
+];
+
+function playbackInstrumentForName(name: string): PlaybackInstrument {
+  const normalized = name.replace(/\s+\d+$/, '').trim();
+  return PLAYBACK_INSTRUMENTS.find((entry) => entry.pattern.test(normalized))?.instrument
+    ?? { name: 'Piano', midiProgram: 1 };
+}
+
+function appendTextElement(doc: XmlDocument, parent: XmlEl, tagName: string, text: string) {
+  const child = doc.createElement(tagName);
+  child.appendChild(doc.createTextNode(text));
+  parent.appendChild(child);
+  return child;
+}
+
+function appendMidiInstrument(doc: XmlDocument, scorePart: XmlEl, partId: string, midiProgram: number) {
+  const midiInstrument = doc.createElement('midi-instrument');
+  midiInstrument.setAttribute('id', `${partId}-I1`);
+  appendTextElement(doc, midiInstrument, 'midi-channel', '1');
+  appendTextElement(doc, midiInstrument, 'midi-program', String(midiProgram));
+  appendTextElement(doc, midiInstrument, 'volume', '78.7402');
+  appendTextElement(doc, midiInstrument, 'pan', '0');
+  scorePart.appendChild(midiInstrument);
+}
+
+function removeDuplicateTabPlaybackParts(doc: XmlDocument) {
+  const scoreParts = Array.from(doc.getElementsByTagName('score-part')) as XmlEl[];
+  const parts = Array.from(doc.getElementsByTagName('part')) as XmlEl[];
+  const partById = new Map(parts.map((part) => [part.getAttribute('id') ?? '', part] as const));
+  const tabPartIds = new Set(
+    scoreParts
+      .filter((scorePart) => isTabScorePart(scorePart, partById.get(scorePart.getAttribute('id') ?? '')))
+      .map((scorePart) => scorePart.getAttribute('id') ?? '')
+      .filter(Boolean),
+  );
+  if (tabPartIds.size === 0) return [];
+
+  const nonTabBaseNames = new Set(
+    scoreParts
+      .filter((scorePart) => !tabPartIds.has(scorePart.getAttribute('id') ?? ''))
+      .map((scorePart) => tabBaseName(scorePartDisplayName(scorePart)))
+      .filter(Boolean),
+  );
+  const removed: Array<{ id: string; name: string }> = [];
+
+  for (const scorePart of scoreParts) {
+    const id = scorePart.getAttribute('id') ?? '';
+    if (!tabPartIds.has(id)) continue;
+    const name = scorePartDisplayName(scorePart);
+    const base = tabBaseName(name);
+    const hasNotationPartner = nonTabBaseNames.has(base) || (/guitar/i.test(name) && [...nonTabBaseNames].some((entry) => /guitar/i.test(entry)));
+    if (!hasNotationPartner) continue;
+
+    const part = partById.get(id);
+    scorePart.parentNode?.removeChild(scorePart);
+    part?.parentNode?.removeChild(part);
+    removed.push({ id, name });
+  }
+
+  return removed;
+}
+
+export function sanitizeXmlForMidiExport(xml: string) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'application/xml');
+  const renamedParts: Array<{ id: string; from: string; to: string }> = [];
+  const renamedInstruments: Array<{ id: string; from: string; to: string }> = [];
+  const removedMalformedTieStarts = stripMalformedTieStarts(doc);
+  const strippedPlaybackMetadata = stripPlaybackMetadata(doc);
+  const removedDuplicateTabParts = removeDuplicateTabPlaybackParts(doc);
+
+  for (const scorePart of Array.from(doc.getElementsByTagName('score-part'))) {
+    const partId = scorePart.getAttribute('id') ?? 'unknown';
+    const partName = scorePart.getElementsByTagName('part-name')[0];
+    const currentPartName = normalizeName(partName?.textContent);
+    const targetPlayback = playbackInstrumentForName(currentPartName);
+    const targetPlaybackName = targetPlayback.name;
+    if (partName?.textContent && partName.textContent !== targetPlaybackName) {
+      renamedParts.push({ id: partId, from: partName.textContent, to: targetPlaybackName });
+      partName.textContent = targetPlaybackName;
+    }
+
+    const instrumentName = scorePart.getElementsByTagName('instrument-name')[0];
+    const currentInstrumentName = normalizeName(instrumentName?.textContent);
+    const targetInstrument = playbackInstrumentForName(currentInstrumentName || currentPartName);
+    const targetInstrumentName = targetInstrument.name;
+    if (instrumentName?.textContent && instrumentName.textContent !== targetInstrumentName) {
+      renamedInstruments.push({ id: partId, from: instrumentName.textContent, to: targetInstrumentName });
+      instrumentName.textContent = targetInstrumentName;
+    }
+    appendMidiInstrument(doc, scorePart as XmlEl, partId, targetInstrument.midiProgram);
+  }
+
+  const sanitized = new XMLSerializer().serializeToString(doc);
+  return {
+    xml: sanitized.startsWith('<?xml') ? sanitized : `<?xml version="1.0" encoding="UTF-8"?>\n${sanitized}`,
+    renamedParts,
+    renamedInstruments,
+    removedDuplicateTabParts,
+    removedMalformedTieStarts,
+    strippedPlaybackMetadata,
+  };
+}

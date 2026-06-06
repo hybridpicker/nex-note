@@ -1,0 +1,45 @@
+import { defineConfig } from '@playwright/test';
+
+const PORT = Number(process.env.NEX_E2E_PORT ?? 3101);
+const HOST = process.env.NEX_E2E_HOST ?? 'localhost';
+const REUSE_EXISTING = process.env.NEX_E2E_REUSE === '1';
+const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+export default defineConfig({
+  testDir: './e2e',
+  timeout: 45_000,
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: 'list',
+  outputDir: 'test-results/playwright',
+  use: {
+    baseURL: `http://${HOST}:${PORT}`,
+    headless: true,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    launchOptions: {
+      executablePath: chromePath,
+      args: ['--no-sandbox'],
+    },
+  },
+  projects: [
+    {
+      name: 'smoke',
+      grep: /@smoke/,
+    },
+    {
+      name: 'regression',
+      grepInvert: /@smoke/,
+    },
+  ],
+  webServer: {
+    command: `npx next dev --webpack --hostname 127.0.0.1 --port ${PORT}`,
+    url: `http://${HOST}:${PORT}`,
+    reuseExistingServer: REUSE_EXISTING,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 120_000,
+  },
+});

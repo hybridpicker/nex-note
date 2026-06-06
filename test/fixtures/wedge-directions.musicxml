@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture covering crescendo and decrescendo wedge directions and an 8va ottava. -->
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Piano</part-name>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <!-- Crescendo starting at beat 1 -->
+      <direction placement="below">
+        <direction-type><wedge type="crescendo" number="1"/></direction-type>
+        <staff>1</staff>
+      </direction>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>half</type>
+        <staff>1</staff>
+      </note>
+      <note>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>half</type>
+        <staff>1</staff>
+      </note>
+      <!-- Crescendo stops at end of measure 1 -->
+      <direction placement="below">
+        <direction-type><wedge type="stop" number="1"/></direction-type>
+        <staff>1</staff>
+      </direction>
+    </measure>
+    <measure number="2">
+      <!-- 8va ottava starting here -->
+      <direction placement="above">
+        <direction-type><octave-shift type="down" size="8" number="1"/></direction-type>
+        <staff>1</staff>
+      </direction>
+      <!-- Decrescendo (diminuendo) through measure 2 -->
+      <direction placement="below">
+        <direction-type><wedge type="diminuendo" number="2"/></direction-type>
+        <staff>1</staff>
+      </direction>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>half</type>
+        <staff>1</staff>
+      </note>
+      <note>
+        <pitch><step>F</step><octave>4</octave></pitch>
+        <duration>2</duration>
+        <voice>1</voice>
+        <type>half</type>
+        <staff>1</staff>
+      </note>
+      <!-- Decrescendo ends -->
+      <direction placement="below">
+        <direction-type><wedge type="stop" number="2"/></direction-type>
+        <staff>1</staff>
+      </direction>
+      <!-- 8va ends -->
+      <direction placement="above">
+        <direction-type><octave-shift type="stop" size="8" number="1"/></direction-type>
+        <staff>1</staff>
+      </direction>
+    </measure>
+  </part>
+</score-partwise>

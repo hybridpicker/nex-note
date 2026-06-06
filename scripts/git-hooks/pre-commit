@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [ "${NEX_NOTE_SKIP_PRE_COMMIT_NOTATION_TOOLS:-}" = "1" ]; then
+  echo "nex-note pre-commit: skipped notation tools e2e because NEX_NOTE_SKIP_PRE_COMMIT_NOTATION_TOOLS=1"
+  exit 0
+fi
+
+echo "nex-note pre-commit: checking notation tools e2e"
+npm run test:e2e:notation-tools

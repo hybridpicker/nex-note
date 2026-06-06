@@ -1,0 +1,143 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  diatonicPitchIndex,
+  keyFifthsAlterForStep,
+  pitchFromDiatonicIndex,
+  resolveClefAtMeasure,
+  resolveStaffStepPitch,
+  topLineDiatonicIndex,
+} from '../src/score-input/staff-pitch.ts';
+import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
+
+test('topLineDiatonicIndex for treble clef = F5', () => {
+  assert.equal(topLineDiatonicIndex({ sign: 'G', line: 2 }), diatonicPitchIndex('F', 5));
+});
+
+test('topLineDiatonicIndex for bass clef = A3', () => {
+  assert.equal(topLineDiatonicIndex({ sign: 'F', line: 4 }), diatonicPitchIndex('A', 3));
+});
+
+test('topLineDiatonicIndex for alto clef (C on line 3) = G4', () => {
+  assert.equal(topLineDiatonicIndex({ sign: 'C', line: 3 }), diatonicPitchIndex('G', 4));
+});
+
+test('topLineDiatonicIndex for tenor clef (C on line 4) = E4', () => {
+  assert.equal(topLineDiatonicIndex({ sign: 'C', line: 4 }), diatonicPitchIndex('E', 4));
+});
+
+test('resolveStaffStepPitch: treble top line = F5', () => {
+  const result = resolveStaffStepPitch(0, { sign: 'G', line: 2 });
+  assert.equal(result.step, 'F');
+  assert.equal(result.octave, 5);
+});
+
+test('resolveStaffStepPitch: treble middle line (B4) is staffStep 4', () => {
+  const result = resolveStaffStepPitch(4, { sign: 'G', line: 2 });
+  assert.equal(result.step, 'B');
+  assert.equal(result.octave, 4);
+});
+
+test('resolveStaffStepPitch: treble bottom line (E4) is staffStep 8', () => {
+  const result = resolveStaffStepPitch(8, { sign: 'G', line: 2 });
+  assert.equal(result.step, 'E');
+  assert.equal(result.octave, 4);
+});
+
+test('resolveStaffStepPitch: middle C (C4) sits one ledger line below treble staff (staffStep 10)', () => {
+  const result = resolveStaffStepPitch(10, { sign: 'G', line: 2 });
+  assert.equal(result.step, 'C');
+  assert.equal(result.octave, 4);
+});
+
+test('resolveStaffStepPitch: bass top line = A3, middle C above = staffStep -2', () => {
+  const top = resolveStaffStepPitch(0, { sign: 'F', line: 4 });
+  assert.equal(top.step, 'A');
+  assert.equal(top.octave, 3);
+  const middleC = resolveStaffStepPitch(-2, { sign: 'F', line: 4 });
+  assert.equal(middleC.step, 'C');
+  assert.equal(middleC.octave, 4);
+});
+
+test('resolveStaffStepPitch: negative staffStep goes above the staff', () => {
+  // Treble G5 sits a diatonic step above top line F5 → staffStep -1
+  const g5 = resolveStaffStepPitch(-1, { sign: 'G', line: 2 });
+  assert.equal(g5.step, 'G');
+  assert.equal(g5.octave, 5);
+});
+
+test('pitchFromDiatonicIndex round-trips through diatonicPitchIndex', () => {
+  for (const step of ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const) {
+    for (let octave = 0; octave <= 8; octave += 1) {
+      const idx = diatonicPitchIndex(step, octave);
+      const pitch = pitchFromDiatonicIndex(idx);
+      assert.equal(pitch.step, step);
+      assert.equal(pitch.octave, octave);
+    }
+  }
+});
+
+function buildDocWithClef(sign: 'G' | 'F' | 'C', line: number, staffIndex = 1): ScoreDocumentModel {
+  return {
+    score: {
+      parts: [{
+        id: 'P1',
+        sourcePartId: 'P1',
+        name: 'Part 1',
+        abbreviation: null,
+        staves: [{
+          staffIndex,
+          measures: [{
+            id: 'm1',
+            measureNumber: 1,
+            voices: [],
+            directions: [],
+            attributes: [{
+              id: 'a1',
+              keyFifths: 0,
+              clefs: [{ staffIndex, sign, line }],
+            }],
+          }],
+        }],
+      }],
+    },
+    index: { measureIds: {}, voiceIds: {}, eventIds: {} },
+  } as unknown as ScoreDocumentModel;
+}
+
+test('resolveClefAtMeasure returns declared clef', () => {
+  const doc = buildDocWithClef('F', 4);
+  const clef = resolveClefAtMeasure(doc, 1, 1);
+  assert.equal(clef.sign, 'F');
+  assert.equal(clef.line, 4);
+});
+
+test('resolveClefAtMeasure falls back to treble when no clef is declared', () => {
+  const clef = resolveClefAtMeasure(null, 1, 1);
+  assert.equal(clef.sign, 'G');
+  assert.equal(clef.line, 2);
+});
+
+test('resolveClefAtMeasure picks up a clef from a previous measure', () => {
+  const doc = buildDocWithClef('F', 4);
+  // add a second measure without a clef declaration
+  doc.score.parts[0]!.staves[0]!.measures.push({
+    id: 'm2',
+    measureNumber: 2,
+    voices: [],
+    directions: [],
+    attributes: [],
+  } as never);
+  const clef = resolveClefAtMeasure(doc, 2, 1);
+  assert.equal(clef.sign, 'F');
+});
+
+test('keyFifthsAlterForStep resolves default mouse-entry accidentals from key signature', () => {
+  assert.equal(keyFifthsAlterForStep(1, 'F'), 1);
+  assert.equal(keyFifthsAlterForStep(3, 'G'), 1);
+  assert.equal(keyFifthsAlterForStep(3, 'B'), 0);
+  assert.equal(keyFifthsAlterForStep(-2, 'B'), -1);
+  assert.equal(keyFifthsAlterForStep(-2, 'E'), -1);
+  assert.equal(keyFifthsAlterForStep(-2, 'A'), 0);
+});

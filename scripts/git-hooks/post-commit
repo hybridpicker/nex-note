@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [ "${NEX_NOTE_SKIP_POST_COMMIT_BUILD:-}" = "1" ]; then
+  echo "nex-note post-commit: skipped macOS build because NEX_NOTE_SKIP_POST_COMMIT_BUILD=1"
+  exit 0
+fi
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "nex-note post-commit: skipped macOS build because this is not macOS"
+  exit 0
+fi
+
+echo "nex-note post-commit: building macOS app artifacts"
+npm run electron:build

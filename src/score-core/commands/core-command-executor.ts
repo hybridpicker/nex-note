@@ -1,0 +1,4707 @@
+import { noteTypeToDivisions } from '@/lib/note-editor';
+import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
+import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
+import type { ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
+import { resolveGuitarFretPitch, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
+import { timestampsEqual } from '@/src/shared/music/timestamp-match';
+import type { ClipboardAbsoluteEvent, ClipboardTargetOffset, ClipboardTimedDirection, ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
+import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
+
+const CORE_SUPPORTED_COMMANDS = new Set([
+  'setTitle',
+  'setSubtitle',
+  'setComposer',
+  'setArranger',
+  'setKey',
+  'transposeDocumentChromatic',
+  'setTimeSignature',
+  'setClef',
+  'removeClefChange',
+  'setPartName',
+  'setPartAbbreviation',
+  'setInstrumentName',
+  'setPartTranspose',
+  'fitRangeOctaves',
+  'fitPartToInstrument',
+  'applyPracticeProfile',
+  'insertMeasureAfter',
+  'deleteMeasure',
+  'changeNotePitch',
+  'changeNoteDuration',
+  'deleteNote',
+  'deleteRange',
+  'clearMeasureVoice',
+  'rippleDelete',
+  'rippleDeleteRange',
+  'insertNote',
+  'insertNoteAt',
+  'insertRest',
+  'insertRestAt',
+  'setNoteStyle',
+  'toggleStemDirection',
+  'setGuitarFret',
+  'toggleGuitarTechnique',
+  'fillSlashMeasure',
+  'transposeChromatic',
+  'transposeRangeChromatic',
+  'toggleArticulation',
+  'clearArticulations',
+  'clearRangeArticulations',
+  'toggleTie',
+  'toggleSlur',
+  'setSlurPlacement',
+  'addDynamic',
+  'setBarline',
+  'addLyric',
+  'removeLyricLine',
+  'removeDirection',
+  'removeArticulations',
+  'setTempo',
+  'addStartRepeat',
+  'addEndRepeat',
+  'addVolta2',
+  'setEnding',
+  'addChords',
+  'setHarmonyAt',
+  'addRehearsalMark',
+  'addRehearsalMarksEvery',
+  'addWords',
+  'addExpressionText',
+  'addAnalysisAnnotation',
+  'addTechniqueInstruction',
+  'addSyncPoint',
+  'addOrchestrationNote',
+  'setSystemBreak',
+  'setPageBreak',
+  'setMeasureLayoutHint',
+  'setLyricLine',
+  'duplicateNote',
+  'addTuplet',
+  'addGraceNote',
+  'removeGraceNote',
+  'addFingering',
+  'addOrnament',
+  'addWedge',
+  'addPedalSpan',
+  'addOttava',
+  'pasteContent',
+  'addFermata',
+  'removeFermata',
+  'addTremolo',
+  'addGlissando',
+  'addArpeggio',
+  'addSegno',
+  'addCoda',
+  'addDacapo',
+  'addDalsegno',
+  'addFine',
+  'addToCoda',
+  'setMeasureRepeat',
+  'addTempoText',
+  'setSwing',
+  'setInstrumentChange',
+  'setCueNote',
+  'setMultiMeasureRest',
+  'addGuitarBend',
+  'addGuitarTap',
+]);
+
+function cloneDocument<T>(value: T): T {
+  return structuredClone(value);
+}
+
+const STEP_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+
+function diatonicPitchIndex(step: string, octave: number): number {
+  const idx = STEP_ORDER.indexOf(step.toUpperCase() as typeof STEP_ORDER[number]);
+  return octave * 7 + (idx >= 0 ? idx : 0);
+}
+
+function clefMiddleLineDiatonicIndex(sign: string | undefined, line: number | undefined) {
+  const normalizedSign = sign === 'F' || sign === 'C' || sign === 'G' ? sign : 'G';
+  const anchor = normalizedSign === 'F'
+    ? { step: 'F', octave: 3, defaultLine: 4 }
+    : normalizedSign === 'C'
+      ? { step: 'C', octave: 4, defaultLine: 3 }
+      : { step: 'G', octave: 4, defaultLine: 2 };
+  const clefLine = Number.isFinite(line) && line! >= 1 && line! <= 5 ? line! : anchor.defaultLine;
+  const anchorIndex = diatonicPitchIndex(anchor.step, anchor.octave);
+  return anchorIndex + 2 * (3 - clefLine);
+}
+
+function resolveMeasureClef(document: ScoreDocumentModel, measureNumber: number, staffIndex: number) {
+  for (const part of document.score.parts) {
+    const staff = part.staves.find((entry) => entry.staffIndex === staffIndex);
+    if (!staff) continue;
+    const measures = [...staff.measures]
+      .filter((measure) => measure.measureNumber <= measureNumber)
+      .sort((a, b) => b.measureNumber - a.measureNumber);
+    for (const measure of measures) {
+      for (const attribute of measure.attributes) {
+        const clef = attribute.clefs.find((entry) => entry.staffIndex === staffIndex);
+        if (clef?.sign) return clef;
+      }
+    }
+  }
+  return { staffIndex, sign: 'G', line: 2 };
+}
+
+function defaultStemDirection(document: ScoreDocumentModel, event: TimedEvent): 'up' | 'down' {
+  if (event.kind !== 'note') return 'up';
+  const clef = resolveMeasureClef(document, event.measureNumber, event.staffIndex);
+  const middleLine = clefMiddleLineDiatonicIndex(clef.sign, clef.line);
+  const pitch = diatonicPitchIndex(event.pitch.step, event.pitch.octave);
+  return pitch < middleLine ? 'up' : 'down';
+}
+
+export function supportsCoreExecution(command: ValidatedScoreCommand) {
+  return CORE_SUPPORTED_COMMANDS.has(command.type);
+}
+
+export type SelectionRemap = Record<string, string>;
+
+export interface CoreCommandExecutionResult {
+  coreDocument: ScoreDocumentModel;
+  selectionRemap: SelectionRemap;
+}
+
+function applyToMatchingMeasures(
+  document: ScoreDocumentModel,
+  measureNumber: number,
+  callback: (args: { partIndex: number; staffIndex: number; measureIndex: number }) => void,
+) {
+  document.score.parts.forEach((part, partIndex) => {
+    part.staves.forEach((staff, staffIndex) => {
+      const measureIndex = staff.measures.findIndex((measure) => measure.measureNumber === measureNumber);
+      if (measureIndex >= 0) callback({ partIndex, staffIndex, measureIndex });
+    });
+  });
+}
+
+function ensureMeasureAttributes(document: ScoreDocumentModel, partIndex: number, staffIndex: number, measureIndex: number) {
+  const measure = document.score.parts[partIndex].staves[staffIndex].measures[measureIndex];
+  if (measure.attributes.length === 0) {
+    measure.attributes.push({
+      id: `attr:${measure.id}:0`,
+      clefs: [],
+    });
+  }
+  return measure.attributes[0];
+}
+
+
+const BEAMABLE_DURATION_LEVEL: Record<string, number> = {
+  eighth: 1,
+  '16th': 2,
+  '32nd': 3,
+  '64th': 4,
+};
+
+function eventBeamLevel(event: TimedEvent) {
+  if (event.kind !== 'note' || event.isChord) return 0;
+  if (!event.durationType) return 0;
+  return BEAMABLE_DURATION_LEVEL[event.durationType] ?? 0;
+}
+
+function resolveBeamGroupUnitDivisions(divisions: number, timeSignature: { beats: number; beatType: number } | null) {
+  const beats = timeSignature?.beats ?? 4;
+  const beatType = timeSignature?.beatType ?? 4;
+  const beatDivisions = Math.max(1, Math.round((Math.max(divisions, 1) * 4) / Math.max(beatType, 1)));
+  const compoundMeter = beatType === 8 && beats >= 6 && beats % 3 === 0;
+  const commonTimeHalfBarGrouping = beatType === 4 && beats === 4;
+  if (commonTimeHalfBarGrouping) return beatDivisions * 2;
+  return compoundMeter ? beatDivisions * 3 : beatDivisions;
+}
+
+function rebuildDefaultBeams(document: ScoreDocumentModel) {
+  const rebuilt: ScoreDocumentModel['beams'] = [];
+
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      staff.measures.forEach((measure) => {
+        const timing = resolveMeasureTiming(staff, measure);
+        const groupUnitDivisions = resolveBeamGroupUnitDivisions(timing.divisions, timing.timeSignature);
+
+        measure.voices.forEach((voice) => {
+          const ordered = [...voice.events].sort((left, right) => (
+            left.timestampNum - right.timestampNum
+            || Number(left.isChord) - Number(right.isChord)
+            || left.id.localeCompare(right.id)
+          ));
+
+          const flushSequence = (sequence: TimedEvent[], bucketIndex: number) => {
+            if (sequence.length < 2) return;
+            const levels = sequence.map((event) => eventBeamLevel(event));
+            const highestLevel = Math.max(...levels, 0);
+
+            for (let level = 1; level <= highestLevel; level += 1) {
+              let start = -1;
+              for (let index = 0; index <= sequence.length; index += 1) {
+                const active = index < sequence.length && levels[index]! >= level;
+                if (active) {
+                  if (start < 0) start = index;
+                  continue;
+                }
+                if (start < 0) continue;
+                const segment = sequence.slice(start, index);
+                if (segment.length >= 2) {
+                  rebuilt.push({
+                    id: `beam:${part.id}:${staff.staffIndex}:${measure.measureNumber}:${voice.voiceId}:${bucketIndex}:${level}:${segment[0]!.id}`,
+                    number: level,
+                    eventIds: segment.map((event) => event.id),
+                  });
+                } else if (level > 1) {
+                  const isolatedIndex = start;
+                  const hasPreviousPrimaryNeighbor = isolatedIndex > 0 && levels[isolatedIndex - 1]! >= level - 1;
+                  const hasNextPrimaryNeighbor = isolatedIndex < levels.length - 1 && levels[isolatedIndex + 1]! >= level - 1;
+                  if (hasPreviousPrimaryNeighbor || hasNextPrimaryNeighbor) {
+                    rebuilt.push({
+                      id: `beam:${part.id}:${staff.staffIndex}:${measure.measureNumber}:${voice.voiceId}:${bucketIndex}:${level}:${segment[0]!.id}:hook`,
+                      number: level,
+                      eventIds: [segment[0]!.id],
+                      hook: hasNextPrimaryNeighbor ? 'forward' : 'backward',
+                    });
+                  }
+                }
+                start = -1;
+              }
+            }
+          };
+
+          let activeSequence: TimedEvent[] = [];
+          let activeBucketIndex: number | null = null;
+          let previousEnd: number | null = null;
+
+          ordered.forEach((event) => {
+            const level = eventBeamLevel(event);
+            if (level === 0) {
+              if (activeSequence.length > 0 && activeBucketIndex != null) {
+                flushSequence(activeSequence, activeBucketIndex);
+              }
+              activeSequence = [];
+              activeBucketIndex = null;
+              previousEnd = null;
+              return;
+            }
+
+            const bucketIndex = Math.floor(event.timestampNum / Math.max(groupUnitDivisions, 1));
+            const crossesBoundary = Math.floor((Math.max(event.timestampNum + event.durationDivisions - 1, event.timestampNum)) / Math.max(groupUnitDivisions, 1)) !== bucketIndex;
+            const contiguous = previousEnd == null || previousEnd === event.timestampNum;
+            if (
+              crossesBoundary
+              || activeBucketIndex == null
+              || bucketIndex !== activeBucketIndex
+              || !contiguous
+            ) {
+              if (activeSequence.length > 0 && activeBucketIndex != null) {
+                flushSequence(activeSequence, activeBucketIndex);
+              }
+              activeSequence = crossesBoundary ? [] : [event];
+              activeBucketIndex = crossesBoundary ? null : bucketIndex;
+              previousEnd = crossesBoundary ? null : event.timestampNum + event.durationDivisions;
+              return;
+            }
+
+            activeSequence.push(event);
+            previousEnd = event.timestampNum + event.durationDivisions;
+          });
+
+          if (activeSequence.length > 0 && activeBucketIndex != null) {
+            flushSequence(activeSequence, activeBucketIndex);
+          }
+        });
+      });
+    });
+  });
+
+  document.beams = rebuilt;
+}
+
+function rebuildScoreIndex(document: ScoreDocumentModel): ScoreIndex {
+  const measureIds: Record<number, string[]> = {};
+  const voiceIds: Record<string, string> = {};
+  const eventIds: Record<string, string> = {};
+
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      staff.measures.forEach((measure) => {
+        measureIds[measure.measureNumber] = [...(measureIds[measure.measureNumber] ?? []), measure.id];
+        measure.voices.forEach((voice) => {
+          voiceIds[`${measure.measureNumber}:${staff.staffIndex}:${voice.voiceId}`] = voice.id;
+          voice.events.forEach((event) => {
+            eventIds[`${measure.measureNumber}:${staff.staffIndex}:${voice.voiceId}:${event.timestampNum}/${event.timestampDen}`] = event.id;
+          });
+        });
+      });
+    });
+  });
+
+  return { measureIds, voiceIds, eventIds };
+}
+
+
+function cloneMeasureForInsertion(sourceMeasure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number], nextMeasureNumber: number) {
+  return {
+    ...structuredClone(sourceMeasure),
+    id: `${sourceMeasure.id}:insert:${nextMeasureNumber}`,
+    measureNumber: nextMeasureNumber,
+    sourceMeasureNumber: null,
+    implicit: undefined,
+    directions: [],
+    voices: sourceMeasure.voices.map((voice) => ({
+      ...structuredClone(voice),
+      id: `${voice.id}:insert:${nextMeasureNumber}`,
+      events: [],
+    })),
+    attributes: sourceMeasure.attributes.map((attribute, index) => ({
+      ...structuredClone(attribute),
+      id: `${sourceMeasure.id}:attr:${nextMeasureNumber}:${index}`,
+    })),
+  };
+}
+
+function renumberMeasures(document: ScoreDocumentModel) {
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      staff.measures.forEach((measure, measureIndex) => {
+        const nextMeasureNumber = measureIndex + 1;
+        measure.measureNumber = nextMeasureNumber;
+        measure.voices.forEach((voice) => {
+          voice.events.forEach((event) => {
+            event.measureNumber = nextMeasureNumber;
+          });
+        });
+        measure.directions.forEach((direction) => {
+          direction.measureNumber = nextMeasureNumber;
+        });
+      });
+    });
+  });
+}
+
+function getMeasureDivisions(measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number]) {
+  return measure.attributes[0]?.divisions ?? 1;
+}
+
+function timestampToDivisionsOffset(
+  divisions: number,
+  timestampNum: number,
+  timestampDen: number,
+) {
+  return Math.max(0, Math.round((timestampNum / Math.max(timestampDen, 1)) * divisions * 4));
+}
+
+function getLocalMeasureDurationDivisions(measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number]) {
+  const divisions = getMeasureDivisions(measure);
+  const time = measure.attributes.find((entry) => entry.time)?.time ?? measure.attributes[0]?.time;
+  if (time?.beats && time?.beatType) {
+    return Math.max(1, Math.round((time.beats * divisions * 4) / time.beatType));
+  }
+  return Math.max(
+    1,
+    measure.voices.reduce((max, voice) => (
+      Math.max(
+        max,
+        voice.events.reduce((voiceMax, event) => Math.max(voiceMax, event.timestampNum + event.durationDivisions), 0),
+      )
+    ), divisions * 4),
+  );
+}
+
+function resolveMeasureTiming(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+) {
+  const effective = getEffectiveMeasureTimingFromStaff(staff, {
+    measureNumber: measure.measureNumber,
+  });
+  if (effective) return effective;
+
+  const divisions = getMeasureDivisions(measure);
+  return {
+    staff,
+    measure,
+    measureIndex: staff.measures.findIndex((entry) => entry.measureNumber === measure.measureNumber),
+    divisions,
+    timeSignature: null,
+    durationDivisions: getLocalMeasureDurationDivisions(measure),
+    durationRatio: 1,
+  };
+}
+
+function requestedDurationDivisions(durationType: string, isDotted: boolean | undefined, divisions: number) {
+  const baseDuration = noteTypeToDivisions(durationType, divisions);
+  return Math.max(1, Math.round(baseDuration * (isDotted ? 1.5 : 1)));
+}
+
+function gcd(left: number, right: number): number {
+  let a = Math.abs(Math.trunc(left));
+  let b = Math.abs(Math.trunc(right));
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
+}
+
+function lcm(left: number, right: number) {
+  const a = Math.max(1, Math.trunc(left));
+  const b = Math.max(1, Math.trunc(right));
+  return (a / gcd(a, b)) * b;
+}
+
+function requiredDivisionsForDuration(durationType: string, isDotted: boolean | undefined, currentDivisions: number) {
+  const quarters: Record<string, { num: number; den: number }> = {
+    maxima: { num: 32, den: 1 },
+    long: { num: 16, den: 1 },
+    breve: { num: 8, den: 1 },
+    whole: { num: 4, den: 1 },
+    half: { num: 2, den: 1 },
+    quarter: { num: 1, den: 1 },
+    eighth: { num: 1, den: 2 },
+    '16th': { num: 1, den: 4 },
+    '32nd': { num: 1, den: 8 },
+    '64th': { num: 1, den: 16 },
+  };
+  const duration = quarters[durationType] ?? quarters.quarter!;
+  const dottedMultiplier = isDotted ? { num: 3, den: 2 } : { num: 1, den: 1 };
+  const rawNum = duration.num * dottedMultiplier.num;
+  const rawDen = duration.den * dottedMultiplier.den;
+  const divisor = rawDen / gcd(rawNum, rawDen);
+  return lcm(currentDivisions, divisor);
+}
+
+function scaleMeasureTiming(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  factor: number,
+) {
+  if (factor === 1) return;
+  measure.voices.forEach((voice) => {
+    voice.events.forEach((event) => {
+      event.timestampNum *= factor;
+      event.timestampDen *= factor;
+      event.durationDivisions *= factor;
+    });
+  });
+  measure.directions.forEach((direction) => {
+    if (typeof direction.timestampNum === 'number') direction.timestampNum *= factor;
+    if (typeof direction.timestampDen === 'number') direction.timestampDen *= factor;
+  });
+}
+
+function measureHasExplicitDivisions(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+) {
+  return measure.attributes.some((attribute) => typeof attribute.divisions === 'number' && attribute.divisions > 0);
+}
+
+function ensureStaffDivisionsForDuration(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  measureNumber: number,
+  durationType: string,
+  isDotted: boolean | undefined,
+) {
+  const timing = getEffectiveMeasureTimingFromStaff(staff, { measureNumber });
+  if (!timing) return;
+  const nextDivisions = requiredDivisionsForDuration(durationType, isDotted, timing.divisions);
+  if (nextDivisions <= timing.divisions) return;
+
+  const factor = nextDivisions / timing.divisions;
+  if (!Number.isInteger(factor) || factor <= 1) return;
+
+  const targetMeasure = staff.measures[timing.measureIndex];
+  if (!targetMeasure) return;
+  const attributes = targetMeasure.attributes.length > 0
+    ? targetMeasure.attributes
+    : (targetMeasure.attributes = [{ id: `attr:${targetMeasure.id}:0`, clefs: [] }]);
+  attributes[0]!.divisions = nextDivisions;
+
+  for (let index = timing.measureIndex; index < staff.measures.length; index += 1) {
+    const measure = staff.measures[index]!;
+    if (index > timing.measureIndex && measureHasExplicitDivisions(measure)) break;
+    scaleMeasureTiming(measure, factor);
+  }
+}
+
+function clampInsertionOffsetToMeasure(
+  rawOffset: number,
+  measureDurationDivisions: number,
+  requestedDuration: number,
+) {
+  const safeMeasureDuration = Math.max(1, measureDurationDivisions);
+  const safeRequestedDuration = Math.max(1, Math.min(requestedDuration, safeMeasureDuration));
+  const maxStart = Math.max(0, safeMeasureDuration - safeRequestedDuration);
+  return Math.max(0, Math.min(rawOffset, maxStart));
+}
+
+function clampDurationToMeasure(
+  measureDurationDivisions: number,
+  startOffset: number,
+  requestedDurationDivisions: number,
+) {
+  const remaining = Math.max(1, measureDurationDivisions - startOffset);
+  return Math.max(1, Math.min(requestedDurationDivisions, remaining));
+}
+
+function resolveVoiceScope(
+  document: ScoreDocumentModel,
+  scope?: { coreMeasureId?: string | null; corePartId?: string | null } | null,
+) {
+  const corePartId = scope?.corePartId && document.score.parts.some((part) => part.id === scope.corePartId)
+    ? scope.corePartId
+    : null;
+  const coreMeasureId = scope?.coreMeasureId && document.score.parts.some((part) => (
+    (!corePartId || part.id === corePartId)
+    && part.staves.some((staff) => staff.measures.some((measure) => measure.id === scope.coreMeasureId))
+  ))
+    ? scope.coreMeasureId
+    : null;
+  return { coreMeasureId, corePartId };
+}
+
+function findVoice(
+  document: ScoreDocumentModel,
+  measureNumber: number,
+  staffIndex: number,
+  voiceId: number,
+  scope?: { coreMeasureId?: string | null; corePartId?: string | null } | null,
+) {
+  const scoped = resolveVoiceScope(document, scope);
+  for (const part of document.score.parts) {
+    if (scoped.corePartId && part.id !== scoped.corePartId) continue;
+    const staff = part.staves.find((entry) => entry.staffIndex === staffIndex);
+    const measure = scoped.coreMeasureId
+      ? staff?.measures.find((entry) => entry.id === scoped.coreMeasureId)
+      : staff?.measures.find((entry) => entry.measureNumber === measureNumber);
+    const voice = measure?.voices.find((entry) => entry.voiceId === voiceId);
+    if (staff && measure && voice) return { part, staff, measure, voice };
+  }
+  return null;
+}
+
+function findEventIndex(voice: VoiceNode, timestampNum: number, timestampDen: number) {
+  return voice.events.findIndex((event) => timestampsEqual(event.timestampNum, event.timestampDen, timestampNum, timestampDen));
+}
+
+function findCommandEventIndex(
+  voice: VoiceNode,
+  locator: {
+    coreEntityId?: string | null;
+    timestampNum: number;
+    timestampDen: number;
+    step?: string;
+    octave?: number;
+    alter?: number;
+    isRest?: boolean;
+  },
+) {
+  if (locator.coreEntityId) {
+    const exactIndex = voice.events.findIndex((event) => (
+      event.id === locator.coreEntityId
+      && timestampsEqual(event.timestampNum, event.timestampDen, locator.timestampNum, locator.timestampDen)
+    ));
+    if (exactIndex >= 0) return exactIndex;
+
+    const identityIndex = voice.events.findIndex((event) => event.id === locator.coreEntityId);
+    if (identityIndex >= 0) return identityIndex;
+  }
+  const timestampMatches = voice.events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => timestampsEqual(event.timestampNum, event.timestampDen, locator.timestampNum, locator.timestampDen));
+  if (locator.isRest) {
+    const restMatch = timestampMatches.find(({ event }) => event.kind === 'rest');
+    if (restMatch) return restMatch.index;
+  }
+  if (typeof locator.step === 'string' && typeof locator.octave === 'number' && typeof locator.alter === 'number') {
+    const pitchMatch = timestampMatches.find(({ event }) => (
+      event.kind === 'note'
+      && event.pitch.step === locator.step
+      && event.pitch.octave === locator.octave
+      && event.pitch.alter === locator.alter
+    ));
+    if (pitchMatch) return pitchMatch.index;
+  }
+  if (locator.coreEntityId && timestampMatches.length !== 1) return -1;
+  if (timestampMatches.length === 1) return timestampMatches[0]!.index;
+  return findEventIndex(voice, locator.timestampNum, locator.timestampDen);
+}
+
+function isTabStaff(part: ScoreDocumentModel['score']['parts'][number], staffIndex: number) {
+  return part.staves
+    .find((staff) => staff.staffIndex === staffIndex)
+    ?.measures.some((measure) => measure.attributes.some((attribute) => (
+      attribute.clefs.some((clef) => clef.staffIndex === staffIndex && clef.sign?.toUpperCase() === 'TAB')
+    ))) ?? false;
+}
+
+function findPairedTabNotationEvent(
+  part: ScoreDocumentModel['score']['parts'][number],
+  sourceStaffIndex: number,
+  measureNumber: number,
+  voiceId: number,
+  timestampNum: number,
+  timestampDen: number,
+) {
+  const sourceIsTab = isTabStaff(part, sourceStaffIndex);
+  const pairedStaves = part.staves
+    .filter((staff) => staff.staffIndex !== sourceStaffIndex && isTabStaff(part, staff.staffIndex) !== sourceIsTab)
+    .sort((left, right) => Math.abs(left.staffIndex - sourceStaffIndex) - Math.abs(right.staffIndex - sourceStaffIndex));
+
+  for (const staff of pairedStaves) {
+    const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+    const voice = measure?.voices.find((entry) => entry.voiceId === voiceId);
+    const event = voice?.events.find((entry) => (
+      entry.kind === 'note'
+      && timestampsEqual(entry.timestampNum, entry.timestampDen, timestampNum, timestampDen)
+    ));
+    if (measure && voice && event?.kind === 'note') {
+      return { staff, measure, voice, event, isTab: isTabStaff(part, staff.staffIndex) };
+    }
+  }
+
+  return null;
+}
+
+function findSimultaneousEventIndices(voice: VoiceNode, timestampNum: number, timestampDen: number) {
+  return voice.events.reduce<number[]>((indices, event, index) => {
+    if (timestampsEqual(event.timestampNum, event.timestampDen, timestampNum, timestampDen)) {
+      indices.push(index);
+    }
+    return indices;
+  }, []);
+}
+
+function compareLocators(
+  a: { measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number },
+  b: { measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number },
+) {
+  return a.measureNumber - b.measureNumber
+    || a.staffIndex - b.staffIndex
+    || a.voiceId - b.voiceId
+    || (a.timestampNum / Math.max(a.timestampDen, 1)) - (b.timestampNum / Math.max(b.timestampDen, 1));
+}
+
+function collectEventsInRange(
+  document: ScoreDocumentModel,
+  range: NonNullable<ValidatedScoreCommand['target']['range']>,
+) {
+  const start = compareLocators(range.start, range.end) <= 0 ? range.start : range.end;
+  const end = start === range.start ? range.end : range.start;
+  const collected: Array<{ voice: VoiceNode; eventIndex: number }> = [];
+
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      if (staff.staffIndex !== start.staffIndex) return;
+      staff.measures.forEach((measure) => {
+        if (measure.measureNumber < start.measureNumber || measure.measureNumber > end.measureNumber) return;
+        measure.voices.forEach((voice) => {
+          if (voice.voiceId !== start.voiceId) return;
+          voice.events.forEach((event, eventIndex) => {
+            const locator = {
+              measureNumber: event.measureNumber,
+              staffIndex: event.staffIndex,
+              voiceId: event.voiceId,
+              timestampNum: event.timestampNum,
+              timestampDen: event.timestampDen,
+            };
+            if (compareLocators(locator, start) >= 0 && compareLocators(locator, end) <= 0) {
+              collected.push({ voice, eventIndex });
+            }
+          });
+        });
+      });
+    });
+  });
+
+  return collected;
+}
+
+function matchesLocator(
+  event: TimedEvent,
+  locator: { measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number },
+) {
+  return event.measureNumber === locator.measureNumber
+    && event.staffIndex === locator.staffIndex
+    && event.voiceId === locator.voiceId
+    && timestampsEqual(event.timestampNum, event.timestampDen, locator.timestampNum, locator.timestampDen);
+}
+
+function findNextNoteEvent(
+  document: ScoreDocumentModel,
+  locator: { measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number },
+) {
+  const candidates: Array<{ event: TimedEvent; locator: typeof locator }> = [];
+
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      if (staff.staffIndex !== locator.staffIndex) return;
+      staff.measures.forEach((measure) => {
+        measure.voices.forEach((voice) => {
+          if (voice.voiceId !== locator.voiceId) return;
+          voice.events.forEach((event) => {
+            candidates.push({
+              event,
+              locator: {
+                measureNumber: event.measureNumber,
+                staffIndex: event.staffIndex,
+                voiceId: event.voiceId,
+                timestampNum: event.timestampNum,
+                timestampDen: event.timestampDen,
+              },
+            });
+          });
+        });
+      });
+    });
+  });
+
+  const sorted = candidates.sort((a, b) => compareLocators(a.locator, b.locator));
+  const startIndex = sorted.findIndex(({ event }) => matchesLocator(event, locator));
+  if (startIndex < 0) return null;
+
+  for (let index = startIndex + 1; index < sorted.length; index += 1) {
+    if (sorted[index].event.kind === 'note') return sorted[index].event;
+  }
+
+  return null;
+}
+
+function ensureVoice(
+  document: ScoreDocumentModel,
+  measureNumber: number,
+  staffIndex: number,
+  voiceId: number,
+  scope?: { coreMeasureId?: string | null; corePartId?: string | null } | null,
+) {
+  const scoped = resolveVoiceScope(document, scope);
+  const found = findVoice(document, measureNumber, staffIndex, voiceId, scoped);
+  if (found) return found;
+
+  for (const part of document.score.parts) {
+    if (scoped.corePartId && part.id !== scoped.corePartId) continue;
+    const staff = part.staves.find((entry) => entry.staffIndex === staffIndex);
+    const measure = scoped.coreMeasureId
+      ? staff?.measures.find((entry) => entry.id === scoped.coreMeasureId)
+      : staff?.measures.find((entry) => entry.measureNumber === measureNumber);
+    if (!measure || !staff) continue;
+    const voice: VoiceNode = {
+      id: `${measure.id}:voice:${voiceId}`,
+      voiceId,
+      events: [],
+    };
+    measure.voices.push(voice);
+    return { part, staff, measure, voice };
+  }
+  return null;
+}
+
+function durationTypeForBeatType(beatType: number | undefined) {
+  if (beatType === 1) return 'whole';
+  if (beatType === 2) return 'half';
+  if (beatType === 8) return 'eighth';
+  if (beatType === 16) return '16th';
+  if (beatType === 32) return '32nd';
+  if (beatType === 64) return '64th';
+  return 'quarter';
+}
+
+function slashPitchForMeasure(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  staffIndex: number,
+) {
+  const clef = [...measure.attributes]
+    .reverse()
+    .flatMap((attribute) => attribute.clefs)
+    .find((entry) => entry.staffIndex === staffIndex || measure.attributes.length === 1);
+  if (clef?.sign === 'F') return { step: 'D', alter: 0, octave: 3 };
+  if (clef?.sign === 'C') return { step: 'C', alter: 0, octave: 4 };
+  return { step: 'B', alter: 0, octave: 4 };
+}
+
+function fillMeasureWithSlashes(
+  document: ScoreDocumentModel,
+  command: Extract<ValidatedScoreCommand, { type: 'fillSlashMeasure' }>,
+) {
+  const targetVoiceId = command.voiceId ?? 1;
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      if (command.staffIndex != null && staff.staffIndex !== command.staffIndex) return;
+      const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+      if (!measure) return;
+      const time = measure.attributes.find((entry) => entry.time)?.time ?? measure.attributes[0]?.time;
+      const durationType = durationTypeForBeatType(time?.beatType);
+      ensureStaffDivisionsForDuration(staff, measure.measureNumber, durationType, false);
+      const refreshedMeasure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber) ?? measure;
+      const timing = resolveMeasureTiming(staff, refreshedMeasure);
+      const slashDuration = requestedDurationDivisions(durationType, false, timing.divisions);
+      const pitch = slashPitchForMeasure(refreshedMeasure, staff.staffIndex);
+      let voice = refreshedMeasure.voices.find((entry) => entry.voiceId === targetVoiceId);
+      if (!voice) {
+        voice = { id: `${refreshedMeasure.id}:voice:${targetVoiceId}`, voiceId: targetVoiceId, events: [] };
+        refreshedMeasure.voices.push(voice);
+      }
+      const events: TimedEvent[] = [];
+      let offset = 0;
+      let index = 0;
+      while (offset < timing.durationDivisions) {
+        const durationDivisions = Math.min(slashDuration, timing.durationDivisions - offset);
+        const duration = describeDuration(durationDivisions, timing.divisions);
+        events.push({
+          id: `${refreshedMeasure.id}:slash:${targetVoiceId}:${offset}:${index}`,
+          kind: 'note',
+          measureNumber: refreshedMeasure.measureNumber,
+          staffIndex: staff.staffIndex,
+          voiceId: targetVoiceId,
+          timestampNum: offset,
+          timestampDen: Math.max(timing.divisions * 4, 1),
+          durationDivisions,
+          durationType: duration.type,
+          isDotted: duration.dotted,
+          isChord: false,
+          notehead: 'slash',
+          stem: command.stem ?? 'none',
+          articulations: [],
+          tieStart: false,
+          lyrics: [],
+          pitch,
+        });
+        offset += durationDivisions;
+        index += 1;
+      }
+      voice.events = events;
+    });
+  });
+}
+
+function transposePitch(step: string, alter: number, octave: number, semitones: number, preferFlats = false) {
+  const STEP_TO_SEMITONE: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const SEMITONE_TO_STEP_ALTER_SHARPS: Array<{ step: string; alter: number }> = [
+    { step: 'C', alter: 0 }, { step: 'C', alter: 1 }, { step: 'D', alter: 0 }, { step: 'D', alter: 1 },
+    { step: 'E', alter: 0 }, { step: 'F', alter: 0 }, { step: 'F', alter: 1 }, { step: 'G', alter: 0 },
+    { step: 'G', alter: 1 }, { step: 'A', alter: 0 }, { step: 'A', alter: 1 }, { step: 'B', alter: 0 },
+  ];
+  const SEMITONE_TO_STEP_ALTER_FLATS: Array<{ step: string; alter: number }> = [
+    { step: 'C', alter: 0 }, { step: 'D', alter: -1 }, { step: 'D', alter: 0 }, { step: 'E', alter: -1 },
+    { step: 'E', alter: 0 }, { step: 'F', alter: 0 }, { step: 'G', alter: -1 }, { step: 'G', alter: 0 },
+    { step: 'A', alter: -1 }, { step: 'A', alter: 0 }, { step: 'B', alter: -1 }, { step: 'B', alter: 0 },
+  ];
+
+  const midi = (STEP_TO_SEMITONE[step] ?? 0) + alter + octave * 12;
+  const nextMidi = midi + semitones;
+  const nextOctave = Math.floor(nextMidi / 12);
+  const chroma = ((nextMidi % 12) + 12) % 12;
+  const mapped = (preferFlats ? SEMITONE_TO_STEP_ALTER_FLATS : SEMITONE_TO_STEP_ALTER_SHARPS)[chroma];
+  return { step: mapped.step, alter: mapped.alter, octave: nextOctave };
+}
+
+function transposeChordToken(token: string, semitones: number, preferFlats: boolean) {
+  const match = token.match(/^([A-Ga-g])([#b]?)(.*)$/);
+  if (!match) return token;
+  const [, rawStep, accidental, suffix] = match;
+  const transposed = transposePitch(rawStep.toUpperCase(), accidental === '#' ? 1 : accidental === 'b' ? -1 : 0, 4, semitones, preferFlats);
+  return `${transposed.step}${transposed.alter === 1 ? '#' : transposed.alter === -1 ? 'b' : ''}${suffix}`;
+}
+
+function transposeHarmonyValue(value: string | undefined, semitones: number, preferFlats: boolean) {
+  if (!value?.trim()) return value;
+  const [rootPart, bassPart] = value.split('/');
+  const nextRoot = transposeChordToken(rootPart.trim(), semitones, preferFlats);
+  if (!bassPart) return nextRoot;
+  const nextBass = transposeChordToken(bassPart.trim(), semitones, preferFlats);
+  return `${nextRoot}/${nextBass}`;
+}
+
+function noteToMidi(step: string, alter: number, octave: number) {
+  const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  return (stepToSemitone[step] ?? 0) + alter + (octave + 1) * 12;
+}
+
+function rehearsalLabel(index: number, style: 'letters' | 'numbers' = 'letters') {
+  if (style === 'numbers') return String(index + 1);
+  let current = index;
+  let result = '';
+  do {
+    result = String.fromCharCode(65 + (current % 26)) + result;
+    current = Math.floor(current / 26) - 1;
+  } while (current >= 0);
+  return result;
+}
+
+function shiftEventsAfter(voice: VoiceNode, fromOffset: number, byDuration: number) {
+  voice.events.forEach((event) => {
+    if (event.timestampNum >= fromOffset) {
+      event.timestampNum += byDuration;
+    }
+  });
+}
+
+function constrainVoiceToMeasure(voice: VoiceNode, measureDurationDivisions: number, divisions = 1) {
+  voice.events = voice.events
+    .filter((event) => event.timestampNum < measureDurationDivisions)
+    .map((event) => {
+      const remaining = Math.max(1, measureDurationDivisions - event.timestampNum);
+      if (event.durationDivisions <= remaining) return event;
+      const duration = describeDuration(remaining, divisions);
+      return {
+        ...event,
+        durationDivisions: remaining,
+        durationType: duration.type,
+        isDotted: duration.dotted,
+      };
+    });
+}
+
+function consumeVoiceEventsForDurationExpansion(
+  document: ScoreDocumentModel,
+  voice: VoiceNode,
+  consumedStart: number,
+  consumedEnd: number,
+  divisions: number,
+  protectedEventIds: Set<string>,
+) {
+  if (consumedEnd <= consumedStart) return;
+  const deletedEventIds = new Set<string>();
+
+  voice.events = voice.events.flatMap((event) => {
+    if (protectedEventIds.has(event.id)) return [event];
+    const eventStart = event.timestampNum;
+    const eventEnd = eventStart + Math.max(event.durationDivisions, 0);
+    const overlapsConsumedSpan = eventStart < consumedEnd && eventEnd > consumedStart;
+    if (!overlapsConsumedSpan) return [event];
+
+    if (eventEnd <= consumedEnd || eventStart >= consumedStart) {
+      deletedEventIds.add(event.id);
+      return [];
+    }
+
+    const nextDurationDivisions = eventEnd - consumedEnd;
+    if (nextDurationDivisions <= 0) {
+      deletedEventIds.add(event.id);
+      return [];
+    }
+    const duration = describeDuration(nextDurationDivisions, divisions);
+    return [{
+      ...event,
+      timestampNum: consumedEnd,
+      durationDivisions: nextDurationDivisions,
+      durationType: duration.type,
+      isDotted: duration.dotted,
+    }];
+  });
+
+  removeDeletedEventReferences(document, deletedEventIds);
+}
+
+function applyDurationChangeToVoice(
+  document: ScoreDocumentModel,
+  input: {
+    staff: ScoreDocumentModel['score']['parts'][number]['staves'][number];
+    measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number];
+    voice: VoiceNode;
+    voiceId: number;
+    timestampNum: number;
+    timestampDen: number;
+    durationType: string;
+    isDotted?: boolean;
+  },
+) {
+  ensureStaffDivisionsForDuration(input.staff, input.measure.measureNumber, input.durationType, input.isDotted);
+  const timing = resolveMeasureTiming(input.staff, input.measure);
+  const simultaneousIndices = findSimultaneousEventIndices(input.voice, input.timestampNum, input.timestampDen);
+  const simultaneousEvents = simultaneousIndices.map((index) => input.voice.events[index]).filter(Boolean);
+  const event = simultaneousEvents[0];
+  if (!event) return false;
+  const requestedDuration = requestedDurationDivisions(input.durationType, input.isDotted, timing.divisions);
+  const nextDurationDivisions = clampDurationToMeasure(timing.durationDivisions, event.timestampNum, requestedDuration);
+  const previousDurationDivisions = simultaneousEvents.reduce((max, current) => (
+    Math.max(max, current.durationDivisions)
+  ), 0);
+  const delta = nextDurationDivisions - previousDurationDivisions;
+  const fromOffset = event.timestampNum + previousDurationDivisions;
+  simultaneousEvents.forEach((entry) => {
+    entry.durationDivisions = nextDurationDivisions;
+    entry.durationType = input.durationType;
+    entry.isDotted = input.isDotted;
+  });
+  if (delta > 0) {
+    consumeVoiceEventsForDurationExpansion(
+      document,
+      input.voice,
+      fromOffset,
+      event.timestampNum + nextDurationDivisions,
+      timing.divisions,
+      new Set(simultaneousEvents.map((entry) => entry.id)),
+    );
+    constrainVoiceToMeasure(input.voice, timing.durationDivisions, timing.divisions);
+    input.voice.events.sort((a, b) => a.timestampNum - b.timestampNum || Number(a.isChord) - Number(b.isChord));
+  } else if (delta < 0) {
+    shiftEventsAfter(input.voice, fromOffset, delta);
+    constrainVoiceToMeasure(input.voice, timing.durationDivisions, timing.divisions);
+    input.voice.events.sort((a, b) => a.timestampNum - b.timestampNum || Number(a.isChord) - Number(b.isChord));
+  }
+  fillVoiceTimelineGaps(input.staff, input.voiceId, {
+    startMeasureNumber: input.measure.measureNumber,
+    endMeasureNumber: input.measure.measureNumber,
+  });
+  return true;
+}
+
+function ensureMeasure(document: ScoreDocumentModel, measureNumber: number, staffIndex?: number) {
+  for (const part of document.score.parts) {
+    const staff = part.staves.find((entry) => entry.staffIndex === (staffIndex ?? 1));
+    const measure = staff?.measures.find((entry) => entry.measureNumber === measureNumber);
+    if (part && staff && measure) return { part, staff, measure };
+  }
+  return null;
+}
+
+function getMeasureKeyFifths(document: ScoreDocumentModel, measureNumber: number, staffIndex: number) {
+  for (const part of document.score.parts) {
+    const staff = part.staves.find((entry) => entry.staffIndex === staffIndex);
+    if (!staff) continue;
+    const measures = [...staff.measures]
+      .filter((measure) => measure.measureNumber <= measureNumber)
+      .sort((a, b) => b.measureNumber - a.measureNumber);
+    for (const measure of measures) {
+      const fifths = measure.attributes.find((attribute) => typeof attribute.keyFifths === 'number')?.keyFifths;
+      if (typeof fifths === 'number') return fifths;
+    }
+  }
+  return undefined;
+}
+
+function upsertLayoutHint(
+  document: ScoreDocumentModel,
+  input: {
+    measureNumber: number;
+    partId?: string;
+    staffIndex?: number;
+    kind: 'newSystem' | 'newPage' | 'staffSpacing' | 'collisionPolicy';
+    value: boolean | number | string;
+    scope?: 'measure' | 'staff' | 'system' | 'page' | 'part';
+  },
+) {
+  const existing = document.layoutHints.find((hint) => (
+    hint.measureNumber === input.measureNumber
+    && hint.partId === input.partId
+    && hint.staffIndex === input.staffIndex
+    && hint.kind === input.kind
+  ));
+  if (existing) {
+    existing.value = input.value;
+    existing.scope = input.scope ?? existing.scope;
+    return existing;
+  }
+
+  const created = {
+    id: `layout:${input.partId ?? 'all'}:${input.staffIndex ?? 'all'}:${input.measureNumber}:${input.kind}`,
+    scope: input.scope ?? 'measure',
+    measureNumber: input.measureNumber,
+    partId: input.partId,
+    staffIndex: input.staffIndex,
+    kind: input.kind,
+    value: input.value,
+  } as const;
+  document.layoutHints.push(created);
+  return created;
+}
+
+function upsertLyricLine(
+  document: ScoreDocumentModel,
+  eventId: string,
+  verseNumber: number,
+  text: string,
+  syllabic?: 'single' | 'begin' | 'middle' | 'end',
+) {
+  const existing = document.lyricLines.find((line) => line.eventId === eventId && line.verseNumber === verseNumber);
+  if (existing) {
+    existing.text = text;
+    existing.syllabic = syllabic;
+    return existing;
+  }
+  const created = {
+    id: `lyric:${eventId}:${verseNumber}`,
+    eventId,
+    verseNumber,
+    text,
+    syllabic,
+  } as const;
+  document.lyricLines.push(created);
+  return created;
+}
+
+function removeLyricLine(
+  document: ScoreDocumentModel,
+  eventId: string,
+  verseNumber: number,
+) {
+  document.lyricLines = document.lyricLines.filter((line) => !(line.eventId === eventId && line.verseNumber === verseNumber));
+}
+
+function removeDirection(
+  document: ScoreDocumentModel,
+  measureNumber: number,
+  text: string,
+  staffIndex?: number,
+  kind?: string,
+) {
+  document.score.parts.forEach((part) => {
+    part.staves.forEach((staff) => {
+      if (staffIndex != null && staff.staffIndex !== staffIndex) return;
+      const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+      if (!measure) return;
+      const match = measure.directions.find((direction) =>
+        direction.value === text
+        && (kind ? direction.kind === kind : true)
+        && (staffIndex != null ? direction.staffIndex === staffIndex : true));
+      if (!match) return;
+      measure.directions = measure.directions.filter((direction) => direction.id !== match.id);
+    });
+  });
+}
+
+function addVisibleTextDirection(input: {
+  document: ScoreDocumentModel;
+  measureNumber: number;
+  text: string;
+  idKind: string;
+  placement?: string;
+  staffIndex?: number;
+  partId?: string;
+  timestampNum?: number;
+  timestampDen?: number;
+}) {
+  input.document.score.parts.forEach((part) => {
+    if (input.partId && part.sourcePartId !== input.partId && part.id !== input.partId) return;
+    part.staves.forEach((staff) => {
+      if (input.staffIndex != null && staff.staffIndex !== input.staffIndex) return;
+      const measure = staff.measures.find((entry) => entry.measureNumber === input.measureNumber);
+      if (!measure) return;
+      const timestampNum = input.timestampNum ?? 0;
+      const timestampDen = input.timestampDen ?? Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1);
+      measure.directions.push({
+        id: `${measure.id}:${input.idKind}:${staff.staffIndex}:${timestampNum}:${input.text}`,
+        kind: 'words',
+        value: input.text,
+        placement: input.placement ?? 'above',
+        measureNumber: input.measureNumber,
+        staffIndex: staff.staffIndex,
+        timestampNum,
+        timestampDen,
+      });
+    });
+  });
+}
+
+function semanticRangeLabel(startMeasureNumber: number, endMeasureNumber: number) {
+  return startMeasureNumber === endMeasureNumber
+    ? `m.${startMeasureNumber}`
+    : `m.${startMeasureNumber}-${endMeasureNumber}`;
+}
+
+function analysisTypeLabel(type?: string) {
+  if (type === 'romanNumeral') return 'Roman numeral';
+  if (type === 'forteSet') return 'Forte set';
+  if (type === 'chordScale') return 'Chord-scale';
+  if (type === 'neoRiemannian') return 'Neo-Riemannian';
+  if (type === 'schenkerian') return 'Schenkerian';
+  if (type === 'motivic') return 'Motivic';
+  if (type === 'form') return 'Form';
+  return 'Analysis';
+}
+
+type InstrumentProfile = {
+  instrumentName: string;
+  chromaticTranspose?: number;
+  diatonicTranspose?: number;
+  minMidi: number;
+  maxMidi: number;
+};
+
+const INSTRUMENT_PROFILES: Record<string, InstrumentProfile> = {
+  voice: { instrumentName: 'Voice', minMidi: 55, maxMidi: 79 },
+  flute: { instrumentName: 'Flute', minMidi: 60, maxMidi: 96 },
+  violin: { instrumentName: 'Violin', minMidi: 55, maxMidi: 103 },
+  'clarinet-bb': { instrumentName: 'Clarinet in Bb', chromaticTranspose: 2, diatonicTranspose: 1, minMidi: 50, maxMidi: 91 },
+  'trumpet-bb': { instrumentName: 'Trumpet in Bb', chromaticTranspose: 2, diatonicTranspose: 1, minMidi: 54, maxMidi: 82 },
+  'alto-sax-eb': { instrumentName: 'Alto Sax in Eb', chromaticTranspose: 9, diatonicTranspose: 6, minMidi: 49, maxMidi: 81 },
+  cello: { instrumentName: 'Cello', minMidi: 36, maxMidi: 76 },
+};
+
+function ensureNotationFragment(event: TimedEvent, containerTag: string, innerXml: string) {
+  const fragments = [...(event.preservedXml?.notationChildren ?? [])].filter((fragment) => !fragment.includes(`<${containerTag}>`));
+  fragments.push(`<${containerTag}>${innerXml}</${containerTag}>`);
+  event.preservedXml = {
+    ...event.preservedXml,
+    notationChildren: fragments,
+  };
+}
+
+function buildInsertedEvent(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  command: Extract<ValidatedScoreCommand, { type: 'insertNote' | 'insertRest' | 'insertNoteAt' | 'insertRestAt' }>,
+  insertionOffset: number,
+  divisions: number,
+  measureDurationDivisions: number,
+): TimedEvent {
+  const durationDivisions = clampDurationToMeasure(
+    measureDurationDivisions,
+    insertionOffset,
+    requestedDurationDivisions(command.durationType, command.isDotted, divisions),
+  );
+  const guitar = 'guitar' in command && command.guitar
+    ? structuredClone(command.guitar) as Extract<TimedEvent, { kind: 'note' }>['guitar']
+    : undefined;
+  const common = {
+    id: `${measure.id}:event:${command.voiceId}:${insertionOffset}:${Date.now()}`,
+    kind: command.type === 'insertNote' ? 'note' as const : 'rest' as const,
+    measureNumber: measure.measureNumber,
+    staffIndex: command.staffIndex,
+    voiceId: command.voiceId,
+    timestampNum: insertionOffset,
+    timestampDen: Math.max(divisions * 4, 1),
+    durationDivisions,
+    durationType: command.durationType,
+    isDotted: command.isDotted,
+    isChord: Boolean('asChord' in command && command.asChord),
+    notehead: 'notehead' in command && command.notehead === 'slash' ? 'slash' as const : undefined,
+    stem: 'stem' in command && command.stem === 'none' ? 'none' as const : undefined,
+    articulations: [],
+    tieStart: false,
+    lyrics: [],
+  };
+
+  if (command.type === 'insertNote' || command.type === 'insertNoteAt') {
+    return {
+      ...common,
+      kind: 'note',
+      pitch: {
+        step: command.step,
+        alter: command.alter,
+        octave: command.octave,
+      },
+      guitar,
+    };
+  }
+
+  return {
+    ...common,
+    kind: 'rest',
+  };
+}
+
+function buildRestEventFromSpan(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  divisions: number,
+  staffIndex: number,
+  voiceId: number,
+  insertionOffset: number,
+  durationDivisions: number,
+): TimedEvent {
+  const duration = describeDuration(durationDivisions, divisions);
+  return {
+    id: `${measure.id}:event:${voiceId}:${insertionOffset}:rest:${Date.now()}`,
+    kind: 'rest',
+    measureNumber: measure.measureNumber,
+    staffIndex,
+    voiceId,
+    timestampNum: insertionOffset,
+    timestampDen: Math.max(divisions * 4, 1),
+    durationDivisions,
+    durationType: duration.type,
+    isDotted: duration.dotted,
+    isChord: false,
+    articulations: [],
+    tieStart: false,
+    lyrics: [],
+  };
+}
+
+function buildRestEventsForSpan(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  divisions: number,
+  staffIndex: number,
+  voiceId: number,
+  startOffset: number,
+  durationDivisions: number,
+  preferredChunkDivisions: number,
+) {
+  const rests: TimedEvent[] = [];
+  let offset = startOffset;
+  const chunks = decomposeDurationDivisions(durationDivisions, divisions, Math.max(1, preferredChunkDivisions), startOffset);
+
+  for (const nextDuration of chunks) {
+    rests.push(buildRestEventFromSpan(measure, divisions, staffIndex, voiceId, offset, nextDuration));
+    offset += nextDuration;
+  }
+
+  return rests;
+}
+
+type StaffTimelineEntry = {
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number];
+  startOffset: number;
+  durationDivisions: number;
+  divisions: number;
+};
+
+type AbsoluteVoiceEvent = {
+  event: TimedEvent;
+  absStart: number;
+  divisions: number;
+};
+
+type EventFragmentIdentity = {
+  firstFragmentId: string;
+  lastFragmentId: string;
+  fragmentIds: string[];
+};
+
+type EventFragmentIdentityMap = Map<string, EventFragmentIdentity>;
+type ClipboardLaneMapping = {
+  sourceStaffIndex: number;
+  sourceVoiceId: number;
+  targetVoiceId: number;
+};
+type ClipboardEventIdentity = {
+  selectionEventId: string;
+  slurStartEventId: string;
+  slurStopEventId: string;
+};
+
+function getOrCreateVoiceForMeasure(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  voiceId: number,
+) {
+  const existing = measure.voices.find((voice) => voice.voiceId === voiceId);
+  if (existing) return existing;
+  const voice: VoiceNode = {
+    id: `${measure.id}:voice:${voiceId}`,
+    voiceId,
+    events: [],
+  };
+  measure.voices.push(voice);
+  return voice;
+}
+
+function buildStaffTimeline(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+): StaffTimelineEntry[] {
+  let startOffset = 0;
+  return staff.measures.map((measure) => {
+    const timing = resolveMeasureTiming(staff, measure);
+    const entry = {
+      measure,
+      startOffset,
+      durationDivisions: timing.durationDivisions,
+      divisions: timing.divisions,
+    };
+    startOffset += timing.durationDivisions;
+    return entry;
+  });
+}
+
+function getTimelineEntryForMeasure(
+  timeline: StaffTimelineEntry[],
+  measureNumber: number,
+) {
+  return timeline.find((entry) => entry.measure.measureNumber === measureNumber) ?? null;
+}
+
+function getTimelineEntryForAbsoluteOffset(
+  timeline: StaffTimelineEntry[],
+  absOffset: number,
+) {
+  return timeline.find((entry) => absOffset >= entry.startOffset && absOffset < entry.startOffset + entry.durationDivisions)
+    ?? timeline[timeline.length - 1]
+    ?? null;
+}
+
+function sortAbsoluteVoiceEvents(events: AbsoluteVoiceEvent[]) {
+  return events.sort((left, right) => (
+    left.absStart - right.absStart
+    || Number(left.event.isChord) - Number(right.event.isChord)
+    || left.event.id.localeCompare(right.event.id)
+  ));
+}
+
+function followSelectionRemap(selectionRemap: SelectionRemap, eventId: string) {
+  let nextEventId = eventId;
+  const seen = new Set<string>();
+  while (selectionRemap[nextEventId] && !seen.has(nextEventId)) {
+    seen.add(nextEventId);
+    nextEventId = selectionRemap[nextEventId]!;
+  }
+  return nextEventId;
+}
+
+function findPartStaff(
+  document: ScoreDocumentModel,
+  partId: string,
+  staffIndex: number,
+) {
+  const part = document.score.parts.find((entry) => entry.id === partId || entry.sourcePartId === partId) ?? null;
+  const staff = part?.staves.find((entry) => entry.staffIndex === staffIndex) ?? null;
+  return part && staff ? { part, staff } : null;
+}
+
+function buildTargetAbsoluteOffset(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  targetOffset: ClipboardTargetOffset,
+) {
+  const timeline = buildStaffTimeline(staff);
+  const measureEntry = getTimelineEntryForMeasure(timeline, targetOffset.measureNumber);
+  if (!measureEntry) return null;
+  return measureEntry.startOffset + timestampToDivisionsOffset(
+    measureEntry.divisions,
+    targetOffset.timestampNum,
+    targetOffset.timestampDen,
+  );
+}
+
+function resolveClipboardLaneMappings(
+  targetStaff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  clipboardData: ScoreClipboardPayload,
+) {
+  const lanes = [...clipboardData.lanes].sort((left, right) => (
+    left.sourceStaffIndex - right.sourceStaffIndex
+    || left.sourceVoiceId - right.sourceVoiceId
+  ));
+  if (lanes.length === 1) {
+    return [{
+      ...lanes[0]!,
+      targetVoiceId: lanes[0]!.sourceVoiceId,
+    }] satisfies ClipboardLaneMapping[];
+  }
+
+  const existingVoiceIds = new Set<number>(
+    targetStaff.measures.flatMap((measure) => measure.voices.map((voice) => voice.voiceId)),
+  );
+  const assignedVoiceIds = new Set<number>();
+  let nextVoiceId = Math.max(0, ...existingVoiceIds, ...lanes.map((lane) => lane.sourceVoiceId)) + 1;
+
+  return lanes.map((lane) => {
+    let targetVoiceId = lane.sourceVoiceId;
+    if (existingVoiceIds.has(targetVoiceId) || assignedVoiceIds.has(targetVoiceId)) {
+      while (existingVoiceIds.has(nextVoiceId) || assignedVoiceIds.has(nextVoiceId)) nextVoiceId += 1;
+      targetVoiceId = nextVoiceId;
+      nextVoiceId += 1;
+    }
+    assignedVoiceIds.add(targetVoiceId);
+    return {
+      ...lane,
+      targetVoiceId,
+    };
+  });
+}
+
+function cloneClipboardLaneEvents(
+  clipboardEvents: ClipboardAbsoluteEvent[],
+  mapping: ClipboardLaneMapping,
+  targetStaffIndex: number,
+  targetAbsoluteOffset: number,
+  identityMap: Map<string, ClipboardEventIdentity>,
+) {
+  return clipboardEvents
+    .filter((entry) => (
+      entry.sourceStaffIndex === mapping.sourceStaffIndex
+      && entry.sourceVoiceId === mapping.sourceVoiceId
+    ))
+    .map((entry, index) => {
+      const nextEvent = structuredClone(entry.event);
+      const nextId = `paste:${targetStaffIndex}:${mapping.targetVoiceId}:${entry.absStart}:${index}:${entry.event.id}`;
+      nextEvent.id = nextId;
+      nextEvent.staffIndex = targetStaffIndex;
+      nextEvent.voiceId = mapping.targetVoiceId;
+      identityMap.set(entry.event.id, {
+        selectionEventId: nextId,
+        slurStartEventId: nextId,
+        slurStopEventId: nextId,
+      });
+      return {
+        event: nextEvent,
+        absStart: targetAbsoluteOffset + entry.absStart,
+        divisions: entry.event.timestampDen > 0 ? Math.max(1, Math.round(entry.event.timestampDen / 4)) : 1,
+      };
+    });
+}
+
+function overwriteAbsoluteTimelineEvents(
+  events: AbsoluteVoiceEvent[],
+  overwriteStart: number,
+  overwriteEnd: number,
+) {
+  const nextEvents: AbsoluteVoiceEvent[] = [];
+  const deletedEventIds = new Set<string>();
+
+  for (const entry of events) {
+    const eventEnd = entry.absStart + entry.event.durationDivisions;
+    if (eventEnd <= overwriteStart || entry.absStart >= overwriteEnd) {
+      nextEvents.push({
+        event: structuredClone(entry.event),
+        absStart: entry.absStart,
+        divisions: entry.divisions,
+      });
+      continue;
+    }
+
+    const leadingDuration = Math.max(0, overwriteStart - entry.absStart);
+    const trailingDuration = Math.max(0, eventEnd - overwriteEnd);
+    const keepLeading = leadingDuration > 0 && !entry.event.isChord;
+    const keepTrailing = trailingDuration > 0 && !entry.event.isChord;
+
+    if (keepLeading) {
+      nextEvents.push({
+        event: cloneTimedEventWithDuration(entry.event, leadingDuration, entry.divisions, {
+          tieStart: false,
+        }),
+        absStart: entry.absStart,
+        divisions: entry.divisions,
+      });
+    }
+
+    if (keepTrailing) {
+      nextEvents.push({
+        event: cloneTimedEventWithDuration(entry.event, trailingDuration, entry.divisions, {
+          id: `${entry.event.id}:overwrite-tail:${overwriteEnd}`,
+          articulations: [],
+          lyrics: [],
+          preservedXml: undefined,
+          tieStart: false,
+        }),
+        absStart: overwriteEnd,
+        divisions: entry.divisions,
+      });
+    }
+
+    if (!keepLeading) deletedEventIds.add(entry.event.id);
+  }
+
+  return {
+    events: sortAbsoluteVoiceEvents(nextEvents),
+    deletedEventIds,
+  };
+}
+
+function buildDocumentEventIdSet(document: ScoreDocumentModel) {
+  return new Set(
+    document.score.parts.flatMap((part) => part.staves)
+      .flatMap((staff) => staff.measures)
+      .flatMap((measure) => measure.voices)
+      .flatMap((voice) => voice.events)
+      .map((event) => event.id),
+  );
+}
+
+function nextDirectionSpanNumber(
+  document: ScoreDocumentModel,
+  kind: string,
+) {
+  const numbers = document.score.parts.flatMap((part) => part.staves)
+    .flatMap((staff) => staff.measures)
+    .flatMap((measure) => measure.directions)
+    .filter((direction) => direction.kind === kind && direction.number != null)
+    .map((direction) => direction.number!);
+  return numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+}
+
+function pasteClipboardTimedDirections(
+  document: ScoreDocumentModel,
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  targetAbsoluteOffset: number,
+  timedDirections: ClipboardTimedDirection[],
+) {
+  if (timedDirections.length === 0) return;
+
+  const timeline = buildStaffTimeline(staff);
+  const spanKinds = new Set(['wedge', 'octave-shift', 'pedal']);
+  const remappedNumbers = new Map<string, number>();
+
+  timedDirections
+    .slice()
+    .sort((left, right) => left.absStart - right.absStart || left.direction.id.localeCompare(right.direction.id))
+    .forEach((entry, index) => {
+      const absoluteOffset = targetAbsoluteOffset + entry.absStart;
+      const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, absoluteOffset);
+      if (!timelineEntry) return;
+
+      const direction = structuredClone(entry.direction);
+      direction.id = `paste:${staff.staffIndex}:direction:${direction.kind}:${absoluteOffset}:${index}`;
+      direction.measureNumber = timelineEntry.measure.measureNumber;
+      direction.staffIndex = staff.staffIndex;
+      direction.timestampNum = absoluteOffset - timelineEntry.startOffset;
+      direction.timestampDen = Math.max(timelineEntry.divisions * 4, 1);
+
+      if (direction.number != null && spanKinds.has(direction.kind)) {
+        const key = `${entry.sourceStaffIndex}:${direction.kind}:${direction.number}`;
+        if (!remappedNumbers.has(key)) {
+          remappedNumbers.set(key, nextDirectionSpanNumber(document, direction.kind));
+        }
+        direction.number = remappedNumbers.get(key)!;
+      }
+
+      timelineEntry.measure.directions.push(direction);
+    });
+}
+
+function pasteClipboardSlurs(
+  document: ScoreDocumentModel,
+  noteSpanners: ScoreClipboardPayload['noteSpanners'],
+  identityMap: Map<string, ClipboardEventIdentity>,
+) {
+  if (noteSpanners.length === 0) return;
+
+  const knownEventIds = buildDocumentEventIdSet(document);
+  let nextNumber = document.slurs.length > 0
+    ? Math.max(...document.slurs.map((slur) => slur.number).filter(Number.isFinite)) + 1
+    : 1;
+
+  noteSpanners.forEach((slur) => {
+    const startEventId = slur.startEventId ? identityMap.get(slur.startEventId)?.slurStartEventId : undefined;
+    const stopEventId = slur.stopEventId ? identityMap.get(slur.stopEventId)?.slurStopEventId : undefined;
+    if (!startEventId || !stopEventId) return;
+    if (!knownEventIds.has(startEventId) || !knownEventIds.has(stopEventId)) return;
+
+    document.slurs.push({
+      id: `slur:paste:${nextNumber}:${startEventId}:${stopEventId}`,
+      number: nextNumber,
+      startEventId,
+      stopEventId,
+      placement: slur.placement,
+    });
+    nextNumber += 1;
+  });
+}
+
+function cloneTimedEventWithDuration(
+  event: TimedEvent,
+  durationDivisions: number,
+  divisions: number,
+  overrides?: Partial<TimedEvent>,
+): TimedEvent {
+  const duration = describeDuration(durationDivisions, divisions);
+  const clone = structuredClone(event) as TimedEvent;
+  clone.durationDivisions = durationDivisions;
+  clone.durationType = duration.type;
+  clone.isDotted = duration.dotted;
+  return {
+    ...clone,
+    ...overrides,
+  } as TimedEvent;
+}
+
+function flattenVoiceEventsToAbsoluteTimeline(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+) {
+  const timeline = buildStaffTimeline(staff);
+  const events: AbsoluteVoiceEvent[] = [];
+
+  for (const entry of timeline) {
+    const voice = entry.measure.voices.find((candidate) => candidate.voiceId === voiceId);
+    if (!voice) continue;
+    for (const event of voice.events) {
+      events.push({
+        event: structuredClone(event),
+        absStart: entry.startOffset + event.timestampNum,
+        divisions: entry.divisions,
+      });
+    }
+  }
+
+  return events.sort((a, b) => (
+    a.absStart - b.absStart
+    || Number(a.event.isChord) - Number(b.event.isChord)
+    || a.event.id.localeCompare(b.event.id)
+  ));
+}
+
+function dropTrailingRestOnlyMeasures(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  events: AbsoluteVoiceEvent[],
+) {
+  let lastNoteMeasureNumber: number | null = null;
+  const timeline = buildStaffTimeline(staff);
+
+  for (const entry of events) {
+    if (entry.event.kind !== 'note') continue;
+    const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, entry.absStart);
+    if (!timelineEntry) continue;
+    lastNoteMeasureNumber = Math.max(lastNoteMeasureNumber ?? timelineEntry.measure.measureNumber, timelineEntry.measure.measureNumber);
+  }
+
+  if (lastNoteMeasureNumber == null) return events;
+
+  return events.filter((entry) => {
+    if (entry.event.kind !== 'rest') return true;
+    const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, entry.absStart);
+    return !timelineEntry || timelineEntry.measure.measureNumber <= lastNoteMeasureNumber;
+  });
+}
+
+function dropRestOnlyTimelineForOverflowEstimate(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  events: AbsoluteVoiceEvent[],
+) {
+  return events.some((entry) => entry.event.kind === 'note')
+    ? dropTrailingRestOnlyMeasures(staff, events)
+    : events.filter((entry) => entry.event.kind !== 'rest');
+}
+
+function pruneTrailingRestOnlyMeasuresForVoice(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+) {
+  let lastNoteMeasureNumber: number | null = null;
+
+  for (const measure of staff.measures) {
+    const voice = measure.voices.find((entry) => entry.voiceId === voiceId);
+    if (voice?.events.some((event) => event.kind === 'note')) {
+      lastNoteMeasureNumber = Math.max(lastNoteMeasureNumber ?? measure.measureNumber, measure.measureNumber);
+    }
+  }
+
+  if (lastNoteMeasureNumber == null) return;
+
+  for (const measure of staff.measures) {
+    if (measure.measureNumber <= lastNoteMeasureNumber) continue;
+    if (voiceId === 1) {
+      const timing = resolveMeasureTiming(staff, measure);
+      const voice = getOrCreateVoiceForMeasure(measure, voiceId);
+      voice.events = buildRestEventsForSpan(
+        measure,
+        timing.divisions,
+        staff.staffIndex,
+        voiceId,
+        0,
+        timing.durationDivisions,
+        timing.durationDivisions,
+      );
+      continue;
+    }
+    measure.voices = measure.voices
+      .map((voice) => voice.voiceId === voiceId
+        ? {
+          ...voice,
+          events: voice.events.filter((event) => event.kind !== 'rest'),
+        }
+        : voice)
+      .filter((voice) => voice.events.length > 0);
+  }
+}
+
+function buildRestTimelineFragments(
+  entry: AbsoluteVoiceEvent,
+  absStart: number,
+  durationDivisions: number,
+  options?: { splitDotted?: boolean },
+) {
+  const duration = describeDuration(durationDivisions, entry.divisions);
+  const isRepresentable = isRepresentableDuration(durationDivisions, entry.divisions);
+  const beatDivisions = Math.max(entry.divisions, 1);
+  const localStart = absStart % beatDivisions;
+  const crossesBeatBoundary = localStart !== 0 && durationDivisions > beatDivisions - localStart;
+  const chunkDurations = (!isRepresentable || crossesBeatBoundary || (options?.splitDotted && duration.dotted))
+    ? decomposeDurationDivisions(durationDivisions, entry.divisions, Math.max(1, entry.divisions), absStart)
+    : [durationDivisions];
+  const fragments: AbsoluteVoiceEvent[] = [];
+  let cursor = absStart;
+
+  chunkDurations.forEach((nextDuration, index) => {
+    fragments.push({
+      event: cloneTimedEventWithDuration(entry.event, nextDuration, entry.divisions, {
+        id: `${entry.event.id}:rest-fragment:${absStart}:${index}`,
+      }),
+      absStart: cursor,
+      divisions: entry.divisions,
+    });
+    cursor += nextDuration;
+  });
+
+  return fragments;
+}
+
+function estimateAbsoluteInsertTimelineEnd(
+  events: AbsoluteVoiceEvent[],
+  insertionAbsoluteOffset: number,
+  insertedDurationDivisions: number,
+  absorbedRestDivisions: number,
+) {
+  const absorbEnd = insertionAbsoluteOffset + absorbedRestDivisions;
+  const shiftByDivisions = Math.max(insertedDurationDivisions - absorbedRestDivisions, 0);
+
+  return events.reduce((max, entry) => {
+    const eventEnd = entry.absStart + entry.event.durationDivisions;
+    if (
+      entry.event.kind === 'rest'
+      && !entry.event.isChord
+      && eventEnd > insertionAbsoluteOffset
+      && entry.absStart < absorbEnd
+    ) {
+      const leadingDuration = Math.max(0, insertionAbsoluteOffset - entry.absStart);
+      const trailingDuration = Math.max(0, eventEnd - absorbEnd);
+      if (leadingDuration > 0) {
+        max = Math.max(max, entry.absStart + leadingDuration);
+      }
+      if (trailingDuration > 0) {
+        max = Math.max(max, absorbEnd + trailingDuration);
+      }
+      return max;
+    }
+    if (entry.absStart >= absorbEnd) {
+      return Math.max(max, eventEnd + shiftByDivisions);
+    }
+    if (!entry.event.isChord && eventEnd > insertionAbsoluteOffset) {
+      return Math.max(max, insertionAbsoluteOffset + shiftByDivisions + (eventEnd - insertionAbsoluteOffset));
+    }
+    return Math.max(max, eventEnd);
+  }, insertionAbsoluteOffset + insertedDurationDivisions);
+}
+
+function computeContiguousRestAbsorption(
+  events: AbsoluteVoiceEvent[],
+  insertionAbsoluteOffset: number,
+  requestedDurationDivisions: number,
+) {
+  let cursor = insertionAbsoluteOffset;
+  let remaining = Math.max(requestedDurationDivisions, 0);
+
+  for (const entry of events) {
+    if (remaining <= 0) break;
+    if (entry.event.isChord || entry.event.kind !== 'rest') {
+      if (entry.absStart <= cursor && entry.absStart + entry.event.durationDivisions > cursor) break;
+      if (entry.absStart === cursor) break;
+      continue;
+    }
+
+    const eventEnd = entry.absStart + entry.event.durationDivisions;
+    if (eventEnd <= cursor) continue;
+    if (entry.absStart > cursor) break;
+
+    const available = eventEnd - cursor;
+    if (available <= 0) continue;
+
+    const absorbed = Math.min(remaining, available);
+    cursor += absorbed;
+    remaining -= absorbed;
+  }
+
+  return Math.max(requestedDurationDivisions - remaining, 0);
+}
+
+function ensureStaffTimelineDuration(
+  document: ScoreDocumentModel,
+  partId: string,
+  staffIndex: number,
+  minimumDurationDivisions: number,
+) {
+  while (true) {
+    const part = document.score.parts.find((entry) => entry.id === partId) ?? null;
+    const staff = part?.staves.find((entry) => entry.staffIndex === staffIndex) ?? null;
+    if (!part || !staff) return;
+
+    const totalDuration = buildStaffTimeline(staff)
+      .reduce((sum, entry) => sum + entry.durationDivisions, 0);
+    if (totalDuration >= minimumDurationDivisions) return;
+
+    document.score.parts.forEach((candidatePart) => {
+      candidatePart.staves.forEach((candidateStaff) => {
+        const reference = candidateStaff.measures[candidateStaff.measures.length - 1];
+        if (!reference) return;
+        candidateStaff.measures.push(
+          cloneMeasureForInsertion(reference, reference.measureNumber + 1),
+        );
+      });
+    });
+    renumberMeasures(document);
+  }
+}
+
+function buildInsertedOverflowFragments(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  command: Extract<ValidatedScoreCommand, { type: 'insertNoteAt' | 'insertRestAt' }>,
+  insertionAbsoluteOffset: number,
+  requestedDurationDivisions: number,
+) {
+  const timeline = buildStaffTimeline(staff);
+  const inserted: AbsoluteVoiceEvent[] = [];
+  let cursor = insertionAbsoluteOffset;
+  let remaining = requestedDurationDivisions;
+  let fragmentIndex = 0;
+
+  while (remaining > 0) {
+    const entry = getTimelineEntryForAbsoluteOffset(timeline, cursor);
+    if (!entry) break;
+    const localOffset = cursor - entry.startOffset;
+    const available = Math.max(1, entry.durationDivisions - localOffset);
+    const fragmentDuration = Math.min(remaining, available);
+    const duration = describeDuration(fragmentDuration, entry.divisions);
+    const tieStart = command.type === 'insertNoteAt' && remaining > fragmentDuration;
+    const guitar = 'guitar' in command && command.guitar
+      ? structuredClone(command.guitar) as Extract<TimedEvent, { kind: 'note' }>['guitar']
+      : undefined;
+    const common = {
+      id: `${entry.measure.id}:event:${command.voiceId}:${localOffset}:overflow:${fragmentIndex}`,
+      measureNumber: entry.measure.measureNumber,
+      staffIndex: command.staffIndex,
+      voiceId: command.voiceId,
+      timestampNum: localOffset,
+      timestampDen: Math.max(entry.divisions * 4, 1),
+      durationDivisions: fragmentDuration,
+      durationType: duration.type,
+      isDotted: duration.dotted,
+      isChord: Boolean('asChord' in command && command.asChord),
+      notehead: 'notehead' in command && command.notehead === 'slash' ? 'slash' as const : undefined,
+      stem: 'stem' in command && command.stem === 'none' ? 'none' as const : undefined,
+      articulations: [],
+      tieStart,
+      lyrics: [],
+    };
+
+    const event: TimedEvent = command.type === 'insertNoteAt'
+      ? {
+        ...common,
+        kind: 'note',
+        pitch: {
+          step: command.step,
+          alter: command.alter,
+          octave: command.octave,
+        },
+        guitar,
+      }
+      : {
+        ...common,
+        kind: 'rest',
+      };
+
+    inserted.push({
+      event,
+      absStart: cursor,
+      divisions: entry.divisions,
+    });
+    cursor += fragmentDuration;
+    remaining -= fragmentDuration;
+    fragmentIndex += 1;
+  }
+
+  return inserted;
+}
+
+function buildTupletEventIdSet(document: ScoreDocumentModel) {
+  return new Set(document.tuplets.flatMap((tuplet) => tuplet.eventIds));
+}
+
+function buildTimelineFragmentsForEvent(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  entry: AbsoluteVoiceEvent,
+  fragmentIdMap: EventFragmentIdentityMap,
+) {
+  const timeline = buildStaffTimeline(staff);
+  const fragments: AbsoluteVoiceEvent[] = [];
+  let cursor = entry.absStart;
+  let remaining = Math.max(0, entry.event.durationDivisions);
+  let fragmentIndex = 0;
+  const fragmentIds: string[] = [];
+
+  while (remaining > 0) {
+    const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, cursor);
+    if (!timelineEntry) break;
+    const localOffset = cursor - timelineEntry.startOffset;
+    const available = Math.max(1, timelineEntry.durationDivisions - localOffset);
+    const fragmentDuration = Math.min(remaining, available);
+    const isFirst = fragmentIndex === 0;
+    const hasNextFragment = remaining > fragmentDuration;
+    const fragmentId = isFirst ? entry.event.id : `${entry.event.id}:fragment:${fragmentIndex}`;
+    const overrides: Partial<TimedEvent> = {
+      id: fragmentId,
+      articulations: isFirst ? [...(entry.event.articulations ?? [])] : [],
+      lyrics: isFirst ? structuredClone(entry.event.lyrics ?? []) : [],
+      preservedXml: isFirst ? structuredClone(entry.event.preservedXml) : undefined,
+    };
+
+    if (entry.event.kind === 'note') {
+      overrides.tieStart = hasNextFragment ? true : Boolean(entry.event.tieStart);
+    } else {
+      overrides.tieStart = false;
+    }
+
+    fragments.push({
+      event: cloneTimedEventWithDuration(entry.event, fragmentDuration, timelineEntry.divisions, overrides),
+      absStart: cursor,
+      divisions: timelineEntry.divisions,
+    });
+    fragmentIds.push(fragmentId);
+    cursor += fragmentDuration;
+    remaining -= fragmentDuration;
+    fragmentIndex += 1;
+  }
+
+  if (fragmentIds.length > 1) {
+    fragmentIdMap.set(entry.event.id, {
+      firstFragmentId: fragmentIds[0]!,
+      lastFragmentId: fragmentIds[fragmentIds.length - 1]!,
+      fragmentIds,
+    });
+  }
+
+  return fragments.length > 0 ? fragments : [entry];
+}
+
+function repairIdentitySpans(
+  document: ScoreDocumentModel,
+  fragmentIdMap: EventFragmentIdentityMap,
+) {
+  if (fragmentIdMap.size === 0) return;
+
+  document.slurs = document.slurs
+    .map((slur) => ({
+      ...slur,
+      startEventId: slur.startEventId ? fragmentIdMap.get(slur.startEventId)?.firstFragmentId ?? slur.startEventId : slur.startEventId,
+      stopEventId: slur.stopEventId ? fragmentIdMap.get(slur.stopEventId)?.lastFragmentId ?? slur.stopEventId : slur.stopEventId,
+    }));
+
+  document.graceNotes = document.graceNotes
+    .map((graceNote) => ({
+      ...graceNote,
+      eventId: fragmentIdMap.get(graceNote.eventId)?.firstFragmentId ?? graceNote.eventId,
+    }));
+
+  document.lyricLines = document.lyricLines
+    .map((line) => ({
+      ...line,
+      eventId: fragmentIdMap.get(line.eventId)?.firstFragmentId ?? line.eventId,
+    }));
+
+  document.chordGroups = document.chordGroups
+    .map((group) => ({
+      ...group,
+      eventIds: group.eventIds.map((eventId) => fragmentIdMap.get(eventId)?.firstFragmentId ?? eventId),
+    }));
+}
+
+function remapCollapsedEventReferences(
+  document: ScoreDocumentModel,
+  eventIdMap: Map<string, string>,
+) {
+  if (eventIdMap.size === 0) return;
+
+  document.slurs = document.slurs
+    .map((slur) => ({
+      ...slur,
+      startEventId: slur.startEventId ? eventIdMap.get(slur.startEventId) ?? slur.startEventId : slur.startEventId,
+      stopEventId: slur.stopEventId ? eventIdMap.get(slur.stopEventId) ?? slur.stopEventId : slur.stopEventId,
+    }));
+
+  document.graceNotes = document.graceNotes
+    .map((graceNote) => ({
+      ...graceNote,
+      eventId: eventIdMap.get(graceNote.eventId) ?? graceNote.eventId,
+    }));
+
+  document.lyricLines = document.lyricLines
+    .map((line) => ({
+      ...line,
+      eventId: eventIdMap.get(line.eventId) ?? line.eventId,
+    }));
+
+  document.chordGroups = document.chordGroups
+    .map((group) => ({
+      ...group,
+      eventIds: [...new Set(group.eventIds.map((eventId) => eventIdMap.get(eventId) ?? eventId))],
+    }))
+    .filter((group) => group.eventIds.length > 1);
+
+  document.tuplets = document.tuplets
+    .map((tuplet) => ({
+      ...tuplet,
+      eventIds: [...new Set(tuplet.eventIds.map((eventId) => eventIdMap.get(eventId) ?? eventId))],
+    }));
+}
+
+function removeDeletedEventReferences(
+  document: ScoreDocumentModel,
+  deletedEventIds: Set<string>,
+) {
+  if (deletedEventIds.size === 0) return;
+
+  document.slurs = document.slurs.filter((slur) => (
+    !slur.startEventId
+    || !slur.stopEventId
+    || (!deletedEventIds.has(slur.startEventId) && !deletedEventIds.has(slur.stopEventId))
+  ));
+  document.graceNotes = document.graceNotes.filter((graceNote) => !deletedEventIds.has(graceNote.eventId));
+  document.lyricLines = document.lyricLines.filter((line) => !deletedEventIds.has(line.eventId));
+  document.chordGroups = document.chordGroups
+    .map((group) => ({
+      ...group,
+      eventIds: group.eventIds.filter((eventId) => !deletedEventIds.has(eventId)),
+    }))
+    .filter((group) => group.eventIds.length > 1);
+  document.tuplets = document.tuplets
+    .filter((tuplet) => !tuplet.eventIds.some((eventId) => deletedEventIds.has(eventId)));
+}
+
+type TieContinuityEventRef = {
+  event: TimedEvent;
+  measureNumber: number;
+  staffIndex: number;
+  voiceId: number;
+  partId: string;
+};
+
+function compareTieContinuityRefs(left: TieContinuityEventRef, right: TieContinuityEventRef) {
+  return left.measureNumber - right.measureNumber
+    || left.event.timestampNum - right.event.timestampNum
+    || left.event.timestampDen - right.event.timestampDen
+    || Number(left.event.isChord) - Number(right.event.isChord)
+    || left.event.id.localeCompare(right.event.id);
+}
+
+function sameTiePitch(left: TimedEvent | null | undefined, right: TimedEvent | null | undefined) {
+  return left?.kind === 'note'
+    && right?.kind === 'note'
+    && left.pitch.step === right.pitch.step
+    && left.pitch.alter === right.pitch.alter
+    && left.pitch.octave === right.pitch.octave;
+}
+
+function tieContinuesAtNextCoreOnset(refs: TieContinuityEventRef[], current: TieContinuityEventRef) {
+  if (current.event.kind !== 'note') return false;
+  const laterNotes = refs
+    .filter((ref) => ref.event.kind === 'note' && compareTieContinuityRefs(ref, current) > 0)
+    .sort(compareTieContinuityRefs);
+  const next = laterNotes[0];
+  if (!next) return false;
+  return laterNotes
+    .filter((ref) => (
+      ref.measureNumber === next.measureNumber
+      && ref.event.timestampNum === next.event.timestampNum
+      && ref.event.timestampDen === next.event.timestampDen
+    ))
+    .some((ref) => sameTiePitch(current.event, ref.event));
+}
+
+function pruneDanglingTieStarts(document: ScoreDocumentModel) {
+  const byVoice = new Map<string, TieContinuityEventRef[]>();
+
+  for (const part of document.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const voice of measure.voices) {
+          const key = `${part.id}:${staff.staffIndex}:${voice.voiceId}`;
+          const refs = byVoice.get(key) ?? [];
+          for (const event of voice.events) {
+            refs.push({
+              event,
+              measureNumber: measure.measureNumber,
+              staffIndex: staff.staffIndex,
+              voiceId: voice.voiceId,
+              partId: part.id,
+            });
+          }
+          byVoice.set(key, refs);
+        }
+      }
+    }
+  }
+
+  for (const refs of byVoice.values()) {
+    const ordered = refs.sort(compareTieContinuityRefs);
+    for (const ref of ordered) {
+      if (ref.event.kind !== 'note') {
+        ref.event.tieStart = false;
+        continue;
+      }
+      if (ref.event.tieStart && !tieContinuesAtNextCoreOnset(ordered, ref)) {
+        ref.event.tieStart = false;
+      }
+    }
+  }
+}
+
+function normalizeVoiceTimelineAcrossMeasures(
+  document: ScoreDocumentModel,
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+  input: {
+    startMeasureNumber: number;
+    endMeasureNumber: number;
+  },
+) {
+  const timeline = buildStaffTimeline(staff);
+  const tupletEventIds = buildTupletEventIdSet(document);
+  const fragmentIdMap: EventFragmentIdentityMap = new Map();
+  let changed = false;
+
+  const nextEvents = flattenVoiceEventsToAbsoluteTimeline(staff, voiceId)
+    .flatMap((entry) => {
+      const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, entry.absStart);
+      if (!timelineEntry) return [entry];
+      if (
+        timelineEntry.measure.measureNumber < input.startMeasureNumber
+        || timelineEntry.measure.measureNumber > input.endMeasureNumber
+      ) {
+        return [entry];
+      }
+
+      const localOffset = entry.absStart - timelineEntry.startOffset;
+      const localEnd = localOffset + entry.event.durationDivisions;
+      if (localEnd <= timelineEntry.durationDivisions) return [entry];
+
+      if (tupletEventIds.has(entry.event.id)) {
+        return [entry];
+      }
+
+      changed = true;
+      return buildTimelineFragmentsForEvent(staff, entry, fragmentIdMap);
+    });
+
+  if (!changed) return { changed: false, fragmentIdMap };
+
+  rewriteVoiceFromAbsoluteTimeline(staff, voiceId, nextEvents);
+  repairIdentitySpans(document, fragmentIdMap);
+
+  return { changed: true, fragmentIdMap };
+}
+
+function rewriteTimedDirectionsAfterAbsoluteInsert(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  insertionAbsoluteOffset: number,
+  insertedDurationDivisions: number,
+  absorbedRestDivisions: number,
+) {
+  const shiftByDivisions = Math.max(insertedDurationDivisions - absorbedRestDivisions, 0);
+  if (shiftByDivisions <= 0) return;
+
+  const absorbEnd = insertionAbsoluteOffset + absorbedRestDivisions;
+  const timeline = buildStaffTimeline(staff);
+  const timedDirectionKinds = new Set(['wedge', 'octave-shift', 'pedal', 'dynamics']);
+  const updates: Array<{
+    sourceMeasureId: string;
+    targetMeasureId: string;
+    directionId: string;
+    measureNumber: number;
+    timestampNum: number;
+    timestampDen: number;
+  }> = [];
+
+  for (const entry of timeline) {
+    for (const direction of [...entry.measure.directions]) {
+      if (!timedDirectionKinds.has(direction.kind)) continue;
+      if (direction.staffIndex != null && direction.staffIndex !== staff.staffIndex) continue;
+
+      const localOffset = direction.timestampNum ?? 0;
+      const absoluteOffset = entry.startOffset + localOffset;
+      if (absoluteOffset < absorbEnd) continue;
+
+      const nextAbsoluteOffset = absoluteOffset + shiftByDivisions;
+      const nextEntry = getTimelineEntryForAbsoluteOffset(timeline, nextAbsoluteOffset);
+      if (!nextEntry) continue;
+
+      updates.push({
+        sourceMeasureId: entry.measure.id,
+        targetMeasureId: nextEntry.measure.id,
+        directionId: direction.id,
+        measureNumber: nextEntry.measure.measureNumber,
+        timestampNum: nextAbsoluteOffset - nextEntry.startOffset,
+        timestampDen: Math.max(nextEntry.divisions * 4, 1),
+      });
+    }
+  }
+
+  for (const update of updates) {
+    const sourceEntry = timeline.find((entry) => entry.measure.id === update.sourceMeasureId);
+    const targetEntry = timeline.find((entry) => entry.measure.id === update.targetMeasureId);
+    const direction = sourceEntry?.measure.directions.find((candidate) => candidate.id === update.directionId);
+    if (!sourceEntry || !targetEntry || !direction) continue;
+    direction.measureNumber = update.measureNumber;
+    direction.timestampNum = update.timestampNum;
+    direction.timestampDen = update.timestampDen;
+    if (sourceEntry.measure.id !== targetEntry.measure.id) {
+      sourceEntry.measure.directions = sourceEntry.measure.directions.filter((candidate) => candidate.id !== direction.id);
+      targetEntry.measure.directions.push(direction);
+    }
+  }
+}
+
+function rewriteTimedDirectionsAfterAbsoluteDelete(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  removedIntervals: Array<{ start: number; end: number }>,
+) {
+  if (removedIntervals.length === 0) return;
+
+  const timeline = buildStaffTimeline(staff);
+  const timedDirectionKinds = new Set(['wedge', 'octave-shift', 'pedal', 'dynamics']);
+  const updates: Array<{
+    sourceMeasureId: string;
+    targetMeasureId: string;
+    directionId: string;
+    measureNumber: number;
+    timestampNum: number;
+    timestampDen: number;
+  }> = [];
+
+  const removedDurationBefore = (absOffset: number) => removedIntervals.reduce((sum, interval) => {
+    if (absOffset <= interval.start) return sum;
+    return sum + Math.max(0, Math.min(absOffset, interval.end) - interval.start);
+  }, 0);
+
+  for (const entry of timeline) {
+    for (const direction of [...entry.measure.directions]) {
+      if (!timedDirectionKinds.has(direction.kind)) continue;
+      if (direction.staffIndex != null && direction.staffIndex !== staff.staffIndex) continue;
+
+      const localOffset = direction.timestampNum ?? 0;
+      const absoluteOffset = entry.startOffset + localOffset;
+      const nextAbsoluteOffset = absoluteOffset - removedDurationBefore(absoluteOffset);
+      const nextEntry = getTimelineEntryForAbsoluteOffset(timeline, nextAbsoluteOffset);
+      if (!nextEntry) continue;
+
+      updates.push({
+        sourceMeasureId: entry.measure.id,
+        targetMeasureId: nextEntry.measure.id,
+        directionId: direction.id,
+        measureNumber: nextEntry.measure.measureNumber,
+        timestampNum: nextAbsoluteOffset - nextEntry.startOffset,
+        timestampDen: Math.max(nextEntry.divisions * 4, 1),
+      });
+    }
+  }
+
+  for (const update of updates) {
+    const sourceEntry = timeline.find((entry) => entry.measure.id === update.sourceMeasureId);
+    const targetEntry = timeline.find((entry) => entry.measure.id === update.targetMeasureId);
+    const direction = sourceEntry?.measure.directions.find((candidate) => candidate.id === update.directionId);
+    if (!sourceEntry || !targetEntry || !direction) continue;
+    direction.measureNumber = update.measureNumber;
+    direction.timestampNum = update.timestampNum;
+    direction.timestampDen = update.timestampDen;
+    if (sourceEntry.measure.id !== targetEntry.measure.id) {
+      sourceEntry.measure.directions = sourceEntry.measure.directions.filter((candidate) => candidate.id !== direction.id);
+      targetEntry.measure.directions.push(direction);
+    }
+  }
+}
+
+function transformAbsoluteInsertTimelineEvents(
+  events: AbsoluteVoiceEvent[],
+  insertionAbsoluteOffset: number,
+  insertedDurationDivisions: number,
+  absorbedRestDivisions: number,
+  options?: { splitDottedRestFragments?: boolean },
+) {
+  const absorbEnd = insertionAbsoluteOffset + absorbedRestDivisions;
+  const shiftByDivisions = Math.max(insertedDurationDivisions - absorbedRestDivisions, 0);
+  const transformed: AbsoluteVoiceEvent[] = [];
+
+  for (const entry of events) {
+    const eventEnd = entry.absStart + entry.event.durationDivisions;
+
+    if (
+      entry.event.kind === 'rest'
+      && !entry.event.isChord
+      && eventEnd > insertionAbsoluteOffset
+      && entry.absStart < absorbEnd
+    ) {
+      const leadingDuration = Math.max(0, insertionAbsoluteOffset - entry.absStart);
+      const trailingDuration = Math.max(0, eventEnd - absorbEnd);
+
+      if (leadingDuration > 0) {
+        transformed.push(...buildRestTimelineFragments(entry, entry.absStart, leadingDuration, {
+          splitDotted: options?.splitDottedRestFragments,
+        }));
+      }
+
+      if (trailingDuration > 0) {
+        transformed.push(...buildRestTimelineFragments(entry, absorbEnd, trailingDuration, {
+          splitDotted: options?.splitDottedRestFragments,
+        }));
+      }
+      continue;
+    }
+
+    if (entry.absStart >= absorbEnd) {
+      transformed.push({
+        event: structuredClone(entry.event),
+        absStart: entry.absStart + shiftByDivisions,
+        divisions: entry.divisions,
+      });
+      continue;
+    }
+
+    if (!entry.event.isChord && eventEnd > insertionAbsoluteOffset) {
+      const leadingDuration = insertionAbsoluteOffset - entry.absStart;
+      const trailingDuration = eventEnd - insertionAbsoluteOffset;
+
+      if (leadingDuration > 0) {
+        transformed.push({
+          event: cloneTimedEventWithDuration(
+            entry.event,
+            leadingDuration,
+            entry.divisions,
+            entry.event.kind === 'note'
+              ? { tieStart: shiftByDivisions === 0 && trailingDuration > 0 }
+              : undefined,
+          ),
+          absStart: entry.absStart,
+          divisions: entry.divisions,
+        });
+      }
+
+      if (trailingDuration > 0) {
+        transformed.push({
+          event: cloneTimedEventWithDuration(entry.event, trailingDuration, entry.divisions, {
+            articulations: [],
+            lyrics: [],
+            preservedXml: undefined,
+            tieStart: entry.event.kind === 'note' ? Boolean(entry.event.tieStart) : false,
+          }),
+          absStart: insertionAbsoluteOffset + shiftByDivisions,
+          divisions: entry.divisions,
+        });
+      }
+      continue;
+    }
+
+    transformed.push({
+      event: structuredClone(entry.event),
+      absStart: entry.absStart,
+      divisions: entry.divisions,
+    });
+  }
+
+  return transformed.sort((a, b) => (
+    a.absStart - b.absStart
+    || Number(a.event.isChord) - Number(b.event.isChord)
+    || a.event.id.localeCompare(b.event.id)
+  ));
+}
+
+function rewriteVoiceFromAbsoluteTimeline(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+  absoluteEvents: AbsoluteVoiceEvent[],
+) {
+  const timeline = buildStaffTimeline(staff);
+
+  for (const entry of timeline) {
+    const existing = entry.measure.voices.find((voice) => voice.voiceId === voiceId);
+    if (existing) existing.events = [];
+  }
+
+  for (const absoluteEvent of absoluteEvents) {
+    const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, absoluteEvent.absStart);
+    if (!timelineEntry) continue;
+
+    const localOffset = absoluteEvent.absStart - timelineEntry.startOffset;
+    const voice = getOrCreateVoiceForMeasure(timelineEntry.measure, voiceId);
+    const event = structuredClone(absoluteEvent.event);
+    event.measureNumber = timelineEntry.measure.measureNumber;
+    event.staffIndex = staff.staffIndex;
+    event.voiceId = voiceId;
+    event.timestampNum = localOffset;
+    event.timestampDen = Math.max(timelineEntry.divisions * 4, 1);
+    voice.events.push(event);
+  }
+
+  for (const entry of timeline) {
+    const voice = getOrCreateVoiceForMeasure(entry.measure, voiceId);
+    voice.events.sort((a, b) => (
+      a.timestampNum - b.timestampNum
+      || Number(a.isChord) - Number(b.isChord)
+      || a.id.localeCompare(b.id)
+    ));
+  }
+}
+
+function remapSelectionRemapTargets(
+  selectionRemap: SelectionRemap,
+  eventIdMap: Map<string, string>,
+) {
+  if (eventIdMap.size === 0) return selectionRemap;
+
+  const remapTarget = (eventId: string) => {
+    let nextEventId = eventId;
+    const seen = new Set<string>();
+    while (eventIdMap.has(nextEventId) && !seen.has(nextEventId)) {
+      seen.add(nextEventId);
+      nextEventId = eventIdMap.get(nextEventId)!;
+    }
+    return nextEventId;
+  };
+
+  return Object.fromEntries(
+    Object.entries(selectionRemap).map(([oldEventId, nextEventId]) => [oldEventId, remapTarget(nextEventId)]),
+  );
+}
+
+function mergeSelectionRemaps(
+  base: SelectionRemap,
+  next: SelectionRemap,
+) {
+  const merged: SelectionRemap = { ...base };
+
+  Object.entries(merged).forEach(([oldEventId, nextEventId]) => {
+    if (next[nextEventId]) {
+      merged[oldEventId] = next[nextEventId]!;
+    }
+  });
+
+  Object.entries(next).forEach(([oldEventId, nextEventId]) => {
+    merged[oldEventId] = nextEventId;
+  });
+
+  return merged;
+}
+
+
+function collapseTiedFragmentsAcrossMeasures(
+  document: ScoreDocumentModel,
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+  selectionRemap: SelectionRemap,
+) {
+  const timeline = buildStaffTimeline(staff);
+  const tupletEventIds = buildTupletEventIdSet(document);
+  const collapsedIdMap = new Map<string, string>();
+  const flattened = dropTrailingRestOnlyMeasures(staff, flattenVoiceEventsToAbsoluteTimeline(staff, voiceId));
+  const collapsed: AbsoluteVoiceEvent[] = [];
+  let changed = false;
+
+  const hasForeignAttachments = (event: TimedEvent) => (
+    (event.articulations?.length ?? 0) > 0
+    || (event.lyrics?.length ?? 0) > 0
+    || Boolean(event.preservedXml?.beforePitch?.length)
+    || Boolean(event.preservedXml?.afterType?.length)
+    || Boolean(event.preservedXml?.notationChildren?.length)
+  );
+
+  for (const entry of flattened) {
+    const previous = collapsed[collapsed.length - 1];
+    const previousTimelineEntry = previous ? getTimelineEntryForAbsoluteOffset(timeline, previous.absStart) : null;
+    const mergedDuration = previous ? previous.event.durationDivisions + entry.event.durationDivisions : 0;
+    const availableInMeasure = previous && previousTimelineEntry
+      ? previousTimelineEntry.startOffset + previousTimelineEntry.durationDivisions - previous.absStart
+      : 0;
+
+    const canCollapse = Boolean(
+      previous
+      && previous.event.kind === 'note'
+      && entry.event.kind === 'note'
+      && !previous.event.isChord
+      && !entry.event.isChord
+      && previous.event.voiceId === entry.event.voiceId
+      && previous.event.pitch.step === entry.event.pitch.step
+      && previous.event.pitch.alter === entry.event.pitch.alter
+      && previous.event.pitch.octave === entry.event.pitch.octave
+      && previous.event.tieStart
+      && previous.absStart + previous.event.durationDivisions === entry.absStart
+      && !tupletEventIds.has(previous.event.id)
+      && !tupletEventIds.has(entry.event.id)
+      && !hasForeignAttachments(entry.event)
+      && mergedDuration <= availableInMeasure
+      && isRepresentableDuration(mergedDuration, previousTimelineEntry?.divisions ?? previous.divisions)
+    );
+
+    if (!canCollapse || !previous) {
+      collapsed.push({
+        event: structuredClone(entry.event),
+        absStart: entry.absStart,
+        divisions: entry.divisions,
+      });
+      continue;
+    }
+
+    previous.event = cloneTimedEventWithDuration(
+      previous.event,
+      mergedDuration,
+      previousTimelineEntry?.divisions ?? previous.divisions,
+      { tieStart: Boolean(entry.event.tieStart) },
+    );
+    collapsedIdMap.set(entry.event.id, previous.event.id);
+    changed = true;
+  }
+
+  if (!changed) return selectionRemap;
+
+  rewriteVoiceFromAbsoluteTimeline(staff, voiceId, collapsed);
+  remapCollapsedEventReferences(document, collapsedIdMap);
+  return remapSelectionRemapTargets(selectionRemap, collapsedIdMap);
+}
+
+function removeAndPullVoiceTimeline(
+  document: ScoreDocumentModel,
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+  eventIdsToRemove: string[],
+) {
+  const removedEventIds = new Set(eventIdsToRemove);
+  if (removedEventIds.size === 0) return { selectionRemap: {} as SelectionRemap };
+
+  const flattened = dropTrailingRestOnlyMeasures(staff, flattenVoiceEventsToAbsoluteTimeline(staff, voiceId));
+  const removedEntries = flattened.filter((entry) => removedEventIds.has(entry.event.id));
+  if (removedEntries.length === 0) return { selectionRemap: {} as SelectionRemap };
+
+  const removedIntervals = removedEntries
+    .map((entry) => ({
+      start: entry.absStart,
+      end: entry.absStart + entry.event.durationDivisions,
+    }))
+    .sort((left, right) => left.start - right.start || left.end - right.end)
+    .reduce<Array<{ start: number; end: number }>>((merged, interval) => {
+      const previous = merged[merged.length - 1];
+      if (!previous || interval.start > previous.end) {
+        merged.push({ ...interval });
+        return merged;
+      }
+      previous.end = Math.max(previous.end, interval.end);
+      return merged;
+    }, []);
+
+  const removedDurationBefore = (absOffset: number) => removedIntervals.reduce((sum, interval) => {
+    if (absOffset <= interval.start) return sum;
+    return sum + Math.max(0, Math.min(absOffset, interval.end) - interval.start);
+  }, 0);
+
+  const selectionRemap: SelectionRemap = {};
+  removedEntries.forEach((entry, index) => {
+    const currentIndex = flattened.findIndex((candidate) => candidate.event.id === entry.event.id);
+    const successor = flattened.slice(currentIndex + 1).find((candidate) => !removedEventIds.has(candidate.event.id));
+    const predecessor = [...flattened.slice(0, currentIndex)].reverse().find((candidate) => !removedEventIds.has(candidate.event.id));
+    const remapTarget = successor?.event.id ?? predecessor?.event.id ?? null;
+    if (remapTarget) {
+      selectionRemap[entry.event.id] = remapTarget;
+    } else if (index === 0) {
+      delete selectionRemap[entry.event.id];
+    }
+  });
+
+  const nextEvents = flattened
+    .filter((entry) => !removedEventIds.has(entry.event.id))
+    .map((entry) => ({
+      event: structuredClone(entry.event),
+      absStart: entry.absStart - removedDurationBefore(entry.absStart),
+      divisions: entry.divisions,
+    }));
+
+  rewriteTimedDirectionsAfterAbsoluteDelete(staff, removedIntervals);
+  rewriteVoiceFromAbsoluteTimeline(staff, voiceId, nextEvents);
+  removeDeletedEventReferences(document, removedEventIds);
+
+  const firstMeasureNumber = staff.measures[0]?.measureNumber ?? 1;
+  const lastMeasureNumber = staff.measures[staff.measures.length - 1]?.measureNumber ?? firstMeasureNumber;
+  normalizeVoiceTimelineAcrossMeasures(document, staff, voiceId, {
+    startMeasureNumber: firstMeasureNumber,
+    endMeasureNumber: lastMeasureNumber,
+  });
+  fillVoiceTimelineGaps(staff, voiceId, {
+    startMeasureNumber: firstMeasureNumber,
+    endMeasureNumber: lastMeasureNumber,
+  });
+
+  return {
+    selectionRemap: collapseTiedFragmentsAcrossMeasures(document, staff, voiceId, selectionRemap),
+  };
+}
+
+function fillVoiceTimelineGaps(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+  range?: { startMeasureNumber?: number; endMeasureNumber?: number },
+) {
+  for (const measure of staff.measures) {
+    if (range?.startMeasureNumber != null && measure.measureNumber < range.startMeasureNumber) continue;
+    if (range?.endMeasureNumber != null && measure.measureNumber > range.endMeasureNumber) continue;
+    const timing = resolveMeasureTiming(staff, measure);
+    let voice = measure.voices.find((entry) => entry.voiceId === voiceId);
+    if (!voice || voice.events.length === 0) {
+      if (voiceId !== 1) continue;
+      voice = getOrCreateVoiceForMeasure(measure, voiceId);
+      voice.events = buildRestEventsForSpan(
+        measure,
+        timing.divisions,
+        staff.staffIndex,
+        voiceId,
+        0,
+        timing.durationDivisions,
+        timing.durationDivisions,
+      );
+      continue;
+    }
+    const sorted = [...voice.events].sort((a, b) => (
+      a.timestampNum - b.timestampNum
+      || Number(a.isChord) - Number(b.isChord)
+      || a.id.localeCompare(b.id)
+    ));
+
+    const rebuilt: TimedEvent[] = [];
+    let cursor = 0;
+    for (const event of sorted) {
+      if (event.timestampNum > cursor) {
+        const gapDuration = event.timestampNum - cursor;
+        rebuilt.push(...buildRestEventsForSpan(
+          measure,
+          timing.divisions,
+          staff.staffIndex,
+          voiceId,
+          cursor,
+          gapDuration,
+          gapDuration,
+        ));
+      }
+      rebuilt.push(event);
+      if (!event.isChord) {
+        cursor = Math.max(cursor, event.timestampNum + event.durationDivisions);
+      }
+    }
+
+    if (cursor < timing.durationDivisions) {
+      const gapDuration = timing.durationDivisions - cursor;
+      rebuilt.push(...buildRestEventsForSpan(
+        measure,
+        timing.divisions,
+        staff.staffIndex,
+        voiceId,
+        cursor,
+        gapDuration,
+        gapDuration,
+      ));
+    }
+
+    voice.events = rebuilt.sort((a, b) => (
+      a.timestampNum - b.timestampNum
+      || Number(a.isChord) - Number(b.isChord)
+      || a.id.localeCompare(b.id)
+    ));
+  }
+
+  pruneTrailingRestOnlyMeasuresForVoice(staff, voiceId);
+}
+
+function coalesceAdjacentRestsInMeasure(
+  measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  divisions: number,
+  staffIndex: number,
+  voiceId: number,
+  events: TimedEvent[],
+) {
+  const sorted = [...events].sort((a, b) => (
+    a.timestampNum - b.timestampNum
+    || Number(a.isChord) - Number(b.isChord)
+    || a.id.localeCompare(b.id)
+  ));
+  const rebuilt: TimedEvent[] = [];
+  let restSpanStart: number | null = null;
+  let restSpanEnd = 0;
+
+  const flushRestSpan = () => {
+    if (restSpanStart == null) return;
+    const duration = restSpanEnd - restSpanStart;
+    if (duration > 0) {
+      rebuilt.push(...buildRestEventsForSpan(
+        measure,
+        divisions,
+        staffIndex,
+        voiceId,
+        restSpanStart,
+        duration,
+        duration,
+      ));
+    }
+    restSpanStart = null;
+    restSpanEnd = 0;
+  };
+
+  for (const event of sorted) {
+    const isMergeableRest = event.kind === 'rest' && !event.isChord;
+    if (
+      isMergeableRest
+      && restSpanStart != null
+      && event.timestampNum === restSpanEnd
+    ) {
+      restSpanEnd = Math.max(restSpanEnd, event.timestampNum + event.durationDivisions);
+      continue;
+    }
+    flushRestSpan();
+    if (isMergeableRest) {
+      restSpanStart = event.timestampNum;
+      restSpanEnd = event.timestampNum + event.durationDivisions;
+      continue;
+    }
+    rebuilt.push(event);
+  }
+  flushRestSpan();
+
+  return rebuilt;
+}
+
+export function executeCoreCommands(
+  currentDocument: ScoreDocumentModel,
+  commands: ValidatedScoreCommand[],
+): CoreCommandExecutionResult {
+  const nextDocument = cloneDocument(currentDocument);
+  let selectionRemap: SelectionRemap = {};
+  const batchTargetKeyFifths = [...commands]
+    .reverse()
+    .find((command) => command.type === 'setKey')?.fifths;
+  const preferFlatsForMeasure = (measureNumber: number, staffIndex: number) => {
+    const keyFifths = batchTargetKeyFifths ?? getMeasureKeyFifths(nextDocument, measureNumber, staffIndex);
+    return (keyFifths ?? 0) < 0;
+  };
+
+  for (const command of commands) {
+    let commandSelectionRemap: SelectionRemap = {};
+
+    switch (command.type) {
+      case 'setTitle':
+        nextDocument.metadata.title = command.title;
+        break;
+      case 'setSubtitle':
+        nextDocument.metadata.subtitle = command.subtitle;
+        break;
+      case 'setComposer':
+        nextDocument.metadata.composer = command.composer;
+        break;
+      case 'setArranger':
+        nextDocument.metadata.arranger = command.arranger;
+        break;
+      case 'removeArticulations': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            staff.measures.forEach((measure) => {
+              measure.voices.forEach((voice) => {
+                voice.events.forEach((event) => {
+                  event.articulations = [];
+                });
+              });
+              measure.directions = measure.directions.filter((direction) => !['dynamics', 'octave-shift'].includes(direction.kind));
+            });
+          });
+        });
+        break;
+      }
+      case 'setKey':
+        applyToMatchingMeasures(nextDocument, 1, ({ partIndex, staffIndex, measureIndex }) => {
+          const attributes = ensureMeasureAttributes(nextDocument, partIndex, staffIndex, measureIndex);
+          attributes.keyFifths = command.fifths;
+        });
+        break;
+      case 'transposeDocumentChromatic': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            staff.measures.forEach((measure) => {
+              const measureKeyFifths = getMeasureKeyFifths(nextDocument, measure.measureNumber, staff.staffIndex);
+              const preferFlats = batchTargetKeyFifths != null
+                ? batchTargetKeyFifths < 0
+                : (measureKeyFifths ?? 0) < 0;
+              measure.voices.forEach((voice) => {
+                voice.events.forEach((event) => {
+                  if (event.kind !== 'note') return;
+                  event.pitch = transposePitch(
+                    event.pitch.step,
+                    event.pitch.alter,
+                    event.pitch.octave,
+                    command.semitones,
+                    preferFlats,
+                  );
+                });
+              });
+              measure.directions.forEach((direction) => {
+                if (direction.kind !== 'harmony') return;
+                direction.value = transposeHarmonyValue(direction.value, command.semitones, preferFlats);
+              });
+            });
+          });
+        });
+        break;
+      }
+      case 'setTempo': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === 1);
+            if (!measure || staff.staffIndex !== 1) return;
+            measure.directions = measure.directions.filter((direction) => direction.kind !== 'metronome');
+            measure.directions.unshift({
+              id: `${measure.id}:tempo`,
+              kind: 'metronome',
+              value: String(command.bpm),
+              placement: 'above',
+              measureNumber: 1,
+              staffIndex: 1,
+              timestampNum: 0,
+              timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+            });
+          });
+        });
+        break;
+      }
+      case 'setTimeSignature': {
+        const targetMeasure = command.measureNumber ?? 1;
+        applyToMatchingMeasures(nextDocument, targetMeasure, ({ partIndex, staffIndex, measureIndex }) => {
+          const attributes = ensureMeasureAttributes(nextDocument, partIndex, staffIndex, measureIndex);
+          attributes.time = {
+            beats: command.beats,
+            beatType: command.beatType,
+          };
+        });
+        break;
+      }
+      case 'setClef': {
+        const targetMeasure = command.measureNumber ?? 1;
+        const targetStaff = command.staffIndex ?? 1;
+        applyToMatchingMeasures(nextDocument, targetMeasure, ({ partIndex, staffIndex, measureIndex }) => {
+          if (staffIndex + 1 !== targetStaff) return;
+          const attributes = ensureMeasureAttributes(nextDocument, partIndex, staffIndex, measureIndex);
+          const existing = attributes.clefs.find((clef) => clef.staffIndex === targetStaff);
+          if (existing) {
+            existing.sign = command.sign;
+            existing.line = command.line;
+          } else {
+            attributes.clefs.push({
+              staffIndex: targetStaff,
+              sign: command.sign,
+              line: command.line,
+            });
+          }
+        });
+        break;
+      }
+      case 'removeClefChange': {
+        const targetStaff = command.staffIndex ?? 1;
+        applyToMatchingMeasures(nextDocument, command.measureNumber, ({ partIndex, staffIndex, measureIndex }) => {
+          if (staffIndex + 1 !== targetStaff) return;
+          const measure = nextDocument.score.parts[partIndex].staves[staffIndex].measures[measureIndex];
+          measure.attributes.forEach((attributes) => {
+            attributes.clefs = attributes.clefs.filter((clef) => clef.staffIndex !== targetStaff);
+          });
+        });
+        break;
+      }
+      case 'setPartName': {
+        const part = nextDocument.score.parts.find((entry) => entry.sourcePartId === command.partId);
+        if (part) part.name = command.name;
+        break;
+      }
+      case 'setPartAbbreviation': {
+        const part = nextDocument.score.parts.find((entry) => entry.sourcePartId === command.partId);
+        if (part) part.abbreviation = command.abbreviation;
+        break;
+      }
+      case 'setInstrumentName': {
+        const part = nextDocument.score.parts.find((entry) => entry.sourcePartId === command.partId);
+        if (part) part.instrumentName = command.instrumentName;
+        break;
+      }
+      case 'setPartTranspose': {
+        const part = nextDocument.score.parts.find((entry) => entry.sourcePartId === command.partId);
+        if (part) {
+          part.chromaticTranspose = command.chromatic;
+          part.diatonicTranspose = command.diatonic;
+        }
+        break;
+      }
+      case 'fitRangeOctaves': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            if (command.staffIndex != null && staff.staffIndex !== command.staffIndex) return;
+            staff.measures.forEach((measure) => {
+              if (command.startMeasureNumber != null && measure.measureNumber < command.startMeasureNumber) return;
+              if (command.endMeasureNumber != null && measure.measureNumber > command.endMeasureNumber) return;
+              measure.voices.forEach((voice) => {
+                if (command.voiceId != null && voice.voiceId !== command.voiceId) return;
+                voice.events.forEach((event) => {
+                  if (event.kind !== 'note') return;
+                  let midi = noteToMidi(event.pitch.step, event.pitch.alter, event.pitch.octave);
+                  while (midi < command.minMidi) {
+                    event.pitch.octave += 1;
+                    midi += 12;
+                  }
+                  while (midi > command.maxMidi) {
+                    event.pitch.octave -= 1;
+                    midi -= 12;
+                  }
+                });
+              });
+            });
+          });
+        });
+        break;
+      }
+      case 'fitPartToInstrument': {
+        const profile = INSTRUMENT_PROFILES[command.instrument];
+        if (!profile) break;
+        nextDocument.score.parts.forEach((part) => {
+          if (command.partId && part.sourcePartId !== command.partId) return;
+          part.instrumentName = profile.instrumentName;
+          part.chromaticTranspose = profile.chromaticTranspose;
+          part.diatonicTranspose = profile.diatonicTranspose;
+          part.staves.forEach((staff) => {
+            staff.measures.forEach((measure) => {
+              measure.voices.forEach((voice) => {
+                voice.events.forEach((event) => {
+                  if (event.kind !== 'note') return;
+                  let midi = noteToMidi(event.pitch.step, event.pitch.alter, event.pitch.octave);
+                  while (midi < profile.minMidi) {
+                    event.pitch.octave += 1;
+                    midi += 12;
+                  }
+                  while (midi > profile.maxMidi) {
+                    event.pitch.octave -= 1;
+                    midi -= 12;
+                  }
+                });
+              });
+            });
+          });
+        });
+        break;
+      }
+      case 'insertMeasureAfter': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const index = staff.measures.findIndex((measure) => measure.measureNumber === command.measureNumber);
+            if (index < 0) return;
+            const reference = staff.measures[index];
+            staff.measures.splice(index + 1, 0, cloneMeasureForInsertion(reference, command.measureNumber + 1));
+          });
+        });
+        renumberMeasures(nextDocument);
+        break;
+      }
+      case 'deleteMeasure': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const index = staff.measures.findIndex((measure) => measure.measureNumber === command.measureNumber);
+            if (index >= 0) {
+              staff.measures.splice(index, 1);
+            }
+          });
+        });
+        renumberMeasures(nextDocument);
+        break;
+      }
+      case 'addStartRepeat': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === 1);
+            if (measure) measure.leftBarline = 'repeat-start';
+          });
+        });
+        break;
+      }
+      case 'addEndRepeat': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const targetMeasureNumber = command.measureNumber ?? staff.measures[staff.measures.length - 1]?.measureNumber;
+            const measure = staff.measures.find((entry) => entry.measureNumber === targetMeasureNumber);
+            if (measure) measure.rightBarline = 'repeat-end';
+          });
+        });
+        break;
+      }
+      case 'addVolta2': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === 1);
+            if (measure) measure.leftEnding = { number: '2', type: 'start' };
+          });
+        });
+        break;
+      }
+      case 'setEnding': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (measure) {
+              if (command.endingType === 'start') {
+                measure.leftEnding = { number: command.number, type: 'start' };
+              } else {
+                measure.rightEnding = { number: command.number, type: command.endingType };
+              }
+            }
+          });
+        });
+        break;
+      }
+      case 'changeNotePitch': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, {
+          coreEntityId: command.coreEntityId,
+          timestampNum: command.timestampNum,
+          timestampDen: command.timestampDen,
+        })];
+        if (event) {
+          event.kind = 'note';
+          (event as Extract<TimedEvent, { kind: 'note' }>).pitch = {
+            step: command.step,
+            alter: command.alter,
+            octave: command.octave,
+          };
+        }
+        break;
+      }
+      case 'changeNoteDuration': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        if (!found) break;
+        const applied = applyDurationChangeToVoice(nextDocument, {
+          staff: found.staff,
+          measure: found.measure,
+          voice: found.voice,
+          voiceId: command.voiceId,
+          timestampNum: command.timestampNum,
+          timestampDen: command.timestampDen,
+          durationType: command.durationType,
+          isDotted: command.isDotted,
+        });
+        if (!applied) break;
+        const paired = findPairedTabNotationEvent(
+          found.part,
+          command.staffIndex,
+          command.measureNumber,
+          command.voiceId,
+          command.timestampNum,
+          command.timestampDen,
+        );
+        if (paired?.voice && paired.voice !== found.voice) {
+          applyDurationChangeToVoice(nextDocument, {
+            staff: paired.staff,
+            measure: paired.measure,
+            voice: paired.voice,
+            voiceId: command.voiceId,
+            timestampNum: command.timestampNum,
+            timestampDen: command.timestampDen,
+            durationType: command.durationType,
+            isDotted: command.isDotted,
+          });
+        }
+        break;
+      }
+      case 'setNoteStyle': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          event.notehead = command.notehead;
+          event.stem = command.stem;
+        }
+        break;
+      }
+      case 'toggleStemDirection': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event?.kind === 'note') {
+          const current = event.stem === 'up' || event.stem === 'down'
+            ? event.stem
+            : defaultStemDirection(nextDocument, event);
+          event.stem = current === 'up' ? 'down' : 'up';
+        }
+        break;
+      }
+      case 'setGuitarFret': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, {
+          coreEntityId: command.coreEntityId,
+          timestampNum: command.timestampNum,
+          timestampDen: command.timestampDen,
+          step: command.step,
+          octave: command.octave,
+          alter: command.alter,
+        })];
+        if (event && event.kind === 'note') {
+          const tuning = resolveGuitarTuning(command.tuning ?? event.guitar?.tuning);
+          const pitch = resolveGuitarFretPitch(command.string, command.fret, tuning);
+          const previous = event.guitar;
+          event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+          event.guitar = {
+            string: command.string,
+            fret: pitch.fret,
+          };
+          const nextTuning = command.tuning ?? previous?.tuning;
+          if (nextTuning) event.guitar.tuning = nextTuning;
+          const nextTechniques = command.techniques ?? previous?.techniques;
+          if (nextTechniques) {
+            event.guitar.techniques = [...nextTechniques] as NonNullable<typeof event.guitar>['techniques'];
+          }
+          const paired = findPairedTabNotationEvent(
+            found.part,
+            command.staffIndex,
+            command.measureNumber,
+            command.voiceId,
+            command.timestampNum,
+            command.timestampDen,
+          );
+          if (paired?.event) {
+            paired.event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+            if (paired.isTab) {
+              const previousPairedGuitar = paired.event.guitar;
+              paired.event.guitar = {
+                string: command.string,
+                fret: pitch.fret,
+              };
+              const nextPairedTuning = command.tuning ?? previousPairedGuitar?.tuning;
+              if (nextPairedTuning) paired.event.guitar.tuning = nextPairedTuning;
+              const pairedTechniques = command.techniques ?? previousPairedGuitar?.techniques;
+              if (pairedTechniques) {
+                paired.event.guitar.techniques = [...pairedTechniques] as NonNullable<typeof paired.event.guitar>['techniques'];
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'toggleGuitarTechnique': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event && event.kind === 'note') {
+          const current = event.guitar ?? { string: 1 as const, fret: 0 };
+          const techniques = new Set(current.techniques ?? []);
+          const technique = command.technique as NonNullable<typeof current.techniques>[number];
+          if (techniques.has(technique)) techniques.delete(technique);
+          else techniques.add(technique);
+          event.guitar = {
+            ...current,
+            techniques: [...techniques],
+          };
+        }
+        break;
+      }
+      case 'deleteNote': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const index = found ? findCommandEventIndex(found.voice, command) : -1;
+        const event = index >= 0 ? found?.voice.events[index] : null;
+        if (event) {
+          const simultaneousNoteCount = found!.voice.events.filter((entry) => (
+            entry.kind === 'note'
+            && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
+          )).length;
+          if (event.kind === 'note' && simultaneousNoteCount > 1) {
+            const deletedEventIds = new Set([event.id]);
+            const deletedRoot = !event.isChord;
+            found!.voice.events.splice(index, 1);
+            if (deletedRoot) {
+              const replacementRoot = found!.voice.events
+                .filter((entry) => (
+                  entry.kind === 'note'
+                  && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
+                ))
+                .sort((left, right) => Number(left.isChord) - Number(right.isChord))[0];
+              if (replacementRoot) replacementRoot.isChord = false;
+            }
+            removeDeletedEventReferences(nextDocument, deletedEventIds);
+            break;
+          }
+          const timing = resolveMeasureTiming(found!.staff, found!.measure);
+          found!.voice.events.splice(index, 1, ...buildRestEventsForSpan(
+            found!.measure,
+            timing.divisions,
+            command.staffIndex,
+            command.voiceId,
+            event.timestampNum,
+            event.durationDivisions,
+            event.durationDivisions,
+          ));
+        }
+        break;
+      }
+      case 'deleteRange': {
+        const range = command.target.range;
+        if (!range) break;
+        const targets = collectEventsInRange(nextDocument, range);
+        targets.forEach(({ voice, eventIndex }) => {
+          const event = voice.events[eventIndex];
+          if (!event) return;
+          voice.events[eventIndex] = {
+            ...event,
+            kind: 'rest',
+          };
+        });
+        break;
+      }
+      case 'clearMeasureVoice': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        if (!found) break;
+        const deletedEventIds = new Set(found.voice.events.map((event) => event.id));
+        const timing = resolveMeasureTiming(found.staff, found.measure);
+        found.voice.events = buildRestEventsForSpan(
+          found.measure,
+          timing.divisions,
+          command.staffIndex,
+          command.voiceId,
+          0,
+          timing.durationDivisions,
+          timing.durationDivisions,
+        );
+        removeDeletedEventReferences(nextDocument, deletedEventIds);
+        break;
+      }
+      case 'rippleDelete': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        if (!found) break;
+        const eventIdsToRemove = found.voice.events
+          .filter((event) => timestampsEqual(event.timestampNum, event.timestampDen, command.timestampNum, command.timestampDen))
+          .map((event) => event.id);
+        commandSelectionRemap = removeAndPullVoiceTimeline(
+          nextDocument,
+          found.staff,
+          command.voiceId,
+          eventIdsToRemove,
+        ).selectionRemap;
+        break;
+      }
+      case 'rippleDeleteRange': {
+        const range = command.target.range;
+        if (!range) break;
+        const start = compareLocators(range.start, range.end) <= 0 ? range.start : range.end;
+        const end = start === range.start ? range.end : range.start;
+        const found = findVoice(nextDocument, start.measureNumber, start.staffIndex, start.voiceId);
+        if (!found) break;
+        const flattened = flattenVoiceEventsToAbsoluteTimeline(found.staff, start.voiceId);
+        const staffTimeline = buildStaffTimeline(found.staff);
+        const absoluteOffsetFor = (locator: typeof start) => {
+          const measureTimeline = getTimelineEntryForMeasure(staffTimeline, locator.measureNumber);
+          if (!measureTimeline) return 0;
+          return measureTimeline.startOffset + timestampToDivisionsOffset(
+            measureTimeline.divisions,
+            locator.timestampNum,
+            locator.timestampDen,
+          );
+        };
+        const absoluteStart = absoluteOffsetFor(start);
+        const absoluteEnd = absoluteOffsetFor(end);
+        const eventIdsToRemove = flattened
+          .filter((entry) => entry.absStart >= absoluteStart && entry.absStart <= absoluteEnd)
+          .map((entry) => entry.event.id);
+        commandSelectionRemap = removeAndPullVoiceTimeline(
+          nextDocument,
+          found.staff,
+          start.voiceId,
+          eventIdsToRemove,
+        ).selectionRemap;
+        break;
+      }
+      case 'transposeChromatic': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
+        if (event?.kind === 'note') {
+          event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+        }
+        break;
+      }
+      case 'transposeRangeChromatic': {
+        const range = command.target.range;
+        if (!range) break;
+        const targets = collectEventsInRange(nextDocument, range);
+        targets.forEach(({ voice, eventIndex }) => {
+          const event = voice.events[eventIndex];
+          if (event?.kind === 'note') {
+            event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+          }
+        });
+        break;
+      }
+      case 'toggleArticulation': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          const articulations = new Set(event.articulations ?? []);
+          if (articulations.has(command.articulation)) articulations.delete(command.articulation);
+          else articulations.add(command.articulation);
+          event.articulations = [...articulations];
+        }
+        break;
+      }
+      case 'clearArticulations': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) event.articulations = [];
+        break;
+      }
+      case 'clearRangeArticulations': {
+        const range = command.target.range;
+        if (!range) break;
+        const targets = collectEventsInRange(nextDocument, range);
+        targets.forEach(({ voice, eventIndex }) => {
+          const event = voice.events[eventIndex];
+          if (event) event.articulations = [];
+        });
+        break;
+      }
+      case 'toggleTie': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) event.tieStart = !event.tieStart;
+        break;
+      }
+      case 'toggleSlur': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event?.kind !== 'note') break;
+
+        const stopLocator = command.stopLocator && typeof command.stopLocator === 'object'
+          ? command.stopLocator
+          : null;
+        const stopEvent = stopLocator
+          ? (() => {
+              const stopFound = findVoice(nextDocument, stopLocator.measureNumber, stopLocator.staffIndex, stopLocator.voiceId);
+              const resolved = stopFound?.voice.events[findEventIndex(stopFound.voice, stopLocator.timestampNum, stopLocator.timestampDen)];
+              return resolved?.kind === 'note' ? resolved : null;
+            })()
+          : findNextNoteEvent(nextDocument, {
+              measureNumber: command.measureNumber,
+              staffIndex: command.staffIndex,
+              voiceId: command.voiceId,
+              timestampNum: command.timestampNum,
+              timestampDen: command.timestampDen,
+            });
+
+        if (!stopEvent || stopEvent.id === event.id) break;
+
+        const existingIndex = nextDocument.slurs.findIndex((slur) => slur.startEventId === event.id && slur.stopEventId === stopEvent.id);
+        if (existingIndex >= 0) {
+          nextDocument.slurs.splice(existingIndex, 1);
+          break;
+        }
+
+        const existingNumbers = nextDocument.slurs.map((slur) => slur.number).filter((value) => Number.isFinite(value));
+        const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+        nextDocument.slurs.push({
+          id: `slur:${event.id}:${stopEvent.id}`,
+          number: nextNumber,
+          startEventId: event.id,
+          stopEventId: stopEvent.id,
+        });
+        break;
+      }
+      case 'setSlurPlacement': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event?.kind !== 'note') break;
+
+        const stopFound = findVoice(
+          nextDocument,
+          command.stopLocator.measureNumber,
+          command.stopLocator.staffIndex,
+          command.stopLocator.voiceId,
+        );
+        const stopEvent = stopFound?.voice.events[
+          findEventIndex(stopFound.voice, command.stopLocator.timestampNum, command.stopLocator.timestampDen)
+        ];
+        if (stopEvent?.kind !== 'note' || stopEvent.id === event.id) break;
+
+        const slur = nextDocument.slurs.find((entry) => entry.startEventId === event.id && entry.stopEventId === stopEvent.id);
+        if (!slur) break;
+        slur.placement = command.placement;
+        break;
+      }
+      case 'addDynamic': {
+        for (const part of nextDocument.score.parts) {
+          const staff = part.staves.find((entry) => entry.staffIndex === command.staffIndex);
+          const measure = staff?.measures.find((entry) => entry.measureNumber === command.measureNumber);
+          if (!measure) continue;
+          measure.directions = measure.directions.filter((direction) => !(
+            direction.kind === 'dynamics'
+            && direction.staffIndex === command.staffIndex
+            && direction.timestampNum === command.timestampNum
+            && direction.timestampDen === command.timestampDen
+          ));
+          measure.directions.push({
+            id: `${measure.id}:dynamic:${command.dynamic}:${command.timestampNum}`,
+            kind: 'dynamics',
+            value: command.dynamic,
+            placement: command.placement ?? 'below',
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.timestampNum,
+            timestampDen: command.timestampDen,
+          });
+        }
+        break;
+      }
+      case 'addRehearsalMark': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            measure.directions.push({
+              id: `${measure.id}:rehearsal:${command.text}`,
+              kind: 'rehearsal',
+              value: command.text,
+              placement: 'above',
+              measureNumber: command.measureNumber,
+              staffIndex: staff.staffIndex,
+              timestampNum: 0,
+              timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+            });
+          });
+        });
+        break;
+      }
+      case 'addRehearsalMarksEvery': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measures = staff.measures
+              .filter((measure) => measure.measureNumber >= (command.startMeasureNumber ?? 1))
+              .filter((measure) => measure.measureNumber <= (command.endMeasureNumber ?? Number.POSITIVE_INFINITY))
+              .sort((a, b) => a.measureNumber - b.measureNumber);
+            measures.forEach((measure, index) => {
+              if (index % command.interval !== 0) return;
+              const label = rehearsalLabel(Math.floor(index / command.interval), command.style);
+              measure.directions = measure.directions.filter((direction) => direction.kind !== 'rehearsal');
+              measure.directions.unshift({
+                id: `${measure.id}:rehearsal:${label}`,
+                kind: 'rehearsal',
+                value: label,
+                placement: 'above',
+                measureNumber: measure.measureNumber,
+                staffIndex: staff.staffIndex,
+                timestampNum: 0,
+                timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+              });
+            });
+          });
+        });
+        break;
+      }
+      case 'addWords': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            measure.directions.push({
+              id: `${measure.id}:words:${command.text}`,
+              kind: 'words',
+              value: command.text,
+              placement: command.placement ?? 'above',
+              measureNumber: command.measureNumber,
+              staffIndex: staff.staffIndex,
+              timestampNum: 0,
+              timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+            });
+          });
+        });
+        break;
+      }
+      case 'addExpressionText': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            measure.directions.push({
+              id: `${measure.id}:expression:${command.text}`,
+              kind: 'words',
+              value: command.text,
+              placement: command.placement ?? 'above',
+              measureNumber: command.measureNumber,
+              staffIndex: staff.staffIndex,
+              timestampNum: 0,
+              timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+            });
+          });
+        });
+        break;
+      }
+      case 'addAnalysisAnnotation': {
+        const startMeasureNumber = command.startMeasureNumber ?? command.measureNumber ?? 1;
+        const endMeasureNumber = command.endMeasureNumber ?? command.measureNumber ?? startMeasureNumber;
+        const label = analysisTypeLabel(command.analysisType);
+        addVisibleTextDirection({
+          document: nextDocument,
+          measureNumber: startMeasureNumber,
+          staffIndex: command.staffIndex,
+          idKind: 'analysis',
+          placement: command.placement ?? 'above',
+          text: `${label} ${semanticRangeLabel(startMeasureNumber, endMeasureNumber)}: ${command.text.trim()}`,
+        });
+        break;
+      }
+      case 'addTechniqueInstruction': {
+        const text = `Technique (${command.instrument}, ${semanticRangeLabel(command.startMeasureNumber, command.endMeasureNumber)}): ${command.text.trim()}`;
+        addVisibleTextDirection({
+          document: nextDocument,
+          measureNumber: command.startMeasureNumber,
+          staffIndex: command.staffIndex,
+          partId: command.partId,
+          idKind: 'technique',
+          placement: command.placement ?? 'above',
+          text,
+        });
+        break;
+      }
+      case 'addSyncPoint': {
+        const timestampNum = command.timestampNum ?? 0;
+        const timestampDen = command.timestampDen ?? 4;
+        const timecode = command.timecode ? ` ${command.timecode}` : '';
+        const text = `Sync${timecode} ${command.label.trim()}: ${command.scoringIntent.trim()}`;
+        addVisibleTextDirection({
+          document: nextDocument,
+          measureNumber: command.measureNumber,
+          staffIndex: command.staffIndex,
+          idKind: 'sync',
+          placement: command.placement ?? 'above',
+          timestampNum,
+          timestampDen,
+          text,
+        });
+        break;
+      }
+      case 'addOrchestrationNote': {
+        const target = command.partName ?? command.partId ?? 'score';
+        const text = `Orchestration (${target}, ${semanticRangeLabel(command.startMeasureNumber, command.endMeasureNumber)}): ${command.instruction.trim()}`;
+        addVisibleTextDirection({
+          document: nextDocument,
+          measureNumber: command.startMeasureNumber,
+          staffIndex: command.staffIndex,
+          partId: command.partId,
+          idKind: 'orchestration',
+          placement: command.placement ?? 'above',
+          text,
+        });
+        break;
+      }
+      case 'removeDirection': {
+        removeDirection(nextDocument, command.measureNumber, command.text, command.staffIndex, command.kind);
+        break;
+      }
+      case 'addChords': {
+        const segments = command.chords.split(',').map((entry) => entry.trim()).filter(Boolean);
+        segments.forEach((segment, index) => {
+          const [measureToken, chordToken] = segment.split(':');
+          const measureNumber = Number.parseInt(measureToken, 10);
+          if (!Number.isFinite(measureNumber) || !chordToken?.trim()) return;
+          nextDocument.score.parts.forEach((part) => {
+            part.staves.forEach((staff) => {
+              const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+              if (!measure) return;
+              measure.directions = measure.directions.filter((direction) => !(direction.kind === 'harmony' && direction.timestampNum === 0));
+              measure.directions.push({
+                id: `${measure.id}:harmony:${index}`,
+                kind: 'harmony',
+                value: chordToken.trim(),
+                measureNumber,
+                staffIndex: staff.staffIndex,
+                timestampNum: 0,
+                timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+              });
+            });
+          });
+        });
+        break;
+      }
+      case 'setHarmonyAt': {
+        nextDocument.score.parts.forEach((part) => {
+          const partHasTargetStaff = command.staffIndex == null || part.staves.some((staff) => (
+            staff.staffIndex === command.staffIndex
+            && staff.measures.some((entry) => entry.measureNumber === command.measureNumber)
+          ));
+          if (!partHasTargetStaff) return;
+          const hostStaff = part.staves.find((staff) => staff.measures.some((entry) => entry.measureNumber === command.measureNumber));
+          const hostMeasure = hostStaff?.measures.find((entry) => entry.measureNumber === command.measureNumber);
+          if (!hostStaff || !hostMeasure) return;
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            measure.directions = measure.directions.filter((direction) => !(
+              direction.kind === 'harmony'
+              && direction.timestampNum === command.timestampNum
+              && direction.timestampDen === command.timestampDen
+            ));
+          });
+          hostMeasure.directions.push({
+            id: `${hostMeasure.id}:harmony:${hostStaff.staffIndex}:${command.timestampNum}:${Date.now()}`,
+            kind: 'harmony',
+            value: command.value.trim(),
+            measureNumber: command.measureNumber,
+            staffIndex: hostStaff.staffIndex,
+            timestampNum: command.timestampNum,
+            timestampDen: command.timestampDen,
+          });
+        });
+        break;
+      }
+      case 'fillSlashMeasure': {
+        fillMeasureWithSlashes(nextDocument, command);
+        break;
+      }
+      case 'setBarline': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (measure) measure.rightBarline = command.barline;
+          });
+        });
+        break;
+      }
+      case 'setSystemBreak': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            measure.print = {
+              ...measure.print,
+              newSystem: command.value ?? true,
+            };
+            upsertLayoutHint(nextDocument, {
+              measureNumber: command.measureNumber,
+              partId: part.sourcePartId,
+              staffIndex: staff.staffIndex,
+              kind: 'newSystem',
+              value: command.value ?? true,
+              scope: 'measure',
+            });
+          });
+        });
+        break;
+      }
+      case 'setPageBreak': {
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            measure.print = {
+              ...measure.print,
+              newPage: command.value ?? true,
+            };
+            upsertLayoutHint(nextDocument, {
+              measureNumber: command.measureNumber,
+              partId: part.sourcePartId,
+              staffIndex: staff.staffIndex,
+              kind: 'newPage',
+              value: command.value ?? true,
+              scope: 'page',
+            });
+          });
+        });
+        break;
+      }
+      case 'setMeasureLayoutHint': {
+        nextDocument.score.parts.forEach((part) => {
+          if (command.partId && part.sourcePartId !== command.partId) return;
+          part.staves.forEach((staff) => {
+            if (command.staffIndex && staff.staffIndex !== command.staffIndex) return;
+            const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
+            if (!measure) return;
+            if (command.hint === 'newSystem') {
+              measure.print = { ...measure.print, newSystem: Boolean(command.value) };
+            }
+            if (command.hint === 'newPage') {
+              measure.print = { ...measure.print, newPage: Boolean(command.value) };
+            }
+            upsertLayoutHint(nextDocument, {
+              measureNumber: command.measureNumber,
+              partId: part.sourcePartId,
+              staffIndex: staff.staffIndex,
+              kind: command.hint,
+              value: command.value,
+              scope: command.hint === 'newPage' ? 'page' : command.hint === 'staffSpacing' ? 'staff' : 'measure',
+            });
+          });
+        });
+        break;
+      }
+      case 'applyPracticeProfile': {
+        const spacing = command.profile === 'compact' ? 84 : command.profile === 'roomy' ? 112 : 124;
+        nextDocument.score.parts.forEach((part) => {
+          part.staves.forEach((staff) => {
+            staff.measures.forEach((measure, index) => {
+              if (command.startMeasureNumber != null && measure.measureNumber < command.startMeasureNumber) return;
+              if (command.endMeasureNumber != null && measure.measureNumber > command.endMeasureNumber) return;
+              const shouldBreak = command.profile !== 'compact' && index > 0 && index % 4 === 0;
+              if (shouldBreak) {
+                measure.print = { ...measure.print, newSystem: true };
+              }
+              upsertLayoutHint(nextDocument, {
+                measureNumber: measure.measureNumber,
+                partId: part.sourcePartId,
+                staffIndex: staff.staffIndex,
+                kind: 'staffSpacing',
+                value: spacing,
+                scope: 'staff',
+              });
+              if (shouldBreak) {
+                upsertLayoutHint(nextDocument, {
+                  measureNumber: measure.measureNumber,
+                  partId: part.sourcePartId,
+                  staffIndex: staff.staffIndex,
+                  kind: 'newSystem',
+                  value: true,
+                  scope: 'measure',
+                });
+              }
+            });
+          });
+        });
+        break;
+      }
+      case 'addLyric': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          event.lyrics = [{
+            verseNumber: 1,
+            text: command.text,
+            syllabic: command.syllabic,
+          }];
+          upsertLyricLine(nextDocument, event.id, 1, command.text, command.syllabic);
+        }
+        break;
+      }
+      case 'setLyricLine': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          const lyrics = [...(event.lyrics ?? [])].filter((lyric) => (lyric.verseNumber ?? 1) !== command.verseNumber);
+          lyrics.push({
+            verseNumber: command.verseNumber,
+            text: command.text,
+            syllabic: command.syllabic,
+          });
+          event.lyrics = lyrics.sort((a, b) => (a.verseNumber ?? 1) - (b.verseNumber ?? 1));
+          upsertLyricLine(nextDocument, event.id, command.verseNumber, command.text, command.syllabic);
+        }
+        break;
+      }
+      case 'removeLyricLine': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          event.lyrics = (event.lyrics ?? []).filter((lyric) => (lyric.verseNumber ?? 1) !== command.verseNumber);
+          removeLyricLine(nextDocument, event.id, command.verseNumber);
+        }
+        break;
+      }
+      case 'duplicateNote': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const index = found ? findEventIndex(found.voice, command.timestampNum, command.timestampDen) : -1;
+        const event = index >= 0 ? found?.voice.events[index] : null;
+        if (found && event) {
+          const duplicate = structuredClone(event);
+          duplicate.id = `${event.id}:duplicate:${found.voice.events.length}`;
+          duplicate.isChord = false;
+          duplicate.tieStart = false;
+          duplicate.lyrics = [];
+
+          const staffTimeline = buildStaffTimeline(found.staff);
+          const currentMeasureTimeline = getTimelineEntryForMeasure(staffTimeline, found.measure.measureNumber);
+          if (!currentMeasureTimeline) break;
+          const insertionAbsoluteOffset = currentMeasureTimeline.startOffset + event.timestampNum + event.durationDivisions;
+          const flattenedVoiceEvents = flattenVoiceEventsToAbsoluteTimeline(found.staff, command.voiceId);
+          const currentVoiceEnd = flattenedVoiceEvents.reduce(
+            (max, entry) => Math.max(max, entry.absStart + entry.event.durationDivisions),
+            insertionAbsoluteOffset,
+          );
+          const requiredTimelineEnd = Math.max(
+            currentVoiceEnd + event.durationDivisions,
+            insertionAbsoluteOffset + event.durationDivisions,
+          );
+
+          ensureStaffTimelineDuration(
+            nextDocument,
+            found.part.id,
+            found.staff.staffIndex,
+            requiredTimelineEnd,
+          );
+          rewriteTimedDirectionsAfterAbsoluteInsert(found.staff, insertionAbsoluteOffset, event.durationDivisions, 0);
+          const transformedVoiceEvents = transformAbsoluteInsertTimelineEvents(
+            flattenedVoiceEvents,
+            insertionAbsoluteOffset,
+            event.durationDivisions,
+            0,
+          );
+          rewriteVoiceFromAbsoluteTimeline(found.staff, command.voiceId, [
+            ...transformedVoiceEvents,
+            {
+              event: duplicate,
+              absStart: insertionAbsoluteOffset,
+              divisions: currentMeasureTimeline.divisions,
+            },
+          ]);
+          const affectedTimeline = buildStaffTimeline(found.staff);
+          const lastAffectedMeasure = getTimelineEntryForAbsoluteOffset(
+            affectedTimeline,
+            Math.max(requiredTimelineEnd - 1, insertionAbsoluteOffset),
+          )?.measure.measureNumber ?? found.measure.measureNumber;
+          normalizeVoiceTimelineAcrossMeasures(nextDocument, found.staff, command.voiceId, {
+            startMeasureNumber: found.measure.measureNumber,
+            endMeasureNumber: lastAffectedMeasure,
+          });
+          fillVoiceTimelineGaps(found.staff, command.voiceId, {
+            startMeasureNumber: found.measure.measureNumber,
+            endMeasureNumber: lastAffectedMeasure,
+          });
+        }
+        break;
+      }
+      case 'addTuplet': {
+        // Collect all non-chord events within the given timestamp range for this voice.
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        if (!found) break;
+        const startRatio = command.startTimestampNum / command.startTimestampDen;
+        const stopRatio = command.stopTimestampNum / command.stopTimestampDen;
+        const spanEvents = found.voice.events
+          .filter((event) => !event.isChord)
+          .filter((event) => {
+            const ratio = event.timestampNum / Math.max(event.timestampDen, 1);
+            return ratio >= startRatio && ratio <= stopRatio;
+          })
+          .sort((a, b) => a.timestampNum - b.timestampNum);
+        if (spanEvents.length < 2) break;
+        // Remove any existing tuplet that overlaps this span.
+        const spanEventIds = new Set(spanEvents.map((event) => event.id));
+        nextDocument.tuplets = nextDocument.tuplets.filter(
+          (tuplet) => !tuplet.eventIds.some((id) => spanEventIds.has(id)),
+        );
+        const existingNumbers = nextDocument.tuplets.map((tuplet) => tuplet.number).filter(Number.isFinite);
+        const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+        nextDocument.tuplets.push({
+          id: `tuplet:${command.measureNumber}:${command.staffIndex}:${command.voiceId}:${command.startTimestampNum}:${Date.now()}`,
+          number: nextNumber,
+          eventIds: spanEvents.map((event) => event.id),
+          actualNotes: command.actualNotes,
+          normalNotes: command.normalNotes,
+          bracket: command.bracket,
+          showNumber: command.showNumber,
+        });
+        break;
+      }
+      case 'addGraceNote': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (!event) break;
+        const existing = nextDocument.graceNotes.find((entry) => entry.eventId === event.id);
+        if (existing) {
+          existing.slash = command.slash;
+        } else {
+          nextDocument.graceNotes.push({
+            id: `grace:${event.id}`,
+            eventId: event.id,
+            slash: command.slash,
+          });
+        }
+        break;
+      }
+      case 'removeGraceNote': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (!event) break;
+        nextDocument.graceNotes = nextDocument.graceNotes.filter((entry) => entry.eventId !== event.id);
+        break;
+      }
+      case 'addFingering': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event && event.kind === 'note') {
+          ensureNotationFragment(event, 'technical', `<fingering>${command.fingering}</fingering>`);
+        }
+        break;
+      }
+      case 'addOrnament': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event && event.kind === 'note') {
+          ensureNotationFragment(event, 'ornaments', `<${command.ornament}/>`);
+        }
+        break;
+      }
+      case 'addWedge': {
+        // Assign the next available span number across all wedge directions in the document.
+        const usedWedgeNumbers = nextDocument.score.parts
+          .flatMap((p) => p.staves)
+          .flatMap((s) => s.measures)
+          .flatMap((m) => m.directions)
+          .filter((d) => d.kind === 'wedge' && d.number != null)
+          .map((d) => d.number!);
+        const wedgeNumber = usedWedgeNumbers.length > 0 ? Math.max(...usedWedgeNumbers) + 1 : 1;
+        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
+        if (startAdded) {
+          startAdded.measure.directions.push({
+            id: `wedge:${wedgeNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
+            kind: 'wedge',
+            value: command.kind,
+            number: wedgeNumber,
+            placement: command.placement ?? 'below',
+            measureNumber: command.startMeasureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.startTimestampNum,
+            timestampDen: command.startTimestampDen,
+          });
+        }
+        if (stopAdded) {
+          stopAdded.measure.directions.push({
+            id: `wedge:${wedgeNumber}:stop:${command.stopMeasureNumber}:${Date.now()}`,
+            kind: 'wedge',
+            value: 'stop',
+            number: wedgeNumber,
+            placement: command.placement ?? 'below',
+            measureNumber: command.stopMeasureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.stopTimestampNum,
+            timestampDen: command.stopTimestampDen,
+          });
+        }
+        break;
+      }
+      case 'addPedalSpan': {
+        const usedPedalNumbers = nextDocument.score.parts
+          .flatMap((p) => p.staves)
+          .flatMap((s) => s.measures)
+          .flatMap((m) => m.directions)
+          .filter((d) => d.kind === 'pedal' && d.number != null)
+          .map((d) => d.number!);
+        const pedalNumber = usedPedalNumbers.length > 0 ? Math.max(...usedPedalNumbers) + 1 : 1;
+        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
+        if (startAdded) {
+          startAdded.measure.directions.push({
+            id: `pedal:${pedalNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
+            kind: 'pedal',
+            value: 'start',
+            number: pedalNumber,
+            placement: 'below',
+            measureNumber: command.startMeasureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.startTimestampNum,
+            timestampDen: command.startTimestampDen,
+          });
+        }
+        if (stopAdded) {
+          stopAdded.measure.directions.push({
+            id: `pedal:${pedalNumber}:stop:${command.stopMeasureNumber}:${Date.now()}`,
+            kind: 'pedal',
+            value: 'stop',
+            number: pedalNumber,
+            placement: 'below',
+            measureNumber: command.stopMeasureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.stopTimestampNum,
+            timestampDen: command.stopTimestampDen,
+          });
+        }
+        break;
+      }
+      case 'addOttava': {
+        const usedNumbers = nextDocument.score.parts
+          .flatMap((p) => p.staves)
+          .flatMap((s) => s.measures)
+          .flatMap((m) => m.directions)
+          .filter((d) => d.kind === 'octave-shift' && d.number != null)
+          .map((d) => d.number!);
+        const ottavaNumber = usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
+        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
+        if (startAdded) {
+          startAdded.measure.directions.push({
+            id: `ottava:${ottavaNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
+            kind: 'octave-shift',
+            value: `${command.kind === '8vb' ? 'down' : 'up'}:8`,
+            number: ottavaNumber,
+            placement: command.placement ?? 'above',
+            measureNumber: command.startMeasureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.startTimestampNum,
+            timestampDen: command.startTimestampDen,
+          });
+        }
+        if (stopAdded) {
+          stopAdded.measure.directions.push({
+            id: `ottava:${ottavaNumber}:stop:${command.stopMeasureNumber}:${Date.now()}`,
+            kind: 'octave-shift',
+            value: 'stop:8',
+            number: ottavaNumber,
+            placement: command.placement ?? 'above',
+            measureNumber: command.stopMeasureNumber,
+            staffIndex: command.staffIndex,
+            timestampNum: command.stopTimestampNum,
+            timestampDen: command.stopTimestampDen,
+          });
+        }
+        break;
+      }
+      case 'pasteContent': {
+        const target = findPartStaff(nextDocument, command.targetPartId, command.targetStaffIndex);
+        if (!target || command.clipboardData.timeline.length === 0) break;
+
+        const targetAbsoluteOffset = buildTargetAbsoluteOffset(target.staff, command.targetOffset);
+        if (targetAbsoluteOffset == null) break;
+
+        const initialTimeline = buildStaffTimeline(target.staff);
+        const initialTotalDuration = initialTimeline.reduce((sum, entry) => sum + entry.durationDivisions, 0);
+        const requiredTimelineEnd = command.mode === 'insert'
+          ? initialTotalDuration + command.clipboardData.durationDivisions
+          : Math.max(initialTotalDuration, targetAbsoluteOffset + command.clipboardData.durationDivisions);
+
+        ensureStaffTimelineDuration(
+          nextDocument,
+          target.part.id,
+          target.staff.staffIndex,
+          requiredTimelineEnd,
+        );
+
+        if (command.mode === 'insert') {
+          rewriteTimedDirectionsAfterAbsoluteInsert(
+            target.staff,
+            targetAbsoluteOffset,
+            command.clipboardData.durationDivisions,
+            0,
+          );
+        }
+
+        const laneMappings = resolveClipboardLaneMappings(target.staff, command.clipboardData);
+        const pastedIdentityMap = new Map<string, ClipboardEventIdentity>();
+        const deletedEventIds = new Set<string>();
+
+        laneMappings.forEach((mapping) => {
+          const currentEvents = flattenVoiceEventsToAbsoluteTimeline(target.staff, mapping.targetVoiceId);
+          const pastedLaneEvents = cloneClipboardLaneEvents(
+            command.clipboardData.timeline,
+            mapping,
+            target.staff.staffIndex,
+            targetAbsoluteOffset,
+            pastedIdentityMap,
+          );
+          if (pastedLaneEvents.length === 0) return;
+
+          const transformed = command.mode === 'insert'
+            ? {
+              events: transformAbsoluteInsertTimelineEvents(
+                currentEvents,
+                targetAbsoluteOffset,
+                command.clipboardData.durationDivisions,
+                0,
+              ),
+              deletedEventIds: new Set<string>(),
+            }
+            : overwriteAbsoluteTimelineEvents(
+              currentEvents,
+              targetAbsoluteOffset,
+              targetAbsoluteOffset + command.clipboardData.durationDivisions,
+            );
+
+          rewriteVoiceFromAbsoluteTimeline(
+            target.staff,
+            mapping.targetVoiceId,
+            sortAbsoluteVoiceEvents([
+              ...transformed.events,
+              ...pastedLaneEvents,
+            ]),
+          );
+          transformed.deletedEventIds.forEach((eventId) => deletedEventIds.add(eventId));
+
+          const refreshedTimeline = buildStaffTimeline(target.staff);
+          const refreshedEvents = flattenVoiceEventsToAbsoluteTimeline(target.staff, mapping.targetVoiceId);
+          const lastAbsoluteEnd = refreshedEvents.reduce(
+            (max, entry) => Math.max(max, entry.absStart + entry.event.durationDivisions),
+            targetAbsoluteOffset + command.clipboardData.durationDivisions,
+          );
+          const firstMeasureNumber = getTimelineEntryForAbsoluteOffset(refreshedTimeline, targetAbsoluteOffset)?.measure.measureNumber
+            ?? command.targetOffset.measureNumber;
+          const lastMeasureNumber = getTimelineEntryForAbsoluteOffset(
+            refreshedTimeline,
+            Math.max(targetAbsoluteOffset, lastAbsoluteEnd - 1),
+          )?.measure.measureNumber ?? firstMeasureNumber;
+
+          const normalizeResult = normalizeVoiceTimelineAcrossMeasures(nextDocument, target.staff, mapping.targetVoiceId, {
+            startMeasureNumber: firstMeasureNumber,
+            endMeasureNumber: lastMeasureNumber,
+          });
+
+          fillVoiceTimelineGaps(target.staff, mapping.targetVoiceId, {
+            startMeasureNumber: firstMeasureNumber,
+            endMeasureNumber: lastMeasureNumber,
+          });
+
+          const laneEventIds = command.clipboardData.timeline
+            .filter((entry) => (
+              entry.sourceStaffIndex === mapping.sourceStaffIndex
+              && entry.sourceVoiceId === mapping.sourceVoiceId
+            ))
+            .map((entry) => entry.event.id);
+
+          laneEventIds.forEach((eventId) => {
+            const identity = pastedIdentityMap.get(eventId);
+            if (!identity) return;
+            const fragments = normalizeResult.fragmentIdMap.get(identity.selectionEventId);
+            if (fragments) {
+              identity.selectionEventId = fragments.firstFragmentId;
+              identity.slurStartEventId = fragments.firstFragmentId;
+              identity.slurStopEventId = fragments.lastFragmentId;
+            }
+          });
+
+          const collapseRemap = collapseTiedFragmentsAcrossMeasures(nextDocument, target.staff, mapping.targetVoiceId, {});
+          laneEventIds.forEach((eventId) => {
+            const identity = pastedIdentityMap.get(eventId);
+            if (!identity) return;
+            identity.selectionEventId = followSelectionRemap(collapseRemap, identity.selectionEventId);
+            identity.slurStartEventId = followSelectionRemap(collapseRemap, identity.slurStartEventId);
+            identity.slurStopEventId = followSelectionRemap(collapseRemap, identity.slurStopEventId);
+          });
+        });
+
+        removeDeletedEventReferences(nextDocument, deletedEventIds);
+        pasteClipboardTimedDirections(
+          nextDocument,
+          target.staff,
+          targetAbsoluteOffset,
+          command.clipboardData.timedDirections,
+        );
+        pasteClipboardSlurs(nextDocument, command.clipboardData.noteSpanners, pastedIdentityMap);
+
+        const knownEventIds = buildDocumentEventIdSet(nextDocument);
+        pastedIdentityMap.forEach((identity, sourceEventId) => {
+          if (knownEventIds.has(identity.selectionEventId)) {
+            commandSelectionRemap[sourceEventId] = identity.selectionEventId;
+          }
+        });
+        break;
+      }
+      case 'insertNote':
+      case 'insertNoteAt':
+      case 'insertRest':
+      case 'insertRestAt': {
+        const found = ensureVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        if (!found) break;
+        ensureStaffDivisionsForDuration(found.staff, found.measure.measureNumber, command.durationType, command.isDotted);
+        const timing = resolveMeasureTiming(found.staff, found.measure);
+        const isAbsoluteInsert = command.type === 'insertNoteAt' || command.type === 'insertRestAt';
+        const targetTimestampNum = isAbsoluteInsert ? command.timestampNum : command.afterTimestampNum;
+        const targetTimestampDen = isAbsoluteInsert ? command.timestampDen : command.afterTimestampDen;
+        const anchorIndex = isAbsoluteInsert ? -1 : findEventIndex(found.voice, targetTimestampNum, targetTimestampDen);
+        const anchor = anchorIndex >= 0 ? found.voice.events[anchorIndex] : null;
+        const requestedDuration = requestedDurationDivisions(command.durationType, command.isDotted, timing.divisions);
+        const requestedAbsoluteOffset = timestampToDivisionsOffset(
+          timing.divisions,
+          targetTimestampNum,
+          targetTimestampDen,
+        );
+        const splitDottedRestFragments = requestedAbsoluteOffset > timing.durationDivisions;
+        const rawAbsoluteOffset = Math.min(requestedAbsoluteOffset, timing.durationDivisions);
+        const insertionOffset = isAbsoluteInsert
+          ? requestedAbsoluteOffset > timing.durationDivisions
+            ? clampInsertionOffsetToMeasure(requestedAbsoluteOffset, timing.durationDivisions, requestedDuration)
+            : rawAbsoluteOffset
+          : anchor ? anchor.timestampNum + anchor.durationDivisions : rawAbsoluteOffset;
+        const spanningRestIndex = isAbsoluteInsert
+          ? found.voice.events.findIndex((event) => (
+              !event.isChord
+              && event.kind === 'rest'
+              && event.timestampNum <= insertionOffset
+              && event.timestampNum + event.durationDivisions >= insertionOffset + requestedDuration
+            ))
+          : -1;
+        const spanningRest = spanningRestIndex >= 0 ? found.voice.events[spanningRestIndex] ?? null : null;
+
+        if (isAbsoluteInsert && !spanningRest && !(command.type === 'insertNoteAt' && command.asChord)) {
+          const staffTimeline = buildStaffTimeline(found.staff);
+          const currentMeasureTimeline = getTimelineEntryForMeasure(staffTimeline, found.measure.measureNumber);
+          if (!currentMeasureTimeline) break;
+
+          const insertionAbsoluteOffset = currentMeasureTimeline.startOffset + insertionOffset;
+          const flattenedVoiceEvents = flattenVoiceEventsToAbsoluteTimeline(found.staff, command.voiceId);
+          const overflowEstimateEvents = dropRestOnlyTimelineForOverflowEstimate(found.staff, flattenedVoiceEvents);
+          const absorbedRestDivisions = computeContiguousRestAbsorption(
+            flattenedVoiceEvents,
+            insertionAbsoluteOffset,
+            requestedDuration,
+          );
+          const requiredTimelineEnd = estimateAbsoluteInsertTimelineEnd(
+            overflowEstimateEvents,
+            insertionAbsoluteOffset,
+            requestedDuration,
+            absorbedRestDivisions,
+          );
+          const preserveOverflow = command.type === 'insertNoteAt' && command.preserveOverflow !== false;
+          const currentMeasureEnd = currentMeasureTimeline.startOffset + currentMeasureTimeline.durationDivisions;
+          if (!preserveOverflow && requiredTimelineEnd > currentMeasureEnd) {
+            break;
+          }
+
+          ensureStaffTimelineDuration(
+            nextDocument,
+            found.part.id,
+            found.staff.staffIndex,
+            requiredTimelineEnd,
+          );
+          rewriteTimedDirectionsAfterAbsoluteInsert(
+            found.staff,
+            insertionAbsoluteOffset,
+            requestedDuration,
+            absorbedRestDivisions,
+          );
+
+          const transformedVoiceEvents = transformAbsoluteInsertTimelineEvents(
+            flattenedVoiceEvents,
+            insertionAbsoluteOffset,
+            requestedDuration,
+            absorbedRestDivisions,
+            { splitDottedRestFragments },
+          );
+          const insertedFragments = buildInsertedOverflowFragments(
+            found.staff,
+            command,
+            insertionAbsoluteOffset,
+            requestedDuration,
+          );
+
+          rewriteVoiceFromAbsoluteTimeline(
+            found.staff,
+            command.voiceId,
+            [...transformedVoiceEvents, ...insertedFragments],
+          );
+          const affectedTimeline = buildStaffTimeline(found.staff);
+          const lastAffectedMeasure = getTimelineEntryForAbsoluteOffset(
+            affectedTimeline,
+            Math.max(requiredTimelineEnd - 1, insertionAbsoluteOffset),
+          )?.measure.measureNumber ?? found.measure.measureNumber;
+          normalizeVoiceTimelineAcrossMeasures(nextDocument, found.staff, command.voiceId, {
+            startMeasureNumber: found.measure.measureNumber,
+            endMeasureNumber: lastAffectedMeasure,
+          });
+          fillVoiceTimelineGaps(found.staff, command.voiceId, {
+            startMeasureNumber: found.measure.measureNumber,
+            endMeasureNumber: lastAffectedMeasure,
+          });
+          break;
+        }
+
+        const inserted = buildInsertedEvent(found.measure, command, insertionOffset, timing.divisions, timing.durationDivisions);
+
+        if (spanningRest && !(command.type === 'insertNoteAt' && command.asChord)) {
+          found.voice.events.splice(spanningRestIndex, 1);
+          const leadingDuration = insertionOffset - spanningRest.timestampNum;
+          const trailingOffset = insertionOffset + inserted.durationDivisions;
+          const trailingDuration = (spanningRest.timestampNum + spanningRest.durationDivisions) - trailingOffset;
+
+          if (leadingDuration > 0) {
+            found.voice.events.push(...buildRestEventsForSpan(
+              found.measure,
+              timing.divisions,
+              command.staffIndex,
+              command.voiceId,
+              spanningRest.timestampNum,
+              leadingDuration,
+              inserted.durationDivisions,
+            ));
+          }
+          found.voice.events.push(inserted);
+          if (trailingDuration > 0) {
+            found.voice.events.push(...buildRestEventsForSpan(
+              found.measure,
+              timing.divisions,
+              command.staffIndex,
+              command.voiceId,
+              trailingOffset,
+              trailingDuration,
+              inserted.durationDivisions,
+            ));
+          }
+        } else if (!(command.type === 'insertNoteAt' && command.asChord)) {
+          shiftEventsAfter(found.voice, insertionOffset, inserted.durationDivisions);
+          found.voice.events.push(inserted);
+        } else {
+          found.voice.events.push(inserted);
+        }
+        const preserveOverflow = command.type === 'insertNoteAt' && Boolean(command.preserveOverflow);
+        if (!isAbsoluteInsert || !preserveOverflow) {
+          constrainVoiceToMeasure(found.voice, timing.durationDivisions, timing.divisions);
+        }
+        found.voice.events = (
+          splitDottedRestFragments
+            ? found.voice.events
+            : coalesceAdjacentRestsInMeasure(
+              found.measure,
+              timing.divisions,
+              found.staff.staffIndex,
+              command.voiceId,
+              found.voice.events,
+            )
+        ).sort((a, b) => a.timestampNum - b.timestampNum);
+        if (!isAbsoluteInsert) {
+          fillVoiceTimelineGaps(found.staff, command.voiceId, {
+            startMeasureNumber: found.measure.measureNumber,
+            endMeasureNumber: found.measure.measureNumber,
+          });
+        }
+        break;
+      }
+      case 'addFermata': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          nextDocument.fermataEventIds.add(event.id);
+        }
+        break;
+      }
+      case 'removeFermata': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          nextDocument.fermataEventIds.delete(event.id);
+        }
+        break;
+      }
+      case 'addTremolo': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          nextDocument.tremolos = nextDocument.tremolos.filter((t) => t.eventId !== event!.id);
+          nextDocument.tremolos.push({
+            id: `tremolo:${event.id}`,
+            eventId: event.id,
+            lines: command.lines,
+            type: command.tremoloType,
+          });
+        }
+        break;
+      }
+      case 'addGlissando': {
+        const startFound = findVoice(nextDocument, command.start.measureNumber, command.start.staffIndex, command.start.voiceId);
+        const startEvent = startFound?.voice.events[findEventIndex(startFound.voice, command.start.timestampNum, command.start.timestampDen)];
+        const stopFound = findVoice(nextDocument, command.stop.measureNumber, command.stop.staffIndex, command.stop.voiceId);
+        const stopEvent = stopFound?.voice.events[findEventIndex(stopFound.voice, command.stop.timestampNum, command.stop.timestampDen)];
+        if (startEvent && stopEvent) {
+          const nextNumber = (nextDocument.glissandos.reduce((max, g) => Math.max(max, g.number), 0)) + 1;
+          nextDocument.glissandos.push({
+            id: `gliss:${startEvent.id}:${stopEvent.id}`,
+            number: nextNumber,
+            startEventId: startEvent.id,
+            stopEventId: stopEvent.id,
+            lineType: command.lineType,
+            text: command.text,
+          });
+        }
+        break;
+      }
+      case 'addArpeggio': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          nextDocument.arpeggios = nextDocument.arpeggios.filter((a) => a.eventId !== event!.id);
+          nextDocument.arpeggios.push({
+            id: `arpeggio:${event.id}`,
+            eventId: event.id,
+            direction: command.direction,
+            nonArpeggiate: command.nonArpeggiate,
+          });
+        }
+        break;
+      }
+      case 'addSegno': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'segno');
+          measure.directions.push({
+            id: `segno:${command.measureNumber}`,
+            kind: 'segno',
+            placement: command.placement,
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          });
+        }
+        break;
+      }
+      case 'addCoda': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'coda');
+          measure.directions.push({
+            id: `coda:${command.measureNumber}`,
+            kind: 'coda',
+            placement: command.placement,
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          });
+        }
+        break;
+      }
+      case 'addDacapo': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'words' || d.value !== 'D.C.');
+          measure.directions.push({
+            id: `dacapo:${command.measureNumber}`,
+            kind: 'words',
+            value: 'D.C.',
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          });
+        }
+        break;
+      }
+      case 'addDalsegno': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'words' || d.value !== 'D.S.');
+          measure.directions.push({
+            id: `dalsegno:${command.measureNumber}`,
+            kind: 'words',
+            value: 'D.S.',
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          });
+        }
+        break;
+      }
+      case 'addFine': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'words' || d.value !== 'Fine');
+          measure.directions.push({
+            id: `fine:${command.measureNumber}`,
+            kind: 'words',
+            value: 'Fine',
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          });
+        }
+        break;
+      }
+      case 'addToCoda': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'words' || d.value !== 'To Coda');
+          measure.directions.push({
+            id: `tocoda:${command.measureNumber}`,
+            kind: 'words',
+            value: 'To Coda',
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          });
+        }
+        break;
+      }
+      case 'setMeasureRepeat': {
+        for (const part of nextDocument.score.parts) {
+          for (const staff of part.staves) {
+            const measure = staff.measures.find((m) => m.measureNumber === command.measureNumber);
+            if (measure) {
+              measure.measureRepeat = command.repeatCount;
+            }
+          }
+        }
+        break;
+      }
+      case 'addTempoText': {
+        const part = nextDocument.score.parts[0];
+        const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
+        const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+        if (measure) {
+          measure.directions = measure.directions.filter((d) => d.kind !== 'metronome' || d.staffIndex !== (command.staffIndex ?? 1));
+          const dir: any = {
+            id: `tempo:${command.measureNumber}`,
+            kind: 'metronome',
+            value: String(command.bpm ?? 120),
+            measureNumber: command.measureNumber,
+            staffIndex: command.staffIndex,
+          };
+          if (command.bpm == null && command.text) {
+            dir.kind = 'words';
+            dir.value = command.text;
+          }
+          measure.directions.push(dir);
+        }
+        break;
+      }
+      case 'setSwing': {
+        nextDocument.swingRatio = command.ratio;
+        break;
+      }
+      case 'setInstrumentChange': {
+        for (const part of nextDocument.score.parts) {
+          if (command.partId && part.sourcePartId !== command.partId) continue;
+          const staff = part.staves.find((s) => s.staffIndex === 1);
+          const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
+          if (measure) {
+            measure.directions = measure.directions.filter((d) => d.kind !== 'words' || !d.value?.startsWith('Instrument:'));
+            measure.directions.push({
+              id: `instrument:${command.measureNumber}`,
+              kind: 'words',
+              value: `Instrument: ${command.instrumentName}`,
+              measureNumber: command.measureNumber,
+            });
+          }
+        }
+        break;
+      }
+      case 'setCueNote': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event) {
+          if (command.isCue) {
+            if (!event.preservedXml) event.preservedXml = {};
+            event.durationType = undefined;
+            event.isDotted = false;
+          }
+        }
+        break;
+      }
+      case 'setMultiMeasureRest': {
+        for (const part of nextDocument.score.parts) {
+          for (const staff of part.staves) {
+            const measure = staff.measures.find((m) => m.measureNumber === command.measureNumber);
+            if (measure) {
+              measure.multiMeasureRest = command.enabled || undefined;
+            }
+          }
+        }
+        break;
+      }
+      case 'addGuitarBend': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event && event.kind === 'note') {
+          if (!event.guitar) event.guitar = { string: 1, fret: 0 };
+          const techniques = event.guitar.techniques ?? [];
+          if (!techniques.includes('bend')) {
+            event.guitar.techniques = [...techniques, 'bend'];
+          }
+        }
+        break;
+      }
+      case 'addGuitarTap': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event && event.kind === 'note') {
+          if (!event.guitar) event.guitar = { string: 1, fret: 0 };
+          const techniques = event.guitar.techniques ?? [];
+          if (!techniques.includes('hammer-on')) {
+            event.guitar.techniques = [...techniques, 'hammer-on'];
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+
+    selectionRemap = mergeSelectionRemaps(selectionRemap, commandSelectionRemap);
+  }
+
+  rebuildDefaultBeams(nextDocument);
+  pruneDanglingTieStarts(nextDocument);
+  nextDocument.index = rebuildScoreIndex(nextDocument);
+  nextDocument.revision += 1;
+  return {
+    coreDocument: nextDocument,
+    selectionRemap,
+  };
+}
+
+export function applyCoreCommands(
+  currentDocument: ScoreDocumentModel,
+  commands: ValidatedScoreCommand[],
+): ScoreDocumentModel {
+  return executeCoreCommands(currentDocument, commands).coreDocument;
+}

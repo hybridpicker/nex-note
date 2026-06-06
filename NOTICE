@@ -1,0 +1,23 @@
+nex-note
+Copyright (C) 2026 Lukas Schoensgibl
+
+The source code in this repository is licensed under AGPL-3.0-or-later unless a
+file states otherwise.
+
+Important scope notes:
+
+- The nex-note name, logo, product identity, website copy, commercial presets,
+  prompt catalogs, private evaluation score corpus, hosted services, license
+  server, updater infrastructure, and paid support workflows are not granted as
+  trademarks or commercial assets by the AGPL source license.
+- nex-note is intended only for scores the user created, owns, is licensed to
+  process, or that are in the public domain.
+- PDF/photo import is an assisted review workflow. This project must not claim
+  perfect automatic conversion from arbitrary scanned or photographed scores.
+- MuseScore, Dorico, Sibelius, Flat, GuitarPro, and other named tools or formats
+  are third-party products or marks. nex-note is not affiliated with their
+  owners unless explicitly stated.
+
+The old public alpha repository was previously available under MIT. Copies of
+that already-published version remain under the license terms that accompanied
+those copies. This branch is licensed forward under AGPL-3.0-or-later.
