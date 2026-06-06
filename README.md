@@ -14,6 +14,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 
 - Current version: `0.0.1`.
 - Release channel: private AGPL relaunch / teacher-MVP preview.
+- Founder build available on request for macOS app testing.
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
@@ -189,6 +190,8 @@ open "$PWD/dist/macos/mac-arm64/Nex Note.app"
 ```
 
 Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
+
+Founder build available on request. The request path is intentionally manual until signing, notarization, and compatibility reporting are ready for broader distribution.
 
 Founder build path:
 

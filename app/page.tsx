@@ -239,7 +239,7 @@ export default function LandingPage() {
         <div className="rounded-md border border-[#dfe3e1] bg-white p-6 sm:p-8">
           <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <h2 className="text-2xl font-semibold text-[#111312]">Get the founder app build</h2>
+              <h2 className="text-2xl font-semibold text-[#111312]">Founder build available on request</h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[#5b6662]">
                 Current builds are founder alpha builds for macOS. They may be unsigned or ad-hoc signed until Apple Developer ID signing and notarization are completed. Developers can also build locally from <span className="font-semibold text-[#111312]">devel</span> with <span className="font-semibold text-[#111312]">npm run electron:build</span>.
               </p>
