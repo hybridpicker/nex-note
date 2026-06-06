@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       const proc = spawn(resolveMuseScoreCli(), [inputPath, '-o', outputAbc], {
         timeout: 60000,
         env: museScoreSpawnEnv(),
+        cwd: tmpDir,
       });
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });

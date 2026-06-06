@@ -52,6 +52,18 @@ test('cleanMuseScoreStderr removes repeated Qt QML warnings even when MuseScore 
   );
 });
 
+test('cleanMuseScoreStderr removes MuseScore AppImage library probe noise', () => {
+  const stderr = [
+    '/usr/lib64/pipewire-0.3/jack/libjack.so.0',
+    '/lib64/libnss3.so',
+    '/home/jarvis/.local/lib/musescore-deps/usr/lib64/libOpenGL.so.0',
+    '/lib64/libwayland-client.so.0',
+    'real conversion problem',
+  ].join('\n');
+
+  assert.equal(cleanMuseScoreStderr(stderr), 'real conversion problem');
+});
+
 test('formatMuseScoreConversionError gives a concise dependency hint for missing libOpenGL', () => {
   const message = formatMuseScoreConversionError({
     code: 40,

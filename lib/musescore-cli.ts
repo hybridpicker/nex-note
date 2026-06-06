@@ -17,6 +17,8 @@ const COMMON_MUSESCORE_PATHS = [
 
 const IGNORED_MUSESCORE_STDERR_PATTERNS = [
   /^qt\.qml\.typeregistration: Invalid QML element name /,
+  /^\/(?:usr\/)?lib64\/(?:pipewire-0\.3\/jack\/)?lib(?:jack|nss3|OpenGL|wayland-client|pipewire-0\.3)\.so(?:\.\d+)*$/,
+  /^\/home\/jarvis\/\.local\/lib\/musescore-deps\/usr\/lib64\/libOpenGL\.so\.0$/,
 ];
 
 function isExecutable(path: string | undefined) {

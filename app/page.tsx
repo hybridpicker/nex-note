@@ -99,11 +99,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="mt-16 grid gap-4 border-t border-[#d9ddda] pt-6 text-sm leading-6 text-[#5b6662] sm:grid-cols-3">
-              <p>The product is the app, not this testing website.</p>
-              <p>Founder testers help harden import, AI edit, export, and private embed workflows.</p>
-              <p>No public promise of perfect PDF/photo conversion or support for every file.</p>
-            </div>
           </div>
         </div>
       </section>

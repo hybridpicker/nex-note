@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       const proc = spawn(musescoreCli, [inputPath, '-o', outputMid, '-f'], {
         timeout: MUSESCORE_EXPORT_TIMEOUT_MS,
         env: museScoreSpawnEnv(),
+        cwd: tmpDir,
       });
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });

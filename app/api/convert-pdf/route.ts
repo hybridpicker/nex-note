@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import { writeFile, readFile, unlink, mkdir, rm, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
-import { basename, extname, join } from 'path';
+import { basename, dirname, extname, join } from 'path';
 import { extractXmlFromMxl } from '@/lib/mxl-utils';
 import { analyzeMidiBuffer } from '@/src/nex-note/midi/analyze-midi';
 import { applyMidiImportLayout } from '@/src/nex-note/midi/apply-midi-import-layout';
@@ -134,6 +134,7 @@ function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserv
     const proc = spawn(resolveMuseScoreCli(), [inputPath, '-o', outputMxl], {
       timeout: timeoutMs,
       env: museScoreSpawnEnv(),
+      cwd: dirname(outputMxl),
     });
 
     let stderr = '';
@@ -160,6 +161,7 @@ function runOmrConversion(inputPath: string, outDir: string, outputMxl: string):
   return new Promise((resolve, reject) => {
     const proc = spawn('bash', [PDF_TO_MUSESCORE_SCRIPT, inputPath, outDir], {
       timeout: 120000,
+      cwd: outDir,
     });
 
     let stderr = '';
