@@ -4,9 +4,9 @@
   <img src="./public/brand/nex-note-logo.png" alt="nex-note logo" width="360">
 </p>
 
-> AGPL community branch: a private score archive, AI editor, and embeddable music workspace.
+> AGPL community branch: a downloadable music app for private scores, tabs, AI editing, and embeds.
 
-nex-note helps musicians, teachers, choir directors, arrangers, bands, and small music schools work with private score and tab archives. The core product loop is: import files the user is allowed to process, render them reliably, ask the AI assistant for cleanup or arrangement changes, preview before applying, validate the result, export practice/exchange files, and embed selected scores privately for students, members, or collaborators.
+nex-note helps musicians, teachers, choir directors, arrangers, bands, and small music schools work with private score and tab archives in an app-first workflow. The core product loop is: import files the user is allowed to process, render them reliably, ask the AI assistant for cleanup or arrangement changes, preview before applying, validate the result, export practice/exchange files, and embed selected scores privately for students, members, or collaborators.
 
 This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. It is also not a promise of perfect PDF/photo conversion. PDF and image workflows are assisted import paths that require review and correction.
 
@@ -16,7 +16,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Release channel: private AGPL relaunch / teacher-MVP preview.
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
-- Current focus: private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
+- Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
 - Recent validation on 2026-05-13: `npm test`, `npm run test:coverage:check`, `npm run build`, and `npm audit --audit-level=high` passed.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
@@ -29,14 +29,14 @@ Use nex-note only with scores you created, own, are licensed to process, or that
 
 ## Why It Exists
 
-Notation editors are strong at engraving, but archive and publishing workflows are still fragmented: open mixed score formats, repair an imported file, ask for arrangement help, extract student parts, transpose for instruments, create a MIDI practice track, embed a private score for members, and confirm that the result still opens in MuseScore. nex-note focuses on those companion workflows instead of trying to become a full notation suite.
+Notation editors are strong at engraving, but archive and publishing workflows are still fragmented: open mixed score formats in an app, repair an imported file, ask for arrangement help, extract student parts, transpose for instruments, create a MIDI practice track, embed a private score for members, and confirm that the result still opens in MuseScore. nex-note focuses on those companion workflows instead of trying to become a full notation suite.
 
 The core value is:
 
 - **Semantic edits instead of raw XML patching** for supported operations.
 - **Preview-before-apply AI workflows** for cleanup, arrangement, practice, and export-prep changes.
 - **Local-first file handling** for scores and conversion tools.
-- **Private archive and embed orientation** for members, students, collaborators, and small schools.
+- **App-first private archive and embed orientation** for members, students, collaborators, and small schools.
 - **MuseScore round-trip orientation** through `.mxl`, MusicXML, MIDI, ABC, and project files.
 
 ## Screenshot

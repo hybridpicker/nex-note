@@ -4,7 +4,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "nex-note",
-  description: "Private score archive, AI editor, and embeddable music workspace.",
+  description: "Downloadable music app for private scores, tabs, AI editing, and embeds.",
   icons: {
     icon: [
       { url: "/brand/nex-note-icon.png", type: "image/png" },
