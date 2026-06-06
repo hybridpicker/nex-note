@@ -36,8 +36,8 @@ function collectText(root: Renderer['root']) {
     .join('\n');
 }
 
-function getInput(root: Renderer['root']) {
-  return root.findByType('input');
+function getComposer(root: Renderer['root']) {
+  return root.findByType('textarea');
 }
 
 function getSendButton(root: Renderer['root']) {
@@ -49,7 +49,7 @@ function getCopyLogButton(root: Renderer['root']) {
 }
 
 async function sendMessage(root: Renderer['root'], message: string) {
-  const input = getInput(root);
+  const input = getComposer(root);
   const button = getSendButton(root);
   assert.ok(button, 'Send button should exist');
 
@@ -111,6 +111,9 @@ test('ChatPanel handles local mode, undo, and redo without touching the network'
   });
 
   const root = renderer!.root;
+  const composer = getComposer(root);
+  assert.equal(composer.props['aria-label'], 'AI assistant message');
+  assert.equal(composer.props.name, 'nex-note-ai-message');
 
   await sendMessage(root, '/mode rehearsal');
   await sendMessage(root, 'undo');
@@ -222,14 +225,14 @@ test('ChatPanel discards a pending preview when a new request arrives and applie
 
   await sendMessage(root, 'set the title');
   assert.match(collectText(root), /Preview only\. Type "apply" to confirm or "cancel" to discard\./);
-  assert.equal(getInput(root).props.placeholder, 'Type apply to confirm or cancel to discard…');
+  assert.equal(getComposer(root).props.placeholder, 'Type apply to confirm or cancel to discard…');
 
   await sendMessage(root, 'change the composer');
 
   const text = collectText(root);
   assert.match(text, /Discarded the pending preview and started a new request\./);
   assert.match(text, /Applied composer update\./);
-  assert.equal(getInput(root).props.placeholder, 'Describe your edit…');
+  assert.equal(getComposer(root).props.placeholder, 'Describe your edit…');
   assert.deepEqual(fetchCalls, ['set the title', 'change the composer']);
   assert.equal(xmlUpdates.length, 1);
   assert.equal(xmlUpdates[0]?.label, 'change the composer');
@@ -277,7 +280,7 @@ test('ChatPanel can send an inline melody request before any score is loaded', a
   });
 
   const root = renderer!.root;
-  const input = getInput(root);
+  const input = getComposer(root);
   assert.equal(input.props.disabled, false);
   assert.match(String(input.props.placeholder), /paste a melody/i);
 

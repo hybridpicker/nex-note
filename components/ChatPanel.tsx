@@ -451,15 +451,27 @@ export default function ChatPanel({ xml, provider, ollamaModel, scoreKey, scoreR
 
       {/* Input */}
       <div className="flex gap-2 items-end">
-        <input
+        <textarea
+          id="nex-note-ai-message"
+          name="nex-note-ai-message"
+          aria-label="AI assistant message"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
           placeholder={pendingConfirmation
             ? t('chat.applyPlaceholder')
             : (xml ? t('chat.editPlaceholder') : t('chat.melodyPlaceholder'))}
           disabled={loading || (isBenchmark && !xml)}
-          className="flex-1 border border-nex-border rounded-xl px-3.5 py-2.5 text-sm text-nex-ink focus:outline-none focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/20 disabled:bg-nex-surface disabled:text-slate-400 transition-colors placeholder:text-slate-300"
+          rows={2}
+          spellCheck
+          autoCapitalize="sentences"
+          autoCorrect="on"
+          className="min-h-[44px] max-h-32 flex-1 resize-y border border-nex-border rounded-xl px-3.5 py-2.5 text-sm leading-relaxed text-nex-ink focus:outline-none focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/20 disabled:bg-nex-surface disabled:text-slate-400 transition-colors placeholder:text-slate-300"
         />
         <button
           onClick={send}
