@@ -621,6 +621,7 @@ export default function Home({ searchParams }: HomeProps) {
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
   const [layoutCleanupLoading, setLayoutCleanupLoading] = useState(false);
   const [importStatus, setImportStatus] = useState('');
+  const [importError, setImportError] = useState('');
   const [scoreOpenStatus, setScoreOpenStatus] = useState('');
   const [embedStartup, setEmbedStartup] = useState<EmbedStartupState>({ phase: 'idle', message: '' });
   const [nativeProjectCacheEnabled, setNativeProjectCacheEnabled] = useState(false);
@@ -1425,6 +1426,7 @@ export default function Home({ searchParams }: HomeProps) {
     });
 
     try {
+      setImportError('');
       const isMidiImport = isMidiFilename(file.name);
       const isImageImport = isImageFilename(file.name);
       const projectDirectory = await getImportProjectDirectory();
@@ -2013,8 +2015,8 @@ export default function Home({ searchParams }: HomeProps) {
   const scoreRevision = coreDocument?.revision ?? 0;
   const deferredXml = useDeferredValue(xml);
   const deferredCoreDocument = useDeferredValue(coreDocument);
-  const activeStatus = importStatus || embedStartup.message || scoreOpenStatus;
-  const activeStatusIsError = !importStatus && embedStartup.phase === 'error';
+  const activeStatus = importError || importStatus || embedStartup.message || scoreOpenStatus;
+  const activeStatusIsError = Boolean(importError) || (!importStatus && embedStartup.phase === 'error');
   const activeStatusIsLoading = !activeStatusIsError;
   const scoreSessionReady = Boolean(chatScoreKey && scoreSessionRevision === scoreRevision);
   const doctorAutoReportSignatureRef = useRef('');
@@ -4312,7 +4314,15 @@ export default function Home({ searchParams }: HomeProps) {
           try {
             await handleSelectedFile(file);
           } catch (err) {
-            alert(String(err));
+            const message = err instanceof Error ? err.message : String(err);
+            setImportStatus('');
+            setImportError(message.replace(/^Error:\s*/, ''));
+            recordBugReportEvent('workspace', 'import-file:failed', {
+              filename: file.name,
+              size: file.size,
+              type: file.type,
+              message,
+            });
           }
         }}
       />

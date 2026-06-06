@@ -78,3 +78,20 @@ test('formatMuseScoreConversionError gives a concise dependency hint for missing
     'MuseScore conversion failed: exited with code 40: /lib64/libnss3.so findlib: libOpenGL.so.0: cannot open shared object file: No such file or directory Install libOpenGL.so.0 (for example the libopengl0 package) or point MUSESCORE_CLI at a working MuseScore install.',
   );
 });
+
+test('formatMuseScoreConversionError gives an actionable import-review message when only AppImage probe noise remains', () => {
+  const message = formatMuseScoreConversionError({
+    code: 40,
+    stderr: [
+      '/usr/lib64/pipewire-0.3/jack/libjack.so.0',
+      '/lib64/libnss3.so',
+      '/home/jarvis/.local/lib/musescore-deps/usr/lib64/libOpenGL.so.0',
+      '/lib64/libwayland-client.so.0',
+    ].join('\n'),
+  });
+
+  assert.equal(
+    message,
+    'MuseScore could not convert this file. The file may be unsupported, damaged, or need manual import review. Try MusicXML/MXL when available, or submit this file as a founder compatibility case.',
+  );
+});

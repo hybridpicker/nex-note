@@ -106,5 +106,8 @@ export function formatMuseScoreConversionError(input: {
   const hint = /libOpenGL\.so\.0: cannot open shared object file/.test(cleanedStderr)
     ? ' Install libOpenGL.so.0 (for example the libopengl0 package) or point MUSESCORE_CLI at a working MuseScore install.'
     : '';
+  if (!cleanedStderr && input.code === 40) {
+    return 'MuseScore could not convert this file. The file may be unsupported, damaged, or need manual import review. Try MusicXML/MXL when available, or submit this file as a founder compatibility case.';
+  }
   return `MuseScore conversion failed: ${reason}${cleanedStderr ? `: ${cleanedStderr}` : ''}${hint}`;
 }

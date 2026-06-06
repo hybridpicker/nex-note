@@ -119,6 +119,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ xml, filename: file.name.replace(/\.[^.]+$/i, '.mxl') });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.warn('Score import conversion failed', {
+      filename: file.name,
+      format: fmt,
+      size: file.size,
+      message,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
     // Cleanup temp files
