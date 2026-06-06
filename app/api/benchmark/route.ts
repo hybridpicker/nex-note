@@ -5,6 +5,7 @@ import { INTENT_SYSTEM_PROMPT } from '@/lib/prompts';
 import { applyDocumentCommands, buildDocumentState } from '@/src/score-core/commands/apply-document-commands';
 import type { ScoreCommand } from '@/lib/score-commands';
 import { resolveScoreRequestXml } from '@/src/nex-note/server/resolve-score-request-xml';
+import { isAiEnabledForRequest, publicAiDisabledResponse } from '@/lib/public-ai-access';
 
 function parseIntentJSON(text: string): { commands: unknown[]; explanation: string } | null {
   try {
@@ -28,6 +29,8 @@ function parseIntentJSON(text: string): { commands: unknown[]; explanation: stri
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isAiEnabledForRequest(req)) return publicAiDisabledResponse();
+
     const { message, xml, scoreKey, scoreRevision, ollamaModel, providers } = await req.json() as {
       message: string;
       xml?: string;

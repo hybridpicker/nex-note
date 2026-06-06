@@ -8,6 +8,7 @@ import { runAiCommandPipeline } from '@/src/nex-note/pipeline/run-ai-command-pip
 import { mergeServerChatTaskState } from '@/src/nex-note/state/chat-task-state';
 import { formatValidationError } from '@/src/shared/errors/command-errors';
 import { resolveChatScoreXml } from '@/src/nex-note/server/resolve-chat-score-xml';
+import { isAiEnabledForRequest, publicAiDisabledResponse } from '@/lib/public-ai-access';
 
 function summarizeText(text: string, max = 280) {
   const compact = text.replace(/\s+/g, ' ').trim();
@@ -17,6 +18,8 @@ function summarizeText(text: string, max = 280) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isAiEnabledForRequest(req)) return publicAiDisabledResponse();
+
     const { message, xml, scoreKey, scoreRevision, provider = 'ollama', ollamaModel, selection, sessionContext, appLocale } = await req.json() as {
       message: string;
       xml?: string;

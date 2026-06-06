@@ -5,11 +5,14 @@ import { resolveScoreRequestXml } from '@/src/nex-note/server/resolve-score-requ
 import { runAiCommandPipeline } from '@/src/nex-note/pipeline/run-ai-command-pipeline';
 import type { TestCase } from '@/lib/benchmark-suite';
 import { commandTypes, scoreBenchmarkResult } from '@/lib/benchmark-scoring';
+import { isAiEnabledForRequest, publicAiDisabledResponse } from '@/lib/public-ai-access';
 
 type BenchmarkModel = { id: string; label?: string };
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isAiEnabledForRequest(req)) return publicAiDisabledResponse();
+
     const { message, xml, scoreKey, scoreRevision, models, testCase } = await req.json() as {
       message: string;
       xml?: string;

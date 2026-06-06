@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { isAiEnabledForRequest } from '@/lib/public-ai-access';
 
 const OLLAMA_BASE = process.env.OLLAMA_API_KEY
   ? 'https://ollama.com'
@@ -48,7 +49,15 @@ function mergeModels(...groups: Array<Array<{ id: string; label: string }>>) {
   });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!isAiEnabledForRequest(req)) {
+    return NextResponse.json({
+      models: [],
+      source: 'public-ai-disabled',
+      aiEnabled: false,
+    });
+  }
+
   let localModels: Array<{ id: string; label: string }> = [];
 
   // Prefer the concrete models exposed by the local Ollama daemon. This also
