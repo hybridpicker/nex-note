@@ -1604,6 +1604,15 @@ export default function Home({ searchParams }: HomeProps) {
         importedFilename,
         format: isMidiImport ? 'midi' : importFormat,
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setImportError(message.replace(/^Error:\s*/, ''));
+      recordBugReportEvent('workspace', 'import-file:failed', {
+        filename: file.name,
+        size: file.size,
+        type: file.type,
+        message,
+      });
     } finally {
       setImportStatus('');
     }
@@ -4311,19 +4320,7 @@ export default function Home({ searchParams }: HomeProps) {
           e.target.value = '';
           if (!file) return;
 
-          try {
-            await handleSelectedFile(file);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            setImportStatus('');
-            setImportError(message.replace(/^Error:\s*/, ''));
-            recordBugReportEvent('workspace', 'import-file:failed', {
-              filename: file.name,
-              size: file.size,
-              type: file.type,
-              message,
-            });
-          }
+          await handleSelectedFile(file);
         }}
       />
       {/* Header */}
