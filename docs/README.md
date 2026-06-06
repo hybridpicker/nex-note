@@ -10,6 +10,7 @@ This directory mixes current status docs, architecture docs, validation material
 - Keyboard shortcuts: [keyboard-shortcuts.md](./keyboard-shortcuts.md)
 - Contributor workflow: [CONTRIBUTING.md](../CONTRIBUTING.md)
 - Current implementation and release state: [execution-tracker.md](./execution-tracker.md)
+- AlmaLinux 9 test-domain finalization: [almalinux9-finalize-domain.md](./almalinux9-finalize-domain.md)
 
 ## Current Source Of Truth
 
