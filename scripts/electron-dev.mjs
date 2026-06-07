@@ -63,7 +63,10 @@ const electronCommand = process.platform === 'darwin'
 
 const child = spawn(electronCommand, ['.'], {
   cwd: process.cwd(),
-  env: process.env,
+  env: {
+    ...process.env,
+    NEX_NOTE_ELECTRON_DEV: '1',
+  },
   stdio: 'inherit',
 });
 

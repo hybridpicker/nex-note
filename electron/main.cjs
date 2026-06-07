@@ -243,7 +243,7 @@ function coreScoreMenuCommand(commandId, options = {}) {
 
 function buildApplicationMenuTemplate() {
   const isMac = process.platform === 'darwin';
-  const isDev = !app.isPackaged;
+  const isDev = isElectronDevRuntime();
   const redoAccelerator = isMac ? 'Shift+CommandOrControl+Z' : 'CommandOrControl+Y';
   const activeViewMode = menuState.activeViewMode || 'continuous-vertical';
 
@@ -361,8 +361,12 @@ function buildApplicationMenuTemplate() {
   ];
 }
 
+function isElectronDevRuntime() {
+  return process.env.NEX_NOTE_ELECTRON_DEV === '1' || !app.isPackaged;
+}
+
 function getRootDir() {
-  return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..');
+  return isElectronDevRuntime() ? path.resolve(__dirname, '..') : app.getAppPath();
 }
 
 function getAssetPath(...segments) {
@@ -448,6 +452,7 @@ async function startPackagedServer() {
   const serverPath = path.join(standaloneDir, 'server.js');
   const url = `http://127.0.0.1:${port}`;
 
+  console.log(`[electron] Starting packaged Next server from ${standaloneDir}`);
   nextProcess = fork(serverPath, [], {
     cwd: standaloneDir,
     env: {
@@ -471,6 +476,7 @@ async function startDevServer() {
   const rootDir = getRootDir();
   const activeServerUrl = await readActiveDevServer(rootDir);
   if (activeServerUrl) {
+    console.log(`[electron] Reusing active Next dev server at ${activeServerUrl}`);
     return activeServerUrl;
   }
 
@@ -478,6 +484,7 @@ async function startDevServer() {
   const url = `http://localhost:${port}`;
   const nextCommand = path.join(rootDir, 'node_modules', '.bin', process.platform === 'win32' ? 'next.cmd' : 'next');
 
+  console.log(`[electron] Starting Next dev server from ${rootDir} at ${url}`);
   nextProcess = spawn(nextCommand, ['dev', '--webpack', '--hostname', 'localhost', '--port', String(port)], {
     cwd: rootDir,
     env: process.env,
@@ -522,7 +529,7 @@ function updateApplicationMenuState(nextState) {
 }
 
 async function createWindow() {
-  const serverUrl = app.isPackaged ? await startPackagedServer() : await startDevServer();
+  const serverUrl = isElectronDevRuntime() ? await startDevServer() : await startPackagedServer();
   const url = resolveRendererUrl(serverUrl);
   const icon = getAssetPath(process.platform === 'darwin' ? 'Icon-nexnote.icns' : 'app-icon.png');
   rendererReady = false;
