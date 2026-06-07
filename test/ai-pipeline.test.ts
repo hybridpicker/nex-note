@@ -1153,6 +1153,8 @@ test('runAiCommandPipeline materializes diatonic alternate lick versions from na
   assert.equal(result.provider, 'local-layout');
   assert.equal(result.model, 'musician-arrangement-engine');
   assert.equal(result.requiresConfirmation, true);
+  assert.match(result.explanation, /score operations are ready, but no notes have changed yet/i);
+  assert.match(result.explanation, /click Apply or type "apply"/i);
   assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
   assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
   const chordCommand = result.commands.find((command) => command.type === 'addChords');

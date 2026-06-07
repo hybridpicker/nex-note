@@ -439,8 +439,8 @@ function buildMaterializedArrangementResponse(
   return {
     commands,
     explanation: explicitChords.length > 0
-      ? `I am preparing a notated alternate version over ${targetChords.join(', ')} while preserving the original rhythm.`
-      : `I am preparing a notated arrangement from the detected harmony while preserving the original rhythm.`,
+      ? `I prepared a notated alternate-version preview over ${targetChords.join(', ')} while preserving the original rhythm. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`
+      : `I prepared a notated arrangement preview from the detected harmony while preserving the original rhythm. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`,
     confidence: 'high',
     ambiguities: [],
     plan: [
