@@ -4524,6 +4524,42 @@ test('Cut shortcut copies the selection to the clipboard and deletes the selecte
   hook.unmount();
 });
 
+test('Score copy shortcut yields to a visible text selection', () => {
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  try {
+    Object.assign(globalThis, {
+      window: {
+        getSelection() {
+          return {
+            isCollapsed: false,
+            toString: () => 'assistant response text',
+          };
+        },
+      },
+    });
+
+    const hook = renderHook(SAMPLE_XML);
+    const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+    let prevented = false;
+
+    act(() => {
+      hook.current.handleNoteClick(notes[1]);
+    });
+    act(() => {
+      const event = makeKeyboardEvent('c', { metaKey: true }) as KeyboardEvent & { preventDefault: () => void };
+      event.preventDefault = () => { prevented = true; };
+      hook.current.handleKeyDown(event);
+    });
+    hook.rerender();
+
+    assert.equal(prevented, false);
+    assert.equal(hook.current.clipboardCount, 0);
+    hook.unmount();
+  } finally {
+    Object.assign(globalThis, { window: previousWindow });
+  }
+});
+
 test('Shift+X toggles slash notehead style through the semantic command path', () => {
   const hook = renderHook(SAMPLE_XML);
   const note = makeSelectedNotes(SAMPLE_XML).filter((entry) => !entry.isRest)[1]!;

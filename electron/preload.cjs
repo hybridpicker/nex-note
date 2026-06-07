@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('nexNoteElectron', {
   listUserTemplates() {
     return ipcRenderer.invoke('nex-note:list-user-templates');
   },
+  performNativeEditCommand(command) {
+    return ipcRenderer.invoke('nex-note:native-edit-command', command);
+  },
   updateMenuState(state) {
     if (!state || typeof state !== 'object') return;
     ipcRenderer.send('nex-note:update-menu-state', {

@@ -180,6 +180,21 @@ function sendMenuCommand(commandId) {
   mainWindow.webContents.send('nex-note:menu-command', commandId);
 }
 
+function performNativeEditCommand(command) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (command === 'cut') {
+    mainWindow.webContents.cut();
+    return;
+  }
+  if (command === 'copy') {
+    mainWindow.webContents.copy();
+    return;
+  }
+  if (command === 'paste') {
+    mainWindow.webContents.paste();
+  }
+}
+
 async function openFilesWithNativeDialog() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -551,6 +566,11 @@ async function createWindow() {
 
 ipcMain.handle('nex-note:open-file-dialog', async () => {
   await openFilesWithNativeDialog();
+});
+
+ipcMain.handle('nex-note:native-edit-command', (_event, command) => {
+  if (!['cut', 'copy', 'paste'].includes(command)) return;
+  performNativeEditCommand(command);
 });
 
 ipcMain.handle('nex-note:list-user-templates', async () => {

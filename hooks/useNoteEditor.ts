@@ -5,6 +5,7 @@ import { type ArticulationKind, type DynamicKind, type BarlineKind } from '@/lib
 import type { ScoreCommand } from '@/lib/score-commands';
 import { dbg } from '@/lib/debug';
 import { readClientVisualDebugEnabled } from '@/lib/debug-flags';
+import { shouldUseNativeClipboardShortcut } from '@/lib/native-clipboard-shortcuts';
 import { applyDocumentCommands } from '@/src/score-core/commands/apply-document-commands';
 import type { GuitarTechniqueKind, ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
 import { validateScoreDocument } from '@/src/score-core/validation/validate-score-document';
@@ -288,13 +289,6 @@ function coerceSelectedNote(input: SelectedNote | any | null): SelectedNote | nu
     isDotted: Boolean(sourceNote.NoteDots?.length ?? sourceNote.noteDots?.length ?? sourceNote.NoteDot ?? sourceNote.noteDot),
     graphicalNote: input,
   };
-}
-
-function shouldBypassClipboardShortcut(target: HTMLElement | null) {
-  if (!target) return false;
-  if (target.closest('[data-chat-panel="true"]')) return true;
-  const selection = typeof window !== 'undefined' ? window.getSelection() : null;
-  return Boolean(selection && !selection.isCollapsed && selection.toString().trim().length > 0);
 }
 
 function selectedNotesEqual(a: SelectedNote | null | undefined, b: SelectedNote | null | undefined) {
@@ -2883,7 +2877,7 @@ export function useNoteEditor(
     }
 
     if (metaKey && key === 'X') {
-      if (shouldBypassClipboardShortcut(target)) return;
+      if (shouldUseNativeClipboardShortcut(target)) return;
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
         copySelectedRange();
@@ -2893,7 +2887,7 @@ export function useNoteEditor(
     }
 
     if (metaKey && key === 'C') {
-      if (shouldBypassClipboardShortcut(target)) return;
+      if (shouldUseNativeClipboardShortcut(target)) return;
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
         copySelectedRange();
@@ -2902,7 +2896,7 @@ export function useNoteEditor(
     }
 
     if (metaKey && key === 'V') {
-      if (shouldBypassClipboardShortcut(target)) return;
+      if (shouldUseNativeClipboardShortcut(target)) return;
       if (selectedNote && clipboard) {
         e.preventDefault();
         pasteContent();

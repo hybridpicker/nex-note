@@ -74,6 +74,7 @@ import { getDoctorRuntimeState, publishDoctorReport, registerDoctorRunner } from
 import type { DoctorDomain } from '@/src/debug/doctor/types';
 import { useI18n } from '@/lib/i18n';
 import { writeLeftNotationSidebarCollapsed } from '@/lib/left-notation-sidebar';
+import { type NativeEditCommand, shouldUseNativeMenuClipboardCommand } from '@/lib/native-clipboard-shortcuts';
 
 const ScoreEditor = dynamic(() => import('@/components/ScoreEditor'), { ssr: false });
 const ScorePreview = dynamic(() => import('@/components/ScorePreview'), { ssr: false });
@@ -104,6 +105,7 @@ type NexNoteElectronApi = {
   onOpenFile: (callback: (payload: ElectronOpenFilePayload) => void) => () => void;
   openFileDialog: () => Promise<void>;
   listUserTemplates: () => Promise<ElectronUserTemplateFolderPayload[]>;
+  performNativeEditCommand: (command: NativeEditCommand) => Promise<void>;
   updateMenuState: (state: {
     hasScore: boolean;
     hasCoreDocument: boolean;
@@ -2849,6 +2851,12 @@ export default function Home({ searchParams }: HomeProps) {
     if (!electronApi) return;
 
     return electronApi.onMenuCommand((commandId) => {
+      const runNativeClipboardCommand = (command: NativeEditCommand) => {
+        if (!shouldUseNativeMenuClipboardCommand()) return false;
+        void electronApi.performNativeEditCommand(command);
+        return true;
+      };
+
       switch (commandId) {
         case 'file:new':
           handleOpenNewScoreDialog();
@@ -2884,12 +2892,15 @@ export default function Home({ searchParams }: HomeProps) {
           handleRedo();
           break;
         case 'edit:cut':
+          if (runNativeClipboardCommand('cut')) break;
           cutSelection();
           break;
         case 'edit:copy':
+          if (runNativeClipboardCommand('copy')) break;
           copySelection();
           break;
         case 'edit:paste':
+          if (runNativeClipboardCommand('paste')) break;
           pasteClipboard();
           break;
         case 'edit:duplicateSelection':
