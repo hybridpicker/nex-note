@@ -1,6 +1,8 @@
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 
 const METADATA_PLACEHOLDER_TEXT = new Set(['title', 'subtitle', 'work number', 'composer', 'arranger', 'lyricist']);
+let cachedMetadataXml = '';
+let cachedMetadataDrawOptions: ReturnType<typeof buildMusicXmlMetadataDrawOptions> | null = null;
 
 function hasConcreteText(value: string | null | undefined) {
   const trimmed = value?.trim();
@@ -27,6 +29,14 @@ export function resolveMusicXmlMetadataDrawOptions(xml: string, coreDocument?: S
     };
   }
 
+  if (cachedMetadataDrawOptions && cachedMetadataXml === xml) return cachedMetadataDrawOptions;
+  const options = buildMusicXmlMetadataDrawOptions(xml);
+  cachedMetadataXml = xml;
+  cachedMetadataDrawOptions = options;
+  return options;
+}
+
+function buildMusicXmlMetadataDrawOptions(xml: string) {
   if (typeof DOMParser === 'undefined') {
     return {
       drawTitle: false,

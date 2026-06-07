@@ -28,16 +28,17 @@ export default function ScorePreview({ xml, className = '', onRendered }: Props)
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay');
         if (cancelled || !containerRef.current) return;
 
+        const metadataDrawOptions = resolveMusicXmlMetadataDrawOptions(xml);
         if (!osmdRef.current) {
           osmdRef.current = new OpenSheetMusicDisplay(containerRef.current, {
             autoResize: true,
-            ...resolveMusicXmlMetadataDrawOptions(xml),
+            ...metadataDrawOptions,
             drawingParameters: 'default',
           });
         }
 
         const osmd = osmdRef.current as { load: (s: string) => Promise<void>; render: () => void; setOptions?: (options: unknown) => void };
-        osmd.setOptions?.(resolveMusicXmlMetadataDrawOptions(xml));
+        osmd.setOptions?.(metadataDrawOptions);
         await osmd.load(xml);
         if (!cancelled) {
           osmd.render();

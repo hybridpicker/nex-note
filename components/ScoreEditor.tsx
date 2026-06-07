@@ -10986,6 +10986,9 @@ export default function ScoreEditor({
   const measureLayoutOverlaysRef = useRef<RenderedMeasureLayoutOverlay[]>([]);
   const systemLayoutOverlaysRef = useRef<RenderedSystemLayoutOverlay[]>([]);
   const staffDetailsByMeasureRef = useRef<Map<number, StaffDetail[]>>(new Map());
+  const tintedRenderedNoteElementsRef = useRef<SVGElement[]>([]);
+  const tintedVisualElementsRef = useRef<SVGElement[]>([]);
+  const tintedGuitarFretElementsRef = useRef<SVGElement[]>([]);
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
   const lastPlacementClientRef = useRef<{ x: number; y: number } | null>(null);
   const lastPlacementMeasureIdRef = useRef<string | null>(null);
@@ -11043,9 +11046,23 @@ export default function ScoreEditor({
   lastSelectedMeasureIdRef.current = lastSelectedMeasureId;
   measureLayoutOverlaysRef.current = measureLayoutOverlays;
   systemLayoutOverlaysRef.current = systemLayoutOverlays;
+
+  const clearActiveScoreTints = useCallback(() => {
+    tintedRenderedNoteElementsRef.current.forEach((element) => tintRenderedNote(element, null));
+    tintedVisualElementsRef.current.forEach((element) => tintSvgElement(element, null));
+    tintedGuitarFretElementsRef.current.forEach((element) => tintSvgElement(element, null));
+    tintedRenderedNoteElementsRef.current = [];
+    tintedVisualElementsRef.current = [];
+    tintedGuitarFretElementsRef.current = [];
+  }, []);
+
   useEffect(() => {
+    if (!visualDebugEnabled && !dbg.enabled()) {
+      setRenderedNoteDebugMarkers((current) => current.length > 0 ? [] : current);
+      return;
+    }
     setRenderedNoteDebugMarkers(buildRenderedNoteDebugMarkers(renderedNotesRef.current, selectedNote, selectionConfidence));
-  }, [selectedNote, selectionConfidence, xml]);
+  }, [selectedNote, selectionConfidence, visualDebugEnabled, xml]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -11333,7 +11350,7 @@ export default function ScoreEditor({
     const pageFormat = viewMode === 'page' ? 'A4_P' : 'Endless';
     const osmd = new OpenSheetMusicDisplay(containerRef.current, {
       autoResize: false,
-      ...resolveMusicXmlMetadataDrawOptions(candidateXml),
+      ...resolveMusicXmlMetadataDrawOptions(candidateXml, coreDocument),
       drawingParameters: 'default',
       autoGenerateMultipleRestMeasuresFromRestMeasures: false,
       zoom: zoomPercent / 100,
@@ -11343,7 +11360,7 @@ export default function ScoreEditor({
     } as any);
     osmdRef.current = osmd;
     return osmd;
-  }, [viewMode, zoomPercent]);
+  }, [coreDocument, viewMode, zoomPercent]);
 
   const loadAndRenderOsmd = useCallback(async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12701,6 +12718,7 @@ export default function ScoreEditor({
     let cancelled = false;
     const abortController = new AbortController();
     geometryProxyRef.current.invalidate();
+    clearActiveScoreTints();
     renderedNotesRef.current = [];
     renderedGhostGridRef.current = createEmptyRenderedGhostGrid();
     interactiveEditMapRef.current = createEmptyInteractiveEditMap();
@@ -12854,7 +12872,7 @@ export default function ScoreEditor({
       abortController.abort();
       geometryProxyRef.current.invalidate();
     };
-  }, [coreDocument, loadAndRenderOsmd, onOsmdReady, onRenderError, onRenderStart, refreshGeometryProxy, renderViewportRevision, viewMode, xml, zoomPercent]);
+  }, [clearActiveScoreTints, coreDocument, loadAndRenderOsmd, onOsmdReady, onRenderError, onRenderStart, refreshGeometryProxy, renderViewportRevision, viewMode, xml, zoomPercent]);
 
   // React to note selection / mode changes without a full re-render
   useEffect(() => {
@@ -13319,9 +13337,25 @@ export default function ScoreEditor({
   }, [adjustZoom, syncViewportBox]);
 
   useEffect(() => {
-    const tintedGuitarFretTextTargets: SVGElement[] = [];
-    renderedNotesRef.current.forEach((entry) => tintRenderedNote(entry.tintElement, null));
-    activeVisualTargets.forEach((element) => tintSvgElement(element, null));
+    clearActiveScoreTints();
+    const tintedRenderedNoteElements = new Set<SVGElement>();
+    const tintedVisualElements = new Set<SVGElement>();
+    const tintedGuitarFretElements = new Set<SVGElement>();
+    const tintAndTrackRenderedNote = (element: SVGElement | null, color: string) => {
+      if (!element) return;
+      tintRenderedNote(element, color);
+      tintedRenderedNoteElements.add(element);
+    };
+    const tintAndTrackVisualElement = (element: SVGElement | null, color: string) => {
+      if (!element) return;
+      tintSvgElement(element, color);
+      tintedVisualElements.add(element);
+    };
+    const tintAndTrackGuitarFretElement = (element: SVGElement | null, color: string) => {
+      if (!element) return;
+      tintSvgElement(element, color);
+      tintedGuitarFretElements.add(element);
+    };
 
     if (playbackActive && playbackPlayhead) {
       // Highlight only notes whose onset has actually been reached by the visible playhead.
@@ -13336,7 +13370,7 @@ export default function ScoreEditor({
         if (activeOnset) {
           notesInMeasure
             .filter((e) => timestampsEqual(e.note.timestampNum, e.note.timestampDen, activeOnset.timestampNum, activeOnset.timestampDen))
-            .forEach((e) => tintRenderedNote(e.tintElement, '#1a56db'));
+            .forEach((e) => tintAndTrackRenderedNote(e.tintElement, '#1a56db'));
         }
       }
     } else {
@@ -13385,7 +13419,7 @@ export default function ScoreEditor({
               })}`);
             }
           }
-          tintRenderedNote(rendered ? getEffectiveTintElement(rendered) : null, index === targets.length - 1 ? '#1a56db' : '#1d4ed8');
+          tintAndTrackRenderedNote(rendered ? getEffectiveTintElement(rendered) : null, index === targets.length - 1 ? '#1a56db' : '#1d4ed8');
           const guitarFretText = findRenderedGuitarFretTextElement({
             coreDocument,
             container: containerRef.current,
@@ -13393,20 +13427,19 @@ export default function ScoreEditor({
             note: target,
           });
           if (guitarFretText) {
-            tintSvgElement(guitarFretText, index === targets.length - 1 ? '#1a56db' : '#1d4ed8');
-            tintedGuitarFretTextTargets.push(guitarFretText);
+            tintAndTrackGuitarFretElement(guitarFretText, index === targets.length - 1 ? '#1a56db' : '#1d4ed8');
           }
         });
       }
-      activeVisualTargets.forEach((element) => tintSvgElement(element, '#1a56db'));
+      activeVisualTargets.forEach((element) => tintAndTrackVisualElement(element, '#1a56db'));
     }
 
-    return () => {
-      renderedNotesRef.current.forEach((entry) => tintRenderedNote(entry.tintElement, null));
-      activeVisualTargets.forEach((element) => tintSvgElement(element, null));
-      tintedGuitarFretTextTargets.forEach((element) => tintSvgElement(element, null));
-    };
-  }, [selectedNote, selectedNotes, noteInputMode, noteInputAnchor, activeVisualTargets, visualSelectionOnly, xml, playbackActive, playbackPlayhead, coreDocument]);
+    tintedRenderedNoteElementsRef.current = [...tintedRenderedNoteElements];
+    tintedVisualElementsRef.current = [...tintedVisualElements];
+    tintedGuitarFretElementsRef.current = [...tintedGuitarFretElements];
+
+    return clearActiveScoreTints;
+  }, [activeVisualTargets, clearActiveScoreTints, coreDocument, noteInputAnchor, noteInputMode, playbackActive, playbackPlayhead, selectedNote, selectedNotes, visualSelectionOnly, xml]);
 
   // Attach/detach pointer listener on the window so clicks always arrive even
   // when OSMD's inner <svg> elements swallow the event. The handler itself
