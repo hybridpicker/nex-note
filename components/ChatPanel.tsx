@@ -178,6 +178,19 @@ function formatChatTranscript(messages: Message[], pendingPreview: PendingConfir
   return [transcript, pending].filter(Boolean).join('\n\n');
 }
 
+function buildTranscriptMessages(messages: Message[], pendingPreview: PendingConfirmation | null) {
+  if (!pendingPreview) return messages;
+  const pendingText = formatPendingPreviewTranscript(pendingPreview);
+  if (!pendingText) return messages;
+  return [...messages, {
+    role: 'assistant' as const,
+    text: pendingText,
+    provider: pendingPreview.provider,
+    model: pendingPreview.model,
+    latencyMs: pendingPreview.latencyMs,
+  }];
+}
+
 async function copyTextToClipboard(text: string) {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -288,8 +301,8 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
   }, [messages]);
 
   useEffect(() => {
-    onTranscriptChange?.(messages);
-  }, [messages, onTranscriptChange]);
+    onTranscriptChange?.(buildTranscriptMessages(messages, pendingConfirmation));
+  }, [messages, pendingConfirmation, onTranscriptChange]);
 
   useEffect(() => {
     if (copyState === 'idle') return;
@@ -600,6 +613,16 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
           autoCorrect="on"
           className="min-h-[44px] max-h-32 flex-1 resize-y border border-nex-border rounded-xl px-3.5 py-2.5 text-sm leading-relaxed text-nex-ink focus:outline-none focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/20 disabled:bg-nex-surface disabled:text-slate-400 transition-colors placeholder:text-slate-300"
         />
+        <button
+          type="button"
+          onClick={copyTranscript}
+          disabled={loading || (!messages.length && !pendingConfirmation)}
+          className="px-3 py-2.5 rounded-xl text-sm font-medium border border-nex-border text-slate-500 hover:bg-nex-surface disabled:opacity-30 transition-colors shrink-0"
+          title={t('chat.copyTranscript')}
+          aria-label={t('chat.copyTranscript')}
+        >
+          {copyState === 'copied' ? t('chat.copied') : copyState === 'failed' ? t('chat.copyFailed') : t('chat.copyLog')}
+        </button>
         <button
           onClick={send}
           disabled={!input.trim() || loading || (isBenchmark && !xml)}

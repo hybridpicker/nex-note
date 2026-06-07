@@ -48,6 +48,10 @@ function getCopyLogButton(root: Renderer['root']) {
   return root.findAllByType('button').find((button) => button.props['aria-label'] === 'Copy full chat transcript');
 }
 
+function getCopyLogButtons(root: Renderer['root']) {
+  return root.findAllByType('button').filter((button) => button.props['aria-label'] === 'Copy full chat transcript');
+}
+
 function getButtonByText(root: Renderer['root'], text: string) {
   return root.findAllByType('button').find((button) => button.children.join('') === text);
 }
@@ -118,8 +122,13 @@ test('ChatPanel handles local mode, undo, and redo without touching the network'
   const composer = getComposer(root);
   assert.equal(composer.props['aria-label'], 'AI assistant message');
   assert.equal(composer.props.name, 'nex-note-ai-message');
+  const initialCopyButton = getCopyLogButton(root);
+  assert.ok(initialCopyButton, 'Copy log button should stay visible in the input row');
+  assert.equal(initialCopyButton.props.disabled, true);
 
   await sendMessage(root, '/mode rehearsal');
+  assert.ok(getCopyLogButtons(root).length >= 1);
+  assert.ok(getCopyLogButtons(root).some((button) => button.props.disabled === false));
   await sendMessage(root, 'undo');
   await sendMessage(root, 'redo');
 
@@ -173,6 +182,7 @@ test('ChatPanel copies the full chat transcript for debugging', async () => {
 
 test('ChatPanel copy log includes pending preview apply state and command payload', async () => {
   let copiedText = '';
+  let latestTranscript: Array<{ text: string }> = [];
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
     value: {
@@ -207,7 +217,11 @@ test('ChatPanel copy log includes pending preview apply state and command payloa
 
   let renderer: Renderer | null = null;
   await act(async () => {
-    renderer = create(React.createElement(ChatPanel, buildChatPanelProps()));
+    renderer = create(React.createElement(ChatPanel, buildChatPanelProps({
+      onTranscriptChange(messages) {
+        latestTranscript = messages;
+      },
+    })));
   });
 
   const root = renderer!.root;
@@ -225,6 +239,7 @@ test('ChatPanel copy log includes pending preview apply state and command payloa
   assert.match(copiedText, /affectedMeasures: 1, 2/);
   assert.match(copiedText, /"type":"insertNoteAt"/);
   assert.match(copiedText, /nextAction: click Apply or type "apply" to change the score/);
+  assert.ok(latestTranscript.some((message) => message.text.includes('[pending-preview]') && message.text.includes('status: NOT APPLIED')));
 
   await act(async () => {
     renderer?.unmount();
