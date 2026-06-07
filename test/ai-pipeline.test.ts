@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { AIResponse, ProviderName } from '../lib/ai-providers.ts';
 import { buildIntentPrompt } from '../lib/prompts.ts';
-import { buildDocumentState } from '../src/score-core/commands/apply-document-commands.ts';
+import { applyDocumentCommands, buildDocumentState } from '../src/score-core/commands/apply-document-commands.ts';
 import { assessAiPlan } from '../src/nex-note/planning/assess-ai-plan.ts';
 import { repairCommandBatch } from '../src/nex-note/repair/repair-command-batch.ts';
 import { runAiCommandPipeline } from '../src/nex-note/pipeline/run-ai-command-pipeline.ts';
@@ -86,6 +86,22 @@ const TWO_MEASURE_A7_LICK_XML = `<?xml version="1.0" encoding="UTF-8"?>
   <part id="P1">
     <measure number="1"><attributes><divisions>2</divisions><key><fifths>2</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><staff-details number="2"><staff-type>tab</staff-type><staff-lines>6</staff-lines></staff-details><clef number="2"><sign>TAB</sign><line>5</line></clef></attributes><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind></harmony><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>5</fret></technical></notations></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>9</fret></technical></notations></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>12</fret></technical></notations></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>15</fret></technical></notations></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>2</staff></note></measure>
     <measure number="2"><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind></harmony><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>15</fret></technical></notations></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>12</fret></technical></notations></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>9</fret></technical></notations></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>2</staff><notations><technical><string>1</string><fret>5</fret></technical></notations></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>2</staff></note></measure>
+  </part>
+</score-partwise>`;
+
+const TWO_MEASURE_A7_LICK_SEPARATE_TAB_PARTS_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Electric Guitar</part-name></score-part>
+    <score-part id="P2"><part-name>Electric Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1"><attributes><divisions>2</divisions><key><fifths>2</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind></harmony><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type></note></measure>
+    <measure number="2"><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind></harmony><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type></note></measure>
+  </part>
+  <part id="P2">
+    <measure number="1"><attributes><divisions>2</divisions><key><fifths>2</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staff-details><staff-type>tab</staff-type><staff-lines>6</staff-lines></staff-details><clef><sign>TAB</sign><line>5</line></clef></attributes><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>5</fret></technical></notations></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>9</fret></technical></notations></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>12</fret></technical></notations></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>15</fret></technical></notations></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type></note></measure>
+    <measure number="2"><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>15</fret></technical></notations></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>12</fret></technical></notations></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>9</fret></technical></notations></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>5</fret></technical></notations></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type></note></measure>
   </part>
 </score-partwise>`;
 
@@ -1255,6 +1271,44 @@ test('runAiCommandPipeline does not treat selected TAB notes as duplicate arrang
   assert.equal(insertNoteCommands.filter((command) => command.staffIndex === 1).length, 16);
   assert.equal(insertNoteCommands.filter((command) => command.staffIndex === 2 && command.guitar).length, 16);
   assert.ok(!insertNoteCommands.some((command) => command.staffIndex === 2 && !command.guitar));
+});
+
+test('runAiCommandPipeline pairs separate MuseScore notation and TAB parts', async () => {
+  const result = await runAiCommandPipeline({
+    message: 'this is a lick for a7; arrange other version in diatonic system; Gmaj7, F#m7 etc..',
+    xml: TWO_MEASURE_A7_LICK_SEPARATE_TAB_PARTS_XML,
+    provider: 'ollama',
+    ask: async (): Promise<AIResponse> => {
+      throw new Error('should not call model');
+    },
+  });
+
+  assert.ok(!('error' in result));
+  if ('error' in result) return;
+  const clearCommands = result.commands.filter((command) => command.type === 'clearMeasureVoice');
+  assert.equal(clearCommands.filter((command) => command.corePartId === 'part:P1').length, 4);
+  assert.equal(clearCommands.filter((command) => command.corePartId === 'part:P2').length, 4);
+
+  const insertNoteCommands = result.commands.filter((command): command is Extract<typeof command, { type: 'insertNoteAt' }> => (
+    command.type === 'insertNoteAt'
+  ));
+  assert.equal(insertNoteCommands.filter((command) => command.corePartId === 'part:P1' && !command.guitar).length, 16);
+  assert.equal(insertNoteCommands.filter((command) => command.corePartId === 'part:P2' && command.guitar).length, 16);
+  assert.deepEqual(
+    insertNoteCommands
+      .filter((command) => command.corePartId === 'part:P2' && command.measureNumber === 3 && command.guitar)
+      .map((command) => `${command.guitar!.string}:${command.guitar!.fret}`),
+    ['1:3', '1:7', '1:10', '1:14'],
+  );
+
+  const applied = applyDocumentCommands(buildDocumentState(TWO_MEASURE_A7_LICK_SEPARATE_TAB_PARTS_XML), result.commands);
+  const tabMeasures = applied.coreDocument?.score.parts
+    .find((part) => part.id === 'part:P2')
+    ?.staves[0]?.measures.filter((measure) => measure.measureNumber >= 3 && measure.measureNumber <= 6);
+  assert.deepEqual(tabMeasures?.map((measure) => (
+    measure.voices.flatMap((voice) => voice.events).filter((event) => event.kind === 'note' && event.guitar).length
+  )), [4, 4, 4, 4]);
+  assert.match(applied.xml, /<technical><string>1<\/string><fret>3<\/fret><\/technical>/);
 });
 
 test('runAiCommandPipeline targets arrangement instrument fitting at the detected part', async () => {

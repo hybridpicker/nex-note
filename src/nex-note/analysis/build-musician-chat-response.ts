@@ -43,6 +43,12 @@ function sameTimestamp(left: { timestampNum: number; timestampDen: number }, rig
   return left.timestampNum * right.timestampDen === right.timestampNum * left.timestampDen;
 }
 
+function sameWrittenPitch(left: NoteEvent, right: NoteEvent) {
+  return left.pitch.step === right.pitch.step
+    && left.pitch.alter === right.pitch.alter
+    && left.pitch.octave === right.pitch.octave;
+}
+
 function noteLabel(note: NoteEvent) {
   const accidental = note.pitch.alter === 1 ? '#' : note.pitch.alter === -1 ? 'b' : '';
   return `${note.pitch.step}${accidental}${note.pitch.octave}`;
@@ -50,6 +56,7 @@ function noteLabel(note: NoteEvent) {
 
 interface ScopedNoteInfo {
   partId: string;
+  corePartId: string;
   partName: string;
   note: NoteEvent;
   measure: MeasureNode;
@@ -86,7 +93,7 @@ function collectScopedNotes(documentState: DocumentState, selection?: EditorSele
     measure.voices.flatMap((voice) => voice.events.flatMap((event) => {
       if (event.kind !== 'note') return [];
       if (anchor && (event.staffIndex !== anchor.staffIndex || event.voiceId !== anchor.voiceId)) return [];
-      return [{ partId: part.sourcePartId, partName: part.name, note: event, measure }];
+      return [{ partId: part.sourcePartId, corePartId: part.id, partName: part.name, note: event, measure }];
     }))
   ))));
 }
@@ -104,7 +111,7 @@ function collectVoiceCandidates(documentState: DocumentState): VoiceCandidate[] 
           const existing = byVoice.get(voice.voiceId) ?? [];
           voice.events.forEach((event) => {
             if (event.kind !== 'note') return;
-            existing.push({ partId: part.sourcePartId, partName: part.name, note: event, measure });
+            existing.push({ partId: part.sourcePartId, corePartId: part.id, partName: part.name, note: event, measure });
           });
           byVoice.set(voice.voiceId, existing);
         });
@@ -146,7 +153,7 @@ function collectArrangementSourceNotes(documentState: DocumentState, selection?:
     const selectedIds = new Set(selection.entityIds);
     const selected = core.score.parts.flatMap((part) => part.staves.flatMap((staff) => staff.measures.flatMap((measure) => (
       measure.voices.flatMap((voice) => voice.events.flatMap((event) => (
-        event.kind === 'note' && selectedIds.has(event.id) ? [{ partId: part.sourcePartId, partName: part.name, note: event, measure }] : []
+        event.kind === 'note' && selectedIds.has(event.id) ? [{ partId: part.sourcePartId, corePartId: part.id, partName: part.name, note: event, measure }] : []
       )))
     ))));
     if (selected.length > 0) {
@@ -161,7 +168,7 @@ function collectArrangementSourceNotes(documentState: DocumentState, selection?:
         if (event.kind !== 'note') return [];
         if ((selection.partId && selection.partId !== part.sourcePartId && selection.partId !== `part:${part.sourcePartId}`)) return [];
         if (event.staffIndex !== anchor.staffIndex || event.voiceId !== anchor.voiceId) return [];
-        return [{ partId: part.sourcePartId, partName: part.name, note: event, measure }];
+        return [{ partId: part.sourcePartId, corePartId: part.id, partName: part.name, note: event, measure }];
       }))
     ))));
     if (anchored.length > 0) {
@@ -478,20 +485,44 @@ function findPairedTabSourceNote(documentState: DocumentState, entry: ScopedNote
   const part = core.score.parts.find((candidate) => candidate.sourcePartId === entry.partId || candidate.id === entry.partId);
   if (!part) return null;
   const sourceIsTab = isTabStaffForArrangement(part, entry.note.staffIndex);
-  const pairedStaves = part.staves
-    .filter((staff) => staff.staffIndex !== entry.note.staffIndex && isTabStaffForArrangement(part, staff.staffIndex) !== sourceIsTab)
-    .sort((left, right) => Math.abs(left.staffIndex - entry.note.staffIndex) - Math.abs(right.staffIndex - entry.note.staffIndex));
+  const sourcePartIndex = core.score.parts.findIndex((candidate) => candidate.id === part.id);
+  const pairedStaffCandidates = core.score.parts
+    .flatMap((candidatePart, candidatePartIndex) => candidatePart.staves.map((staff) => ({
+      part: candidatePart,
+      partIndex: candidatePartIndex,
+      staff,
+      isTab: isTabStaffForArrangement(candidatePart, staff.staffIndex),
+    })))
+    .filter((candidate) => (
+      candidate.isTab !== sourceIsTab
+      && !(candidate.part.id === part.id && candidate.staff.staffIndex === entry.note.staffIndex)
+    ))
+    .sort((left, right) => (
+      Number(left.part.id !== part.id) - Number(right.part.id !== part.id)
+      || Math.abs(left.staff.staffIndex - entry.note.staffIndex) - Math.abs(right.staff.staffIndex - entry.note.staffIndex)
+      || Math.abs(left.partIndex - sourcePartIndex) - Math.abs(right.partIndex - sourcePartIndex)
+    ));
 
-  for (const staff of pairedStaves) {
-    const measure = staff.measures.find((candidate) => candidate.measureNumber === entry.measure.measureNumber);
-    const event = measure?.voices
+  for (const candidate of pairedStaffCandidates) {
+    const measure = candidate.staff.measures.find((candidateMeasure) => candidateMeasure.measureNumber === entry.measure.measureNumber);
+    const sameVoiceEvent = measure?.voices
       .find((voice) => voice.voiceId === entry.note.voiceId)
-      ?.events.find((candidate) => (
-        candidate.kind === 'note'
-        && sameTimestamp(candidate, entry.note)
+      ?.events.find((candidateEvent) => (
+        candidateEvent.kind === 'note'
+        && sameTimestamp(candidateEvent, entry.note)
+        && (!candidate.isTab || Boolean(candidateEvent.guitar))
+        && (candidate.isTab || sameWrittenPitch(candidateEvent, entry.note))
+      ));
+    const event = sameVoiceEvent ?? measure?.voices
+      .flatMap((voice) => voice.events)
+      .find((candidateEvent) => (
+        candidateEvent.kind === 'note'
+        && sameTimestamp(candidateEvent, entry.note)
+        && (!candidate.isTab || Boolean(candidateEvent.guitar))
+        && (candidate.isTab || sameWrittenPitch(candidateEvent, entry.note))
       ));
     if (event?.kind === 'note' && event.guitar) {
-      return { note: event, staffIndex: staff.staffIndex };
+      return { note: event, staffIndex: candidate.staff.staffIndex, corePartId: candidate.part.id };
     }
   }
 
@@ -645,11 +676,12 @@ function buildMaterializedArrangementResponse(
   if (instrument) commands.push({ type: 'fitPartToInstrument', instrument, ...(targetPartId ? { partId: targetPartId } : {}) });
 
   const emitSourceNote = (entry: ScopedNoteInfo, noteIndex: number, targetMeasureNumber: number, targetChord: string) => {
-    const voiceKey = `${targetMeasureNumber}:${entry.note.staffIndex}:${entry.note.voiceId}`;
+    const voiceKey = `${entry.corePartId}:${targetMeasureNumber}:${entry.note.staffIndex}:${entry.note.voiceId}`;
     if (!touchedVoices.has(voiceKey)) {
       touchedVoices.add(voiceKey);
       commands.push({
         type: 'clearMeasureVoice',
+        corePartId: entry.corePartId,
         measureNumber: targetMeasureNumber,
         staffIndex: entry.note.staffIndex,
         voiceId: entry.note.voiceId,
@@ -665,6 +697,7 @@ function buildMaterializedArrangementResponse(
     pairedTabSources.set(entry.note.id, pairedTabSource);
     commands.push({
       type: 'insertNoteAt',
+      corePartId: entry.corePartId,
       measureNumber: targetMeasureNumber,
       staffIndex: entry.note.staffIndex,
       voiceId: entry.note.voiceId,
@@ -678,11 +711,12 @@ function buildMaterializedArrangementResponse(
       preserveOverflow: false,
     });
     if (pairedTabSource) {
-      const tabVoiceKey = `${targetMeasureNumber}:${pairedTabSource.staffIndex}:${pairedTabSource.note.voiceId}`;
+      const tabVoiceKey = `${pairedTabSource.corePartId}:${targetMeasureNumber}:${pairedTabSource.staffIndex}:${pairedTabSource.note.voiceId}`;
       if (!touchedVoices.has(tabVoiceKey)) {
         touchedVoices.add(tabVoiceKey);
         commands.push({
           type: 'clearMeasureVoice',
+          corePartId: pairedTabSource.corePartId,
           measureNumber: targetMeasureNumber,
           staffIndex: pairedTabSource.staffIndex,
           voiceId: pairedTabSource.note.voiceId,
@@ -692,6 +726,7 @@ function buildMaterializedArrangementResponse(
       if (guitar) {
         commands.push({
           type: 'insertNoteAt',
+          corePartId: pairedTabSource.corePartId,
           measureNumber: targetMeasureNumber,
           staffIndex: pairedTabSource.staffIndex,
           voiceId: pairedTabSource.note.voiceId,

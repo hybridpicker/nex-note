@@ -3318,7 +3318,7 @@ export function executeCoreCommands(
         break;
       }
       case 'clearMeasureVoice': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
         if (!found) break;
         const deletedEventIds = new Set(found.voice.events.map((event) => event.id));
         const timing = resolveMeasureTiming(found.staff, found.measure);

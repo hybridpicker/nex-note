@@ -20,7 +20,7 @@ export type NoteLocatorLike = {
 export type LegacyScoreOperation =
   | { type: 'removeArticulations' }
   | { type: 'deleteRange'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
-  | { type: 'clearMeasureVoice'; measureNumber: number; staffIndex: number; voiceId: number }
+  | { type: 'clearMeasureVoice'; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number }
   | ({ type: 'rippleDelete' } & NoteLocatorLike)
   | { type: 'rippleDeleteRange'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
   | { type: 'setKey'; fifths: number }
@@ -202,6 +202,7 @@ export type ScoreCommandCategory = 'content' | 'notation' | 'structure' | 'attri
 export interface ScoreCommandTarget {
   scope: 'document' | 'part' | 'measure' | 'voice' | 'note';
   partId?: string;
+  corePartId?: string;
   measureNumber?: number;
   staffIndex?: number;
   voiceId?: number;
@@ -422,6 +423,7 @@ function getTarget(command: Record<string, unknown>): ScoreCommandTarget {
     return {
       ...target,
       scope: 'voice',
+      corePartId: typeof command.corePartId === 'string' ? command.corePartId : undefined,
       measureNumber: Number(command.measureNumber),
       staffIndex: Number(command.staffIndex),
       voiceId: Number(command.voiceId),
@@ -485,6 +487,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       ensureRange(command, issues);
       break;
     case 'clearMeasureVoice':
+      if (command.corePartId != null) ensureString(command, 'corePartId', issues);
       ensureNumber(command, 'measureNumber', issues, { min: 1 });
       ensureNumber(command, 'staffIndex', issues, { min: 1 });
       ensureNumber(command, 'voiceId', issues, { min: 1 });

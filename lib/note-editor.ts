@@ -204,6 +204,26 @@ function findMeasureForLocator(doc: XmlDocument, locator: NoteLocator): XmlEleme
   return null;
 }
 
+function findMeasureForScopedEdit(
+  doc: XmlDocument,
+  operation: { corePartId?: string | null; measureNumber: number },
+): XmlElementNode | null {
+  const partMatches = (partId: string | null | undefined) => {
+    if (!operation.corePartId) return true;
+    if (!partId) return false;
+    if (partId === operation.corePartId) return true;
+    return `part:${partId}` === operation.corePartId || partId === operation.corePartId.replace(/^part:/, '');
+  };
+  const parts = Array.from(doc.getElementsByTagName('part')).filter((part) => partMatches(part.getAttribute('id')));
+  for (const part of parts) {
+    const measure = Array.from(part.getElementsByTagName('measure')).find((entry) => (
+      parseInt(entry.getAttribute('number') ?? '0', 10) === operation.measureNumber
+    ));
+    if (measure) return measure;
+  }
+  return null;
+}
+
 function removeDirectChildrenByTag(node: XmlElementNode, tag: string) {
   Array.from(node.childNodes).forEach((child) => {
     const element = child as XmlElementNode;
@@ -449,14 +469,7 @@ export function applyNoteEdit(xml: string, op: NoteEditOperation): string {
   } else if (op.type === 'setBarline') {
     setMeasureRightBarline(doc, op.measureNumber, op.barline);
   } else if (op.type === 'insertNote' || op.type === 'insertRest' || op.type === 'insertNoteAt' || op.type === 'insertRestAt') {
-    const measures = doc.getElementsByTagName('measure');
-    let targetMeasure: typeof measures[0] | null = null;
-    for (let i = 0; i < measures.length; i++) {
-      const m = measures[i];
-      if (parseInt(m.getAttribute('number') ?? '0', 10) === op.measureNumber) {
-        targetMeasure = m; break;
-      }
-    }
+    const targetMeasure = findMeasureForScopedEdit(doc, op);
     if (targetMeasure) {
       const note = buildInsertedNote(doc, divisions, op);
       if (op.type === 'insertNoteAt' || op.type === 'insertRestAt') {
@@ -482,6 +495,8 @@ export function applyNoteEdit(xml: string, op: NoteEditOperation): string {
         }
       } else {
         const anchor = findNoteElement(doc, {
+          corePartId: op.corePartId,
+          coreMeasureId: op.coreMeasureId,
           measureNumber: op.measureNumber,
           staffIndex: op.staffIndex,
           voiceId: op.voiceId,
