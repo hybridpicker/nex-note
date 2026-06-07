@@ -1106,6 +1106,8 @@ test('runAiCommandPipeline routes arrangement requests through the arrangement a
   assert.equal(result.model, 'musician-arrangement-engine');
   assert.equal(result.requiresConfirmation, true);
   assert.ok(result.commands.some((command) => command.type === 'addChords'));
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
   assert.ok(result.riskReasons.includes('Arrangement suggestions should stay previewable before apply'));
 });
 
@@ -1130,7 +1132,35 @@ test('runAiCommandPipeline can prepare a local arrangement preview without calli
   assert.equal(result.requiresConfirmation, true);
   assert.ok(result.commands.some((command) => command.type === 'addChords'));
   assert.ok(result.commands.some((command) => command.type === 'addExpressionText'));
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
   assert.ok(result.riskReasons.includes('Arrangement suggestions should stay previewable before apply'));
+});
+
+test('runAiCommandPipeline materializes diatonic alternate lick versions from named chords', async () => {
+  const result = await runAiCommandPipeline({
+    message: 'this is a lick for a7; arrange other version in diatonic system; Gmaj7, F#m7 etc..',
+    xml: EIGHT_MEASURE_READING_XML,
+    provider: 'ollama',
+    ask: async (): Promise<AIResponse> => {
+      throw new Error('should not call model');
+    },
+  });
+
+  assert.ok(!('error' in result));
+  if ('error' in result) return;
+  assert.equal(result.workflow, 'arrangement-assist');
+  assert.equal(result.provider, 'local-layout');
+  assert.equal(result.model, 'musician-arrangement-engine');
+  assert.equal(result.requiresConfirmation, true);
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
+  const chordCommand = result.commands.find((command) => command.type === 'addChords');
+  assert.ok(chordCommand);
+  if (!chordCommand || chordCommand.type !== 'addChords') return;
+  assert.match(chordCommand.chords, /1:Gmaj7/);
+  assert.match(chordCommand.chords, /2:F#m7/);
+  assert.doesNotMatch(chordCommand.chords, /A7/);
 });
 
 test('runAiCommandPipeline targets arrangement instrument fitting at the detected part', async () => {

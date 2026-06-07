@@ -33,6 +33,11 @@ function noteToMidi(note: NoteEvent) {
   return (stepToSemitone[note.pitch.step] ?? 0) + note.pitch.alter + (note.pitch.octave + 1) * 12;
 }
 
+function writtenPitchToMidi(pitch: { step: string; alter: number; octave: number }) {
+  const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  return (stepToSemitone[pitch.step] ?? 0) + pitch.alter + (pitch.octave + 1) * 12;
+}
+
 function noteLabel(note: NoteEvent) {
   const accidental = note.pitch.alter === 1 ? '#' : note.pitch.alter === -1 ? 'b' : '';
   return `${note.pitch.step}${accidental}${note.pitch.octave}`;
@@ -248,6 +253,204 @@ function buildChordPlan(scoped: ScopedNoteInfo[], preferFlats: boolean) {
   return entries.length > 0 ? entries.join(',') : null;
 }
 
+const DIATONIC_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+const STEP_TO_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const DIATONIC_VARIATION_PATTERN = [0, 1, 2, 3, 2, 1, 0, 2, 3, 1, 2, 0] as const;
+
+function normalizeChordSymbol(raw: string) {
+  const compact = raw.replace(/\s+/g, '');
+  const match = compact.match(/^([A-Ga-g])([#b]?)(.*)$/);
+  if (!match) return null;
+  const [, step, accidental, quality] = match;
+  const normalizedQuality = quality
+    .replace(/^min/i, 'm')
+    .replace(/^Maj/i, 'maj');
+  return `${step.toUpperCase()}${accidental}${normalizedQuality}`;
+}
+
+function extractExplicitChordSymbols(message: string) {
+  const symbols: Array<{ symbol: string; index: number }> = [];
+  const chordPattern = /(?<![A-Za-z])([A-Ga-g](?:#|b)?\s*(?:maj|min|m|dim|aug|sus)?\s*(?:6|7|9|11|13)?)(?![A-Za-z])/g;
+  for (const match of message.matchAll(chordPattern)) {
+    const raw = match[1] ?? '';
+    const compact = raw.replace(/\s+/g, '');
+    if (!/[#b0-9]|maj|min|dim|aug|sus|m/.test(compact)) continue;
+    if (/^[a-g]$/.test(compact)) continue;
+    const symbol = normalizeChordSymbol(compact);
+    if (!symbol) continue;
+    symbols.push({ symbol, index: match.index ?? 0 });
+  }
+
+  if (symbols.length > 1) {
+    const firstPrefix = message.slice(Math.max(0, symbols[0]!.index - 12), symbols[0]!.index).toLowerCase();
+    if (/\b(for|over)\s*$/.test(firstPrefix)) return symbols.slice(1).map((entry) => entry.symbol);
+  }
+  return symbols.map((entry) => entry.symbol);
+}
+
+function shouldBuildMaterializedArrangement(message: string, explicitChordCount: number) {
+  const normalized = message.toLowerCase();
+  const asksForArrangement = /\b(arrang(?:e|ement|ing|ed|iere|ieren|iert)|reharmoni[sz]e|reharmon(?:is(?:e|ing)|isieren)|harmonis(?:e|ing|iere|ieren|iert)|accompan(?:iment|y)|begleit(?:e|en|et|ung)?|voic(?:e|ing)|satz)\b/.test(normalized);
+  const asksForConcreteLine = /\b(lick|riff|melody|melodie|line|phrase|version|variation|variant|alternate|alternative|other|another|variante|andere|anderen)\b/.test(normalized);
+  const asksOnlyForSurfaceAnnotation = /\b(chord symbols?|akkordsymbole?|tempo|expression|marking|layout|spacing)\b/.test(normalized);
+  return asksForArrangement && (explicitChordCount > 0 || asksForConcreteLine || !asksOnlyForSurfaceAnnotation);
+}
+
+function parseChordRoot(symbol: string) {
+  const match = symbol.match(/^([A-G])([#b]?)/);
+  if (!match) return null;
+  const step = match[1]!;
+  const alter = match[2] === '#' ? 1 : match[2] === 'b' ? -1 : 0;
+  return { step, alter, pc: (STEP_TO_PC[step] + alter + 12) % 12 };
+}
+
+function chordIntervals(symbol: string) {
+  const quality = symbol.replace(/^[A-G][#b]?/, '').toLowerCase();
+  if (quality.startsWith('dim')) return [0, 3, 6, 9];
+  if (quality.startsWith('sus')) return [0, 5, 7, 10];
+  if (quality.startsWith('m') && !quality.startsWith('maj')) return [0, 3, 7, 10];
+  if (quality.startsWith('maj')) return [0, 4, 7, 11];
+  if (quality.includes('7')) return [0, 4, 7, 10];
+  return [0, 4, 7, 11];
+}
+
+function spelledChordTones(symbol: string) {
+  const root = parseChordRoot(symbol);
+  if (!root) return [];
+  const rootStepIndex = DIATONIC_STEPS.indexOf(root.step as (typeof DIATONIC_STEPS)[number]);
+  if (rootStepIndex < 0) return [];
+
+  return chordIntervals(symbol).map((interval, toneIndex) => {
+    const step = DIATONIC_STEPS[(rootStepIndex + toneIndex * 2) % DIATONIC_STEPS.length]!;
+    const targetPc = (root.pc + interval) % 12;
+    const naturalPc = STEP_TO_PC[step];
+    let alter = targetPc - naturalPc;
+    if (alter > 6) alter -= 12;
+    if (alter < -6) alter += 12;
+    return { step, alter };
+  });
+}
+
+function fitChordToneNearSource(tone: { step: string; alter: number }, sourceMidi: number, lift: number) {
+  let best = { step: tone.step, alter: tone.alter, octave: 4 };
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let octave = 1; octave <= 8; octave += 1) {
+    const candidate = { step: tone.step, alter: tone.alter, octave };
+    const distance = Math.abs(writtenPitchToMidi(candidate) - sourceMidi - lift);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function extractChordSymbolsFromPlan(chordPlan: string | null) {
+  if (!chordPlan) return [];
+  return chordPlan
+    .split(',')
+    .map((entry) => normalizeChordSymbol(entry.trim().split(':')[1] ?? ''))
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+function chooseMaterializedPitch(input: {
+  tones: Array<{ step: string; alter: number }>;
+  source: NoteEvent;
+  noteIndex: number;
+}) {
+  const { tones, source, noteIndex } = input;
+  const sourceMidi = noteToMidi(source);
+  const firstTone = tones[DIATONIC_VARIATION_PATTERN[noteIndex % DIATONIC_VARIATION_PATTERN.length] % Math.max(1, tones.length)];
+  if (!firstTone) return null;
+  let pitch = fitChordToneNearSource(firstTone, sourceMidi, noteIndex % 4 === 3 ? 3 : 0);
+  if (
+    pitch.step === source.pitch.step
+    && pitch.alter === source.pitch.alter
+    && pitch.octave === source.pitch.octave
+    && tones.length > 1
+  ) {
+    const nextTone = tones[(DIATONIC_VARIATION_PATTERN[noteIndex % DIATONIC_VARIATION_PATTERN.length] + 1) % tones.length]!;
+    pitch = fitChordToneNearSource(nextTone, sourceMidi, 0);
+  }
+  return pitch;
+}
+
+function buildMaterializedArrangementResponse(
+  message: string,
+  scoped: ScopedNoteInfo[],
+  expression: string,
+  tempo: number | null,
+  chordPlan: string | null,
+  instrument: InstrumentKey | null,
+  targetPartId?: string,
+): ParsedIntentJson | null {
+  const explicitChords = extractExplicitChordSymbols(message);
+  if (!shouldBuildMaterializedArrangement(message, explicitChords.length)) return null;
+  const targetChords = explicitChords.length > 0 ? explicitChords : extractChordSymbolsFromPlan(chordPlan);
+  if (targetChords.length === 0) return null;
+
+  const first = scoped[0];
+  if (!first) return null;
+  const commands: ParsedIntentJson['commands'] = [];
+  const touchedVoices = new Set<string>();
+  const measureNumbers = [...new Set(scoped.map((entry) => entry.measure.measureNumber))].sort((a, b) => a - b);
+  const targetChordPlan = measureNumbers
+    .map((measureNumber, index) => `${measureNumber}:${targetChords[index % targetChords.length]}`)
+    .join(',');
+
+  commands.push({ type: 'addChords', chords: targetChordPlan });
+  commands.push({ type: 'addExpressionText', measureNumber: first.measure.measureNumber, text: expression, placement: 'above' });
+  if (tempo) commands.push({ type: 'setTempo', bpm: tempo });
+  if (instrument) commands.push({ type: 'fitPartToInstrument', instrument, ...(targetPartId ? { partId: targetPartId } : {}) });
+
+  scoped.forEach((entry, noteIndex) => {
+    const voiceKey = `${entry.measure.measureNumber}:${entry.note.staffIndex}:${entry.note.voiceId}`;
+    if (!touchedVoices.has(voiceKey)) {
+      touchedVoices.add(voiceKey);
+      commands.push({
+        type: 'clearMeasureVoice',
+        measureNumber: entry.measure.measureNumber,
+        staffIndex: entry.note.staffIndex,
+        voiceId: entry.note.voiceId,
+      });
+    }
+
+    const measureIndex = Math.max(0, measureNumbers.indexOf(entry.measure.measureNumber));
+    const chord = targetChords[measureIndex % targetChords.length]!;
+    const tones = spelledChordTones(chord);
+    const pitch = chooseMaterializedPitch({ tones, source: entry.note, noteIndex });
+    if (!pitch) return;
+    commands.push({
+      type: 'insertNoteAt',
+      measureNumber: entry.measure.measureNumber,
+      staffIndex: entry.note.staffIndex,
+      voiceId: entry.note.voiceId,
+      timestampNum: entry.note.timestampNum,
+      timestampDen: entry.note.timestampDen,
+      step: pitch.step,
+      octave: pitch.octave,
+      alter: pitch.alter,
+      durationType: entry.note.durationType ?? 'quarter',
+      ...(entry.note.isDotted ? { isDotted: true } : {}),
+      preserveOverflow: false,
+    });
+  });
+
+  return {
+    commands,
+    explanation: explicitChords.length > 0
+      ? `I am preparing a notated alternate version over ${targetChords.join(', ')} while preserving the original rhythm.`
+      : `I am preparing a notated arrangement from the detected harmony while preserving the original rhythm.`,
+    confidence: 'high',
+    ambiguities: [],
+    plan: [
+      'Read the source lick rhythm',
+      `Map the arrangement to ${targetChords.join(', ')}`,
+      'Replace the selected melody voice with concrete chord-tone motion',
+    ],
+  };
+}
+
 function keyNameFromFifths(fifths: number, german: boolean) {
   const names: Record<number, string> = german
     ? {
@@ -326,6 +529,8 @@ function buildArrangementResponse(
   const chordPlan = buildChordPlan(scoped, preferFlats);
   const commands: ParsedIntentJson['commands'] = [];
   const targetPartId = scoped[0]?.partId;
+  const materializedArrangement = buildMaterializedArrangementResponse(message, scoped, expression, tempo, chordPlan, instrument, targetPartId);
+  if (materializedArrangement) return materializedArrangement;
 
   if (chordPlan) commands.push({ type: 'addChords', chords: chordPlan });
   commands.push({ type: 'addExpressionText', measureNumber: scoped[0]!.measure.measureNumber, text: expression, placement: 'above' });
