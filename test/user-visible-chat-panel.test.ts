@@ -171,6 +171,66 @@ test('ChatPanel copies the full chat transcript for debugging', async () => {
   });
 });
 
+test('ChatPanel copy log includes pending preview apply state and command payload', async () => {
+  let copiedText = '';
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      clipboard: {
+        async writeText(text: string) {
+          copiedText = text;
+        },
+      },
+    },
+  });
+  Object.assign(globalThis, {
+    fetch: async () => createFetchResponse({
+      requiresConfirmation: true,
+      explanation: 'Prepared alternate lick.',
+      workflowLabel: 'Arrangement assistant',
+      commands: [
+        { type: 'addChords', chords: '1:Gmaj7,2:F#m7' },
+        { type: 'clearMeasureVoice', measureNumber: 1, staffIndex: 1, voiceId: 1 },
+        { type: 'insertNoteAt', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, step: 'G', octave: 4, alter: 0, durationType: 'quarter' },
+      ],
+      affectedMeasures: [1, 2],
+      ambiguities: [],
+      plan: ['Replace the selected melody voice with concrete chord-tone motion'],
+      riskReasons: ['Arrangement suggestions should stay previewable before apply'],
+      validatorFindings: [],
+      provider: 'local-layout',
+      model: 'musician-arrangement-engine',
+      latencyMs: 0,
+      taskState: { scoreKey: 'score:test', lastWorkflow: 'arrangement-assist' },
+    }),
+  });
+
+  let renderer: Renderer | null = null;
+  await act(async () => {
+    renderer = create(React.createElement(ChatPanel, buildChatPanelProps()));
+  });
+
+  const root = renderer!.root;
+  await sendMessage(root, 'arrange other version');
+  const copyButton = getCopyLogButton(root);
+  assert.ok(copyButton);
+
+  await act(async () => {
+    await copyButton.props.onClick();
+  });
+
+  assert.match(copiedText, /\[pending-preview\]/);
+  assert.match(copiedText, /status: NOT APPLIED/);
+  assert.match(copiedText, /commands: 3 \(addChords, clearMeasureVoice, insertNoteAt\)/);
+  assert.match(copiedText, /affectedMeasures: 1, 2/);
+  assert.match(copiedText, /"type":"insertNoteAt"/);
+  assert.match(copiedText, /nextAction: click Apply or type "apply" to change the score/);
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
 test('ChatPanel discards a pending preview when a new request arrives and applies the fresh response', async () => {
   const fetchCalls: string[] = [];
   const xmlUpdates: Array<{ xml: string; label?: string }> = [];

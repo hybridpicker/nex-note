@@ -140,11 +140,42 @@ function buildApplyFailureText(preview: PendingConfirmation, result: ApplyComman
   ].filter(Boolean).join('\n');
 }
 
-function formatChatTranscript(messages: Message[]) {
-  return messages.map((message) => {
+function formatCommandDebug(commands: ScoreCommand[], maxCommands = 8) {
+  const visible = commands.slice(0, maxCommands).map((command, index) => {
+    try {
+      return `  ${index + 1}. ${JSON.stringify(command)}`;
+    } catch {
+      return `  ${index + 1}. ${command.type}`;
+    }
+  });
+  const hidden = commands.length - visible.length;
+  return `${visible.join('\n')}${hidden > 0 ? `\n  ... ${hidden} more command${hidden === 1 ? '' : 's'}` : ''}`;
+}
+
+function formatPendingPreviewTranscript(preview: PendingConfirmation | null) {
+  if (!preview) return '';
+  return [
+    '[pending-preview]',
+    'status: NOT APPLIED',
+    `request: ${preview.requestLabel}`,
+    preview.workflowLabel ? `workflow: ${preview.workflowLabel}` : '',
+    `commands: ${preview.commands.length}${summarizeCommandTypes(preview.commands) ? ` (${summarizeCommandTypes(preview.commands)})` : ''}`,
+    preview.affectedMeasures.length ? `affectedMeasures: ${preview.affectedMeasures.join(', ')}` : 'affectedMeasures: none',
+    preview.riskReasons.length ? `confirmationReasons: ${preview.riskReasons.join('; ')}` : '',
+    preview.plan.length ? `plan: ${preview.plan.join(' -> ')}` : '',
+    'commandPayload:',
+    formatCommandDebug(preview.commands),
+    'nextAction: click Apply or type "apply" to change the score; click Cancel or type "cancel" to discard.',
+  ].filter(Boolean).join('\n');
+}
+
+function formatChatTranscript(messages: Message[], pendingPreview: PendingConfirmation | null = null) {
+  const transcript = messages.map((message) => {
     const meta = message.model ? ` (${message.model}${typeof message.latencyMs === 'number' ? ` · ${message.latencyMs}ms` : ''})` : '';
     return `[${message.role}${meta}]\n${message.text}`;
   }).join('\n\n');
+  const pending = formatPendingPreviewTranscript(pendingPreview);
+  return [transcript, pending].filter(Boolean).join('\n\n');
 }
 
 async function copyTextToClipboard(text: string) {
@@ -471,7 +502,7 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
   }
 
   async function copyTranscript() {
-    const transcript = formatChatTranscript(messages);
+    const transcript = formatChatTranscript(messages, pendingConfirmation);
     if (!transcript) return;
     try {
       const copied = await copyTextToClipboard(transcript);
