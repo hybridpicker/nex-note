@@ -1166,19 +1166,39 @@ test('runAiCommandPipeline materializes diatonic alternate lick versions from na
   assert.equal(result.requiresConfirmation, true);
   assert.match(result.explanation, /after the source lick/i);
   assert.match(result.explanation, /original measures stay unchanged/i);
+  assert.match(result.explanation, /chromatic figures/i);
   assert.match(result.explanation, /score operations are ready, but no notes have changed yet/i);
   assert.match(result.explanation, /click Apply or type "apply"/i);
-  assert.equal(result.commands.filter((command) => command.type === 'insertMeasureAfter').length, 2);
+  assert.equal(result.commands.filter((command) => command.type === 'insertMeasureAfter').length, 4);
   assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice' && command.measureNumber === 3));
   assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice' && command.measureNumber === 4));
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice' && command.measureNumber === 5));
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice' && command.measureNumber === 6));
   assert.ok(!result.commands.some((command) => command.type === 'clearMeasureVoice' && (command.measureNumber === 1 || command.measureNumber === 2)));
   assert.ok(result.commands.some((command) => command.type === 'insertNoteAt' && command.measureNumber === 3));
   assert.ok(result.commands.some((command) => command.type === 'insertNoteAt' && command.measureNumber === 4));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt' && command.measureNumber === 5));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt' && command.measureNumber === 6));
+  const notesByMeasure = new Map<number, string[]>();
+  result.commands
+    .filter((command) => command.type === 'insertNoteAt')
+    .forEach((command) => {
+      const existing = notesByMeasure.get(command.measureNumber) ?? [];
+      const accidental = command.alter === 1 ? '#' : command.alter === -1 ? 'b' : '';
+      existing.push(`${command.step}${accidental}${command.octave}`);
+      notesByMeasure.set(command.measureNumber, existing);
+    });
+  assert.deepEqual(notesByMeasure.get(3), ['G4', 'B4', 'D5', 'F#5']);
+  assert.deepEqual(notesByMeasure.get(4), ['F#5', 'D5', 'B4', 'G4']);
+  assert.deepEqual(notesByMeasure.get(5), ['F#4', 'A4', 'C#5', 'E5']);
+  assert.deepEqual(notesByMeasure.get(6), ['E5', 'C#5', 'A4', 'F#4']);
   const chordCommand = result.commands.find((command) => command.type === 'addChords');
   assert.ok(chordCommand);
   if (!chordCommand || chordCommand.type !== 'addChords') return;
   assert.match(chordCommand.chords, /3:Gmaj7/);
-  assert.match(chordCommand.chords, /4:F#m7/);
+  assert.match(chordCommand.chords, /4:Gmaj7/);
+  assert.match(chordCommand.chords, /5:F#m7/);
+  assert.match(chordCommand.chords, /6:F#m7/);
   assert.doesNotMatch(chordCommand.chords, /1:Gmaj7/);
   assert.doesNotMatch(chordCommand.chords, /2:F#m7/);
   assert.doesNotMatch(chordCommand.chords, /A7/);

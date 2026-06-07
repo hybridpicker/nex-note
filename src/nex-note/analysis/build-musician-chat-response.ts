@@ -256,6 +256,36 @@ function buildChordPlan(scoped: ScopedNoteInfo[], preferFlats: boolean) {
 const DIATONIC_STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
 const STEP_TO_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const DIATONIC_VARIATION_PATTERN = [0, 1, 2, 3, 2, 1, 0, 2, 3, 1, 2, 0] as const;
+const SHARP_SPELLINGS = [
+  { step: 'C', alter: 0 },
+  { step: 'C', alter: 1 },
+  { step: 'D', alter: 0 },
+  { step: 'D', alter: 1 },
+  { step: 'E', alter: 0 },
+  { step: 'F', alter: 0 },
+  { step: 'F', alter: 1 },
+  { step: 'G', alter: 0 },
+  { step: 'G', alter: 1 },
+  { step: 'A', alter: 0 },
+  { step: 'A', alter: 1 },
+  { step: 'B', alter: 0 },
+] as const;
+const FLAT_SPELLINGS = [
+  { step: 'C', alter: 0 },
+  { step: 'D', alter: -1 },
+  { step: 'D', alter: 0 },
+  { step: 'E', alter: -1 },
+  { step: 'E', alter: 0 },
+  { step: 'F', alter: 0 },
+  { step: 'G', alter: -1 },
+  { step: 'G', alter: 0 },
+  { step: 'A', alter: -1 },
+  { step: 'A', alter: 0 },
+  { step: 'B', alter: -1 },
+  { step: 'B', alter: 0 },
+] as const;
+
+type ChordSymbolMatch = { symbol: string; index: number };
 
 function normalizeChordSymbol(raw: string) {
   const compact = raw.replace(/\s+/g, '');
@@ -268,8 +298,8 @@ function normalizeChordSymbol(raw: string) {
   return `${step.toUpperCase()}${accidental}${normalizedQuality}`;
 }
 
-function extractExplicitChordSymbols(message: string) {
-  const symbols: Array<{ symbol: string; index: number }> = [];
+function collectChordSymbolMatches(message: string): ChordSymbolMatch[] {
+  const symbols: ChordSymbolMatch[] = [];
   const chordPattern = /(?<![A-Za-z])([A-Ga-g](?:#|b)?\s*(?:maj|min|m|dim|aug|sus)?\s*(?:6|7|9|11|13)?)(?![A-Za-z])/g;
   for (const match of message.matchAll(chordPattern)) {
     const raw = match[1] ?? '';
@@ -280,12 +310,23 @@ function extractExplicitChordSymbols(message: string) {
     if (!symbol) continue;
     symbols.push({ symbol, index: match.index ?? 0 });
   }
+  return symbols;
+}
 
+function extractExplicitChordSymbols(message: string) {
+  const symbols = collectChordSymbolMatches(message);
   if (symbols.length > 1) {
     const firstPrefix = message.slice(Math.max(0, symbols[0]!.index - 12), symbols[0]!.index).toLowerCase();
     if (/\b(for|over)\s*$/.test(firstPrefix)) return symbols.slice(1).map((entry) => entry.symbol);
   }
   return symbols.map((entry) => entry.symbol);
+}
+
+function extractSourceChordSymbol(message: string) {
+  const symbols = collectChordSymbolMatches(message);
+  if (symbols.length < 2) return null;
+  const firstPrefix = message.slice(Math.max(0, symbols[0]!.index - 12), symbols[0]!.index).toLowerCase();
+  return /\b(for|over)\s*$/.test(firstPrefix) ? symbols[0]!.symbol : null;
 }
 
 function shouldBuildMaterializedArrangement(message: string, explicitChordCount: number) {
@@ -345,6 +386,76 @@ function fitChordToneNearSource(tone: { step: string; alter: number }, sourceMid
   return best;
 }
 
+function normalizeNearbySemitoneShift(semitones: number) {
+  let shift = semitones;
+  while (shift > 6) shift -= 12;
+  while (shift < -6) shift += 12;
+  return shift;
+}
+
+function chordDegreeIndexForPitch(symbol: string, pitchClass: number) {
+  const root = parseChordRoot(symbol);
+  if (!root) return null;
+  const normalizedPitchClass = ((pitchClass % 12) + 12) % 12;
+  const intervals = chordIntervals(symbol);
+  const index = intervals.findIndex((interval) => ((root.pc + interval) % 12) === normalizedPitchClass);
+  return index >= 0 ? index : null;
+}
+
+function pitchNearMidiFromSpelling(tone: { step: string; alter: number }, targetMidi: number) {
+  let best = { step: tone.step, alter: tone.alter, octave: Math.max(1, Math.min(8, Math.floor(targetMidi / 12) - 1)) };
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let octave = 1; octave <= 8; octave += 1) {
+    const candidate = { step: tone.step, alter: tone.alter, octave };
+    const distance = Math.abs(writtenPitchToMidi(candidate) - targetMidi);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function spellMidiPitch(midi: number, preferFlats: boolean) {
+  const pitchClass = ((midi % 12) + 12) % 12;
+  const spelling = (preferFlats ? FLAT_SPELLINGS : SHARP_SPELLINGS)[pitchClass] ?? SHARP_SPELLINGS[0]!;
+  return {
+    step: spelling.step,
+    alter: spelling.alter,
+    octave: Math.floor(midi / 12) - 1,
+  };
+}
+
+function transposeMotivicLickPitch(input: {
+  source: NoteEvent;
+  sourceChord: string;
+  targetChord: string;
+}) {
+  const { source, sourceChord, targetChord } = input;
+  const sourceRoot = parseChordRoot(sourceChord);
+  const targetRoot = parseChordRoot(targetChord);
+  if (!sourceRoot || !targetRoot) return null;
+
+  const sourceIntervals = chordIntervals(sourceChord);
+  const targetIntervals = chordIntervals(targetChord);
+  const sourceMidi = noteToMidi(source);
+  const sourcePitchClass = ((sourceMidi % 12) + 12) % 12;
+  const degreeIndex = chordDegreeIndexForPitch(sourceChord, sourcePitchClass);
+  let targetMidi = sourceMidi + normalizeNearbySemitoneShift(targetRoot.pc - sourceRoot.pc);
+
+  if (degreeIndex != null) {
+    const sourceInterval = sourceIntervals[degreeIndex];
+    const targetInterval = targetIntervals[degreeIndex];
+    if (typeof sourceInterval === 'number' && typeof targetInterval === 'number') {
+      targetMidi += targetInterval - sourceInterval;
+      const targetTone = spelledChordTones(targetChord)[degreeIndex];
+      if (targetTone) return pitchNearMidiFromSpelling(targetTone, targetMidi);
+    }
+  }
+
+  return spellMidiPitch(targetMidi, targetRoot.alter < 0);
+}
+
 function extractChordSymbolsFromPlan(chordPlan: string | null) {
   if (!chordPlan) return [];
   return chordPlan
@@ -397,6 +508,8 @@ function buildMaterializedArrangementResponse(
   const shouldAppendAlternateVersion = explicitChords.length > 0
     && /\b(lick|version|variation|variant|alternate|other|diatonic|variante|andere|diatonisch)\b/i.test(message);
   const sourceLastMeasure = sourceMeasureNumbers[sourceMeasureNumbers.length - 1] ?? first.measure.measureNumber;
+  const sourceMeasureCount = Math.max(1, sourceMeasureNumbers.length);
+  const sourceChord = extractSourceChordSymbol(message) ?? extractChordSymbolsFromPlan(chordPlan)[0] ?? null;
   const targetMeasureBySource = new Map<number, number>();
 
   sourceMeasureNumbers.forEach((measureNumber, index) => {
@@ -407,13 +520,20 @@ function buildMaterializedArrangementResponse(
   });
 
   if (shouldAppendAlternateVersion) {
-    sourceMeasureNumbers.forEach((_measureNumber, index) => {
+    Array.from({ length: sourceMeasureCount * targetChords.length }, (_value, index) => {
       commands.push({ type: 'insertMeasureAfter', measureNumber: sourceLastMeasure + index });
     });
   }
 
-  const targetChordPlan = sourceMeasureNumbers
-    .map((measureNumber, index) => `${targetMeasureBySource.get(measureNumber) ?? measureNumber}:${targetChords[index % targetChords.length]}`)
+  const targetChordPlan = (shouldAppendAlternateVersion
+    ? targetChords.flatMap((targetChord, chordIndex) => (
+        sourceMeasureNumbers.map((measureNumber, measureIndex) => (
+          `${sourceLastMeasure + 1 + chordIndex * sourceMeasureCount + measureIndex}:${targetChord}`
+        ))
+      ))
+    : sourceMeasureNumbers
+        .map((measureNumber, index) => `${targetMeasureBySource.get(measureNumber) ?? measureNumber}:${targetChords[index % targetChords.length]}`)
+  )
     .join(',');
 
   commands.push({ type: 'addChords', chords: targetChordPlan });
@@ -426,8 +546,7 @@ function buildMaterializedArrangementResponse(
   if (tempo) commands.push({ type: 'setTempo', bpm: tempo });
   if (instrument) commands.push({ type: 'fitPartToInstrument', instrument, ...(targetPartId ? { partId: targetPartId } : {}) });
 
-  scoped.forEach((entry, noteIndex) => {
-    const targetMeasureNumber = targetMeasureBySource.get(entry.measure.measureNumber) ?? entry.measure.measureNumber;
+  const emitSourceNote = (entry: ScopedNoteInfo, noteIndex: number, targetMeasureNumber: number, targetChord: string) => {
     const voiceKey = `${targetMeasureNumber}:${entry.note.staffIndex}:${entry.note.voiceId}`;
     if (!touchedVoices.has(voiceKey)) {
       touchedVoices.add(voiceKey);
@@ -439,10 +558,10 @@ function buildMaterializedArrangementResponse(
       });
     }
 
-    const measureIndex = Math.max(0, sourceMeasureNumbers.indexOf(entry.measure.measureNumber));
-    const chord = targetChords[measureIndex % targetChords.length]!;
-    const tones = spelledChordTones(chord);
-    const pitch = chooseMaterializedPitch({ tones, source: entry.note, noteIndex });
+    const tones = spelledChordTones(targetChord);
+    const pitch = shouldAppendAlternateVersion && sourceChord
+      ? transposeMotivicLickPitch({ source: entry.note, sourceChord, targetChord })
+      : chooseMaterializedPitch({ tones, source: entry.note, noteIndex });
     if (!pitch) return;
     commands.push({
       type: 'insertNoteAt',
@@ -458,12 +577,28 @@ function buildMaterializedArrangementResponse(
       ...(entry.note.isDotted ? { isDotted: true } : {}),
       preserveOverflow: false,
     });
-  });
+  };
+
+  if (shouldAppendAlternateVersion) {
+    targetChords.forEach((targetChord, chordIndex) => {
+      scoped.forEach((entry, noteIndex) => {
+        const measureIndex = Math.max(0, sourceMeasureNumbers.indexOf(entry.measure.measureNumber));
+        const targetMeasureNumber = sourceLastMeasure + 1 + chordIndex * sourceMeasureCount + measureIndex;
+        emitSourceNote(entry, noteIndex, targetMeasureNumber, targetChord);
+      });
+    });
+  } else {
+    scoped.forEach((entry, noteIndex) => {
+      const targetMeasureNumber = targetMeasureBySource.get(entry.measure.measureNumber) ?? entry.measure.measureNumber;
+      const measureIndex = Math.max(0, sourceMeasureNumbers.indexOf(entry.measure.measureNumber));
+      emitSourceNote(entry, noteIndex, targetMeasureNumber, targetChords[measureIndex % targetChords.length]!);
+    });
+  }
 
   return {
     commands,
     explanation: explicitChords.length > 0
-      ? `I prepared a notated alternate-version preview over ${targetChords.join(', ')} after the source lick while preserving the original rhythm. The original measures stay unchanged. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`
+      ? `I prepared a notated alternate-version preview over ${targetChords.join(', ')} after the source lick while preserving the original rhythm and chromatic figures. The original measures stay unchanged. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`
       : `I prepared a notated arrangement preview from the detected harmony while preserving the original rhythm. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`,
     confidence: 'high',
     ambiguities: [],
@@ -471,7 +606,7 @@ function buildMaterializedArrangementResponse(
       'Read the source lick rhythm',
       `Map the arrangement to ${targetChords.join(', ')}`,
       shouldAppendAlternateVersion
-        ? 'Insert the diatonic variation after the source lick'
+        ? 'Transpose the same lick shape once per target chord after the source lick'
         : 'Replace the selected melody voice with concrete chord-tone motion',
     ],
   };
