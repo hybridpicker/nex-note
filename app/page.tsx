@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 const founderMailto =
   "mailto:lukas@schoensgibl.com?subject=nex-note%20founder%20app%20build&body=Hi%20Lukas%2C%0A%0AI%20want%20to%20test%20the%20nex-note%20downloadable%20app.%0A%0AI%20am%20a%3A%20%5Bmusic%20teacher%2Fguitar%20teacher%2Fchoir%20director%2Fschool%2Farranger%2Fmusician%5D%0AMy%20main%20file%20formats%20are%3A%20%5BMusicXML%2FMXL%2FMSCZ%2FPDF%2Fphoto%2FGuitarPro%2FMIDI%5D%0AI%20can%20submit%20files%20that%20are%3A%20%5Bown%2Fself-created%2Flicensed%2Fpublic-domain%5D%0AI%20need%20nex-note%20for%3A%20%5Bprivate%20archive%2FAI%20editing%2Farranging%2Fexport%2Fprivate%20embeds%5D%0A";
@@ -53,7 +55,23 @@ function Eyebrow({ children }: { children: ReactNode }) {
   );
 }
 
-export default function LandingPage() {
+function isLocalAppHost(host: string) {
+  const normalized = host.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized.startsWith("localhost:")
+    || normalized === "127.0.0.1"
+    || normalized.startsWith("127.0.0.1:")
+    || normalized === "::1"
+    || normalized === "[::1]"
+    || normalized.startsWith("[::1]:");
+}
+
+export default async function LandingPage() {
+  const host = (await headers()).get("host") ?? "";
+  if (isLocalAppHost(host)) {
+    redirect(webAlphaHref);
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f8f8] text-[#111312]">
       <section className="relative flex min-h-[90vh] overflow-hidden border-b border-[#e2e5e3] bg-[#f7f8f8]">

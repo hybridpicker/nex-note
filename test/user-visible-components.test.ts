@@ -5,6 +5,7 @@ import React from 'react';
 import { act, create, type ReactTestInstance } from 'react-test-renderer';
 
 import NotationToolbar from '../components/NotationToolbar.tsx';
+import NoteInputToolbar from '../components/NoteInputToolbar.tsx';
 import LeftNotationSidebar from '../components/LeftNotationSidebar.tsx';
 import CommandCenter from '../components/CommandCenter.tsx';
 import FileMenu from '../components/FileMenu.tsx';
@@ -173,6 +174,13 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     layoutCleanupLoading: false,
     ...overrides,
   } as React.ComponentProps<typeof NotationToolbar>;
+}
+
+function noteInputToolbarProps(overrides: Partial<React.ComponentProps<typeof NoteInputToolbar>> = {}): React.ComponentProps<typeof NoteInputToolbar> {
+  return {
+    ...(toolbarProps() as unknown as React.ComponentProps<typeof NoteInputToolbar>),
+    ...overrides,
+  };
 }
 
 function paletteProps(overrides: Partial<React.ComponentProps<typeof EditPalette>> = {}): React.ComponentProps<typeof EditPalette> {
@@ -647,8 +655,13 @@ test('NotationToolbar starts note input when a duration button is clicked', () =
   });
 
   const root = renderer!.root;
+  const quarterDurationButton = root.findAllByType('button').find((button) => (
+    typeof button.props.title === 'string'
+    && button.props.title.startsWith('Quarter note: 5')
+    && button.props.title.includes('64th note: 1')
+  ));
   act(() => {
-    root.findAllByProps({ title: 'Quarter note (5)' })[0].props.onClick();
+    quarterDurationButton!.props.onClick();
   });
 
   assert.equal(toggledNoteInput, 1);
@@ -674,8 +687,13 @@ test('NotationToolbar changes the selected note duration without starting note i
   });
 
   const root = renderer!.root;
+  const quarterDurationButton = root.findAllByType('button').find((button) => (
+    typeof button.props.title === 'string'
+    && button.props.title.startsWith('Quarter note: 5')
+    && button.props.title.includes('64th note: 1')
+  ));
   act(() => {
-    root.findAllByProps({ title: 'Quarter note (5)' })[0].props.onClick();
+    quarterDurationButton!.props.onClick();
   });
 
   assert.equal(toggledNoteInput, 0);
@@ -765,7 +783,13 @@ test('NotationToolbar exposes consistent shortcut hints and pitched-note disable
 
   let root = renderer!.root;
   let titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
-  assert.ok(titles.includes('Quarter note (5)'));
+  assert.ok(titles.some((title) => (
+    typeof title === 'string'
+    && title.startsWith('Quarter note: 5')
+    && title.includes('Duration shortcuts (only when Note Input is active)')
+    && title.includes('64th note: 1')
+    && title.includes('Dotted note: .')
+  )));
   assert.ok(titles.includes('Voice 3 (Cmd/Ctrl+Alt/Option+3)'));
   assert.ok(titles.includes('Flat (-)'));
   assert.ok(titles.includes('Toggle slur (S) - Select a pitched note first'));
@@ -781,6 +805,33 @@ test('NotationToolbar exposes consistent shortcut hints and pitched-note disable
   titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
   assert.ok(titles.includes('Set active note to F (F)'));
   assert.ok(titles.includes('Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)'));
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
+test('NoteInputToolbar exposes the full Notes shortcut map on the sidebar header', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NoteInputToolbar, noteInputToolbarProps({
+      placement: 'sidebar',
+      noteInputMode: true,
+    })));
+  });
+
+  const root = renderer!.root;
+  const notesHeader = root.findAll((node) => (
+    node.type === 'button'
+    && typeof node.props.title === 'string'
+    && node.props.title.includes('Duration shortcuts (only when Note Input is active)')
+  ))[0];
+
+  assert.ok(notesHeader.props.title.includes('64th note: 1'));
+  assert.ok(notesHeader.props.title.includes('Quarter note: 5'));
+  assert.ok(notesHeader.props.title.includes('Dotted note: .'));
+  assert.ok(notesHeader.props.title.includes('Sharp: +'));
 
   act(() => {
     renderer?.unmount();

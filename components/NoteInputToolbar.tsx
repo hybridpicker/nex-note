@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, ArticulationKind, BarlineKind, DynamicKind, GuitarTechniqueKind, TupletNumber } from '@/hooks/useNoteEditor';
 import { AccidentalGlyph, BarlineGlyph, NoteDurationGlyph, RestGlyph } from '@/components/NotationGlyphs';
 import { useI18n, type TranslationKey } from '@/lib/i18n';
+import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { GUITAR_TUNINGS, resolveGuitarFretPitch, resolveGuitarTuning, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { QWERTY_PIANO_KEYS } from '@/src/score-input/repitch-mode';
@@ -31,6 +32,18 @@ const DURATIONS: { key: NoteDuration; titleKey: TranslationKey }[] = [
   { key: '2',  titleKey: 'note.duration.2' },
   { key: '1',  titleKey: 'note.duration.1' },
 ];
+
+const DURATION_SHORTCUTS: Record<NoteDuration, string> = {
+  '64': '1',
+  '32': '2',
+  '16': '3',
+  '8': '4',
+  '4': '5',
+  '2': '6',
+  '1': '7',
+  breve: '8',
+  long: '9',
+};
 
 const ACCIDENTALS: {
   value: Exclude<AccidentalChoice, null>;
@@ -315,12 +328,14 @@ const SIDEBAR_SECTION_DEFAULTS: Record<SidebarSectionId, boolean> = {
 function SidebarSection({
   title,
   summary,
+  hoverTitle,
   open,
   onToggle,
   children,
 }: {
   title: string;
   summary?: React.ReactNode;
+  hoverTitle?: string;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
@@ -331,6 +346,7 @@ function SidebarSection({
         type="button"
         className="nex-note-sidebar-section-toggle"
         aria-expanded={open}
+        title={hoverTitle}
         onClick={onToggle}
       >
         <span className="min-w-0">
@@ -359,6 +375,10 @@ function SidebarSection({
 
 function withShortcut(label: string, shortcut: string) {
   return `${label} (${shortcut})`;
+}
+
+function stripShortcutSuffix(label: string) {
+  return label.replace(/\s*\([^)]*\)\s*$/, '');
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -455,6 +475,29 @@ export default function NoteInputToolbar({
     () => QWERTY_PIANO_KEYS.filter((entry) => entry.row === 'upper'),
     [],
   );
+  const noteSectionShortcutTitle = useMemo(() => {
+    const durationLines = DURATIONS.map((duration) => (
+      `${stripShortcutSuffix(t(duration.titleKey))}: ${DURATION_SHORTCUTS[duration.key]}`
+    ));
+    const accidentalLines = ACCIDENTALS.map((accidental) => (
+      `${accidental.title}: ${formatShortcutHint(ACCIDENTAL_SHORTCUTS[accidental.value])}`
+    ));
+
+    return [
+      'Duration shortcuts (only when Note Input is active)',
+      ...durationLines,
+      `${stripShortcutSuffix(t('note.dotted'))}: .`,
+      '',
+      'Accidental shortcuts',
+      ...accidentalLines,
+    ].join('\n');
+  }, [t]);
+
+  const durationTitle = (duration: (typeof DURATIONS)[number]) => [
+    `${stripShortcutSuffix(t(duration.titleKey))}: ${DURATION_SHORTCUTS[duration.key]}`,
+    '',
+    noteSectionShortcutTitle,
+  ].join('\n');
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined;
@@ -515,7 +558,7 @@ export default function NoteInputToolbar({
         <TBtn
           key={d.key}
           onClick={() => onDurationChange(d.key)}
-          title={t(d.titleKey)}
+          title={durationTitle(d)}
           active={selectedDuration === d.key}
         >
           {NOTE_ICONS[d.key]}
@@ -990,6 +1033,7 @@ export default function NoteInputToolbar({
         <SidebarSection
           title={t('note.section.notes')}
           summary={`${t(selectedDurationTitleKey)} · ${isDotted ? t('note.dotted') : selectedAccidentalLabel}`}
+          hoverTitle={noteSectionShortcutTitle}
           open={sidebarSections.notes}
           onToggle={() => toggleSidebarSection('notes')}
         >
