@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeAiProviderRequestSettings, type AiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { isAiEnabledForRequest } from '@/lib/public-ai-access';
-
-const OLLAMA_BASE = process.env.OLLAMA_API_KEY
-  ? 'https://ollama.com'
-  : 'http://localhost:11434';
-
-const OLLAMA_HEADERS: Record<string, string> = process.env.OLLAMA_API_KEY
-  ? { Authorization: `Bearer ${process.env.OLLAMA_API_KEY}` }
-  : {};
 
 const isCloud = !!process.env.OLLAMA_API_KEY;
 const LOCAL_OLLAMA_BASE = 'http://localhost:11434';
@@ -49,7 +42,20 @@ function mergeModels(...groups: Array<Array<{ id: string; label: string }>>) {
   });
 }
 
-export async function GET(req: NextRequest) {
+function getOllamaConnection(settings?: AiProviderRequestSettings) {
+  const apiKey = settings?.apiKeys?.ollama || process.env.OLLAMA_API_KEY || '';
+  const baseUrl = settings?.ollamaBaseUrl
+    || (apiKey ? 'https://ollama.com' : 'http://localhost:11434');
+  const headers: Record<string, string> = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return {
+    baseUrl: baseUrl.replace(/\/+$/, ''),
+    headers,
+    isCloud: Boolean(apiKey) && !settings?.ollamaBaseUrl,
+  };
+}
+
+async function listOllamaModels(req: NextRequest, settings?: AiProviderRequestSettings) {
   if (!isAiEnabledForRequest(req)) {
     return NextResponse.json({
       models: [],
@@ -58,6 +64,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const connection = getOllamaConnection(settings);
   let localModels: Array<{ id: string; label: string }> = [];
 
   // Prefer the concrete models exposed by the local Ollama daemon. This also
@@ -74,7 +81,7 @@ export async function GET(req: NextRequest) {
     // Fall through to cloud/fallback list.
   }
 
-  if (isCloud) {
+  if (connection.isCloud || isCloud) {
     return NextResponse.json({
       models: mergeModels(localModels, CLOUD_MODELS),
       source: localModels.length > 0 ? 'live+cloud' : 'cloud',
@@ -84,7 +91,8 @@ export async function GET(req: NextRequest) {
   if (localModels.length > 0) return NextResponse.json({ models: localModels, source: 'live' });
 
   try {
-    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+    const res = await fetch(`${connection.baseUrl}/api/tags`, {
+      headers: connection.headers,
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return NextResponse.json({ models: CLOUD_MODELS, source: 'fallback' });
@@ -97,4 +105,13 @@ export async function GET(req: NextRequest) {
   } catch {
     return NextResponse.json({ models: CLOUD_MODELS, source: 'fallback' });
   }
+}
+
+export async function GET(req: NextRequest) {
+  return listOllamaModels(req);
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  return listOllamaModels(req, normalizeAiProviderRequestSettings((body as { aiSettings?: unknown }).aiSettings));
 }

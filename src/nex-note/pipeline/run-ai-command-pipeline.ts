@@ -1,5 +1,6 @@
 import type { ProviderName } from '@/lib/ai-provider-config';
 import { askProvider, type AIResponse } from '@/lib/ai-providers';
+import type { AiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { buildIntentPrompt, buildValidatorRepairPrompt, type AiSessionContext } from '@/lib/prompts';
 import { applyDocumentCommands, buildDocumentState, type DocumentDiagnostic } from '@/src/score-core/commands/apply-document-commands';
 import { buildMusicianChatResponse, buildSimpleMelodyDraftResponse } from '@/src/nex-note/analysis/build-musician-chat-response';
@@ -24,6 +25,7 @@ export interface RunAiCommandPipelineParams {
   ollamaModel?: string;
   selection?: EditorSelection;
   sessionContext?: AiSessionContext;
+  providerSettings?: AiProviderRequestSettings;
   ask?: (prompt: string, provider: ProviderName, ollamaModel?: string) => Promise<AIResponse>;
 }
 
@@ -506,7 +508,13 @@ function buildNonJsonFallbackResult(params: {
 }
 
 export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): Promise<RunAiCommandPipelineResult> {
-  const { message, xml, provider, ollamaModel, selection, sessionContext, ask = askProvider } = params;
+  const { message, xml, provider, ollamaModel, selection, sessionContext, providerSettings } = params;
+  const ask = params.ask ?? ((prompt, selectedProvider, selectedOllamaModel) => askProvider(
+    prompt,
+    selectedProvider,
+    selectedOllamaModel,
+    providerSettings,
+  ));
   const documentState = buildDocumentState(xml);
   const context = buildAiScoreContext(documentState, selectionToAiContext(selection));
   const workflow = resolveAiWorkflow(message);

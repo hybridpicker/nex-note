@@ -3,6 +3,7 @@ import type { ProviderName } from '@/lib/ai-provider-config';
 import { dbg } from '@/lib/debug';
 import type { AiSessionContext } from '@/lib/prompts';
 import type { Locale } from '@/lib/i18n';
+import { normalizeAiProviderRequestSettings } from '@/lib/ai-model-settings';
 import type { EditorSelection } from '@/hooks/useNoteEditor';
 import { runAiCommandPipeline } from '@/src/nex-note/pipeline/run-ai-command-pipeline';
 import { mergeServerChatTaskState } from '@/src/nex-note/state/chat-task-state';
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   try {
     if (!isAiEnabledForRequest(req)) return publicAiDisabledResponse();
 
-    const { message, xml, scoreKey, scoreRevision, provider = 'ollama', ollamaModel, selection, sessionContext, appLocale } = await req.json() as {
+    const { message, xml, scoreKey, scoreRevision, provider = 'ollama', ollamaModel, selection, sessionContext, appLocale, aiSettings } = await req.json() as {
       message: string;
       xml?: string;
       scoreKey?: string;
@@ -30,7 +31,12 @@ export async function POST(req: NextRequest) {
       selection?: EditorSelection;
       sessionContext?: AiSessionContext;
       appLocale?: Locale;
+      aiSettings?: unknown;
     };
+    const providerSettings = normalizeAiProviderRequestSettings(aiSettings);
+    if (providerSettings.enabledProviders && !providerSettings.enabledProviders.includes(provider)) {
+      return NextResponse.json({ error: `${provider} is disabled in AI model settings` }, { status: 400 });
+    }
     const effectiveSessionContext: AiSessionContext | undefined = sessionContext || appLocale
       ? { ...sessionContext, appLocale: appLocale ?? sessionContext?.appLocale ?? null }
       : undefined;
@@ -55,6 +61,7 @@ export async function POST(req: NextRequest) {
       xml: effectiveXml,
       provider,
       ollamaModel,
+      providerSettings,
       selection,
       sessionContext: effectiveSessionContext,
     });

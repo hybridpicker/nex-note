@@ -4,6 +4,7 @@ import { use, useState, useCallback, useEffect, useLayoutEffect, useRef, startTr
 import dynamic from 'next/dynamic';
 import ChatPanel from '@/components/ChatPanel';
 import ProviderSelector from '@/components/ProviderSelector';
+import AiModelSettingsPanel from '@/components/AiModelSettings';
 import BenchmarkPanel from '@/components/BenchmarkPanel';
 import NewScoreDialog, { type DialogTab } from '@/components/NewScoreDialog';
 import EditLibrary from '@/components/EditLibrary';
@@ -23,6 +24,16 @@ import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/
 import type { ProviderName } from '@/lib/ai-provider-config';
 import { BENCHMARK_SUITE, OLLAMA_MODEL_SUITE } from '@/lib/benchmark-suite';
 import { OLLAMA_MODELS } from '@/lib/ai-provider-config';
+import {
+  AI_PROVIDER_ORDER,
+  DEFAULT_AI_MODEL_SETTINGS,
+  buildAiProviderRequestSettings,
+  mergeModelOptions,
+  normalizeAiModelSettings,
+  readAiModelSettings,
+  writeAiModelSettings,
+  type AiModelSettings,
+} from '@/lib/ai-model-settings';
 import { buildNxnFilename, createNxnFile, downloadNxnFile, isNxnFilename, readNxnFile } from '@/lib/nxn-file';
 import {
   chooseBugReportDirectoryHandle,
@@ -615,6 +626,8 @@ export default function Home({ searchParams }: HomeProps) {
   const [currentScoreId, setCurrentScoreId] = useState<string | null>(null);
   const [provider, setProvider] = useState<ProviderName | 'benchmark'>('ollama');
   const [ollamaModel, setOllamaModel] = useState('gemma4:31b');
+  const [aiModelSettings, setAiModelSettings] = useState<AiModelSettings>(DEFAULT_AI_MODEL_SETTINGS);
+  const [aiModelSettingsHydrated, setAiModelSettingsHydrated] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<'assistant' | 'library' | 'inspector'>('assistant');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => embedConfig.initialWorkspaceCollapsed ?? true);
   const [leftNotationSidebarCollapsed, setLeftNotationSidebarCollapsed] = useState(true);
@@ -751,24 +764,98 @@ export default function Home({ searchParams }: HomeProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const playbackSelectedNoteRef = useRef<SelectedNote | null>(null);
   const smartOllamaModels = useMemo(() => pickSmartOllamaModels(ollamaModels), [ollamaModels]);
+  const aiProviderRequestSettings = useMemo(() => buildAiProviderRequestSettings(aiModelSettings), [aiModelSettings]);
+  const providerOptions = useMemo<Array<ProviderName | 'benchmark'>>(() => {
+    const enabled = AI_PROVIDER_ORDER.filter((providerId) => aiModelSettings.providers[providerId].enabled);
+    return [...(enabled.length ? enabled : ['ollama' as ProviderName]), 'benchmark'];
+  }, [aiModelSettings]);
+
+  const handleAiModelSettingsChange = useCallback((nextSettings: AiModelSettings) => {
+    setAiModelSettings(normalizeAiModelSettings(nextSettings));
+  }, []);
+
+  const handleOllamaModelsChange = useCallback((models: OllamaModelOption[]) => {
+    setOllamaModels(models);
+    setAiModelSettings((current) => normalizeAiModelSettings({
+      ...current,
+      providers: {
+        ...current.providers,
+        ollama: {
+          ...current.providers.ollama,
+          models,
+        },
+      },
+    }));
+  }, []);
+
+  const handleOllamaModelChange = useCallback((model: string) => {
+    const trimmed = model.trim();
+    if (!trimmed) return;
+    setOllamaModel(trimmed);
+    setAiModelSettings((current) => {
+      const existingModels = current.providers.ollama.models;
+      const models = existingModels.some((option) => option.id === trimmed)
+        ? existingModels
+        : mergeModelOptions(existingModels, [{ id: trimmed, label: trimmed }]);
+      return normalizeAiModelSettings({
+        ...current,
+        providers: {
+          ...current.providers,
+          ollama: {
+            ...current.providers.ollama,
+            selectedModel: trimmed,
+            models,
+          },
+        },
+      });
+    });
+  }, []);
 
   useEffect(() => {
-    fetch('/api/ollama-models')
+    const storedSettings = readAiModelSettings();
+    setAiModelSettings(storedSettings);
+    setOllamaModels(storedSettings.providers.ollama.models);
+    setOllamaModel(storedSettings.providers.ollama.selectedModel);
+    setAiModelSettingsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!aiModelSettingsHydrated) return;
+    writeAiModelSettings(aiModelSettings);
+  }, [aiModelSettings, aiModelSettingsHydrated]);
+
+  useEffect(() => {
+    if (provider === 'benchmark') return;
+    if (aiModelSettings.providers[provider].enabled) return;
+    const nextProvider = AI_PROVIDER_ORDER.find((providerId) => aiModelSettings.providers[providerId].enabled) ?? 'ollama';
+    setProvider(nextProvider);
+  }, [aiModelSettings, provider]);
+
+  useEffect(() => {
+    if (!aiModelSettingsHydrated) return;
+    fetch('/api/ollama-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiSettings: aiProviderRequestSettings }),
+    })
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.models) && data.models.length > 0) {
-          setOllamaModels(data.models);
-          setOllamaModel((current) => (
-            data.models.some((model: { id: string }) => model.id === current)
-              ? current
-              : data.models[0].id
-          ));
+          const mergedModels = mergeModelOptions(aiModelSettings.providers.ollama.models, data.models);
+          const currentModelIds = aiModelSettings.providers.ollama.models.map((model) => model.id).join('\n');
+          const mergedModelIds = mergedModels.map((model) => model.id).join('\n');
+          if (currentModelIds !== mergedModelIds) {
+            handleOllamaModelsChange(mergedModels);
+          }
+          if (!mergedModels.some((model: { id: string }) => model.id === ollamaModel)) {
+            handleOllamaModelChange(mergedModels[0].id);
+          }
         }
       })
       .catch(() => {
         /* keep fallback model list */
       });
-  }, []);
+  }, [aiModelSettings.providers.ollama.models, aiModelSettingsHydrated, aiProviderRequestSettings, handleOllamaModelChange, handleOllamaModelsChange, ollamaModel]);
 
   useEffect(() => {
     if (!supportsNxnProjectDirectoryStorage()) return;
@@ -1279,6 +1366,7 @@ export default function Home({ searchParams }: HomeProps) {
         xml: input.xml,
         provider: provider === 'benchmark' ? 'ollama' : provider,
         ollamaModel,
+        aiSettings: aiProviderRequestSettings,
         sessionContext: {
           appLocale: locale,
           taskState: {
@@ -1349,7 +1437,7 @@ export default function Home({ searchParams }: HomeProps) {
           : (aiData.error ?? 'no-polish-result'),
     });
     return input.xml;
-  }, [locale, ollamaModel, provider]);
+  }, [aiProviderRequestSettings, locale, ollamaModel, provider]);
 
   useEffect(() => {
     if (e2eBootRef.current || xml) return;
@@ -1526,6 +1614,7 @@ export default function Home({ searchParams }: HomeProps) {
             xml: importedXml,
             provider: provider === 'benchmark' ? 'ollama' : provider,
             ollamaModel,
+            aiSettings: aiProviderRequestSettings,
             sessionContext: {
               appLocale: locale,
               midiImport: midiAnalysis ?? null,
@@ -1618,7 +1707,7 @@ export default function Home({ searchParams }: HomeProps) {
     } finally {
       setImportStatus('');
     }
-  }, [getImportProjectDirectory, handleNxnFileLoaded, handleXmlFileLoaded, locale, ollamaModel, polishImportedScore, provider]);
+  }, [aiProviderRequestSettings, getImportProjectDirectory, handleNxnFileLoaded, handleXmlFileLoaded, locale, ollamaModel, polishImportedScore, provider]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2421,14 +2510,14 @@ export default function Home({ searchParams }: HomeProps) {
       const res = await fetch('/api/benchmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, ollamaModel, ...buildScoreRequestPayload() }),
+        body: JSON.stringify({ message, ollamaModel, aiSettings: aiProviderRequestSettings, ...buildScoreRequestPayload() }),
       });
       const data = await res.json();
       setBenchmarkResults(data.results ?? []);
     } finally {
       setBenchmarkLoading(false);
     }
-  }, [buildScoreRequestPayload, ollamaModel]);
+  }, [aiProviderRequestSettings, buildScoreRequestPayload, ollamaModel]);
 
   const handleRunOllamaSuite = useCallback(async (modelsOverride?: OllamaModelOption[], mode: 'smart' | 'all' = 'all') => {
     if (!xml) return;
@@ -2458,6 +2547,7 @@ export default function Home({ searchParams }: HomeProps) {
             message: testCase.instruction,
             testCase,
             models: modelsToTest,
+            aiSettings: aiProviderRequestSettings,
             ...buildScoreRequestPayload(),
           }),
         });
@@ -2471,7 +2561,7 @@ export default function Home({ searchParams }: HomeProps) {
     }
 
     setOllamaSuiteRunning(false);
-  }, [buildScoreRequestPayload, ollamaModels, xml]);
+  }, [aiProviderRequestSettings, buildScoreRequestPayload, ollamaModels, xml]);
 
   const handleRunSmartOllamaSuite = useCallback(() => {
     void handleRunOllamaSuite(smartOllamaModels, 'smart');
@@ -2502,7 +2592,7 @@ export default function Home({ searchParams }: HomeProps) {
         const res = await fetch('/api/benchmark', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: testCase.instruction, ollamaModel, providers, ...buildScoreRequestPayload() }),
+          body: JSON.stringify({ message: testCase.instruction, ollamaModel, providers, aiSettings: aiProviderRequestSettings, ...buildScoreRequestPayload() }),
         });
         const data = await res.json();
         accumulated.push({ testCase, providerResults: data.results ?? [] });
@@ -2514,7 +2604,7 @@ export default function Home({ searchParams }: HomeProps) {
     }
 
     setSuiteRunning(false);
-  }, [buildScoreRequestPayload, ollamaModel, xml]);
+  }, [aiProviderRequestSettings, buildScoreRequestPayload, ollamaModel, xml]);
 
   const handleRunOllamaProviderSuite = useCallback(() => {
     void handleRunSuite(['ollama']);
@@ -2658,6 +2748,7 @@ export default function Home({ searchParams }: HomeProps) {
           xml,
           provider: provider === 'benchmark' ? 'ollama' : provider,
           ollamaModel,
+          aiSettings: aiProviderRequestSettings,
           appLocale: locale,
         }),
       });
@@ -2707,7 +2798,7 @@ export default function Home({ searchParams }: HomeProps) {
     } finally {
       setLayoutCleanupLoading(false);
     }
-  }, [buildScoreRequestPayload, handleApplyCommands, handleXmlUpdate, layoutCleanupLoading, locale, ollamaModel, provider, t, xml]);
+  }, [aiProviderRequestSettings, buildScoreRequestPayload, handleApplyCommands, handleXmlUpdate, layoutCleanupLoading, locale, ollamaModel, provider, t, xml]);
 
   const handlePlay = useCallback(async () => {
     if (!xml) return;
@@ -4357,10 +4448,20 @@ export default function Home({ searchParams }: HomeProps) {
             provider={provider}
             ollamaModel={ollamaModel}
             onProviderChange={setProvider}
-            onModelChange={setOllamaModel}
+            onModelChange={handleOllamaModelChange}
+            providerOptions={providerOptions}
+            ollamaModels={aiModelSettings.providers.ollama.models}
+            onOllamaModelsChange={handleOllamaModelsChange}
             compact
           />
         </div>
+        <AiModelSettingsPanel
+          settings={aiModelSettings}
+          onSettingsChange={handleAiModelSettingsChange}
+          onProviderChange={setProvider}
+          onOllamaModelChange={handleOllamaModelChange}
+          liveOllamaModels={ollamaModels}
+        />
         <LanguageSettings />
 
         {debugMode && (
@@ -4791,6 +4892,7 @@ export default function Home({ searchParams }: HomeProps) {
                     xml={xml}
                     provider={provider === 'benchmark' ? 'ollama' : provider}
                     ollamaModel={ollamaModel}
+                    aiSettings={aiProviderRequestSettings}
                     scoreKey={chatScoreKey}
                     scoreRevision={scoreRevision}
                     scoreSessionReady={scoreSessionReady}

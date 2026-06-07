@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OLLAMA_MODELS } from '@/lib/ai-provider-config';
 import { askOllama } from '@/lib/ai-providers';
+import { normalizeAiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { resolveScoreRequestXml } from '@/src/nex-note/server/resolve-score-request-xml';
 import { runAiCommandPipeline } from '@/src/nex-note/pipeline/run-ai-command-pipeline';
 import type { TestCase } from '@/lib/benchmark-suite';
@@ -13,14 +14,19 @@ export async function POST(req: NextRequest) {
   try {
     if (!isAiEnabledForRequest(req)) return publicAiDisabledResponse();
 
-    const { message, xml, scoreKey, scoreRevision, models, testCase } = await req.json() as {
+    const { message, xml, scoreKey, scoreRevision, models, testCase, aiSettings } = await req.json() as {
       message: string;
       xml?: string;
       scoreKey?: string;
       scoreRevision?: number;
       models?: BenchmarkModel[];
       testCase?: TestCase;
+      aiSettings?: unknown;
     };
+    const providerSettings = normalizeAiProviderRequestSettings(aiSettings);
+    if (providerSettings.enabledProviders && !providerSettings.enabledProviders.includes('ollama')) {
+      return NextResponse.json({ results: [] });
+    }
     const effectiveXml = resolveScoreRequestXml({ xml, scoreKey, scoreRevision });
     if (!message || !effectiveXml) return NextResponse.json({ error: 'message and score xml required' }, { status: 400 });
 
@@ -34,7 +40,8 @@ export async function POST(req: NextRequest) {
         xml: effectiveXml,
         provider: 'ollama',
         ollamaModel: model.id,
-        ask: (prompt, provider, ollamaModel) => askOllama(prompt, ollamaModel),
+        providerSettings,
+        ask: (_prompt, _provider, selectedOllamaModel) => askOllama(_prompt, selectedOllamaModel, providerSettings),
       }))
     );
 

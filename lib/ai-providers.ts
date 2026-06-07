@@ -1,16 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { OLLAMA_MODELS, type ProviderName } from '@/lib/ai-provider-config';
+import type { ProviderName } from '@/lib/ai-provider-config';
+import type { AiProviderRequestSettings } from '@/lib/ai-model-settings';
 
 export type { ProviderName } from '@/lib/ai-provider-config';
-
-const OLLAMA_BASE = process.env.OLLAMA_API_KEY
-  ? 'https://ollama.com'
-  : 'http://localhost:11434';
-
-const OLLAMA_HEADERS: Record<string, string> = process.env.OLLAMA_API_KEY
-  ? { Authorization: `Bearer ${process.env.OLLAMA_API_KEY}`, 'Content-Type': 'application/json' }
-  : { 'Content-Type': 'application/json' };
 
 export interface AIResponse {
   provider: ProviderName;
@@ -30,16 +23,34 @@ function formatProviderError(providerLabel: string, err: unknown, timeoutMs?: nu
   return String(err);
 }
 
-export async function askOllama(prompt: string, model: string = 'gemma4:31b'): Promise<AIResponse> {
+function resolveOllamaConnection(settings?: AiProviderRequestSettings) {
+  const apiKey = settings?.apiKeys?.ollama?.trim() || process.env.OLLAMA_API_KEY || '';
+  const baseUrl = settings?.ollamaBaseUrl?.trim()
+    || (apiKey ? 'https://ollama.com' : 'http://localhost:11434');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return {
+    baseUrl: baseUrl.replace(/\/+$/, ''),
+    apiKey,
+    isCloud: Boolean(apiKey) && !settings?.ollamaBaseUrl,
+    headers,
+  };
+}
+
+export async function askOllama(
+  prompt: string,
+  model: string = 'gemma4:31b',
+  settings?: AiProviderRequestSettings,
+): Promise<AIResponse> {
   const start = Date.now();
-  const isCloud = !!process.env.OLLAMA_API_KEY;
+  const connection = resolveOllamaConnection(settings);
   const timeoutMs = 120000;
   try {
-    if (isCloud) {
+    if (connection.isCloud) {
       // Cloud uses /api/chat with messages format
-      const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      const res = await fetch(`${connection.baseUrl}/api/chat`, {
         method: 'POST',
-        headers: OLLAMA_HEADERS,
+        headers: connection.headers,
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
@@ -54,9 +65,9 @@ export async function askOllama(prompt: string, model: string = 'gemma4:31b'): P
       return { provider: 'ollama', model, text, latencyMs: Date.now() - start };
     } else {
       // Local uses /api/generate
-      const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+      const res = await fetch(`${connection.baseUrl}/api/generate`, {
         method: 'POST',
-        headers: OLLAMA_HEADERS,
+        headers: connection.headers,
         body: JSON.stringify({
           model,
           prompt,
@@ -74,14 +85,15 @@ export async function askOllama(prompt: string, model: string = 'gemma4:31b'): P
   }
 }
 
-export async function askClaude(prompt: string): Promise<AIResponse> {
+export async function askClaude(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
   const start = Date.now();
-  const model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const model = settings?.models?.claude || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+  const apiKey = settings?.apiKeys?.claude || process.env.ANTHROPIC_API_KEY || '';
+  if (!apiKey) {
     return { provider: 'claude', model, text: '', latencyMs: 0, error: 'ANTHROPIC_API_KEY not set' };
   }
   try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const client = new Anthropic({ apiKey });
     const msg = await client.messages.create({
       model,
       max_tokens: 8192,
@@ -94,14 +106,15 @@ export async function askClaude(prompt: string): Promise<AIResponse> {
   }
 }
 
-export async function askGemini(prompt: string): Promise<AIResponse> {
+export async function askGemini(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
   const start = Date.now();
-  const model = 'gemini-2.5-flash';
-  if (!process.env.GEMINI_API_KEY) {
+  const model = settings?.models?.gemini || 'gemini-2.5-flash';
+  const apiKey = settings?.apiKeys?.gemini || process.env.GEMINI_API_KEY || '';
+  if (!apiKey) {
     return { provider: 'gemini', model, text: '', latencyMs: 0, error: 'GEMINI_API_KEY not set' };
   }
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(apiKey);
     const genModel = genAI.getGenerativeModel({ model });
     const result = await genModel.generateContent(prompt);
     const text = result.response.text();
@@ -114,20 +127,21 @@ export async function askGemini(prompt: string): Promise<AIResponse> {
 export async function askProvider(
   prompt: string,
   provider: ProviderName,
-  ollamaModel?: string
+  ollamaModel?: string,
+  settings?: AiProviderRequestSettings,
 ): Promise<AIResponse> {
   switch (provider) {
-    case 'ollama': return askOllama(prompt, ollamaModel ?? 'gemma4:31b');
-    case 'claude': return askClaude(prompt);
-    case 'gemini': return askGemini(prompt);
+    case 'ollama': return askOllama(prompt, settings?.models?.ollama ?? ollamaModel ?? 'gemma4:31b', settings);
+    case 'claude': return askClaude(prompt, settings);
+    case 'gemini': return askGemini(prompt, settings);
   }
 }
 
-export async function askAllProviders(prompt: string, ollamaModel?: string): Promise<AIResponse[]> {
+export async function askAllProviders(prompt: string, ollamaModel?: string, settings?: AiProviderRequestSettings): Promise<AIResponse[]> {
   const results = await Promise.allSettled([
-    askOllama(prompt, ollamaModel ?? 'gemma4:31b'),
-    askClaude(prompt),
-    askGemini(prompt),
+    askOllama(prompt, settings?.models?.ollama ?? ollamaModel ?? 'gemma4:31b', settings),
+    askClaude(prompt, settings),
+    askGemini(prompt, settings),
   ]);
   return results.map((r) => (r.status === 'fulfilled' ? r.value : {
     provider: 'ollama' as ProviderName,

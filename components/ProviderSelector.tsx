@@ -11,6 +11,9 @@ interface Props {
   ollamaModel: string;
   onProviderChange: (p: ProviderName | 'benchmark') => void;
   onModelChange: (m: string) => void;
+  providerOptions?: Array<ProviderName | 'benchmark'>;
+  ollamaModels?: OllamaModel[];
+  onOllamaModelsChange?: (models: OllamaModel[]) => void;
   compact?: boolean;
 }
 
@@ -28,21 +31,36 @@ const PROVIDER_COLORS: Record<string, string> = {
   benchmark: 'text-nex-ink bg-nex-surface',
 };
 
-export default function ProviderSelector({ provider, ollamaModel, onProviderChange, onModelChange, compact = false }: Props) {
+export default function ProviderSelector({
+  provider,
+  ollamaModel,
+  onProviderChange,
+  onModelChange,
+  providerOptions,
+  ollamaModels,
+  onOllamaModelsChange,
+  compact = false,
+}: Props) {
   const { t } = useI18n();
-  const [models, setModels] = useState<OllamaModel[]>(OLLAMA_MODELS);
+  const [models, setModels] = useState<OllamaModel[]>(ollamaModels ?? OLLAMA_MODELS);
   const [adding, setAdding] = useState(false);
   const [customInput, setCustomInput] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const visibleProviders = providerOptions?.length ? providerOptions : (['claude', 'gemini', 'ollama', 'benchmark'] as const);
 
   useEffect(() => {
+    if (ollamaModels) return;
     fetch('/api/ollama-models')
       .then(r => r.json())
       .then(data => { if (data.models?.length > 0) setModels(data.models); })
       .catch(() => { /* keep fallback */ });
-  }, []);
+  }, [ollamaModels]);
+
+  useEffect(() => {
+    if (ollamaModels) setModels(ollamaModels);
+  }, [ollamaModels]);
 
   useEffect(() => {
     if (adding) inputRef.current?.focus();
@@ -63,7 +81,9 @@ export default function ProviderSelector({ provider, ollamaModel, onProviderChan
     const id = customInput.trim();
     if (!id) { setAdding(false); return; }
     if (!models.find(m => m.id === id)) {
-      setModels(prev => [...prev, { id, label: id }]);
+      const nextModels = [...models, { id, label: id }];
+      setModels(nextModels);
+      onOllamaModelsChange?.(nextModels);
     }
     onModelChange(id);
     setCustomInput('');
@@ -94,7 +114,7 @@ export default function ProviderSelector({ provider, ollamaModel, onProviderChan
 
         {dropdownOpen && (
           <div className="absolute top-full mt-1 right-0 z-50 bg-white border border-nex-border rounded-xl shadow-xl p-1 min-w-[140px]">
-            {(['claude', 'gemini', 'ollama', 'benchmark'] as const).map(p => (
+            {visibleProviders.map(p => (
               <button
                 key={p}
                 onClick={() => { onProviderChange(p); setDropdownOpen(false); }}
@@ -151,7 +171,7 @@ export default function ProviderSelector({ provider, ollamaModel, onProviderChan
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center bg-nex-surface rounded-lg p-0.5 gap-0.5">
-        {(['claude', 'gemini', 'ollama', 'benchmark'] as const).map((p) => (
+        {visibleProviders.map((p) => (
           <button
             key={p}
             onClick={() => onProviderChange(p)}

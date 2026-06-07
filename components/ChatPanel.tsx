@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { ProviderName } from '@/lib/ai-provider-config';
+import type { AiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { dbg } from '@/lib/debug';
 import type { ScoreCommand } from '@/lib/score-commands';
 import type { EditorSelection } from '@/hooks/useNoteEditor';
@@ -47,6 +48,7 @@ interface Props {
   xml: string;
   provider: ProviderName;
   ollamaModel: string;
+  aiSettings?: AiProviderRequestSettings;
   scoreKey?: string;
   scoreRevision?: number;
   scoreSessionReady?: boolean;
@@ -156,7 +158,7 @@ function isSafeWholeScoreTransposePreview(
   return hasTranspose && hasSetKey;
 }
 
-export default function ChatPanel({ xml, provider, ollamaModel, scoreKey, scoreRevision, scoreSessionReady = false, selection, onXmlUpdate, onApplyCommands, onUndo, onRedo, onBenchmark, isBenchmark, onOperationsApplied, onTranscriptChange }: Props) {
+export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scoreKey, scoreRevision, scoreSessionReady = false, selection, onXmlUpdate, onApplyCommands, onUndo, onRedo, onBenchmark, isBenchmark, onOperationsApplied, onTranscriptChange }: Props) {
   const { locale, t } = useI18n();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -272,6 +274,7 @@ export default function ChatPanel({ xml, provider, ollamaModel, scoreKey, scoreR
           scoreRevision,
           provider,
           ollamaModel,
+          aiSettings,
           selection: serializedSelection,
           appLocale: locale,
           sessionContext: nextSessionContext,

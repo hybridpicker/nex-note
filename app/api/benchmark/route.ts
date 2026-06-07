@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ProviderName } from '@/lib/ai-provider-config';
 import { askClaude, askGemini, askOllama, type AIResponse } from '@/lib/ai-providers';
+import { normalizeAiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { INTENT_SYSTEM_PROMPT } from '@/lib/prompts';
 import { applyDocumentCommands, buildDocumentState } from '@/src/score-core/commands/apply-document-commands';
 import type { ScoreCommand } from '@/lib/score-commands';
@@ -31,26 +32,29 @@ export async function POST(req: NextRequest) {
   try {
     if (!isAiEnabledForRequest(req)) return publicAiDisabledResponse();
 
-    const { message, xml, scoreKey, scoreRevision, ollamaModel, providers } = await req.json() as {
+    const { message, xml, scoreKey, scoreRevision, ollamaModel, providers, aiSettings } = await req.json() as {
       message: string;
       xml?: string;
       scoreKey?: string;
       scoreRevision?: number;
       ollamaModel?: string;
       providers?: ProviderName[];
+      aiSettings?: unknown;
     };
+    const providerSettings = normalizeAiProviderRequestSettings(aiSettings);
     const effectiveXml = resolveScoreRequestXml({ xml, scoreKey, scoreRevision });
     if (!message || !effectiveXml) return NextResponse.json({ error: 'message and score xml required' }, { status: 400 });
 
     const prompt = `${INTENT_SYSTEM_PROMPT}\n\nUser instruction: ${message}`;
     const selectedProviders = (providers?.length ? providers : ['ollama', 'claude', 'gemini'])
-      .filter((provider): provider is ProviderName => ['ollama', 'claude', 'gemini'].includes(provider));
+      .filter((provider): provider is ProviderName => ['ollama', 'claude', 'gemini'].includes(provider))
+      .filter((provider) => !providerSettings.enabledProviders || providerSettings.enabledProviders.includes(provider));
 
     const raw = await Promise.allSettled(selectedProviders.map((provider) => {
       switch (provider) {
-        case 'ollama': return askOllama(prompt, ollamaModel);
-        case 'claude': return askClaude(prompt);
-        case 'gemini': return askGemini(prompt);
+        case 'ollama': return askOllama(prompt, providerSettings.models?.ollama ?? ollamaModel, providerSettings);
+        case 'claude': return askClaude(prompt, providerSettings);
+        case 'gemini': return askGemini(prompt, providerSettings);
       }
     }));
 
