@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildNewScoreFilename, createNewScoreXml, createDefaultNewScoreDraft } from '../lib/new-score.ts';
+import { buildNewScoreFilename, createNewScoreXml, createDefaultNewScoreDraft, INSTRUMENT_DEFINITIONS } from '../lib/new-score.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import { projectLayoutToDocument } from '../src/layout/project-layout-to-document.ts';
 import { exportCoreToMusicXml } from '../src/musicxml-adapter/export/export-core-to-musicxml.ts';
@@ -78,4 +78,39 @@ test('blank piano render export keeps explicit clef numbering for both staves', 
 
   assert.match(renderXml, /<clef number="1"><sign>G<\/sign><line>2<\/line><\/clef>/);
   assert.match(renderXml, /<clef number="2"><sign>F<\/sign><line>4<\/line><\/clef>/);
+});
+
+test('instrument picker catalog includes guitar and bass notation plus TAB options', () => {
+  const byId = new Map(INSTRUMENT_DEFINITIONS.map((instrument) => [instrument.id, instrument]));
+
+  assert.equal(byId.get('acoustic-guitar')?.family, 'Guitars');
+  assert.equal(byId.get('electric-guitar')?.family, 'Guitars');
+  assert.equal(byId.get('electric-bass')?.family, 'Guitars');
+  assert.equal(byId.get('guitar-tab')?.staves, 2);
+  assert.equal(byId.get('electric-guitar-tab')?.staffDetails?.[0]?.staffLines, 6);
+  assert.equal(byId.get('electric-bass-tab')?.staffDetails?.[0]?.staffLines, 4);
+});
+
+test('createNewScoreXml builds combined notation and TAB staves for guitar-family instruments', () => {
+  const draft = createDefaultNewScoreDraft();
+  draft.instrumentIds = ['electric-guitar-tab', 'electric-bass-tab'];
+  draft.measureCount = 2;
+
+  const xml = createNewScoreXml(draft);
+
+  assert.match(xml, /<part-name>Electric Guitar \+ TAB<\/part-name>/);
+  assert.match(xml, /<part-name>Electric Bass \+ TAB<\/part-name>/);
+  assert.equal((xml.match(/<staves>2<\/staves>/g) ?? []).length, 2);
+  assert.match(xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
+  assert.match(xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>4<\/staff-lines><\/staff-details>/);
+  assert.equal((xml.match(/<clef number="2"><sign>TAB<\/sign><line>5<\/line><\/clef>/g) ?? []).length, 2);
+  assert.equal((xml.match(/<staff>2<\/staff>/g) ?? []).length, 4);
+
+  const projected = projectLayoutToDocument(importMusicXmlToCore(xml));
+  const renderXml = exportCoreToMusicXml(xml, projected);
+
+  assert.equal(projected.score.parts[0]?.staves.length, 2);
+  assert.equal(projected.score.parts[1]?.staves.length, 2);
+  assert.match(renderXml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
+  assert.match(renderXml, /<clef number="2"><sign>TAB<\/sign><line>5<\/line><\/clef>/);
 });

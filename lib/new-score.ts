@@ -4,7 +4,12 @@ export interface InstrumentDefinition {
   shortName?: string;
   family: string;
   staves: number;
-  clefs: Array<{ sign: 'G' | 'F' | 'C'; line: number }>;
+  clefs: Array<{ sign: 'G' | 'F' | 'C' | 'TAB'; line: number }>;
+  staffDetails?: Array<{
+    staffIndex: number;
+    staffType: 'tab';
+    staffLines: number;
+  }>;
   chromaticTranspose?: number;
   diatonicTranspose?: number;
 }
@@ -72,7 +77,77 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
   { id: 'alto', name: 'Alto', shortName: 'A.', family: 'Voices', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
   { id: 'tenor', name: 'Tenor', shortName: 'T.', family: 'Voices', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
   { id: 'bass', name: 'Bass', shortName: 'B.', family: 'Voices', staves: 1, clefs: [{ sign: 'F', line: 4 }] },
-  { id: 'guitar', name: 'Guitar', shortName: 'Gtr.', family: 'Plucked', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  { id: 'guitar', name: 'Guitar', shortName: 'Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  {
+    id: 'guitar-tab',
+    name: 'Guitar + TAB',
+    shortName: 'Gtr.',
+    family: 'Guitars',
+    staves: 2,
+    clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+  },
+  { id: 'acoustic-guitar', name: 'Acoustic Guitar', shortName: 'A. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  {
+    id: 'acoustic-guitar-tab',
+    name: 'Acoustic Guitar + TAB',
+    shortName: 'A. Gtr.',
+    family: 'Guitars',
+    staves: 2,
+    clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+  },
+  { id: 'classical-guitar', name: 'Classical Guitar', shortName: 'C. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  {
+    id: 'classical-guitar-tab',
+    name: 'Classical Guitar + TAB',
+    shortName: 'C. Gtr.',
+    family: 'Guitars',
+    staves: 2,
+    clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+  },
+  { id: 'electric-guitar', name: 'Electric Guitar', shortName: 'E. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  {
+    id: 'electric-guitar-tab',
+    name: 'Electric Guitar + TAB',
+    shortName: 'E. Gtr.',
+    family: 'Guitars',
+    staves: 2,
+    clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+  },
+  { id: 'electric-bass', name: 'Electric Bass', shortName: 'E. Bass', family: 'Guitars', staves: 1, clefs: [{ sign: 'F', line: 4 }] },
+  {
+    id: 'electric-bass-tab',
+    name: 'Electric Bass + TAB',
+    shortName: 'E. Bass',
+    family: 'Guitars',
+    staves: 2,
+    clefs: [{ sign: 'F', line: 4 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 4 }],
+  },
+  { id: 'five-string-electric-bass', name: '5-String Electric Bass', shortName: '5-Str. Bass', family: 'Guitars', staves: 1, clefs: [{ sign: 'F', line: 4 }] },
+  {
+    id: 'five-string-electric-bass-tab',
+    name: '5-String Electric Bass + TAB',
+    shortName: '5-Str. Bass',
+    family: 'Guitars',
+    staves: 2,
+    clefs: [{ sign: 'F', line: 4 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 5 }],
+  },
+  { id: 'ukulele', name: 'Ukulele', shortName: 'Uk.', family: 'Plucked', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  {
+    id: 'ukulele-tab',
+    name: 'Ukulele + TAB',
+    shortName: 'Uk.',
+    family: 'Plucked',
+    staves: 2,
+    clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
+    staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 4 }],
+  },
+  { id: 'mandolin', name: 'Mandolin', shortName: 'Mdn.', family: 'Plucked', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
 ];
 
 export const NEW_SCORE_TEMPLATES: NewScoreTemplate[] = [
@@ -249,6 +324,12 @@ function buildMeasureXml(params: {
       `<key><fifths>${key.fifths}</fifths><mode>${key.mode}</mode></key>`,
       `<time><beats>${timeBeats}</beats><beat-type>${timeBeatType}</beat-type></time>`,
       instrument.staves > 1 ? `<staves>${instrument.staves}</staves>` : '',
+      ...(instrument.staffDetails ?? []).map((details) => [
+        `<staff-details number="${details.staffIndex}">`,
+        `<staff-type>${details.staffType}</staff-type>`,
+        `<staff-lines>${details.staffLines}</staff-lines>`,
+        '</staff-details>',
+      ].join('')),
       ...instrument.clefs.map((clef, index) => [
         `<clef${instrument.staves > 1 ? ` number="${index + 1}"` : ''}>`,
         `<sign>${clef.sign}</sign>`,
