@@ -1217,6 +1217,8 @@ test('ScoreLibrary cards use cropped real embedded score previews', async () => 
       buildEmbeddedScorePreviewUrl(saved, previewDataSource),
       'score card preview should use the embedded score iframe helper',
     );
+    assert.match(iframe.props.src, /^\/nex-note-app\?/);
+    assert.doesNotMatch(iframe.props.src, /^\/\?/);
     assert.match(iframe.props.src, /embed=1/);
     assert.match(iframe.props.src, /chrome=0/);
     assert.match(iframe.props.src, /entry=/);

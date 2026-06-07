@@ -102,7 +102,7 @@ export function buildEmbeddedScorePreviewUrl(score: LibraryScore, scoreDataUrl: 
     scoreDataUrl,
     view: 'score',
   });
-  return `/?${params.toString()}`;
+  return `/nex-note-app?${params.toString()}`;
 }
 
 export default function ScoreLibrary({ currentScoreId, dense = false, onOpenScore }: Props) {
