@@ -4,6 +4,7 @@ import type { DocumentState } from '@/src/score-core/commands/apply-document-com
 import type { MeasureNode, NoteEvent } from '@/src/score-core/model/types';
 import type { ParsedIntentJson } from '@/src/nex-note/intent/parse-intent-json';
 import type { AiWorkflowKind } from '@/src/nex-note/workflows/ai-workflows';
+import { STANDARD_GUITAR_TUNING } from '@/src/score-input/guitar-fretboard';
 
 type InstrumentKey = 'voice' | 'flute' | 'violin' | 'clarinet-bb' | 'trumpet-bb' | 'alto-sax-eb' | 'cello';
 
@@ -36,6 +37,10 @@ function noteToMidi(note: NoteEvent) {
 function writtenPitchToMidi(pitch: { step: string; alter: number; octave: number }) {
   const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   return (stepToSemitone[pitch.step] ?? 0) + pitch.alter + (pitch.octave + 1) * 12;
+}
+
+function sameTimestamp(left: { timestampNum: number; timestampDen: number }, right: { timestampNum: number; timestampDen: number }) {
+  return left.timestampNum * right.timestampDen === right.timestampNum * left.timestampDen;
 }
 
 function noteLabel(note: NoteEvent) {
@@ -456,6 +461,97 @@ function transposeMotivicLickPitch(input: {
   return spellMidiPitch(targetMidi, targetRoot.alter < 0);
 }
 
+function isTabStaffForArrangement(
+  part: NonNullable<DocumentState['coreDocument']>['score']['parts'][number],
+  staffIndex: number,
+) {
+  return part.staves
+    .find((staff) => staff.staffIndex === staffIndex)
+    ?.measures.some((measure) => measure.attributes.some((attribute) => (
+      attribute.clefs.some((clef) => clef.staffIndex === staffIndex && clef.sign?.toUpperCase() === 'TAB')
+    ))) ?? false;
+}
+
+function findPairedTabSourceNote(documentState: DocumentState, entry: ScopedNoteInfo) {
+  const core = documentState.coreDocument;
+  if (!core) return null;
+  const part = core.score.parts.find((candidate) => candidate.sourcePartId === entry.partId || candidate.id === entry.partId);
+  if (!part) return null;
+  const sourceIsTab = isTabStaffForArrangement(part, entry.note.staffIndex);
+  const pairedStaves = part.staves
+    .filter((staff) => staff.staffIndex !== entry.note.staffIndex && isTabStaffForArrangement(part, staff.staffIndex) !== sourceIsTab)
+    .sort((left, right) => Math.abs(left.staffIndex - entry.note.staffIndex) - Math.abs(right.staffIndex - entry.note.staffIndex));
+
+  for (const staff of pairedStaves) {
+    const measure = staff.measures.find((candidate) => candidate.measureNumber === entry.measure.measureNumber);
+    const event = measure?.voices
+      .find((voice) => voice.voiceId === entry.note.voiceId)
+      ?.events.find((candidate) => (
+        candidate.kind === 'note'
+        && sameTimestamp(candidate, entry.note)
+      ));
+    if (event?.kind === 'note' && event.guitar) {
+      return { note: event, staffIndex: staff.staffIndex };
+    }
+  }
+
+  return null;
+}
+
+function isArrangementTabEntry(documentState: DocumentState, entry: ScopedNoteInfo) {
+  const core = documentState.coreDocument;
+  if (!core) return false;
+  const part = core.score.parts.find((candidate) => candidate.sourcePartId === entry.partId || candidate.id === entry.partId);
+  return part ? isTabStaffForArrangement(part, entry.note.staffIndex) : false;
+}
+
+function filterArrangementMelodySources(documentState: DocumentState, scoped: ScopedNoteInfo[]) {
+  const notationEntries = scoped.filter((entry) => !isArrangementTabEntry(documentState, entry));
+  return notationEntries.length > 0 ? notationEntries : scoped;
+}
+
+function guitarPlacementForPitch(
+  pitch: { step: string; alter: number; octave: number },
+  sourceGuitar?: NonNullable<NoteEvent['guitar']>,
+) {
+  const targetMidi = writtenPitchToMidi(pitch);
+  const sourceString = sourceGuitar?.string;
+  const sourceFret = sourceGuitar?.fret;
+  const sourceTuning = sourceGuitar?.tuning;
+  const sourceStringTuning = sourceString ? STANDARD_GUITAR_TUNING.find((entry) => entry.string === sourceString) : null;
+  if (sourceStringTuning) {
+    const fret = targetMidi - sourceStringTuning.openMidi;
+    if (fret >= 0 && fret <= 24) {
+      return {
+        string: sourceString,
+        fret,
+        ...(sourceTuning ? { tuning: sourceTuning } : {}),
+        ...(sourceGuitar?.techniques?.length ? { techniques: [...sourceGuitar.techniques] } : {}),
+      };
+    }
+  }
+
+  const candidates = STANDARD_GUITAR_TUNING
+    .map((stringTuning) => ({
+      string: stringTuning.string,
+      fret: targetMidi - stringTuning.openMidi,
+    }))
+    .filter((candidate) => candidate.fret >= 0 && candidate.fret <= 24)
+    .sort((left, right) => (
+      Math.abs(left.string - (sourceString ?? left.string)) - Math.abs(right.string - (sourceString ?? right.string))
+      || Math.abs(left.fret - (sourceFret ?? left.fret)) - Math.abs(right.fret - (sourceFret ?? right.fret))
+      || left.fret - right.fret
+    ));
+  const selected = candidates[0];
+  if (!selected) return null;
+  return {
+    string: selected.string,
+    fret: selected.fret,
+    ...(sourceTuning ? { tuning: sourceTuning } : {}),
+    ...(sourceGuitar?.techniques?.length ? { techniques: [...sourceGuitar.techniques] } : {}),
+  };
+}
+
 function extractChordSymbolsFromPlan(chordPlan: string | null) {
   if (!chordPlan) return [];
   return chordPlan
@@ -488,6 +584,7 @@ function chooseMaterializedPitch(input: {
 
 function buildMaterializedArrangementResponse(
   message: string,
+  documentState: DocumentState,
   scoped: ScopedNoteInfo[],
   expression: string,
   tempo: number | null,
@@ -504,6 +601,7 @@ function buildMaterializedArrangementResponse(
   if (!first) return null;
   const commands: ParsedIntentJson['commands'] = [];
   const touchedVoices = new Set<string>();
+  const pairedTabSources = new Map<NoteEvent['id'], ReturnType<typeof findPairedTabSourceNote>>();
   const sourceMeasureNumbers = [...new Set(scoped.map((entry) => entry.measure.measureNumber))].sort((a, b) => a - b);
   const shouldAppendAlternateVersion = explicitChords.length > 0
     && /\b(lick|version|variation|variant|alternate|other|diatonic|variante|andere|diatonisch)\b/i.test(message);
@@ -563,6 +661,8 @@ function buildMaterializedArrangementResponse(
       ? transposeMotivicLickPitch({ source: entry.note, sourceChord, targetChord })
       : chooseMaterializedPitch({ tones, source: entry.note, noteIndex });
     if (!pitch) return;
+    const pairedTabSource = pairedTabSources.get(entry.note.id) ?? findPairedTabSourceNote(documentState, entry);
+    pairedTabSources.set(entry.note.id, pairedTabSource);
     commands.push({
       type: 'insertNoteAt',
       measureNumber: targetMeasureNumber,
@@ -577,6 +677,36 @@ function buildMaterializedArrangementResponse(
       ...(entry.note.isDotted ? { isDotted: true } : {}),
       preserveOverflow: false,
     });
+    if (pairedTabSource) {
+      const tabVoiceKey = `${targetMeasureNumber}:${pairedTabSource.staffIndex}:${pairedTabSource.note.voiceId}`;
+      if (!touchedVoices.has(tabVoiceKey)) {
+        touchedVoices.add(tabVoiceKey);
+        commands.push({
+          type: 'clearMeasureVoice',
+          measureNumber: targetMeasureNumber,
+          staffIndex: pairedTabSource.staffIndex,
+          voiceId: pairedTabSource.note.voiceId,
+        });
+      }
+      const guitar = guitarPlacementForPitch(pitch, pairedTabSource.note.guitar);
+      if (guitar) {
+        commands.push({
+          type: 'insertNoteAt',
+          measureNumber: targetMeasureNumber,
+          staffIndex: pairedTabSource.staffIndex,
+          voiceId: pairedTabSource.note.voiceId,
+          timestampNum: entry.note.timestampNum,
+          timestampDen: entry.note.timestampDen,
+          step: pitch.step,
+          octave: pitch.octave,
+          alter: pitch.alter,
+          durationType: entry.note.durationType ?? 'quarter',
+          ...(entry.note.isDotted ? { isDotted: true } : {}),
+          preserveOverflow: false,
+          guitar,
+        });
+      }
+    }
   };
 
   if (shouldAppendAlternateVersion) {
@@ -679,7 +809,7 @@ function buildArrangementResponse(
   selection?: EditorSelection,
   sessionContext?: AiSessionContext,
 ): ParsedIntentJson | null {
-  const scoped = collectArrangementSourceNotes(documentState, selection);
+  const scoped = filterArrangementMelodySources(documentState, collectArrangementSourceNotes(documentState, selection));
   if (scoped.length === 0) return null;
 
   const german = isLikelyGerman(message);
@@ -690,7 +820,7 @@ function buildArrangementResponse(
   const chordPlan = buildChordPlan(scoped, preferFlats);
   const commands: ParsedIntentJson['commands'] = [];
   const targetPartId = scoped[0]?.partId;
-  const materializedArrangement = buildMaterializedArrangementResponse(message, scoped, expression, tempo, chordPlan, instrument, targetPartId);
+  const materializedArrangement = buildMaterializedArrangementResponse(message, documentState, scoped, expression, tempo, chordPlan, instrument, targetPartId);
   if (materializedArrangement) return materializedArrangement;
 
   if (chordPlan) commands.push({ type: 'addChords', chords: chordPlan });

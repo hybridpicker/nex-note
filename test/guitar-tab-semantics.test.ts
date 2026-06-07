@@ -184,6 +184,35 @@ test('setGuitarFret keeps Guitar Pro style staff-details TAB imports paired with
   assert.match(result.xml, /<staff>2<\/staff>/);
 });
 
+test('legacy fallback insertNoteAt writes TAB string and fret metadata', () => {
+  const result = applyDocumentCommands({ xml: DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS, coreDocument: null }, [{
+    type: 'insertNoteAt',
+    measureNumber: 1,
+    staffIndex: 2,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+    durationType: 'quarter',
+    guitar: { string: 1, fret: 3, tuning: 'standard' },
+  } as any]);
+
+  assert.match(result.xml, /<staff>2<\/staff>/);
+  assert.match(result.xml, /<technical><string>1<\/string><fret>3<\/fret><\/technical>/);
+  const imported = result.coreDocument;
+  const tabNotes = imported?.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .filter((event) => event.kind === 'note');
+  assert.ok(tabNotes?.some((event) => (
+    event.kind === 'note'
+    && event.pitch.step === 'G'
+    && event.pitch.octave === 4
+    && event.guitar?.string === 1
+    && event.guitar.fret === 3
+  )));
+});
+
 test('toggleGuitarTechnique edits existing TAB note techniques without changing fret metadata', () => {
   const inserted = applyCoreCommands(buildEmptyDocument(), [{
     type: 'insertNoteAt',

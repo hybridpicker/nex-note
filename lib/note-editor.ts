@@ -570,6 +570,9 @@ function buildInsertedNote(
   const staffEl = doc.createElement('staff');
   staffEl.textContent = String(op.staffIndex);
   note.appendChild(staffEl);
+  if ((op.type === 'insertNote' || op.type === 'insertNoteAt') && op.guitar) {
+    setGuitarTechnicalElements(doc, note, op.guitar.string, op.guitar.fret, op.guitar.techniques);
+  }
   return note;
 }
 
