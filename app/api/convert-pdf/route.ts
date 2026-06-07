@@ -7,7 +7,13 @@ import { extractXmlFromMxl } from '@/lib/mxl-utils';
 import { analyzeMidiBuffer } from '@/src/nex-note/midi/analyze-midi';
 import { applyMidiImportLayout } from '@/src/nex-note/midi/apply-midi-import-layout';
 import { convertGuitarProBufferToTabbedMusicXml } from '@/lib/alphatab-guitar-pro-import';
-import { formatMuseScoreConversionError, museScoreSpawnEnv, resolveMuseScoreCli } from '@/lib/musescore-cli';
+import { formatMuseScoreConversionError, museScoreSpawnEnv, readMuseScoreCliVersion, resolveMuseScoreCli } from '@/lib/musescore-cli';
+import {
+  formatMsczVersionMismatchError,
+  inspectMsczArchive,
+  type MsczArchiveInfo,
+  shouldRejectMsczForCliVersion,
+} from '@/lib/mscz-utils';
 import {
   GUITAR_PRO_IMPORT_FIDELITY_PROMPT,
   collectGuitarProTechniqueFallbackWarnings,
@@ -19,6 +25,8 @@ import {
 
 const PDF_TO_MUSESCORE_SCRIPT = process.env.PDF_TO_MUSESCORE_SCRIPT
   || `${process.env.HOME}/Coding/musescore/scripts/pdf-to-musescore.sh`;
+
+let museScoreVersionCache: Promise<string | undefined> | undefined;
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -62,7 +70,9 @@ export async function POST(req: NextRequest) {
 
     if (fmt === 'mscz') {
       // MuseScore file — convert to MXL via MuseScore CLI
-      const xml = await runMscoreToMxl(inputPath, outputMxl);
+      const archive = await inspectMsczArchive(buffer).catch(() => undefined);
+      await assertMsczSupportedByServerMuseScore(archive);
+      const xml = await runMscoreToMxl(inputPath, outputMxl, { archive });
       return NextResponse.json({ xml, filename: file.name.replace(/\.mscz$/i, '.mxl') });
     }
 
@@ -134,7 +144,21 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserveTabs?: boolean } = {}): Promise<string> {
+async function getServerMuseScoreVersion() {
+  if (!museScoreVersionCache) {
+    museScoreVersionCache = readMuseScoreCliVersion(resolveMuseScoreCli());
+  }
+  return museScoreVersionCache;
+}
+
+async function assertMsczSupportedByServerMuseScore(archive: MsczArchiveInfo | undefined) {
+  const cliVersion = await getServerMuseScoreVersion();
+  if (cliVersion && shouldRejectMsczForCliVersion(archive, cliVersion)) {
+    throw new Error(formatMsczVersionMismatchError({ archive: archive!, cliVersion }));
+  }
+}
+
+function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserveTabs?: boolean; archive?: MsczArchiveInfo } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const timeoutMs = 60000;
     const proc = spawn(resolveMuseScoreCli(), [inputPath, '-o', outputMxl], {
@@ -149,6 +173,11 @@ function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserv
 
     proc.on('close', async (code, signal) => {
       if (code !== 0) {
+        const cliVersion = await getServerMuseScoreVersion().catch(() => undefined);
+        if (cliVersion && shouldRejectMsczForCliVersion(options.archive, cliVersion)) {
+          reject(new Error(formatMsczVersionMismatchError({ archive: options.archive!, cliVersion })));
+          return;
+        }
         reject(new Error(formatMuseScoreConversionError({ code, signal, stderr, timeoutMs })));
         return;
       }

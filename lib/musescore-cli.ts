@@ -1,6 +1,7 @@
 import { accessSync, constants } from 'fs';
 import { platform } from 'os';
 import { delimiter, join } from 'path';
+import { spawn } from 'child_process';
 
 const COMMON_MUSESCORE_BINARIES = ['mscore', 'musescore', 'musescore4'];
 const COMMON_MUSESCORE_PATHS = [
@@ -53,6 +54,23 @@ export function resolveMuseScoreCli(env: NodeJS.ProcessEnv = process.env) {
     );
   }
   return resolved;
+}
+
+export function readMuseScoreCliVersion(path: string, env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const proc = spawn(path, ['--version'], {
+      timeout: 10000,
+      env: museScoreSpawnEnv(env),
+    });
+
+    let output = '';
+    proc.stdout.on('data', (data) => { output += data.toString(); });
+    proc.stderr.on('data', (data) => { output += data.toString(); });
+    proc.on('error', () => resolve(undefined));
+    proc.on('close', () => {
+      resolve(output.match(/\d+(?:\.\d+){1,3}/)?.[0]);
+    });
+  });
 }
 
 export function museScoreSpawnEnv(env: NodeJS.ProcessEnv = process.env) {
