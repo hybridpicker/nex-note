@@ -385,13 +385,16 @@ function addChords(doc: XmlDocument, chords: string) {
     const measureNumber = parseInt(measurePart, 10);
     const measure = getMeasure(doc, measureNumber);
     if (!measure || !harmonyPart) continue;
-    const harmony = doc.createElement('harmony');
-    const root = doc.createElement('root');
-    const rootStep = doc.createElement('root-step');
-    rootStep.textContent = harmonyPart.trim().charAt(0).toUpperCase();
-    root.appendChild(rootStep);
-    harmony.appendChild(root);
-    measure.insertBefore(harmony, measure.firstChild);
+    Array.from(measure.childNodes)
+      .filter((node): node is XmlEl => node.nodeType === 1 && (node as XmlEl).tagName === 'harmony')
+      .forEach((harmony) => harmony.parentNode?.removeChild(harmony));
+    const harmony = buildLegacyHarmonyElement(doc, harmonyPart.trim(), 0);
+    const firstTimedElement = Array.from(measure.childNodes)
+      .find((node): node is XmlEl => (
+        node.nodeType === 1
+        && ['note', 'backup', 'forward'].includes((node as XmlEl).tagName)
+      ));
+    measure.insertBefore(harmony, firstTimedElement ?? null);
   }
 }
 
@@ -560,14 +563,31 @@ function removeClefChange(doc: XmlDocument, measureNumber: number, staffIndex?: 
 }
 
 function insertMeasureAfter(doc: XmlDocument, measureNumber: number) {
-  const measure = getMeasure(doc, measureNumber);
-  if (!measure?.parentNode) return;
-  const clone = measure.cloneNode(true) as XmlEl;
-  clone.setAttribute('number', String(measureNumber + 1));
-  const notes = Array.from(clone.getElementsByTagName('note'));
-  for (const note of notes) note.parentNode?.removeChild(note);
-  if (measure.nextSibling) measure.parentNode.insertBefore(clone, measure.nextSibling);
-  else measure.parentNode.appendChild(clone);
+  const parts = Array.from(doc.getElementsByTagName('part'));
+  parts.forEach((part) => {
+    const measures = Array.from(part.childNodes)
+      .filter((node): node is XmlEl => node.nodeType === 1 && (node as XmlEl).tagName === 'measure');
+    const index = measures.findIndex((measure) => parseInt(measure.getAttribute('number') ?? '0', 10) === measureNumber);
+    const measure = index >= 0 ? measures[index] : null;
+    if (!measure) return;
+
+    const clone = measure.cloneNode(true) as XmlEl;
+    Array.from(clone.childNodes)
+      .filter((node): node is XmlEl => (
+        node.nodeType === 1
+        && ['note', 'backup', 'forward', 'harmony', 'direction', 'barline'].includes((node as XmlEl).tagName)
+      ))
+      .forEach((node) => node.parentNode?.removeChild(node));
+
+    const nextSibling = measures[index + 1] ?? null;
+    part.insertBefore(clone, nextSibling);
+
+    Array.from(part.childNodes)
+      .filter((node): node is XmlEl => node.nodeType === 1 && (node as XmlEl).tagName === 'measure')
+      .forEach((entry, measureIndex) => {
+        entry.setAttribute('number', String(measureIndex + 1));
+      });
+  });
 }
 
 function deleteMeasure(doc: XmlDocument, measureNumber: number) {

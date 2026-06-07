@@ -77,6 +77,17 @@ const EIGHT_MEASURE_READING_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const TWO_MEASURE_A7_LICK_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1"><attributes><divisions>2</divisions><key><fifths>2</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind></harmony><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note></measure>
+    <measure number="2"><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind></harmony><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>C</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note><note><rest/><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note></measure>
+  </part>
+</score-partwise>`;
+
 const FOUR_MEASURE_REST_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list>
@@ -1140,7 +1151,7 @@ test('runAiCommandPipeline can prepare a local arrangement preview without calli
 test('runAiCommandPipeline materializes diatonic alternate lick versions from named chords', async () => {
   const result = await runAiCommandPipeline({
     message: 'this is a lick for a7; arrange other version in diatonic system; Gmaj7, F#m7 etc..',
-    xml: EIGHT_MEASURE_READING_XML,
+    xml: TWO_MEASURE_A7_LICK_XML,
     provider: 'ollama',
     ask: async (): Promise<AIResponse> => {
       throw new Error('should not call model');
@@ -1153,15 +1164,23 @@ test('runAiCommandPipeline materializes diatonic alternate lick versions from na
   assert.equal(result.provider, 'local-layout');
   assert.equal(result.model, 'musician-arrangement-engine');
   assert.equal(result.requiresConfirmation, true);
+  assert.match(result.explanation, /after the source lick/i);
+  assert.match(result.explanation, /original measures stay unchanged/i);
   assert.match(result.explanation, /score operations are ready, but no notes have changed yet/i);
   assert.match(result.explanation, /click Apply or type "apply"/i);
-  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
-  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
+  assert.equal(result.commands.filter((command) => command.type === 'insertMeasureAfter').length, 2);
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice' && command.measureNumber === 3));
+  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice' && command.measureNumber === 4));
+  assert.ok(!result.commands.some((command) => command.type === 'clearMeasureVoice' && (command.measureNumber === 1 || command.measureNumber === 2)));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt' && command.measureNumber === 3));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt' && command.measureNumber === 4));
   const chordCommand = result.commands.find((command) => command.type === 'addChords');
   assert.ok(chordCommand);
   if (!chordCommand || chordCommand.type !== 'addChords') return;
-  assert.match(chordCommand.chords, /1:Gmaj7/);
-  assert.match(chordCommand.chords, /2:F#m7/);
+  assert.match(chordCommand.chords, /3:Gmaj7/);
+  assert.match(chordCommand.chords, /4:F#m7/);
+  assert.doesNotMatch(chordCommand.chords, /1:Gmaj7/);
+  assert.doesNotMatch(chordCommand.chords, /2:F#m7/);
   assert.doesNotMatch(chordCommand.chords, /A7/);
 });
 

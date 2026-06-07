@@ -3669,20 +3669,24 @@ export function executeCoreCommands(
           const measureNumber = Number.parseInt(measureToken, 10);
           if (!Number.isFinite(measureNumber) || !chordToken?.trim()) return;
           nextDocument.score.parts.forEach((part) => {
+            const hostStaff = part.staves.find((staff) => staff.measures.some((entry) => entry.measureNumber === measureNumber));
             part.staves.forEach((staff) => {
               const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
               if (!measure) return;
-              measure.directions = measure.directions.filter((direction) => !(direction.kind === 'harmony' && direction.timestampNum === 0));
-              measure.directions.push({
-                id: `${measure.id}:harmony:${index}`,
+              measure.directions = measure.directions.filter((direction) => direction.kind !== 'harmony');
+            });
+            const hostMeasure = hostStaff?.measures.find((entry) => entry.measureNumber === measureNumber);
+            if (hostStaff && hostMeasure) {
+              hostMeasure.directions.push({
+                id: `${hostMeasure.id}:harmony:${index}`,
                 kind: 'harmony',
                 value: chordToken.trim(),
                 measureNumber,
-                staffIndex: staff.staffIndex,
+                staffIndex: hostStaff.staffIndex,
                 timestampNum: 0,
-                timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+                timestampDen: Math.max((hostMeasure.attributes[0]?.divisions ?? 1) * 4, 1),
               });
-            });
+            }
           });
         });
         break;

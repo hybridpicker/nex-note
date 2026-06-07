@@ -393,36 +393,60 @@ function buildMaterializedArrangementResponse(
   if (!first) return null;
   const commands: ParsedIntentJson['commands'] = [];
   const touchedVoices = new Set<string>();
-  const measureNumbers = [...new Set(scoped.map((entry) => entry.measure.measureNumber))].sort((a, b) => a - b);
-  const targetChordPlan = measureNumbers
-    .map((measureNumber, index) => `${measureNumber}:${targetChords[index % targetChords.length]}`)
+  const sourceMeasureNumbers = [...new Set(scoped.map((entry) => entry.measure.measureNumber))].sort((a, b) => a - b);
+  const shouldAppendAlternateVersion = explicitChords.length > 0
+    && /\b(lick|version|variation|variant|alternate|other|diatonic|variante|andere|diatonisch)\b/i.test(message);
+  const sourceLastMeasure = sourceMeasureNumbers[sourceMeasureNumbers.length - 1] ?? first.measure.measureNumber;
+  const targetMeasureBySource = new Map<number, number>();
+
+  sourceMeasureNumbers.forEach((measureNumber, index) => {
+    targetMeasureBySource.set(
+      measureNumber,
+      shouldAppendAlternateVersion ? sourceLastMeasure + 1 + index : measureNumber,
+    );
+  });
+
+  if (shouldAppendAlternateVersion) {
+    sourceMeasureNumbers.forEach((_measureNumber, index) => {
+      commands.push({ type: 'insertMeasureAfter', measureNumber: sourceLastMeasure + index });
+    });
+  }
+
+  const targetChordPlan = sourceMeasureNumbers
+    .map((measureNumber, index) => `${targetMeasureBySource.get(measureNumber) ?? measureNumber}:${targetChords[index % targetChords.length]}`)
     .join(',');
 
   commands.push({ type: 'addChords', chords: targetChordPlan });
-  commands.push({ type: 'addExpressionText', measureNumber: first.measure.measureNumber, text: expression, placement: 'above' });
+  commands.push({
+    type: 'addExpressionText',
+    measureNumber: targetMeasureBySource.get(first.measure.measureNumber) ?? first.measure.measureNumber,
+    text: shouldAppendAlternateVersion ? `Diatonic alternate version: ${targetChords.join(', ')}` : expression,
+    placement: 'above',
+  });
   if (tempo) commands.push({ type: 'setTempo', bpm: tempo });
   if (instrument) commands.push({ type: 'fitPartToInstrument', instrument, ...(targetPartId ? { partId: targetPartId } : {}) });
 
   scoped.forEach((entry, noteIndex) => {
-    const voiceKey = `${entry.measure.measureNumber}:${entry.note.staffIndex}:${entry.note.voiceId}`;
+    const targetMeasureNumber = targetMeasureBySource.get(entry.measure.measureNumber) ?? entry.measure.measureNumber;
+    const voiceKey = `${targetMeasureNumber}:${entry.note.staffIndex}:${entry.note.voiceId}`;
     if (!touchedVoices.has(voiceKey)) {
       touchedVoices.add(voiceKey);
       commands.push({
         type: 'clearMeasureVoice',
-        measureNumber: entry.measure.measureNumber,
+        measureNumber: targetMeasureNumber,
         staffIndex: entry.note.staffIndex,
         voiceId: entry.note.voiceId,
       });
     }
 
-    const measureIndex = Math.max(0, measureNumbers.indexOf(entry.measure.measureNumber));
+    const measureIndex = Math.max(0, sourceMeasureNumbers.indexOf(entry.measure.measureNumber));
     const chord = targetChords[measureIndex % targetChords.length]!;
     const tones = spelledChordTones(chord);
     const pitch = chooseMaterializedPitch({ tones, source: entry.note, noteIndex });
     if (!pitch) return;
     commands.push({
       type: 'insertNoteAt',
-      measureNumber: entry.measure.measureNumber,
+      measureNumber: targetMeasureNumber,
       staffIndex: entry.note.staffIndex,
       voiceId: entry.note.voiceId,
       timestampNum: entry.note.timestampNum,
@@ -439,14 +463,16 @@ function buildMaterializedArrangementResponse(
   return {
     commands,
     explanation: explicitChords.length > 0
-      ? `I prepared a notated alternate-version preview over ${targetChords.join(', ')} while preserving the original rhythm. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`
+      ? `I prepared a notated alternate-version preview over ${targetChords.join(', ')} after the source lick while preserving the original rhythm. The original measures stay unchanged. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`
       : `I prepared a notated arrangement preview from the detected harmony while preserving the original rhythm. ${commands.length} score operations are ready, but no notes have changed yet; click Apply or type "apply" to write them into the score.`,
     confidence: 'high',
     ambiguities: [],
     plan: [
       'Read the source lick rhythm',
       `Map the arrangement to ${targetChords.join(', ')}`,
-      'Replace the selected melody voice with concrete chord-tone motion',
+      shouldAppendAlternateVersion
+        ? 'Insert the diatonic variation after the source lick'
+        : 'Replace the selected melody voice with concrete chord-tone motion',
     ],
   };
 }

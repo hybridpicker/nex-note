@@ -477,6 +477,40 @@ test('applyDocumentCommands can set harmony through the legacy fallback path whe
   assert.match(majorResult.xml, /<harmony><root><root-step>C<\/root-step><\/root><kind>major<\/kind><\/harmony>/);
 });
 
+test('legacy fallback addChords replaces existing chord symbols with full chord quality', () => {
+  const unsafeXml = SAMPLE_XML
+    .replace('<attributes>', '<attributes><staff-details><staff-lines>5</staff-lines></staff-details>')
+    .replace(
+      '<note>',
+      '<harmony><root><root-step>G</root-step></root></harmony><harmony><root><root-step>A</root-step></root><kind text="7">dominant</kind><offset>1</offset></harmony><note>',
+    );
+  const result = applyDocumentCommands(buildDocumentState(unsafeXml), [{
+    type: 'addChords',
+    chords: '1:Gmaj7',
+  }]);
+
+  assert.ok(result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
+  assert.equal((result.xml.match(/<harmony>/g) ?? []).length, 1);
+  assert.match(result.xml, /<harmony><root><root-step>G<\/root-step><\/root><kind text="maj7">major-seventh<\/kind><\/harmony>/);
+  assert.doesNotMatch(result.xml, /<kind text="7">dominant<\/kind>/);
+});
+
+test('legacy fallback insertMeasureAfter inserts blank measures and renumbers later measures', () => {
+  const unsafeXml = SAMPLE_XML
+    .replace('<attributes>', '<attributes><staff-details><staff-lines>5</staff-lines></staff-details>')
+    .replace('</part>', '<measure number="2"><note><pitch><step>D</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note></measure></part>');
+  const result = applyDocumentCommands(buildDocumentState(unsafeXml), [{
+    type: 'insertMeasureAfter',
+    measureNumber: 1,
+  }]);
+
+  assert.ok(result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
+  assert.deepEqual(Array.from(result.xml.matchAll(/<measure number="([^"]+)"/g)).map((match) => match[1]), ['1', '2', '3']);
+  const insertedMeasure = /<measure number="2">([\s\S]*?)<\/measure>/.exec(result.xml)?.[1] ?? '';
+  assert.doesNotMatch(insertedMeasure, /<note>/);
+  assert.doesNotMatch(insertedMeasure, /<harmony>/);
+});
+
 test('applyDocumentCommands keeps safe transpose-key edits on the core path when staff details are present', () => {
   const xmlWithStaffDetails = SAMPLE_XML.replace('<attributes>', '<attributes><staff-details><staff-lines>5</staff-lines></staff-details>');
   const result = applyDocumentCommands(buildDocumentState(xmlWithStaffDetails), [
