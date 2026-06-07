@@ -2722,16 +2722,20 @@ export default function Home({ searchParams }: HomeProps) {
   }, []);
 
   const handleApplyCommands = useCallback((commands: ScoreCommand[], label?: string) => {
-    applyCommands(commands, {
+    const result = applyCommands(commands, {
       label,
       selectionAnchor: currentSelectionAnchor,
     });
-    setLastOperations(commands);
+    if (!result || result.applied) {
+      setLastOperations(commands);
+    }
     recordBugReportEvent('commands', 'apply', {
       label: label ?? null,
       commandTypes: commands.map((command) => command.type),
       commandCount: commands.length,
+      result: result ?? null,
     });
+    return result;
   }, [applyCommands, currentSelectionAnchor]);
 
   const handleLayoutCleanup = useCallback(async () => {

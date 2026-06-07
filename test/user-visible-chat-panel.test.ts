@@ -48,6 +48,10 @@ function getCopyLogButton(root: Renderer['root']) {
   return root.findAllByType('button').find((button) => button.props['aria-label'] === 'Copy full chat transcript');
 }
 
+function getButtonByText(root: Renderer['root'], text: string) {
+  return root.findAllByType('button').find((button) => button.children.join('') === text);
+}
+
 async function sendMessage(root: Renderer['root'], message: string) {
   const input = getComposer(root);
   const button = getSendButton(root);
@@ -225,6 +229,8 @@ test('ChatPanel discards a pending preview when a new request arrives and applie
 
   await sendMessage(root, 'set the title');
   assert.match(collectText(root), /Preview only\. Type "apply" to confirm or "cancel" to discard\./);
+  assert.match(collectText(root), /Prepared 1 score operation: setTitle\./);
+  assert.match(collectText(root), /No score changes have been applied yet\./);
   assert.equal(getComposer(root).props.placeholder, 'Type apply to confirm or cancel to discard…');
 
   await sendMessage(root, 'change the composer');
@@ -237,6 +243,64 @@ test('ChatPanel discards a pending preview when a new request arrives and applie
   assert.equal(xmlUpdates.length, 1);
   assert.equal(xmlUpdates[0]?.label, 'change the composer');
   assert.match(xmlUpdates[0]?.xml ?? '', /Codex Piano/);
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
+test('ChatPanel reports failed preview apply instead of claiming a no-op changed the score', async () => {
+  Object.assign(globalThis, {
+    fetch: async () => createFetchResponse({
+      requiresConfirmation: true,
+      explanation: 'Prepared alternate lick.',
+      workflowLabel: 'Arrangement assistant',
+      commands: [
+        { type: 'clearMeasureVoice', measureNumber: 1, staffIndex: 1, voiceId: 1 },
+        { type: 'insertNoteAt', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, step: 'G', octave: 4, alter: 0, durationType: 'quarter' },
+      ],
+      affectedMeasures: [1],
+      ambiguities: [],
+      plan: ['Replace the selected melody voice with concrete chord-tone motion'],
+      riskReasons: ['Arrangement suggestions should stay previewable before apply'],
+      validatorFindings: [],
+      provider: 'local-layout',
+      model: 'musician-arrangement-engine',
+      latencyMs: 0,
+      taskState: { scoreKey: 'score:test', lastWorkflow: 'arrangement-assist' },
+    }),
+  });
+
+  let renderer: Renderer | null = null;
+  await act(async () => {
+    renderer = create(React.createElement(ChatPanel, buildChatPanelProps({
+      onApplyCommands() {
+        return {
+          applied: false,
+          reason: 'no-xml-change',
+          commandCount: 2,
+          appliedCommandCount: 0,
+          commandTypes: ['clearMeasureVoice', 'insertNoteAt'],
+        };
+      },
+    })));
+  });
+
+  const root = renderer!.root;
+  await sendMessage(root, 'arrange other version');
+  assert.match(collectText(root), /Prepared 2 score operations: clearMeasureVoice, insertNoteAt\./);
+  const applyButton = getButtonByText(root, 'Apply');
+  assert.ok(applyButton);
+
+  await act(async () => {
+    applyButton.props.onClick();
+  });
+
+  const text = collectText(root);
+  assert.match(text, /I could not apply that preview because the score did not change \(no-xml-change\)\./);
+  assert.match(text, /Command batch: clearMeasureVoice, insertNoteAt\./);
+  assert.doesNotMatch(text, /Arrangement assistant: Prepared alternate lick\. \(m\.1\)/);
+  assert.equal(getComposer(root).props.placeholder, 'Type apply to confirm or cancel to discard…');
 
   await act(async () => {
     renderer?.unmount();

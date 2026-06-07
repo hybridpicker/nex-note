@@ -44,6 +44,15 @@ interface PendingConfirmation {
   latencyMs?: number;
 }
 
+interface ApplyCommandsResult {
+  applied: boolean;
+  reason?: string;
+  commandCount?: number;
+  appliedCommandCount?: number;
+  commandTypes?: string[];
+  diagnosticCount?: number;
+}
+
 interface Props {
   xml: string;
   provider: ProviderName;
@@ -54,7 +63,7 @@ interface Props {
   scoreSessionReady?: boolean;
   selection?: EditorSelection;
   onXmlUpdate: (xml: string, meta?: { label?: string; commands?: ScoreCommand[] }) => void;
-  onApplyCommands: (commands: ScoreCommand[], label?: string) => void;
+  onApplyCommands: (commands: ScoreCommand[], label?: string) => void | ApplyCommandsResult;
   onUndo?: () => void;
   onRedo?: () => void;
   onBenchmark: (message: string) => void;
@@ -78,9 +87,12 @@ function getConfirmationAction(message: string): 'confirm' | 'cancel' | null {
 }
 
 function buildPreviewText(preview: PendingConfirmation, t: ReturnType<typeof useI18n>['t']) {
+  const commandSummary = summarizeCommandTypes(preview.commands);
   const lines = [
     preview.workflowLabel ? `${preview.workflowLabel}.` : '',
     `${preview.explanation || t('chat.previewWaiting')}`,
+    `Prepared ${preview.commands.length} score operation${preview.commands.length === 1 ? '' : 's'}${commandSummary ? `: ${commandSummary}` : ''}.`,
+    'No score changes have been applied yet.',
     t('chat.previewOnly'),
   ].filter(Boolean);
   if (preview.affectedMeasures.length) {
@@ -99,6 +111,33 @@ function buildPreviewText(preview: PendingConfirmation, t: ReturnType<typeof use
     lines.push(`${t('chat.validatorFindings')}: ${preview.validatorFindings.join('; ')}`);
   }
   return lines.join('\n');
+}
+
+function summarizeCommandTypes(commands: ScoreCommand[] | undefined) {
+  if (!Array.isArray(commands) || commands.length === 0) return '';
+  const counts = new Map<string, number>();
+  commands.forEach((command) => counts.set(command.type, (counts.get(command.type) ?? 0) + 1));
+  return [...counts.entries()]
+    .map(([type, count]) => (count === 1 ? type : `${type} x${count}`))
+    .join(', ');
+}
+
+function buildApplyFailureText(preview: PendingConfirmation, result: ApplyCommandsResult | void, t: ReturnType<typeof useI18n>['t']) {
+  const reason = result && 'reason' in result && result.reason ? result.reason : 'unknown';
+  const commandSummary = summarizeCommandTypes(preview.commands);
+  const appliedCount = result && 'appliedCommandCount' in result && typeof result.appliedCommandCount === 'number'
+    ? ` Applied commands before rejection: ${result.appliedCommandCount}.`
+    : '';
+  const diagnosticCount = result && 'diagnosticCount' in result && typeof result.diagnosticCount === 'number'
+    ? ` Blocking diagnostics: ${result.diagnosticCount}.`
+    : '';
+  return [
+    `${preview.workflowLabel ? `${preview.workflowLabel}: ` : ''}I could not apply that preview because the score did not change (${reason}).`,
+    commandSummary ? `Command batch: ${commandSummary}.` : '',
+    appliedCount.trim(),
+    diagnosticCount.trim(),
+    t('chat.previewOnly'),
+  ].filter(Boolean).join('\n');
 }
 
 function formatChatTranscript(messages: Message[]) {
@@ -173,6 +212,46 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
   });
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  function applyPendingPreview(preview: PendingConfirmation) {
+    const result = onApplyCommands(preview.commands, preview.requestLabel);
+    const commandSummary = summarizeCommandTypes(preview.commands);
+    dbg.info('chat', 'assistant preview apply requested', {
+      provider: preview.provider,
+      model: preview.model,
+      requestLabel: preview.requestLabel,
+      commandCount: preview.commands.length,
+      commandTypes: preview.commands.map((command) => command.type),
+      result,
+    });
+    if (result && result.applied === false) {
+      setMessages((m) => [...m, {
+        role: 'assistant',
+        text: buildApplyFailureText(preview, result, t),
+        provider: preview.provider,
+        model: preview.model,
+        latencyMs: preview.latencyMs,
+      }]);
+      return false;
+    }
+    if (preview.commands.length && onOperationsApplied) {
+      onOperationsApplied(preview.commands);
+    }
+    setMessages((m) => [...m, {
+      role: 'assistant',
+      text: `${preview.workflowLabel ? `${preview.workflowLabel}: ` : ''}${preview.explanation || t('chat.previewApplied')}${preview.affectedMeasures.length ? ` (m.${preview.affectedMeasures.join(', m.')})` : ''}${commandSummary ? `\nApplied operations: ${commandSummary}.` : ''}`,
+      provider: preview.provider,
+      model: preview.model,
+      latencyMs: preview.latencyMs,
+    }]);
+    setPendingConfirmation(null);
+    return true;
+  }
+
+  function cancelPendingPreview() {
+    setPendingConfirmation(null);
+    setMessages((m) => [...m, { role: 'assistant', text: t('chat.previewDiscarded') }]);
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -211,23 +290,11 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
 
     const confirmationAction = getConfirmationAction(msg);
     if (pendingConfirmation && confirmationAction === 'confirm') {
-      onApplyCommands(pendingConfirmation.commands, pendingConfirmation.requestLabel);
-      if (pendingConfirmation.commands.length && onOperationsApplied) {
-        onOperationsApplied(pendingConfirmation.commands);
-      }
-      setMessages((m) => [...m, {
-        role: 'assistant',
-        text: `${pendingConfirmation.workflowLabel ? `${pendingConfirmation.workflowLabel}: ` : ''}${pendingConfirmation.explanation || t('chat.previewApplied')}${pendingConfirmation.affectedMeasures.length ? ` (m.${pendingConfirmation.affectedMeasures.join(', m.')})` : ''}`,
-        provider: pendingConfirmation.provider,
-        model: pendingConfirmation.model,
-        latencyMs: pendingConfirmation.latencyMs,
-      }]);
-      setPendingConfirmation(null);
+      applyPendingPreview(pendingConfirmation);
       return;
     }
     if (pendingConfirmation && confirmationAction === 'cancel') {
-      setPendingConfirmation(null);
-      setMessages((m) => [...m, { role: 'assistant', text: t('chat.previewDiscarded') }]);
+      cancelPendingPreview();
       return;
     }
     if (pendingConfirmation) {
@@ -297,11 +364,35 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
       const appliedCommands = (data.commands ?? data.operations) as ScoreCommand[] | undefined;
       const hasAppliedCommands = Array.isArray(appliedCommands) && appliedCommands.length > 0;
       if (isSafeWholeScoreTransposePreview(appliedCommands, data.riskReasons)) {
-        onApplyCommands(appliedCommands, msg);
+        const applyResult = onApplyCommands(appliedCommands, msg);
+        if (applyResult && applyResult.applied === false) {
+          const failedPreview: PendingConfirmation = {
+            requestLabel: msg,
+            commands: appliedCommands,
+            explanation: data.explanation || t('chat.previewPrepared'),
+            workflowLabel: typeof data.workflowLabel === 'string' ? data.workflowLabel : undefined,
+            affectedMeasures: Array.isArray(data.affectedMeasures) ? data.affectedMeasures : [],
+            ambiguities: Array.isArray(data.ambiguities) ? data.ambiguities : [],
+            plan: Array.isArray(data.plan) ? data.plan : [],
+            riskReasons: Array.isArray(data.riskReasons) ? data.riskReasons : [],
+            validatorFindings: Array.isArray(data.validatorFindings) ? data.validatorFindings : [],
+            provider: data.provider,
+            model: data.model,
+            latencyMs: data.latencyMs,
+          };
+          setMessages((m) => [...m, {
+            role: 'assistant',
+            text: buildApplyFailureText(failedPreview, applyResult, t),
+            provider: data.provider,
+            model: data.model,
+            latencyMs: data.latencyMs,
+          }]);
+          return;
+        }
         if (onOperationsApplied) onOperationsApplied(appliedCommands);
         setMessages((m) => [...m, {
           role: 'assistant',
-          text: `${typeof data.workflowLabel === 'string' ? `${data.workflowLabel}: ` : ''}${data.explanation || t('chat.changesApplied')}${Array.isArray(data.affectedMeasures) && data.affectedMeasures.length ? ` (m.${data.affectedMeasures.join(', m.')})` : ''}`,
+          text: `${typeof data.workflowLabel === 'string' ? `${data.workflowLabel}: ` : ''}${data.explanation || t('chat.changesApplied')}${Array.isArray(data.affectedMeasures) && data.affectedMeasures.length ? ` (m.${data.affectedMeasures.join(', m.')})` : ''}${summarizeCommandTypes(appliedCommands) ? `\nApplied operations: ${summarizeCommandTypes(appliedCommands)}.` : ''}`,
           provider: data.provider,
           model: data.model,
           latencyMs: data.latencyMs,
@@ -344,6 +435,8 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
           latencyMs: data.latencyMs,
           explanation: preview.explanation,
           affectedMeasures: preview.affectedMeasures,
+          commandCount: preview.commands.length,
+          commandTypes: preview.commands.map((command) => command.type),
         });
         return;
       }
@@ -483,6 +576,26 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
         >
           {isBenchmark ? t('chat.test') : t('chat.send')}
         </button>
+        {pendingConfirmation && (
+          <>
+            <button
+              type="button"
+              onClick={() => applyPendingPreview(pendingConfirmation)}
+              disabled={loading}
+              className="px-3 py-2.5 rounded-xl text-sm font-medium border border-nex-accent text-nex-accent hover:bg-nex-accent/10 disabled:opacity-30 transition-colors shrink-0"
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              onClick={cancelPendingPreview}
+              disabled={loading}
+              className="px-3 py-2.5 rounded-xl text-sm font-medium border border-nex-border text-slate-500 hover:bg-nex-surface disabled:opacity-30 transition-colors shrink-0"
+            >
+              Cancel
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

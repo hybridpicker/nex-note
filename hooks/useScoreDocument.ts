@@ -369,10 +369,18 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
   }, [buildCoreState, clearHistoryStacks, replaceSession, setBaseDocumentLive, setDocumentLive]);
 
   const applyCommands = useCallback((commands: ScoreCommand[], meta?: { label?: string; selectionAnchor?: ScoreDocumentSelectionAnchor | null }) => {
-    if (!commands.length) return;
+    if (!commands.length) return { applied: false, reason: 'empty-command-batch' as const, commandCount: 0, commandTypes: [] as string[] };
     const current = documentRef.current;
     const next = applyDocumentCommands(current, commands);
-    if (next.xml === current.xml) return;
+    if (next.xml === current.xml) {
+      return {
+        applied: false,
+        reason: 'no-xml-change' as const,
+        commandCount: commands.length,
+        appliedCommandCount: next.appliedCommands.length,
+        commandTypes: commands.map((command) => command.type),
+      };
+    }
     const nextDocumentState: DocumentState = {
       xml: next.xml,
       sourceMusicXml: next.sourceMusicXml,
@@ -390,7 +398,16 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
       previousRevision: current.revision,
       revision: nextDocumentState.revision,
     });
-    if (doctorReport && doctorReportBlocksTransaction(doctorReport)) return;
+    if (doctorReport && doctorReportBlocksTransaction(doctorReport)) {
+      return {
+        applied: false,
+        reason: 'doctor-blocked' as const,
+        commandCount: commands.length,
+        appliedCommandCount: next.appliedCommands.length,
+        commandTypes: commands.map((command) => command.type),
+        diagnosticCount: doctorReport.diagnostics.length,
+      };
+    }
     const inverseDerivation = deriveInverseCommands(current.coreDocument, next.appliedCommands);
     const canUseInverse = inverseDerivation.unsupported.length === 0 && inverseDerivation.inverseCommands.length === next.appliedCommands.length;
     const currentHistoryLength = undoStackRef.current.length;
@@ -429,6 +446,15 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     }));
     updateSession({ selectionAnchor: transaction.selectionAnchor ?? null });
     setDocumentLive(nextDocumentState);
+    return {
+      applied: true,
+      reason: 'applied' as const,
+      commandCount: commands.length,
+      appliedCommandCount: next.appliedCommands.length,
+      commandTypes: next.appliedCommands.map((command) => command.type),
+      beforeRevision: current.revision,
+      afterRevision: next.revision,
+    };
   }, [cloneDocument, pushUndo, setDocumentLive, setRedoStackLive, updateSession]);
 
   const undo = useCallback(() => {
