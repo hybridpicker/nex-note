@@ -295,6 +295,7 @@ const SMART_OLLAMA_MODEL_IDS = [
   'gpt-oss:120b-cloud',
   'gemma4:31b-cloud',
   'gemma4:31b',
+  'gemma4:12b',
   'mistral-large-3:675b-cloud',
   'ministral-3:14b-cloud',
   'deepseek-v4-flash:cloud',

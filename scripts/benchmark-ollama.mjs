@@ -5,7 +5,7 @@
  * Usage:
  *   node --env-file=.env.local scripts/benchmark-ollama.mjs
  *   node --env-file=.env.local scripts/benchmark-ollama.mjs --quick
- *   node --env-file=.env.local scripts/benchmark-ollama.mjs --models=gemma4:31b,qwen3:30b
+ *   node --env-file=.env.local scripts/benchmark-ollama.mjs --models=gemma4:12b,gemma4:31b,qwen3-coder-next
  */
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -17,8 +17,10 @@ const HEADERS        = OLLAMA_API_KEY
   : { 'Content-Type': 'application/json' };
 
 const CURATED_MODELS = [
+  'gemma4:12b',
   'gemma4:31b',
   'gemma3:27b',
+  'qwen3-coder-next',
   'qwen3:30b',
   'qwen2.5:72b',
   'nemotron-super',
@@ -28,7 +30,7 @@ const CURATED_MODELS = [
   'ministral-3:14b',
 ];
 
-const QUICK_MODELS = ['gemma4:31b', 'qwen3:30b', 'phi4', 'ministral-3:14b'];
+const QUICK_MODELS = ['gemma4:12b', 'gemma4:31b', 'qwen3-coder-next', 'ministral-3:14b'];
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
 

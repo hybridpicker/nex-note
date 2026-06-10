@@ -9,6 +9,7 @@ const LOCAL_OLLAMA_BASE = 'http://localhost:11434';
 const CLOUD_MODELS = [
   { id: 'gemma4:31b',                 label: 'Gemma 4 31B' },
   { id: 'gemma4:31b-cloud',           label: 'Gemma 4 31B Cloud' },
+  { id: 'gemma4:12b',                 label: 'Gemma 4 12B' },
   { id: 'gemma4:26b',                 label: 'Gemma 4 26B' },
   { id: 'qwen3.5:cloud',              label: 'Qwen 3.5 Cloud' },
   { id: 'qwen3.5:397b-cloud',         label: 'Qwen 3.5 397B Cloud' },
