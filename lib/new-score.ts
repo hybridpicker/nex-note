@@ -159,6 +159,7 @@ export const NEW_SCORE_TEMPLATES: NewScoreTemplate[] = [
   { id: 'wind-quintet', name: 'Wind Quintet', category: 'Ensemble', description: 'Flute, Oboe, Clarinet, Horn, Bassoon.', instrumentIds: ['flute', 'oboe', 'clarinet-bb', 'horn-f', 'bassoon'] },
   { id: 'brass-quartet', name: 'Brass Quartet', category: 'Ensemble', description: 'Two trumpets, horn, trombone.', instrumentIds: ['trumpet-bb', 'trumpet-bb', 'horn-f', 'trombone'] },
   { id: 'jazz-combo', name: 'Jazz Combo', category: 'Band', description: 'Alto sax, trumpet, piano, bass, guitar.', instrumentIds: ['sax-alto-eb', 'trumpet-bb', 'piano', 'double-bass', 'guitar'] },
+  { id: 'guitar-tab', name: 'Guitar + TAB', category: 'Guitars', description: 'Six-string guitar score with standard notation and tablature staves.', instrumentIds: ['guitar-tab'] },
 ];
 
 export const KEY_SIGNATURE_OPTIONS: KeySignatureOption[] = [

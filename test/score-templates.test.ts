@@ -94,6 +94,8 @@ test('built-in template categories remain available', () => {
   const categories = buildTemplateCategories(NEW_SCORE_TEMPLATES);
 
   assert.ok(NEW_SCORE_TEMPLATES.some((template) => template.id === 'solo-piano'));
+  assert.ok(NEW_SCORE_TEMPLATES.some((template) => template.id === 'guitar-tab'));
   assert.ok(categories.includes('Solo'));
   assert.ok(categories.includes('Chamber'));
+  assert.ok(categories.includes('Guitars'));
 });
