@@ -328,7 +328,10 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     };
   }
 
-  if (exactNotes.length === 0 && exactRests.length === 0) {
+  // Reject targets that hit no element anchor — but only in voices that
+  // already have events. A still-empty voice has no anchors yet; its first
+  // entry (e.g. starting voice 2 at a voice-1 anchor) must stay possible.
+  if (voiceEvents.length > 0 && exactNotes.length === 0 && exactRests.length === 0) {
     diagnostics.push(spanningRest ? 'validation:target-inside-rest-rejected' : 'validation:insert-target-missing');
     return {
       target: null,

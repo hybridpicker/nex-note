@@ -2195,7 +2195,7 @@ test('synthetic beat snaps are not overridden by a nearby rest placement anchor'
   });
 });
 
-test('semantic replace ghost rebinds stale preview X to the current snap slot', () => {
+test('semantic replace ghost drops stale previews inside a rest span', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
   const part = coreDocument.score.parts[0]!;
   const measure = part.staves[0]!.measures[0]!;
@@ -2285,11 +2285,9 @@ test('semantic replace ghost rebinds stale preview X to the current snap slot', 
     false,
   );
 
-  assert.ok(rebound);
-  assert.equal(rebound.domCenter.x, currentSlot.domX);
-  assert.equal(rebound.previewLeft, 146.16);
-  assert.equal(rebound.resolvedTarget?.domX, currentSlot.domX);
-  assert.match(rebound.resolvedTarget?.diagnostics.join(' ') ?? '', /validation:replace-rest-span/);
+  // Element-anchor rule: a stale preview pointing inside a rest span no longer
+  // resolves to a target — the phantom mid-rest slot is dropped entirely.
+  assert.equal(rebound, null);
 });
 
 test('advanced retarget keeps note anchors marked as notes for fresh multi-voice entry', () => {
@@ -2506,7 +2504,7 @@ test('clicking the visible rest glyph commits against the rest start snap', () =
   assert.match(rebound.resolvedTarget?.diagnostics.join(' ') ?? '', /validation:replace-rest-exact/);
 });
 
-test('whole-rest pointer hover and commit quantize to the selected rest unit', () => {
+test('whole-rest pointer hover locks to the rest anchor', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
   const measureId = coreDocument.score.parts[0]!.staves[0]!.measures[0]!.id;
   const renderedNotes: RenderedNote[] = [{
@@ -2599,16 +2597,18 @@ test('whole-rest pointer hover and commit quantize to the selected rest unit', (
     new Map([[1, overlay.staffDetails]]),
   );
 
+  // Element-anchor rule: hovering anywhere inside a whole-measure rest locks
+  // the ghost to the rest's start anchor — no quantized internal slots.
   assert.ok(target);
-  assert.equal(target.timestampNum, 1);
-  assert.equal(target.timestampDen, 4);
-  assert.equal(Math.round(target.domCenter.x), 140);
-  assert.equal(target.resolvedTarget?.timestampNum, 1);
-  assert.equal(target.resolvedTarget?.timestampDen, 4);
+  assert.equal(target.timestampNum, 0);
+  assert.equal(Math.round(target.domCenter.x), 180);
+  assert.equal(target.resolvedTarget?.timestampNum, 0);
   assert.equal(target.resolvedTarget?.existingEventKind, 'rest');
-  assert.equal(target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot'), true);
-  assert.equal(target.snapResolution?.effectiveSnap?.synthetic, true);
-  assert.equal(target.snapResolution?.quantizedFallbackSnap?.timestamp, '1/4');
+  assert.equal(target.resolvedTarget?.diagnostics.includes('rest-only-snap-selected'), true);
+  assert.equal(target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot'), false);
+  assert.equal(target.snapResolution?.effectiveSnap?.synthetic, false);
+  assert.equal(target.snapResolution?.effectiveSnap?.timestamp, '0/4');
+  assert.equal(target.snapResolution?.quantizedFallbackSnap ?? null, null);
 });
 
 test('ghost diagnostics accept quantized rest-only fallback snaps as represented slots', () => {
@@ -2664,7 +2664,7 @@ test('ghost diagnostics accept quantized rest-only fallback snaps as represented
   }), false);
 });
 
-test('whole-rest semantic rest hover quantizes away from the visible rest glyph', () => {
+test('whole-rest semantic rest hover stays locked to the rest anchor', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
   const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
   const measureId = measure.id;
@@ -2769,17 +2769,18 @@ test('whole-rest semantic rest hover quantizes away from the visible rest glyph'
     new Map([[1, overlay.staffDetails]]),
   );
 
+  // Element-anchor rule: the ghost preview may follow the pointer visually,
+  // but the committed target stays locked to the rest's start anchor.
   assert.ok(target);
   assert.equal(Math.round(target.domCenter.x), 215);
-  assert.equal(target.timestampNum, 1);
-  assert.equal(target.timestampDen, 2);
-  assert.equal(target.resolvedTarget?.timestampNum, 1);
-  assert.equal(target.resolvedTarget?.timestampDen, 2);
+  assert.equal(target.timestampNum, 0);
+  assert.equal(target.resolvedTarget?.timestampNum, 0);
   assert.equal(target.resolvedTarget?.existingEventKind, 'rest');
-  assert.equal(target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot'), true);
-  assert.equal(target.snapResolution?.effectiveSnap?.synthetic, true);
-  assert.equal(target.snapResolution?.quantizedFallbackSnap?.timestamp, '1/2');
-  assert.equal(target.snapResolution?.effectiveSnap?.timestamp, '1/2');
+  assert.equal(target.resolvedTarget?.diagnostics.includes('rest-only-snap-selected'), true);
+  assert.equal(target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot'), false);
+  assert.equal(target.snapResolution?.effectiveSnap?.synthetic, false);
+  assert.equal(target.snapResolution?.quantizedFallbackSnap ?? null, null);
+  assert.equal(target.snapResolution?.effectiveSnap?.timestamp, '0/4');
   assert.equal(target.snapResolution?.resolver, 'proxy');
 });
 

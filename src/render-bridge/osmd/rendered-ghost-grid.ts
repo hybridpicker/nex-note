@@ -254,34 +254,11 @@ function selectedDurationFraction(options: RenderedGhostGridBuildOptions): Fract
 }
 
 function buildRestMeasureSlotAnchors(duration: Fraction, slotDuration: Fraction | null): RhythmicAnchorTick[] {
-  const durationRatio = fractionToNumber(duration);
-  const slotRatio = slotDuration ? fractionToNumber(slotDuration) : 0;
-  if (!(durationRatio > 0) || !(slotRatio > 0)) {
-    return [{
-      timestampNum: 0,
-      timestampDen: 1,
-      timestamp: normalizeFraction(0, 1),
-      isRest: true,
-    }];
-  }
-
-  const anchors: RhythmicAnchorTick[] = [];
-  const maxSlots = 128;
-  const gcd = (left: number, right: number): number => (right ? gcd(right, left % right) : Math.abs(left) || 1);
-  const commonDen = Math.max(1, (duration.den * slotDuration!.den) / gcd(duration.den, slotDuration!.den));
-  for (let ratio = 0, index = 0; ratio < durationRatio - 1e-9 && index < maxSlots; ratio += slotRatio, index += 1) {
-    const timestamp = normalizeFraction(
-      Math.round(ratio * commonDen),
-      commonDen,
-    );
-    anchors.push({
-      timestampNum: timestamp.num,
-      timestampDen: timestamp.den,
-      timestamp,
-      isRest: true,
-    });
-  }
-  return anchors.length > 0 ? anchors : [{
+  // Element-anchor rule: a rest-only measure exposes exactly one input target —
+  // the start of the rest. Never synthesize a duration grid across it.
+  void duration;
+  void slotDuration;
+  return [{
     timestampNum: 0,
     timestampDen: 1,
     timestamp: normalizeFraction(0, 1),
@@ -315,19 +292,16 @@ function addSilentSpanSlotAnchors(input: {
   const slotRatio = input.slotDuration ? fractionToNumber(input.slotDuration) : 0;
   if (!(slotRatio > 0) || endRatio <= startRatio + 1e-9) return;
 
-  const commonDen = lcm(input.start.den, input.slotDuration!.den);
-  const maxSlots = 128;
-  for (let ratio = startRatio, index = 0; ratio < endRatio - 1e-9 && index < maxSlots; ratio += slotRatio, index += 1) {
-    const timestamp = normalizeFraction(Math.round(ratio * commonDen), commonDen);
-    const key = timestampKey(timestamp.num, timestamp.den);
-    if (input.anchors.has(key)) continue;
-    input.anchors.set(key, {
-      timestampNum: timestamp.num,
-      timestampDen: timestamp.den,
-      timestamp,
-      isRest: true,
-    });
-  }
+  // Element-anchor rule: a silent span's only legal input target is its start.
+  const timestamp = normalizeFraction(input.start.num, input.start.den);
+  const key = timestampKey(timestamp.num, timestamp.den);
+  if (input.anchors.has(key)) return;
+  input.anchors.set(key, {
+    timestampNum: timestamp.num,
+    timestampDen: timestamp.den,
+    timestamp,
+    isRest: true,
+  });
 }
 
 function collectVoiceEventAnchors(voice: { events: Array<{

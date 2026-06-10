@@ -35,7 +35,11 @@ export function detectUnsafeCoreRoundtripTags(sourceXml: string) {
 }
 
 function supportsCoreExecutionWithUnsafeRoundtripTags(command: ValidatedScoreCommand) {
-  if (command.type === 'insertNoteAt' && command.guitar) return supportsCoreExecution(command);
+  // Note inserts must run through the core executor even on scores with
+  // unsafe-roundtrip tags: the legacy XML fallback pads remainders with
+  // beat-crossing dotted rests and cannot mirror paired TAB staves. The
+  // core export roundtrip preserves staff-details (covered by tests).
+  if (command.type === 'insertNoteAt' || command.type === 'insertNote') return supportsCoreExecution(command);
   return supportsCoreExecution(command) && CORE_SAFE_WITH_UNSAFE_ROUNDTRIP_TAGS.has(command.type);
 }
 

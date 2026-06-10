@@ -8887,40 +8887,12 @@ function buildQuantizedRestMeasureGhostPoint(
     measureRight: number;
   },
 ): RenderedGhostGridPoint | null {
-  const staffPoints = filterSelectableRenderedGhostSnapPoints(
-    getRenderedGhostStaffPoints(renderedGhostGrid, input.measureId, input.staffIndex, { includeSynthetic: true }),
-  );
-  if (staffPoints.length === 0 || staffPoints.some((point) => !point.isRest)) return null;
-  if (!(input.measureDurationRatio > 0) || !(input.measureRight > input.measureLeft)) return null;
-  if (staffPoints.some((point) => Math.abs(point.ratio - input.ratio) <= 1e-6)) return null;
-
-  const timestamp = normalizeFraction(Math.round(input.ratio * 64), 64);
-  const restReference = staffPoints
-    .filter((point) => point.voiceId === input.voiceId)
-    .sort((left, right) => Math.abs(left.ratio - input.ratio) - Math.abs(right.ratio - input.ratio))[0]
-    ?? staffPoints[0]!;
-  const domX = input.measureLeft
-    + ((input.measureRight - input.measureLeft)
-      * clamp(input.ratio / Math.max(input.measureDurationRatio, 1e-6), 0, 1));
-
-  return {
-    id: `quantized-rest:${input.measureId}:${input.staffIndex}:${input.voiceId}:${timestamp.num}/${timestamp.den}`,
-    coreEntityId: null,
-    corePartId: input.corePartId ?? restReference.corePartId,
-    measureId: input.measureId,
-    measureNumber: input.measureNumber,
-    pageIndex: input.pageIndex ?? restReference.pageIndex,
-    systemIndex: input.systemIndex ?? restReference.systemIndex,
-    staffIndex: input.staffIndex,
-    voiceId: input.voiceId,
-    timestampNum: timestamp.num,
-    timestampDen: timestamp.den,
-    ratio: fractionToNumber(timestamp),
-    domX,
-    domY: restReference.domY,
-    isRest: true,
-    synthetic: true,
-  };
+  // Element-anchor rule: never fabricate ghost targets inside a rest span.
+  // The only legal target over a rest is the rest's own start anchor, which
+  // already exists as a real grid point.
+  void renderedGhostGrid;
+  void input;
+  return null;
 }
 
 function quantizeRatioToDurationGrid(

@@ -2183,6 +2183,21 @@ export default function Home({ searchParams }: HomeProps) {
     publishDoctorReport(report);
   }, [coreDocument, diagnostics, historyMeta.lastTransaction?.beforeRevision, importLifecycle.deferred, lastCommands, scoreRevision]);
 
+  // True when the current selection (note OR rest) sits on a TAB staff, so the
+  // collapsed-sidebar TAB chip is reachable before the first fret exists.
+  const selectionOnTabStaff = useMemo(() => {
+    if (!selectedNote || !coreDocument) return false;
+    const part = coreDocument.score.parts.find((candidate) => (
+      (selectedNote.corePartId && candidate.id === selectedNote.corePartId)
+      || candidate.staves.some((staff) => staff.measures.some((measure) => measure.id === selectedNote.coreMeasureId))
+    )) ?? coreDocument.score.parts[0] ?? null;
+    return Boolean(part?.staves
+      .find((staff) => staff.staffIndex === selectedNote.staffIndex)
+      ?.measures.some((measure) => measure.attributes.some((attribute) => (
+        attribute.clefs.some((clef) => clef.staffIndex === selectedNote.staffIndex && clef.sign?.toUpperCase() === 'TAB')
+      ))));
+  }, [coreDocument, selectedNote]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const target = window as typeof window & {
@@ -4738,7 +4753,7 @@ export default function Home({ searchParams }: HomeProps) {
                         hide: t('app.leftToolsHide'),
                         title: t('app.leftToolsTitle'),
                       }}
-                      collapsedActions={selectedNote?.guitar ? (
+                      collapsedActions={(selectedNote?.guitar || selectionOnTabStaff) ? (
                         <button
                           type="button"
                           onClick={() => {

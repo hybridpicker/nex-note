@@ -390,9 +390,37 @@ function resolveRangeSelection(document: ScoreDocumentModel | null | undefined, 
   return ordered.slice(from, to + 1);
 }
 
+/**
+ * Positional match that ignores entity ids. Generated events (e.g. padding
+ * rests) get fresh timestamp-suffixed ids on every apply, so a selection can
+ * legitimately carry a different id than the same logical event in the
+ * current document. Used only as a fallback after the strict id-aware match.
+ */
+function selectedNotesPositionallyEqual(a: SelectedNote, b: SelectedNote) {
+  if (a.isRest !== b.isRest) return false;
+  return a.measureNumber === b.measureNumber
+    && a.staffIndex === b.staffIndex
+    && a.voiceId === b.voiceId
+    && timestampsEqual(a.timestampNum, a.timestampDen, b.timestampNum, b.timestampDen)
+    && (
+      a.isRest
+      || (
+        a.step === b.step
+        && a.octave === b.octave
+        && a.alter === b.alter
+      )
+    );
+}
+
+function findSelectionIndex(ordered: SelectedNote[], current: SelectedNote) {
+  const strictIndex = ordered.findIndex((entry) => selectedNotesEqual(entry, current));
+  if (strictIndex >= 0) return strictIndex;
+  return ordered.findIndex((entry) => selectedNotesPositionallyEqual(entry, current));
+}
+
 function findAdjacentSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote, direction: 'prev' | 'next') {
   const ordered = getSelectionLaneOrder(document, current);
-  const currentIndex = ordered.findIndex((entry) => selectedNotesEqual(entry, current));
+  const currentIndex = findSelectionIndex(ordered, current);
   if (currentIndex < 0) return null;
   const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
   if (nextIndex < 0 || nextIndex >= ordered.length) return null;
@@ -408,7 +436,7 @@ function isLocalNoteInputAdvance(current: SelectedNote, candidate: SelectedNote 
 function findMeasureBoundary(document: ScoreDocumentModel | null | undefined, current: SelectedNote, direction: 'prev' | 'next'): SelectedNote | null {
   // Navigate within the same part/staff/voice so measure jumps stay in context.
   const ordered = getSelectionLaneOrder(document, current);
-  const currentIndex = ordered.findIndex((entry) => selectedNotesEqual(entry, current));
+  const currentIndex = findSelectionIndex(ordered, current);
   if (currentIndex < 0) return null;
   if (direction === 'next') {
     const firstInNext = ordered.findIndex((entry) => entry.measureNumber > current.measureNumber);
@@ -439,7 +467,7 @@ function findVerticalSelection(document: ScoreDocumentModel | null | undefined, 
     || a.voiceId - b.voiceId
     || compareSelectedNotes(a, b)
   ));
-  const currentIndex = ranked.findIndex((entry) => selectedNotesEqual(entry, current));
+  const currentIndex = findSelectionIndex(ranked, current);
   if (currentIndex < 0) return null;
   const nextIndex = direction === 'down' ? currentIndex + 1 : currentIndex - 1;
   if (nextIndex < 0 || nextIndex >= ranked.length) return null;
@@ -992,7 +1020,10 @@ export function useNoteEditor(
       const duration = selectedNote.durationType ? NOTE_DURATION_FROM_TYPE[selectedNote.durationType] : null;
       if (duration) setSelectedDurationLive(duration);
       setSelectedAccidentalLive(alterToAccidental(selectedNote.alter));
-      setIsDottedLive(Boolean(selectedNote.isDotted));
+      // Arm the dot from notes only. Rests often carry an invisible dot
+      // (a 3/4 whole-measure rest is stored as a dotted half), and silently
+      // latching it makes the next entry dotted when no dot was ever shown.
+      setIsDottedLive(Boolean(!selectedNote.isRest && selectedNote.isDotted));
       if (selectedNote.voiceId >= 1 && selectedNote.voiceId <= 4) {
         setSelectedVoiceLive(selectedNote.voiceId as 1 | 2 | 3 | 4);
       }
@@ -2333,9 +2364,14 @@ export function useNoteEditor(
   const toggleNoteInput = useCallback(() => {
     const next = !noteInputModeRef.current;
     if (next) ensureNoteInputAnchor();
-    if (!next) setStepInputKeyboardModeLive(false);
+    if (!next) {
+      setStepInputKeyboardModeLive(false);
+      // Guitar fret entry requires note input; leaving guitar mode armed
+      // without it makes fret digits silently act as duration shortcuts.
+      setGuitarInputModeLive(false);
+    }
     setNoteInputModeLive(next);
-  }, [ensureNoteInputAnchor, setNoteInputModeLive, setStepInputKeyboardModeLive]);
+  }, [ensureNoteInputAnchor, setGuitarInputModeLive, setNoteInputModeLive, setStepInputKeyboardModeLive]);
 
   const toggleStepInputKeyboardMode = useCallback(() => {
     const next = !stepInputKeyboardModeRef.current;
@@ -3265,7 +3301,14 @@ export function useNoteEditor(
     toggleEntryMode: () => setEntryModeLive(entryModeRef.current === 'insert' ? 'overwrite' : 'insert'),
     toggleChordInputMode: () => setChordInputModeLive(!chordInputModeRef.current),
     toggleLeadsheetMode: () => setLeadsheetModeLive(!leadsheetModeRef.current),
-    toggleGuitarInputMode: () => setGuitarInputModeLive(!guitarInputModeRef.current),
+    toggleGuitarInputMode: () => {
+      const next = !guitarInputModeRef.current;
+      if (next && !noteInputModeRef.current) {
+        ensureNoteInputAnchor();
+        setNoteInputModeLive(true);
+      }
+      setGuitarInputModeLive(next);
+    },
     setGuitarTuning: setSelectedGuitarTuningLive,
     handleNoteClick,
     handleKeyDown,

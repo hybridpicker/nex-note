@@ -428,7 +428,7 @@ test('applyDocumentCommands executes tempo through the core path', () => {
   assert.ok(!result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
 });
 
-test('applyDocumentCommands can insertNoteAt through the legacy fallback path when unsafe roundtrip tags are present', () => {
+test('applyDocumentCommands routes insertNoteAt through the core path when unsafe roundtrip tags are present', () => {
   const unsafeXml = SAMPLE_XML.replace('<attributes>', '<attributes><staff-details><staff-lines>5</staff-lines></staff-details>');
   const result = applyDocumentCommands(buildDocumentState(unsafeXml), [{
     type: 'insertNoteAt',
@@ -447,7 +447,7 @@ test('applyDocumentCommands can insertNoteAt through the legacy fallback path wh
 
   assert.notEqual(result.xml, unsafeXml);
   assert.match(result.xml, /<staff-details><staff-lines>5<\/staff-lines><\/staff-details>/);
-  assert.ok(result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
+  assert.ok(!result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
 });
 
 test('applyDocumentCommands can set harmony through the legacy fallback path when unsafe roundtrip tags are present', () => {
@@ -612,7 +612,7 @@ test('note duration edits with staff details fill released chord tails on the co
   assert.ok(!result.diagnostics.some((entry) => ['voice_rhythm_sum_mismatch', 'voice_timeline_gap'].includes(entry.code)));
 });
 
-test('applyDocumentCommands splits a full-measure rest correctly through the legacy fallback path', () => {
+test('applyDocumentCommands splits a full-measure rest correctly on scores with staff details', () => {
   const unsafeXml = FULL_REST_XML.replace('<attributes>', '<attributes><staff-details><staff-lines>5</staff-lines></staff-details>');
   const result = applyDocumentCommands(buildDocumentState(unsafeXml), [{
     type: 'insertNoteAt',
@@ -637,11 +637,11 @@ test('applyDocumentCommands splits a full-measure rest correctly through the leg
     ['0/4:rest:1', '1/4:C4:1', '2/4:rest:2'],
   );
   assert.match(result.xml, /<staff-details><staff-lines>5<\/staff-lines><\/staff-details>/);
-  assert.ok(result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
+  assert.ok(!result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
   assert.ok(!result.diagnostics.some((entry) => entry.code === 'measure_balance'));
 });
 
-test('legacy fallback insertNoteAt keeps multi-voice measure balance and backups valid', () => {
+test('insertNoteAt on staff-details scores keeps multi-voice measure balance and backups valid', () => {
   const unsafeXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list>
@@ -682,7 +682,7 @@ test('legacy fallback insertNoteAt keeps multi-voice measure balance and backups
     [4, 4],
   );
   assert.match(result.xml, /<backup><duration>4<\/duration><\/backup>/);
-  assert.ok(result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
+  assert.ok(!result.diagnostics.some((entry) => entry.code === 'legacy_fallback'));
   assert.ok(!result.diagnostics.some((entry) => ['measure_balance', 'voice_rhythm_sum_mismatch', 'voice_duration_mismatch', 'voice_timeline_gap'].includes(entry.code)));
 });
 
