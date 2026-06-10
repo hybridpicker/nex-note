@@ -998,7 +998,7 @@ test('buildNoteEntryCommitCommands maps resolved targets to shared semantic comm
   });
 });
 
-test('inspectResolvedEditTarget accepts canonical quarter slots inside a whole-rest measure', () => {
+test('inspectResolvedEditTarget rejects canonical quarter slots inside a whole-rest measure', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
 
   const inspected = inspectResolvedEditTarget({
@@ -1024,11 +1024,9 @@ test('inspectResolvedEditTarget accepts canonical quarter slots inside a whole-r
     isDotted: false,
   });
 
-  assert.ok(inspected.target);
-  assert.equal(inspected.target?.timestampNum, 2);
-  assert.equal(inspected.target?.timestampDen, 4);
-  assert.equal(inspected.target?.existingEventKind, 'rest');
-  assert.match(inspected.target?.diagnostics.join(' ') ?? '', /validation:replace-rest-span/);
+  assert.equal(inspected.target, null);
+  assert.equal(inspected.rejectionReason, 'target-inside-rest');
+  assert.match(inspected.diagnostics.join(' '), /validation:target-inside-rest-rejected/);
 });
 
 test('inspectResolvedEditTarget rejects replace mode when no replaceable target exists at the slot', () => {

@@ -46,6 +46,32 @@ const DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS = DUAL_STAFF_TAB_XML.replace(
   '<staff-details number="2"><staff-type>tab</staff-type><staff-lines>6</staff-lines></staff-details><clef number="2"><sign>TAB</sign><line>5</line></clef>',
 );
 
+const DUAL_STAFF_TAB_REST_ANCHORS_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <staff-details number="2"><staff-type>tab</staff-type><staff-lines>6</staff-lines></staff-details>
+        <clef number="2"><sign>TAB</sign><line>5</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>5</string><fret>3</fret></technical></notations></note>
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>2</string><fret>5</fret></technical></notations></note>
+      <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
 function buildEmptyDocument(): ScoreDocumentModel {
   return importMusicXmlToCore(EMPTY_XML);
 }
@@ -182,6 +208,78 @@ test('setGuitarFret keeps Guitar Pro style staff-details TAB imports paired with
   assert.match(result.xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
   assert.match(result.xml, /<staff>1<\/staff>/);
   assert.match(result.xml, /<staff>2<\/staff>/);
+});
+
+test('insertNoteAt with guitar converts the paired notation rest at the same rhythmic anchor', () => {
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), [{
+    type: 'insertNoteAt',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 2,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'A',
+    octave: 3,
+    alter: 0,
+    durationType: 'quarter',
+    isDotted: false,
+    guitar: { string: 4, fret: 7, tuning: 'standard' },
+  } as any]);
+
+  const notationEvents = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .sort((a, b) => a.timestampNum - b.timestampNum);
+  const tabEvents = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .sort((a, b) => a.timestampNum - b.timestampNum);
+  const notationBeatTwo = notationEvents.find((event) => event.timestampNum === 1);
+  const tabBeatTwo = tabEvents.find((event) => event.timestampNum === 1);
+
+  assert.equal(notationBeatTwo?.kind, 'note');
+  assert.deepEqual(notationBeatTwo?.kind === 'note' ? notationBeatTwo.pitch : null, { step: 'A', alter: 0, octave: 3 });
+  assert.equal(notationBeatTwo?.kind === 'note' ? notationBeatTwo.guitar : undefined, undefined);
+  assert.equal(tabBeatTwo?.kind, 'note');
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'A', alter: 0, octave: 3 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 4, fret: 7, tuning: 'standard' });
+  assert.deepEqual(
+    notationEvents.map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType}`),
+    ['0/4:C4:quarter', '1/4:A3:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
+  );
+  assert.deepEqual(
+    tabEvents.map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.kind === 'note' ? event.guitar?.fret ?? 'ng' : 'r'}`),
+    ['0/4:C4:3', '1/4:A3:7', '2/4:E4:5', '3/4:rest:r'],
+  );
+});
+
+test('document command guitar insertNoteAt mirrors paired notation in staff-details TAB scores', () => {
+  const result = applyDocumentCommands({ xml: DUAL_STAFF_TAB_REST_ANCHORS_XML, coreDocument: null }, [{
+    type: 'insertNoteAt',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 2,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'A',
+    octave: 3,
+    alter: 0,
+    durationType: 'quarter',
+    isDotted: false,
+    guitar: { string: 4, fret: 7, tuning: 'standard' },
+  } as any]);
+
+  assert.deepEqual(
+    result.coreDocument?.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+      .sort((a, b) => a.timestampNum - b.timestampNum)
+      .map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType}`),
+    ['0/4:C4:quarter', '1/4:A3:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
+  );
+  assert.deepEqual(
+    result.coreDocument?.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+      .sort((a, b) => a.timestampNum - b.timestampNum)
+      .map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.kind === 'note' ? event.guitar?.fret ?? 'ng' : 'r'}`),
+    ['0/4:C4:3', '1/4:A3:7', '2/4:E4:5', '3/4:rest:r'],
+  );
+  assert.match(result.xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
 });
 
 test('legacy fallback insertNoteAt writes TAB string and fret metadata', () => {

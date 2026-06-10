@@ -35,6 +35,7 @@ export function detectUnsafeCoreRoundtripTags(sourceXml: string) {
 }
 
 function supportsCoreExecutionWithUnsafeRoundtripTags(command: ValidatedScoreCommand) {
+  if (command.type === 'insertNoteAt' && command.guitar) return supportsCoreExecution(command);
   return supportsCoreExecution(command) && CORE_SAFE_WITH_UNSAFE_ROUNDTRIP_TAGS.has(command.type);
 }
 

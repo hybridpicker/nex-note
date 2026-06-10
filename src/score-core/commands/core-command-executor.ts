@@ -663,6 +663,26 @@ function findPairedTabNotationEvent(
   return null;
 }
 
+function findPairedStaffVoice(
+  part: ScoreDocumentModel['score']['parts'][number],
+  sourceStaffIndex: number,
+  measureNumber: number,
+  voiceId: number,
+) {
+  const sourceIsTab = isTabStaff(part, sourceStaffIndex);
+  const pairedStaves = part.staves
+    .filter((staff) => staff.staffIndex !== sourceStaffIndex && isTabStaff(part, staff.staffIndex) !== sourceIsTab)
+    .sort((left, right) => Math.abs(left.staffIndex - sourceStaffIndex) - Math.abs(right.staffIndex - sourceStaffIndex));
+
+  for (const staff of pairedStaves) {
+    const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+    const voice = measure?.voices.find((entry) => entry.voiceId === voiceId);
+    if (measure && voice) return { staff, measure, voice, isTab: isTabStaff(part, staff.staffIndex) };
+  }
+
+  return null;
+}
+
 function findSimultaneousEventIndices(voice: VoiceNode, timestampNum: number, timestampDen: number) {
   return voice.events.reduce<number[]>((indices, event, index) => {
     if (timestampsEqual(event.timestampNum, event.timestampDen, timestampNum, timestampDen)) {
@@ -1318,6 +1338,44 @@ function buildRestEventFromSpan(
   };
 }
 
+function decomposeRestSpanDivisions(
+  durationDivisions: number,
+  divisions: number,
+  preferredChunkDivisions: number,
+  startOffset: number,
+) {
+  const chunks: number[] = [];
+  const candidates = buildDurationCandidates(divisions);
+  const preferred = preferredChunkDivisions > 0
+    ? candidates.find((candidate) => candidate.value === preferredChunkDivisions) ?? null
+    : null;
+  const beatDivisions = Math.max(divisions, 1);
+  const strongGroupDivisions = beatDivisions * 2;
+  let remaining = Math.max(0, durationDivisions);
+  let offset = Math.max(0, startOffset);
+
+  while (remaining > 0) {
+    const beatRemainder = offset % beatDivisions;
+    const beatBoundaryFill = beatRemainder > 0 ? beatDivisions - beatRemainder : 0;
+    const strongRemainder = strongGroupDivisions > beatDivisions ? offset % strongGroupDivisions : 0;
+    const strongBoundaryFill = strongRemainder > 0 ? strongGroupDivisions - strongRemainder : 0;
+    const limitedToBoundary = beatBoundaryFill > 0 && beatBoundaryFill < remaining
+      ? beatBoundaryFill
+      : strongBoundaryFill > 0 && strongBoundaryFill < remaining
+        ? strongBoundaryFill
+        : 0;
+    const target = limitedToBoundary > 0 ? limitedToBoundary : remaining;
+    const next = limitedToBoundary > 0 && preferred && preferred.value === target
+      ? preferred
+      : candidates.find((candidate) => candidate.value <= target) ?? { value: 1, type: '64th', dotted: false };
+    chunks.push(next.value);
+    remaining -= next.value;
+    offset += next.value;
+  }
+
+  return chunks;
+}
+
 function buildRestEventsForSpan(
   measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
   divisions: number,
@@ -1329,7 +1387,7 @@ function buildRestEventsForSpan(
 ) {
   const rests: TimedEvent[] = [];
   let offset = startOffset;
-  const chunks = decomposeDurationDivisions(durationDivisions, divisions, Math.max(1, preferredChunkDivisions), startOffset);
+  const chunks = decomposeRestSpanDivisions(durationDivisions, divisions, Math.max(1, preferredChunkDivisions), startOffset);
 
   for (const nextDuration of chunks) {
     rests.push(buildRestEventFromSpan(measure, divisions, staffIndex, voiceId, offset, nextDuration));
@@ -1337,6 +1395,96 @@ function buildRestEventsForSpan(
   }
 
   return rests;
+}
+
+function mirrorGuitarInsertionToPairedStaff(input: {
+  part: ScoreDocumentModel['score']['parts'][number];
+  sourceStaffIndex: number;
+  command: Extract<ValidatedScoreCommand, { type: 'insertNoteAt' | 'insertNote' }>;
+  sourceInserted: TimedEvent;
+}) {
+  if (
+    !('guitar' in input.command)
+    || !input.command.guitar
+    || ('asChord' in input.command && input.command.asChord)
+  ) return;
+  const paired = findPairedStaffVoice(
+    input.part,
+    input.sourceStaffIndex,
+    input.command.measureNumber,
+    input.command.voiceId,
+  );
+  if (!paired) return;
+
+  ensureStaffDivisionsForDuration(paired.staff, paired.measure.measureNumber, input.command.durationType, input.command.isDotted);
+  const pairedTiming = resolveMeasureTiming(paired.staff, paired.measure);
+  const pairedInsertionOffset = timestampToDivisionsOffset(
+    pairedTiming.divisions,
+    input.sourceInserted.timestampNum,
+    input.sourceInserted.timestampDen,
+  );
+  const pairedDuration = requestedDurationDivisions(input.command.durationType, input.command.isDotted, pairedTiming.divisions);
+  const pairedRestIndex = paired.voice.events.findIndex((event) => (
+    !event.isChord
+    && event.kind === 'rest'
+    && event.timestampNum === pairedInsertionOffset
+    && event.timestampNum + event.durationDivisions >= pairedInsertionOffset + pairedDuration
+  ));
+  const pairedRest = pairedRestIndex >= 0 ? paired.voice.events[pairedRestIndex] ?? null : null;
+  if (!pairedRest) return;
+
+  const pairedCommand = {
+    ...input.command,
+    staffIndex: paired.staff.staffIndex,
+    guitar: paired.isTab ? input.command.guitar : undefined,
+  };
+  const inserted = buildInsertedEvent(
+    paired.measure,
+    pairedCommand,
+    pairedInsertionOffset,
+    pairedTiming.divisions,
+    pairedTiming.durationDivisions,
+  );
+  paired.voice.events.splice(pairedRestIndex, 1);
+  const leadingDuration = pairedInsertionOffset - pairedRest.timestampNum;
+  const trailingOffset = pairedInsertionOffset + inserted.durationDivisions;
+  const trailingDuration = (pairedRest.timestampNum + pairedRest.durationDivisions) - trailingOffset;
+
+  if (leadingDuration > 0) {
+    paired.voice.events.push(...buildRestEventsForSpan(
+      paired.measure,
+      pairedTiming.divisions,
+      paired.staff.staffIndex,
+      input.command.voiceId,
+      pairedRest.timestampNum,
+      leadingDuration,
+      inserted.durationDivisions,
+    ));
+  }
+  paired.voice.events.push(inserted);
+  if (trailingDuration > 0) {
+    paired.voice.events.push(...buildRestEventsForSpan(
+      paired.measure,
+      pairedTiming.divisions,
+      paired.staff.staffIndex,
+      input.command.voiceId,
+      trailingOffset,
+      trailingDuration,
+      inserted.durationDivisions,
+    ));
+  }
+
+  paired.voice.events = coalesceAdjacentRestsInMeasure(
+    paired.measure,
+    pairedTiming.divisions,
+    paired.staff.staffIndex,
+    input.command.voiceId,
+    paired.voice.events,
+  ).sort((a, b) => (
+    a.timestampNum - b.timestampNum
+    || Number(a.isChord) - Number(b.isChord)
+    || a.id.localeCompare(b.id)
+  ));
 }
 
 type StaffTimelineEntry = {
@@ -4404,6 +4552,14 @@ export function executeCoreCommands(
           found.voice.events.push(inserted);
         } else {
           found.voice.events.push(inserted);
+        }
+        if ((command.type === 'insertNoteAt' || command.type === 'insertNote') && inserted.kind === 'note') {
+          mirrorGuitarInsertionToPairedStaff({
+            part: found.part,
+            sourceStaffIndex: found.staff.staffIndex,
+            command,
+            sourceInserted: inserted,
+          });
         }
         const preserveOverflow = command.type === 'insertNoteAt' && Boolean(command.preserveOverflow);
         if (!isAbsoluteInsert || !preserveOverflow) {

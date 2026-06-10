@@ -40,7 +40,10 @@ function eventEndOffset(event: TimedEvent, divisions: number) {
 }
 
 function targetStartOffset(target: ResolvedEditTarget, divisions: number) {
-  return Math.max(0, Math.round((target.timestampNum / Math.max(target.timestampDen, 1)) * divisions * 4));
+  const rawOffset = (target.timestampNum / Math.max(target.timestampDen, 1)) * divisions * 4;
+  const rounded = Math.round(rawOffset);
+  if (Math.abs(rawOffset - rounded) > 1e-9) return null;
+  return Math.max(0, rounded);
 }
 
 function requestedDurationDivisions(durationType: string, isDotted: boolean, divisions: number) {
@@ -162,6 +165,14 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
   }
 
   const startOffset = targetStartOffset(input.target, context.divisions);
+  if (startOffset == null) {
+    diagnostics.push('validation:non-integral-target-timestamp');
+    return {
+      target: null,
+      rejectionReason: 'non-integral-target-timestamp',
+      diagnostics,
+    };
+  }
   const requestedDuration = requestedDurationDivisions(input.durationType, input.isDotted, context.divisions);
   const endOffset = startOffset + requestedDuration;
   const voiceEvents = context.voice?.events ?? [];
@@ -269,7 +280,7 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
       };
     }
 
-    if (exactRests.length === 1 || spanningRest) {
+    if (exactRests.length === 1) {
       const coverage = inspectSilentCoverage({
         events: voiceEvents,
         divisions: context.divisions,
@@ -286,16 +297,25 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
         };
       }
 
-      diagnostics.push(exactRests.length === 1 ? 'validation:replace-rest-exact' : 'validation:replace-rest-span');
+      diagnostics.push('validation:replace-rest-exact');
       return {
         target: {
           ...input.target,
           corePartId: input.target.corePartId ?? context.partId,
           existingEventKind: 'rest',
-          existingEventStartsAtTarget: exactRests.length === 1,
+          existingEventStartsAtTarget: true,
           diagnostics,
         },
         rejectionReason: null,
+        diagnostics,
+      };
+    }
+
+    if (spanningRest) {
+      diagnostics.push('validation:target-inside-rest-rejected');
+      return {
+        target: null,
+        rejectionReason: 'target-inside-rest',
         diagnostics,
       };
     }
@@ -304,6 +324,15 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     return {
       target: null,
       rejectionReason: 'replace-target-missing',
+      diagnostics,
+    };
+  }
+
+  if (exactNotes.length === 0 && exactRests.length === 0) {
+    diagnostics.push(spanningRest ? 'validation:target-inside-rest-rejected' : 'validation:insert-target-missing');
+    return {
+      target: null,
+      rejectionReason: spanningRest ? 'target-inside-rest' : 'insert-target-missing',
       diagnostics,
     };
   }

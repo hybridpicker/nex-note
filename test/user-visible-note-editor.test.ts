@@ -495,6 +495,7 @@ function makeSelectedNotes(xml: string): SelectedNote[] {
     isRest: event.kind === 'rest',
     durationType: event.durationType,
     isDotted: event.isDotted ?? false,
+    guitar: event.kind === 'note' ? event.guitar : undefined,
     graphicalNote: null,
   }));
 }
@@ -513,7 +514,7 @@ function makeSelectedNotesFromAllParts(xml: string): SelectedNote[] {
               coreMeasureId: measure.id,
               corePartId: part.id,
               measureNumber: event.measureNumber,
-              staffIndex: event.staffIndex,
+              staffIndex: staff.staffIndex,
               voiceId: event.voiceId,
               timestampNum: event.timestampNum,
               timestampDen: event.timestampDen,
@@ -523,6 +524,7 @@ function makeSelectedNotesFromAllParts(xml: string): SelectedNote[] {
               isRest: event.kind === 'rest',
               durationType: event.durationType,
               isDotted: event.isDotted ?? false,
+              guitar: event.kind === 'note' ? event.guitar : undefined,
               graphicalNote: null,
             });
           }
@@ -3692,7 +3694,85 @@ test('mouse-style rest replacement splits a full-measure rest without losing the
     events.map((event) => (
       `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationDivisions}`
     )),
-    ['0/4:C4:1', '1/4:rest:3'],
+    ['0/4:C4:1', '1/4:rest:1', '2/4:rest:2'],
+  );
+  hook.unmount();
+});
+
+test('step-time input is restricted to rhythmic anchors and splits padding rests on entry', () => {
+  const hook = renderHook(FULL_REST_XML);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('N'));
+    hook.current.setDuration('4');
+  });
+  hook.rerender();
+
+  act(() => {
+    hook.current.placeNoteAt({
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      step: 'C',
+      octave: 4,
+      alter: 0,
+      placementMode: 'replace',
+    });
+  });
+  hook.rerender();
+
+  const afterFirstInput = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.measureNumber === 1 && event.voiceId === 1)
+    .sort((a, b) => a.timestampNum - b.timestampNum);
+  assert.deepEqual(
+    afterFirstInput.map((event) => (
+      `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType ?? 'none'}`
+    )),
+    ['0/4:C4:quarter', '1/4:rest:quarter', '2/4:rest:half'],
+  );
+
+  const xmlBeforeInvalidInput = hook.xml;
+  act(() => {
+    hook.current.placeNoteAt({
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 8,
+      step: 'D',
+      octave: 4,
+      alter: 0,
+      placementMode: 'replace',
+    });
+  });
+  hook.rerender();
+  assert.equal(hook.xml, xmlBeforeInvalidInput);
+
+  act(() => {
+    hook.current.placeNoteAt({
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 2,
+      timestampDen: 4,
+      step: 'E',
+      octave: 4,
+      alter: 0,
+      placementMode: 'replace',
+    });
+  });
+  hook.rerender();
+
+  const afterSecondInput = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.measureNumber === 1 && event.voiceId === 1)
+    .sort((a, b) => a.timestampNum - b.timestampNum);
+  assert.deepEqual(
+    afterSecondInput.map((event) => (
+      `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType ?? 'none'}`
+    )),
+    ['0/4:C4:quarter', '1/4:rest:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
   );
   hook.unmount();
 });
@@ -3743,8 +3823,9 @@ test('note input previews and highlights the entered note while advancing the in
   hook.unmount();
 });
 
-test('mouse-style full-rest replacement at beat 3 pads correctly without spawning 64th-rest loops', () => {
+test('mouse-style full-rest replacement at beat 3 is rejected because it is not a rest anchor', () => {
   const hook = renderHook(FULL_REST_XML);
+  const originalXml = hook.xml;
 
   act(() => {
     hook.current.handleKeyDown(makeKeyboardEvent('N'));
@@ -3771,14 +3852,15 @@ test('mouse-style full-rest replacement at beat 3 pads correctly without spawnin
     .filter((event) => event.measureNumber === 1 && event.voiceId === 1)
     .sort((a, b) => a.timestampNum - b.timestampNum);
 
+  assert.equal(hook.xml, originalXml);
   assert.deepEqual(
     events.map((event) => (
       `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationDivisions}:${event.durationType ?? 'none'}`
     )),
-    ['0/4:rest:2:half', '2/4:G4:1:quarter', '3/4:rest:1:quarter'],
+    ['0/4:rest:4:whole'],
   );
   assert.equal(events.some((event) => event.durationType === '64th'), false);
-  assert.ok(events.length <= 3);
+  assert.equal(events.length, 1);
   hook.unmount();
 });
 
