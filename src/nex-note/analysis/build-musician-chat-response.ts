@@ -217,36 +217,188 @@ function getDocumentKeyFifths(documentState: DocumentState) {
   return 0;
 }
 
-function inferChordForMeasure(notes: NoteEvent[], preferFlats: boolean) {
-  if (notes.length === 0) return null;
-  const weightedPitchClasses = notes.map((note) => noteToMidi(note) % 12);
+type LocalChordQuality = 'major' | 'minor' | 'diminished' | 'maj7' | 'm7' | '7' | 'm7b5';
+
+interface LocalChordCandidate {
+  symbol: string;
+  rootPc: number;
+  quality: LocalChordQuality;
+  tones: number[];
+  score: number;
+}
+
+const LOCAL_CHORD_QUALITIES: Array<{ quality: LocalChordQuality; suffix: string; intervals: number[] }> = [
+  { quality: 'major', suffix: '', intervals: [0, 4, 7] },
+  { quality: 'minor', suffix: 'm', intervals: [0, 3, 7] },
+  { quality: 'diminished', suffix: 'dim', intervals: [0, 3, 6] },
+  { quality: 'maj7', suffix: 'maj7', intervals: [0, 4, 7, 11] },
+  { quality: 'm7', suffix: 'm7', intervals: [0, 3, 7, 10] },
+  { quality: '7', suffix: '7', intervals: [0, 4, 7, 10] },
+  { quality: 'm7b5', suffix: 'm7b5', intervals: [0, 3, 6, 10] },
+];
+
+function normalizePitchClass(pc: number) {
+  return ((pc % 12) + 12) % 12;
+}
+
+function keyFifthsToPitchClass(fifths: number) {
+  return normalizePitchClass(fifths * 7);
+}
+
+function majorScalePitchClasses(tonicPc: number) {
+  return [0, 2, 4, 5, 7, 9, 11].map((interval) => normalizePitchClass(tonicPc + interval));
+}
+
+function majorScaleDegree(rootPc: number, tonicPc: number) {
+  return majorScalePitchClasses(tonicPc).indexOf(normalizePitchClass(rootPc));
+}
+
+function expectedDiatonicQuality(degree: number, seventh: boolean): LocalChordQuality | null {
+  if (degree === 0 || degree === 3) return seventh ? 'maj7' : 'major';
+  if (degree === 1 || degree === 2 || degree === 5) return seventh ? 'm7' : 'minor';
+  if (degree === 4) return seventh ? '7' : 'major';
+  if (degree === 6) return seventh ? 'm7b5' : 'diminished';
+  return null;
+}
+
+function diatonicChordBonus(candidate: Pick<LocalChordCandidate, 'rootPc' | 'quality' | 'tones'>, keyFifths: number) {
+  const tonicPc = keyFifthsToPitchClass(keyFifths);
+  const scale = majorScalePitchClasses(tonicPc);
+  const degree = majorScaleDegree(candidate.rootPc, tonicPc);
+  const seventh = candidate.tones.length >= 4;
+  let score = 0;
+  if (degree >= 0) score += 1.25;
+  const expected = expectedDiatonicQuality(degree, seventh);
+  if (expected === candidate.quality) score += 2.5;
+  const diatonicToneCount = candidate.tones.filter((tone) => scale.includes(normalizePitchClass(tone))).length;
+  if (diatonicToneCount === candidate.tones.length) score += 1.5;
+  else score -= (candidate.tones.length - diatonicToneCount) * 0.5;
+  return score;
+}
+
+function buildLocalChordCandidates(preferFlats: boolean) {
+  return Array.from({ length: 12 }, (_, root) => LOCAL_CHORD_QUALITIES.map((quality) => ({
+    symbol: `${pitchClassName(root, preferFlats)}${quality.suffix}`,
+    rootPc: root,
+    quality: quality.quality,
+    tones: quality.intervals.map((interval) => normalizePitchClass(root + interval)),
+  }))).flat();
+}
+
+function scoreChordCandidatesForMeasure(notes: NoteEvent[], preferFlats: boolean, keyFifths: number): LocalChordCandidate[] {
+  if (notes.length === 0) return [];
+  const weightedPitchClasses = notes.map((note) => normalizePitchClass(noteToMidi(note)));
+  const uniquePitchClasses = [...new Set(weightedPitchClasses)];
   const firstPc = weightedPitchClasses[0] ?? 0;
   const lastPc = weightedPitchClasses[weightedPitchClasses.length - 1] ?? firstPc;
 
-  const candidates = Array.from({ length: 12 }, (_, root) => ([
-    { symbol: pitchClassName(root, preferFlats), tones: [root, root + 4, root + 7] },
-    { symbol: `${pitchClassName(root, preferFlats)}m`, tones: [root, root + 3, root + 7] },
-    { symbol: `${pitchClassName(root, preferFlats)}dim`, tones: [root, root + 3, root + 6] },
-  ])).flat();
-
-  const scored = candidates.map((candidate) => {
-    const normalizedTones = candidate.tones.map((tone) => ((tone % 12) + 12) % 12);
+  const scored = buildLocalChordCandidates(preferFlats).map((candidate) => {
+    const rootPc = normalizePitchClass(candidate.rootPc);
+    const seventhPc = candidate.tones[3] != null ? normalizePitchClass(candidate.tones[3]) : null;
     let score = 0;
     weightedPitchClasses.forEach((pc, index) => {
-      if (normalizedTones.includes(pc)) score += index === weightedPitchClasses.length - 1 ? 3 : 2;
-      if (pc === ((candidate.tones[0] % 12) + 12) % 12) score += 2;
+      if (candidate.tones.includes(pc)) score += index === weightedPitchClasses.length - 1 ? 3 : 2;
+      else score -= 1.75;
+      if (pc === rootPc) score += 1.75;
+      if (seventhPc != null && pc === seventhPc) score += 1.5;
     });
-    if (normalizedTones.includes(lastPc)) score += 2;
-    if (((candidate.tones[0] % 12) + 12) % 12 === lastPc) score += 3;
-    if (((candidate.tones[0] % 12) + 12) % 12 === firstPc) score += 1;
-    return { symbol: candidate.symbol, score };
-  })
-    .sort((a, b) => b.score - a.score || a.symbol.length - b.symbol.length);
 
-  return scored[0]?.symbol ?? null;
+    const matchedToneCount = uniquePitchClasses.filter((pc) => candidate.tones.includes(pc)).length;
+    score += matchedToneCount * 1.2;
+    if (candidate.tones.includes(lastPc)) score += 1.5;
+    if (rootPc === lastPc) score += 2.5;
+    if (rootPc === firstPc) score += 1;
+    if (candidate.tones.length >= 4 && seventhPc != null && uniquePitchClasses.includes(seventhPc)) score += 2.5;
+    if (candidate.tones.length === 3 && uniquePitchClasses.some((pc) => (
+      pc === normalizePitchClass(rootPc + 10) || pc === normalizePitchClass(rootPc + 11)
+    ))) {
+      score -= 2.75;
+    }
+    score += diatonicChordBonus(candidate, keyFifths);
+    return { ...candidate, score };
+  })
+    .sort((a, b) => b.score - a.score || a.symbol.length - b.symbol.length || a.symbol.localeCompare(b.symbol));
+
+  return scored.slice(0, 12);
 }
 
-function buildChordPlan(scoped: ScopedNoteInfo[], preferFlats: boolean) {
+function transitionChordScore(previous: LocalChordCandidate, current: LocalChordCandidate, keyFifths: number, isFinalMeasure: boolean) {
+  const tonicPc = keyFifthsToPitchClass(keyFifths);
+  const previousDegree = majorScaleDegree(previous.rootPc, tonicPc);
+  const currentDegree = majorScaleDegree(current.rootPc, tonicPc);
+  const rootMotion = normalizePitchClass(current.rootPc - previous.rootPc);
+  let score = 0;
+
+  if (rootMotion === 5) score += 1.75;
+  if (previousDegree === 1 && currentDegree === 4) score += 2.25;
+  if (previousDegree === 4 && currentDegree === 0) score += 3;
+  if (previous.quality === '7' && currentDegree === 0) score += 1.25;
+  if (currentDegree === 0 && isFinalMeasure) score += 2;
+  if (previousDegree === 4 && currentDegree === 0 && isFinalMeasure) score += 1.5;
+
+  const commonFunctionalMotions = new Set([0, 2, 5, 7, 10]);
+  if (!commonFunctionalMotions.has(rootMotion)) score -= 0.75;
+  if (previousDegree < 0 && currentDegree < 0) score -= 0.75;
+
+  return score;
+}
+
+function chooseSmoothedChordSequence(
+  measures: Array<{ measureNumber: number; candidates: LocalChordCandidate[] }>,
+  keyFifths: number,
+) {
+  const states: Array<Array<{ candidate: LocalChordCandidate; score: number; previousIndex: number | null }>> = [];
+  measures.forEach((measure, measureIndex) => {
+    const isFinalMeasure = measureIndex === measures.length - 1;
+    const previousStates = states[measureIndex - 1] ?? [];
+    states[measureIndex] = measure.candidates.map((candidate) => {
+      if (previousStates.length === 0) {
+        return {
+          candidate,
+          score: candidate.score + (isFinalMeasure && majorScaleDegree(candidate.rootPc, keyFifthsToPitchClass(keyFifths)) === 0 ? 1 : 0),
+          previousIndex: null,
+        };
+      }
+      const transitions = previousStates.map((previous, previousIndex) => ({
+        previousIndex,
+        score: previous.score + candidate.score + transitionChordScore(previous.candidate, candidate, keyFifths, isFinalMeasure),
+      })).sort((left, right) => right.score - left.score || left.previousIndex - right.previousIndex);
+      const best = transitions[0];
+      return {
+        candidate,
+        score: best?.score ?? candidate.score,
+        previousIndex: best?.previousIndex ?? null,
+      };
+    });
+  });
+
+  const finalStates = states.at(-1) ?? [];
+  const final = finalStates
+    .map((state, index) => ({ state, index }))
+    .sort((left, right) => (
+      right.state.score - left.state.score
+      || left.state.candidate.symbol.length - right.state.candidate.symbol.length
+      || left.state.candidate.symbol.localeCompare(right.state.candidate.symbol)
+    ))[0];
+  if (!final) return [];
+
+  const selected: LocalChordCandidate[] = [];
+  let stateIndex = final.index;
+  for (let measureIndex = states.length - 1; measureIndex >= 0; measureIndex -= 1) {
+    const state = states[measureIndex]?.[stateIndex];
+    if (!state) break;
+    selected[measureIndex] = state.candidate;
+    stateIndex = state.previousIndex ?? 0;
+  }
+
+  return selected;
+}
+
+function inferChordForMeasure(notes: NoteEvent[], preferFlats: boolean, keyFifths: number) {
+  return scoreChordCandidatesForMeasure(notes, preferFlats, keyFifths)[0]?.symbol ?? null;
+}
+
+function buildChordPlan(scoped: ScopedNoteInfo[], preferFlats: boolean, keyFifths: number) {
   const byMeasure = new Map<number, NoteEvent[]>();
   scoped.forEach(({ note, measure }) => {
     const existing = byMeasure.get(measure.measureNumber) ?? [];
@@ -254,11 +406,18 @@ function buildChordPlan(scoped: ScopedNoteInfo[], preferFlats: boolean) {
     byMeasure.set(measure.measureNumber, existing);
   });
 
-  const entries = [...byMeasure.entries()]
+  const measureCandidates = [...byMeasure.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([measureNumber, notes]) => {
-      const chord = inferChordForMeasure(notes, preferFlats);
-      return chord ? `${measureNumber}:${chord}` : null;
+    .map(([measureNumber, notes]) => ({
+      measureNumber,
+      candidates: scoreChordCandidatesForMeasure(notes, preferFlats, keyFifths),
+    }))
+    .filter((entry) => entry.candidates.length > 0);
+  const smoothed = chooseSmoothedChordSequence(measureCandidates, keyFifths);
+  const entries = measureCandidates
+    .map((entry, index) => {
+      const chord = smoothed[index]?.symbol ?? inferChordForMeasure(byMeasure.get(entry.measureNumber) ?? [], preferFlats, keyFifths);
+      return chord ? `${entry.measureNumber}:${chord}` : null;
     })
     .filter((entry): entry is string => Boolean(entry));
 
@@ -854,11 +1013,12 @@ function buildArrangementResponse(
   if (scoped.length === 0) return null;
 
   const german = isLikelyGerman(message);
-  const preferFlats = getDocumentKeyFifths(documentState) < 0;
+  const keyFifths = getDocumentKeyFifths(documentState);
+  const preferFlats = keyFifths < 0;
   const instrument = inferInstrument(message, sessionContext);
   const expression = detectExpressionText(message, german);
   const tempo = detectArrangementTempo(message);
-  const chordPlan = buildChordPlan(scoped, preferFlats);
+  const chordPlan = buildChordPlan(scoped, preferFlats, keyFifths);
   const commands: ParsedIntentJson['commands'] = [];
   const targetPartId = scoped[0]?.partId;
   const materializedArrangement = buildMaterializedArrangementResponse(message, documentState, scoped, expression, tempo, chordPlan, instrument, targetPartId);
@@ -918,8 +1078,9 @@ function buildHarmonyResponse(message: string, documentState: DocumentState): Pa
   const targetChord = extractExplicitChordTarget(message);
   const german = isLikelyGerman(message);
   const sourceNotes = detectPrimaryVoiceNotes(documentState);
-  const preferFlats = getDocumentKeyFifths(documentState) < 0 || Boolean(targetChord && /b|♭/.test(targetChord));
-  const inferredPlan = buildChordPlan(sourceNotes, preferFlats);
+  const keyFifths = getDocumentKeyFifths(documentState);
+  const preferFlats = keyFifths < 0 || Boolean(targetChord && /b|♭/.test(targetChord));
+  const inferredPlan = buildChordPlan(sourceNotes, preferFlats, keyFifths);
   const chords = targetChord && inferredPlan
     ? `${inferredPlan},4:${targetChord}`
     : targetChord
@@ -1003,12 +1164,13 @@ function buildAnalysisSummary(
   if (scoped.length === 0) return null;
 
   const german = isLikelyGerman(message);
-  const preferFlats = getDocumentKeyFifths(documentState) < 0;
-  const keyName = keyNameFromFifths(getDocumentKeyFifths(documentState), german);
+  const keyFifths = getDocumentKeyFifths(documentState);
+  const preferFlats = keyFifths < 0;
+  const keyName = keyNameFromFifths(keyFifths, german);
   const time = getFirstTimeSignature(documentState);
   const measureNumbers = [...new Set(scoped.map((entry) => entry.measure.measureNumber))].sort((a, b) => a - b);
   const phraseShape = describePhraseShape(measureNumbers.length, german);
-  const chordPlan = buildChordPlan(scoped, preferFlats);
+  const chordPlan = buildChordPlan(scoped, preferFlats, keyFifths);
   const notes = scoped.map((entry) => entry.note);
   const rhythmTypes = [...new Set(notes.map((note) => durationLabel(note)))].slice(0, 5).join(', ');
   const midiValues = notes.map(noteToMidi);

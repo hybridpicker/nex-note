@@ -79,6 +79,18 @@ const EIGHT_MEASURE_READING_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const II_V_I_SEVENTHS_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note></measure>
+    <measure number="2"><note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>F</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note></measure>
+    <measure number="3"><note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note><note><pitch><step>B</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note></measure>
+  </part>
+</score-partwise>`;
+
 const TWO_MEASURE_A7_LICK_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list>
@@ -1115,6 +1127,33 @@ test('runAiCommandPipeline reports all measures encoded in addChords previews', 
   if ('error' in result) return;
   assert.equal(result.requiresConfirmation, true);
   assert.deepEqual(result.affectedMeasures, [1, 2, 8]);
+});
+
+test('runAiCommandPipeline local fallback infers seventh chords with ii-V-I smoothing', async () => {
+  let askCalls = 0;
+  const result = await runAiCommandPipeline({
+    message: 'Reharmonisiere diese Melodie als close voicing',
+    xml: II_V_I_SEVENTHS_XML,
+    provider: 'ollama',
+    ask: async (): Promise<AIResponse> => {
+      askCalls += 1;
+      return {
+        provider: 'ollama' satisfies ProviderName,
+        model: 'mock-broken-model',
+        text: 'not planner JSON',
+        latencyMs: 5,
+      };
+    },
+  });
+
+  assert.equal(askCalls, 1);
+  assert.ok(!('error' in result));
+  if ('error' in result) return;
+  assert.equal(result.provider, 'local-layout');
+  const chordCommand = result.commands.find((command) => command.type === 'addChords');
+  assert.ok(chordCommand);
+  if (!chordCommand || chordCommand.type !== 'addChords') return;
+  assert.equal(chordCommand.chords, '1:Dm7,2:G7,3:Cmaj7');
 });
 
 test('runAiCommandPipeline routes arrangement requests through the arrangement assistant workflow', async () => {
