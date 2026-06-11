@@ -441,6 +441,7 @@ test('UploadZone advertises MIDI import support', () => {
   assert.match(input.props.accept, /\.midi/);
   assert.match(input.props.accept, /\.png/);
   assert.match(input.props.accept, /\.jpe?g/);
+  assert.equal(input.props.multiple, true);
   assert.ok(root.findAll((node) => node.children?.includes?.('NXN · PDF · image · MXL · XML · MSCZ · MIDI · GP · click to select')).length > 0);
 });
 

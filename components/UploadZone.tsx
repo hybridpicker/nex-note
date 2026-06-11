@@ -4,22 +4,28 @@ import { useRef, useState } from 'react';
 
 interface Props {
   onFileSelected: (file: File) => Promise<void> | void;
+  onFilesSelected?: (files: File[]) => Promise<void> | void;
   loadingMessage?: string;
 }
 
 const IMPORT_FILE_ACCEPT = '.nxn,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif,.mxl,.xml,.musicxml,.mscz,.mid,.midi,.gp,.gp4,.gp5,.gp6,.gpx';
 
-export default function UploadZone({ onFileSelected, loadingMessage }: Props) {
+export default function UploadZone({ onFileSelected, onFilesSelected, loadingMessage }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleFile(file: File) {
+  async function handleFiles(files: File[]) {
+    if (files.length === 0) return;
     setError('');
     setLoading(true);
     try {
-      await onFileSelected(file);
+      if (onFilesSelected) {
+        await onFilesSelected(files);
+      } else {
+        await onFileSelected(files[0]);
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -30,8 +36,7 @@ export default function UploadZone({ onFileSelected, loadingMessage }: Props) {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    void handleFiles(Array.from(e.dataTransfer.files));
   }
 
   return (
@@ -50,10 +55,15 @@ export default function UploadZone({ onFileSelected, loadingMessage }: Props) {
         ref={inputRef}
         type="file"
         accept={IMPORT_FILE_ACCEPT}
+        multiple
         className="hidden"
         style={{ caretColor: 'transparent' }}
         suppressHydrationWarning
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          void handleFiles(files);
+        }}
       />
       {loading ? (
         <div className="flex items-center justify-center gap-3">

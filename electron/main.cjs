@@ -81,6 +81,11 @@ function isSupportedOpenPath(filePath) {
   return SUPPORTED_OPEN_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+function isSupportedImageOpenPath(filePath) {
+  return ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp', '.heic', '.heif']
+    .includes(path.extname(filePath).toLowerCase());
+}
+
 function getUserTemplateDirectories() {
   const appData = app.getPath('appData');
   return [
@@ -163,6 +168,35 @@ async function sendOpenFileToRenderer(filePath) {
   mainWindow.webContents.send('nex-note:open-file', payload);
 }
 
+async function sendOpenFileBatchToRenderer(filePaths) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    for (const filePath of filePaths) {
+      queueOpenFile(filePath);
+    }
+    return;
+  }
+
+  const files = await Promise.all(filePaths.map(async (filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    const data = await fs.readFile(filePath);
+    return {
+      name: path.basename(filePath),
+      type: MIME_BY_EXTENSION.get(ext) || 'application/octet-stream',
+      base64: data.toString('base64'),
+    };
+  }));
+
+  const parentDirectories = [...new Set(filePaths.map((filePath) => path.dirname(filePath)))];
+  const batchName = parentDirectories.length === 1
+    ? path.basename(parentDirectories[0])
+    : `${path.basename(filePaths[0], path.extname(filePaths[0]))}-${filePaths.length}-pages`;
+
+  mainWindow.webContents.send('nex-note:open-file', {
+    name: batchName,
+    files,
+  });
+}
+
 async function flushPendingOpenFiles() {
   if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) return;
   while (pendingOpenFilePaths.length > 0) {
@@ -200,7 +234,7 @@ async function openFilesWithNativeDialog() {
 
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Open Score',
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'Supported score and project files', extensions: [...SUPPORTED_OPEN_EXTENSIONS].map((ext) => ext.slice(1)) },
       { name: 'Nex Note projects', extensions: ['nxn'] },
@@ -212,7 +246,13 @@ async function openFilesWithNativeDialog() {
   });
 
   if (result.canceled) return;
-  for (const filePath of result.filePaths) {
+  const supportedPaths = result.filePaths.filter(isSupportedOpenPath);
+  if (supportedPaths.length > 1 && supportedPaths.every(isSupportedImageOpenPath)) {
+    await sendOpenFileBatchToRenderer(supportedPaths);
+    return;
+  }
+
+  for (const filePath of supportedPaths) {
     queueOpenFile(filePath);
   }
   await flushPendingOpenFiles();

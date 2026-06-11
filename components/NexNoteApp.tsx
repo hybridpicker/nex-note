@@ -70,6 +70,7 @@ import {
 import { buildChatScoreKey } from '@/lib/chat-task-state';
 import type { ScoreCommand } from '@/lib/score-commands';
 import { buildNewScoreFilename, createDefaultNewScoreDraft, createNewScoreXml, type NewScoreDraft } from '@/lib/new-score';
+import { buildScoreImageBatchBaseName, isScoreImageFilename, sortScoreImagePages } from '@/lib/score-image-pages';
 import {
   dedupeUserTemplates,
   normalizeUserTemplatesFromFolder,
@@ -110,10 +111,17 @@ type ElectronOpenFilePayload = {
   base64: string;
 };
 
+type ElectronOpenFilesPayload = {
+  name?: string;
+  files: ElectronOpenFilePayload[];
+};
+
+type ElectronOpenPayload = ElectronOpenFilePayload | ElectronOpenFilesPayload;
+
 type NexNoteElectronApi = {
   isElectron: true;
   onMenuCommand: (callback: (commandId: string) => void) => () => void;
-  onOpenFile: (callback: (payload: ElectronOpenFilePayload) => void) => () => void;
+  onOpenFile: (callback: (payload: ElectronOpenPayload) => void) => () => void;
   openFileDialog: () => Promise<void>;
   listUserTemplates: () => Promise<ElectronUserTemplateFolderPayload[]>;
   performNativeEditCommand: (command: NativeEditCommand) => Promise<void>;
@@ -390,7 +398,7 @@ function isMidiFilename(name: string) {
 }
 
 function isImageFilename(name: string) {
-  return /\.(png|jpe?g|tiff?|webp|bmp|heic|heif)$/i.test(name);
+  return isScoreImageFilename(name);
 }
 
 function fileFromBase64(payload: ElectronOpenFilePayload) {
@@ -400,6 +408,28 @@ function fileFromBase64(payload: ElectronOpenFilePayload) {
     bytes[i] = binary.charCodeAt(i);
   }
   return new File([bytes], payload.name, { type: payload.type || 'application/octet-stream' });
+}
+
+function filesFromElectronOpenPayload(payload: ElectronOpenPayload) {
+  return 'files' in payload
+    ? payload.files.map(fileFromBase64)
+    : [fileFromBase64(payload)];
+}
+
+function getElectronOpenPayloadName(payload: ElectronOpenPayload) {
+  if ('files' in payload) return payload.name || buildScoreImageBatchBaseName(payload.files);
+  return payload.name;
+}
+
+function getBrowserImageBatchName(files: File[]) {
+  const firstFile = files[0] as (File & { webkitRelativePath?: string }) | undefined;
+  const firstPath = firstFile?.webkitRelativePath;
+  const folderName = firstPath?.split('/').filter(Boolean).at(-2);
+  return folderName || buildScoreImageBatchBaseName(files);
+}
+
+function totalFileSize(files: File[]) {
+  return files.reduce((sum, file) => sum + file.size, 0);
 }
 
 function waitForUiPaint() {
@@ -1509,26 +1539,46 @@ export default function Home({ searchParams }: HomeProps) {
     if (!noteInputMode) toggleNoteInput();
   }, [noteInputMode, pendingAutoNoteInput, toggleNoteInput, xml]);
 
-  const handleSelectedFile = useCallback(async (file: File) => {
+  const handleSelectedFiles = useCallback(async (selectedFiles: File[]) => {
+    const receivedFiles = selectedFiles.filter(Boolean);
+    if (receivedFiles.length === 0) return;
+
+    const isMultiImageImport = receivedFiles.length > 1;
+    const files = isMultiImageImport ? sortScoreImagePages(receivedFiles) : receivedFiles;
+    const file = files[0];
+    if (!file) return;
+
+    const originalFilename = isMultiImageImport ? getBrowserImageBatchName(files) : file.name;
+    const originalSize = totalFileSize(files);
+    const originalType = isMultiImageImport ? 'image/page-set' : file.type;
+
     recordBugReportEvent('workspace', 'import-file:start', {
-      filename: file.name,
-      size: file.size,
-      type: file.type,
+      filename: originalFilename,
+      filenames: isMultiImageImport ? files.map((entry) => entry.name) : undefined,
+      size: originalSize,
+      type: originalType,
+      pageCount: isMultiImageImport ? files.length : undefined,
     });
 
     try {
       setImportError('');
-      const isMidiImport = isMidiFilename(file.name);
-      const isImageImport = isImageFilename(file.name);
+      if (isMultiImageImport && files.some((entry) => !isImageFilename(entry.name))) {
+        throw new Error('Select only image files when importing multiple pages into one score.');
+      }
+
+      const isMidiImport = !isMultiImageImport && isMidiFilename(file.name);
+      const isImageImport = isMultiImageImport || isImageFilename(file.name);
       const projectDirectory = await getImportProjectDirectory();
       const projectDirectoryLabel = projectDirectory ? formatNxnProjectDirectoryLabel(projectDirectory) : '';
       setImportStatus(isMidiImport
         ? 'Converting MIDI to editable notation…'
-        : isImageImport
-          ? 'Reading image notation with OMR…'
+        : isMultiImageImport
+          ? `Reading ${files.length} image pages with OMR…`
+          : isImageImport
+            ? 'Reading image notation with OMR…'
           : 'Converting score file…');
 
-      if (isNxnFilename(file.name)) {
+      if (!isMultiImageImport && isNxnFilename(file.name)) {
         const data = await readNxnFile(file);
         const saved = handleNxnFileLoaded(data, file.name, { cacheNativeProject: Boolean(projectDirectory) });
         if (projectDirectory) {
@@ -1551,7 +1601,7 @@ export default function Home({ searchParams }: HomeProps) {
         return;
       }
 
-      if (isLegacyXmlFilename(file.name)) {
+      if (!isMultiImageImport && isLegacyXmlFilename(file.name)) {
         let xmlText = await file.text();
         xmlText = await polishImportedScore({
           xml: xmlText,
@@ -1576,7 +1626,14 @@ export default function Home({ searchParams }: HomeProps) {
       }
 
       const form = new FormData();
-      form.append('file', file);
+      if (isMultiImageImport) {
+        for (const imagePage of files) {
+          form.append('files', imagePage);
+        }
+        form.append('batchName', originalFilename);
+      } else {
+        form.append('file', file);
+      }
 
       const res = await fetch('/api/convert-pdf', { method: 'POST', body: form });
       const text = await res.text();
@@ -1596,7 +1653,9 @@ export default function Home({ searchParams }: HomeProps) {
       let importedXml = data.xml as string;
       const importedFilename = data.filename as string;
       const midiAnalysis = data.midiAnalysis;
-      const importFormat = getImportPolishSourceFormat(file.name);
+      const importFormat: ImportPolishSourceFormat = isMultiImageImport
+        ? 'image'
+        : getImportPolishSourceFormat(file.name);
 
       if (isMidiImport && importedXml) {
         const analysisSummary = typeof midiAnalysis?.summary === 'string' ? midiAnalysis.summary : 'MIDI analysis complete.';
@@ -1677,7 +1736,7 @@ export default function Home({ searchParams }: HomeProps) {
       if (!isMidiImport && importedXml) {
         importedXml = await polishImportedScore({
           xml: importedXml,
-          originalFilename: file.name,
+          originalFilename,
           importedFilename,
           format: importFormat,
         });
@@ -1687,28 +1746,34 @@ export default function Home({ searchParams }: HomeProps) {
       if (projectDirectory) {
         setScoreOpenStatus(`Saving ${buildNxnFilename(importedFilename)} in ${projectDirectoryLabel}…`);
       }
-      addRecentFile(file.name, file.size, {
+      addRecentFile(originalFilename, originalSize, {
         libraryScoreId: saved.id,
         importedName: importedFilename,
       });
       recordBugReportEvent('workspace', 'import-file:success', {
-        originalFilename: file.name,
+        originalFilename,
         importedFilename,
         format: isMidiImport ? 'midi' : importFormat,
+        pageCount: isMultiImageImport ? files.length : undefined,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setImportError(message.replace(/^Error:\s*/, ''));
       recordBugReportEvent('workspace', 'import-file:failed', {
-        filename: file.name,
-        size: file.size,
-        type: file.type,
+        filename: originalFilename,
+        size: originalSize,
+        type: originalType,
+        pageCount: isMultiImageImport ? files.length : undefined,
         message,
       });
     } finally {
       setImportStatus('');
     }
   }, [aiProviderRequestSettings, getImportProjectDirectory, handleNxnFileLoaded, handleXmlFileLoaded, locale, ollamaModel, polishImportedScore, provider]);
+
+  const handleSelectedFile = useCallback(async (file: File) => {
+    await handleSelectedFiles([file]);
+  }, [handleSelectedFiles]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1717,25 +1782,25 @@ export default function Home({ searchParams }: HomeProps) {
       let chain = Promise.resolve();
       return electronApi.onOpenFile((payload) => {
         chain = chain.then(async () => {
-          await handleSelectedFile(fileFromBase64(payload));
+          await handleSelectedFiles(filesFromElectronOpenPayload(payload));
         }).catch((error) => {
           setImportStatus('');
-          setScoreOpenStatus(`Could not open ${payload.name}: ${String(error)}`);
+          setScoreOpenStatus(`Could not open ${getElectronOpenPayloadName(payload)}: ${String(error)}`);
         });
       });
     }
 
     const target = window as typeof window & {
-      __NEX_NOTE_OPEN_FILE__?: (payload: ElectronOpenFilePayload) => void;
-      __NEX_NOTE_PENDING_OPEN_FILES__?: ElectronOpenFilePayload[];
+      __NEX_NOTE_OPEN_FILE__?: (payload: ElectronOpenPayload) => void;
+      __NEX_NOTE_PENDING_OPEN_FILES__?: ElectronOpenPayload[];
     };
     let chain = Promise.resolve();
-    const openPayload = (payload: ElectronOpenFilePayload) => {
+    const openPayload = (payload: ElectronOpenPayload) => {
       chain = chain.then(async () => {
-        await handleSelectedFile(fileFromBase64(payload));
+        await handleSelectedFiles(filesFromElectronOpenPayload(payload));
       }).catch((error) => {
         setImportStatus('');
-        setScoreOpenStatus(`Could not open ${payload.name}: ${String(error)}`);
+        setScoreOpenStatus(`Could not open ${getElectronOpenPayloadName(payload)}: ${String(error)}`);
       });
     };
 
@@ -1749,7 +1814,7 @@ export default function Home({ searchParams }: HomeProps) {
         delete target.__NEX_NOTE_OPEN_FILE__;
       }
     };
-  }, [handleSelectedFile]);
+  }, [handleSelectedFiles]);
 
   const handleLibraryOpen = useCallback(async (score: LibraryScore) => {
     setScoreOpenStatus(`${t('library.opening')} ${score.name}…`);
@@ -4435,15 +4500,16 @@ export default function Home({ searchParams }: HomeProps) {
         ref={fileInputRef}
         type="file"
         accept={IMPORT_FILE_ACCEPT}
+        multiple
         className="hidden"
         style={{ caretColor: 'transparent' }}
         suppressHydrationWarning
         onChange={async (e) => {
-          const file = e.target.files?.[0];
+          const files = Array.from(e.target.files ?? []);
           e.target.value = '';
-          if (!file) return;
+          if (files.length === 0) return;
 
-          await handleSelectedFile(file);
+          await handleSelectedFiles(files);
         }}
       />
       {/* Header */}
@@ -4621,6 +4687,7 @@ export default function Home({ searchParams }: HomeProps) {
             onChooseTemplate={handleOpenTemplateDialog}
             onOpenFile={handleOpenFilePicker}
             onFileSelected={handleSelectedFile}
+            onFilesSelected={handleSelectedFiles}
             onOpenLibraryScore={handleLibraryOpen}
             importStatus={importStatus}
           />

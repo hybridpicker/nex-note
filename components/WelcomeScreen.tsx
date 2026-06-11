@@ -12,6 +12,7 @@ type WelcomeScreenProps = {
   onChooseTemplate: () => void;
   onOpenFile: () => void;
   onFileSelected: (file: File) => Promise<void> | void;
+  onFilesSelected?: (files: File[]) => Promise<void> | void;
   onOpenLibraryScore: (score: LibraryScore) => Promise<void> | void;
   importStatus?: string;
 };
@@ -21,6 +22,7 @@ export default function WelcomeScreen({
   onChooseTemplate,
   onOpenFile,
   onFileSelected,
+  onFilesSelected,
   onOpenLibraryScore,
   importStatus,
 }: WelcomeScreenProps) {
@@ -78,7 +80,7 @@ export default function WelcomeScreen({
           </section>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.7fr)]">
-            <UploadZone onFileSelected={onFileSelected} loadingMessage={importStatus} />
+            <UploadZone onFileSelected={onFileSelected} onFilesSelected={onFilesSelected} loadingMessage={importStatus} />
             <div className="rounded-lg border border-slate-200 bg-white/82 p-4">
               <RecentFiles
                 onFileSelected={onFileSelected}

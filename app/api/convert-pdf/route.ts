@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
+import { PDFDocument } from 'pdf-lib';
 import { writeFile, readFile, unlink, mkdir, rm, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
-import { basename, dirname, extname, join } from 'path';
+import { basename, delimiter, dirname, extname, join } from 'path';
 import { extractXmlFromMxl } from '@/lib/mxl-utils';
+import {
+  buildScoreImageBatchBaseName,
+  isPdfEmbeddableScoreImageFilename,
+  isScoreImageFilename,
+  sortScoreImagePages,
+} from '@/lib/score-image-pages';
 import { analyzeMidiBuffer } from '@/src/nex-note/midi/analyze-midi';
 import { applyMidiImportLayout } from '@/src/nex-note/midi/apply-midi-import-layout';
 import { convertGuitarProBufferToTabbedMusicXml } from '@/lib/alphatab-guitar-pro-import';
@@ -25,16 +32,44 @@ import {
 
 const PDF_TO_MUSESCORE_SCRIPT = process.env.PDF_TO_MUSESCORE_SCRIPT
   || `${process.env.HOME}/Coding/musescore/scripts/pdf-to-musescore.sh`;
+const AUDIVERIS_JAVA = process.env.AUDIVERIS_JAVA
+  || '/Applications/Audiveris.app/Contents/runtime/Contents/Home/bin/java';
+const AUDIVERIS_APP_DIR = process.env.AUDIVERIS_APP_DIR
+  || '/Applications/Audiveris.app/Contents/app';
+const AUDIVERIS_TESSERACT_CONSTANT = 'org.audiveris.omr.text.tesseract.TesseractOCR.TESSDATA_PREFIX';
+const MAX_IMAGE_BATCH_PAGES = 64;
+// Audiveris rasterizes PDF input at roughly 300 DPI; this keeps source pixels 1:1.
+const PDF_POINTS_PER_IMAGE_PIXEL = 72 / 300;
 
 let museScoreVersionCache: Promise<string | undefined> | undefined;
 
+function isUploadedFile(value: unknown): value is File {
+  return Boolean(value)
+    && typeof value === 'object'
+    && typeof (value as File).name === 'string'
+    && typeof (value as File).arrayBuffer === 'function';
+}
+
+function parseOptionalTextField(value: FormDataEntryValue | null) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
-  const file = formData.get('file') as File | null;
+  const fileValue = formData.get('file');
+  const file = isUploadedFile(fileValue) ? fileValue : null;
+  const imagePageFiles = formData.getAll('files').filter(isUploadedFile);
+  const batchName = parseOptionalTextField(formData.get('batchName'));
+  const uploadFiles = imagePageFiles.length > 0 ? imagePageFiles : (file ? [file] : []);
 
-  if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+  if (uploadFiles.length === 0) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+  if (uploadFiles.length > 1) {
+    return convertImagePageBatch(uploadFiles, batchName);
+  }
 
-  const lower = file.name.toLowerCase();
+  const [singleFile] = uploadFiles;
+  if (!singleFile) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+  const lower = singleFile.name.toLowerCase();
   const origExt = lower.split('.').pop() ?? 'tmp';
   const fmt = lower.endsWith('.mxl') ? 'mxl'
     : /\.(xml|musicxml)$/.test(lower) ? 'xml'
@@ -46,7 +81,7 @@ export async function POST(req: NextRequest) {
     : 'unsupported';
 
   if (fmt === 'unsupported') {
-    return NextResponse.json({ error: `Unsupported import format for ${file.name}` }, { status: 415 });
+    return NextResponse.json({ error: `Unsupported import format for ${singleFile.name}` }, { status: 415 });
   }
   const tmpDir = join(tmpdir(), `nex-note-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
@@ -55,17 +90,17 @@ export async function POST(req: NextRequest) {
   const outputMxl = join(tmpDir, 'output.mxl');
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = Buffer.from(await singleFile.arrayBuffer());
     await writeFile(inputPath, buffer);
 
     if (fmt === 'mxl') {
       // Already MXL — extract XML directly
       const { xml: rawXml } = await extractXmlFromMxl(buffer);
-      return NextResponse.json({ xml: stripTabParts(rawXml), filename: file.name });
+      return NextResponse.json({ xml: stripTabParts(rawXml), filename: singleFile.name });
     }
 
     if (fmt === 'xml') {
-      return NextResponse.json({ xml: stripTabParts(buffer.toString('utf-8')), filename: file.name });
+      return NextResponse.json({ xml: stripTabParts(buffer.toString('utf-8')), filename: singleFile.name });
     }
 
     if (fmt === 'mscz') {
@@ -73,7 +108,7 @@ export async function POST(req: NextRequest) {
       const archive = await inspectMsczArchive(buffer).catch(() => undefined);
       await assertMsczSupportedByServerMuseScore(archive);
       const xml = await runMscoreToMxl(inputPath, outputMxl, { archive });
-      return NextResponse.json({ xml, filename: file.name.replace(/\.mscz$/i, '.mxl') });
+      return NextResponse.json({ xml, filename: singleFile.name.replace(/\.mscz$/i, '.mxl') });
     }
 
     if (fmt === 'gp') {
@@ -95,7 +130,7 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({
         xml,
-        filename: file.name.replace(/\.[^.]+$/, '.mxl'),
+        filename: singleFile.name.replace(/\.[^.]+$/, '.mxl'),
         importContract: {
           prompt: GUITAR_PRO_IMPORT_FIDELITY_PROMPT,
           preservedTabs: musicXmlHasTabStaff(xml),
@@ -113,7 +148,7 @@ export async function POST(req: NextRequest) {
       const layout = applyMidiImportLayout(xml, analysis);
       return NextResponse.json({
         xml: layout.xml,
-        filename: file.name.replace(/\.[^.]+$/, '.mxl'),
+        filename: singleFile.name.replace(/\.[^.]+$/, '.mxl'),
         midiAnalysis: analysis,
         midiLayout: {
           profile: layout.profile,
@@ -126,13 +161,13 @@ export async function POST(req: NextRequest) {
 
     // PDF/image OMR: run the configured Audiveris conversion script.
     const xml = await runOmrConversion(inputPath, tmpDir, outputMxl);
-    return NextResponse.json({ xml, filename: file.name.replace(/\.[^.]+$/i, '.mxl') });
+    return NextResponse.json({ xml, filename: singleFile.name.replace(/\.[^.]+$/i, '.mxl') });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn('Score import conversion failed', {
-      filename: file.name,
+      filename: singleFile.name,
       format: fmt,
-      size: file.size,
+      size: singleFile.size,
       message,
     });
     return NextResponse.json({ error: message }, { status: 500 });
@@ -142,6 +177,82 @@ export async function POST(req: NextRequest) {
     await unlink(outputMxl).catch(() => {});
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function convertImagePageBatch(files: File[], requestedBatchName: string) {
+  if (files.length > MAX_IMAGE_BATCH_PAGES) {
+    return NextResponse.json({
+      error: `Multi-image score imports support up to ${MAX_IMAGE_BATCH_PAGES} pages at a time.`,
+    }, { status: 413 });
+  }
+
+  const nonImage = files.find((file) => !isScoreImageFilename(file.name));
+  if (nonImage) {
+    return NextResponse.json({
+      error: `Multi-file score import only supports image pages. ${nonImage.name} is not an image import.`,
+    }, { status: 415 });
+  }
+
+  const unsupported = files.find((file) => !isPdfEmbeddableScoreImageFilename(file.name));
+  if (unsupported) {
+    return NextResponse.json({
+      error: `Multi-image score import currently supports PNG and JPEG pages. Convert ${unsupported.name} to PNG/JPEG or import it by itself.`,
+    }, { status: 415 });
+  }
+
+  const sortedFiles = sortScoreImagePages(files);
+  const batchBaseName = sanitizeOutputBaseName(requestedBatchName) || buildScoreImageBatchBaseName(sortedFiles);
+  const tmpDir = join(tmpdir(), `nex-note-${Date.now()}`);
+  const inputPath = join(tmpDir, 'image-pages.pdf');
+  const outputMxl = join(tmpDir, 'output.mxl');
+
+  await mkdir(tmpDir, { recursive: true });
+  try {
+    await writeImagePagesPdf(sortedFiles, inputPath);
+    const xml = await runOmrConversion(inputPath, tmpDir, outputMxl, { allSheets: true });
+    return NextResponse.json({ xml, filename: `${batchBaseName}.mxl` });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('Multi-image score import conversion failed', {
+      filename: batchBaseName,
+      pageCount: sortedFiles.length,
+      size: sortedFiles.reduce((sum, file) => sum + file.size, 0),
+      message,
+    });
+    return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    await unlink(inputPath).catch(() => {});
+    await unlink(outputMxl).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function sanitizeOutputBaseName(name: string) {
+  return name
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function writeImagePagesPdf(files: File[], outputPath: string) {
+  const pdf = await PDFDocument.create();
+  for (const file of files) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const image = /\.png$/i.test(file.name)
+      ? await pdf.embedPng(bytes)
+      : await pdf.embedJpg(bytes);
+    const width = image.width * PDF_POINTS_PER_IMAGE_PIXEL;
+    const height = image.height * PDF_POINTS_PER_IMAGE_PIXEL;
+    const page = pdf.addPage([width, height]);
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width,
+      height,
+    });
+  }
+
+  await writeFile(outputPath, await pdf.save());
 }
 
 async function getServerMuseScoreVersion() {
@@ -192,7 +303,19 @@ function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserv
   });
 }
 
-function runOmrConversion(inputPath: string, outDir: string, outputMxl: string): Promise<string> {
+async function runOmrConversion(
+  inputPath: string,
+  outDir: string,
+  outputMxl: string,
+  options: { allSheets?: boolean } = {},
+): Promise<string> {
+  if (options.allSheets) {
+    await runAudiverisAllSheets(inputPath, outDir);
+    const mxlBuffer = await readOmrOutputMxl(outDir, inputPath, outputMxl);
+    const { xml } = await extractXmlFromMxl(mxlBuffer);
+    return xml;
+  }
+
   return new Promise((resolve, reject) => {
     const proc = spawn('bash', [PDF_TO_MUSESCORE_SCRIPT, inputPath, outDir], {
       timeout: 120000,
@@ -201,6 +324,7 @@ function runOmrConversion(inputPath: string, outDir: string, outputMxl: string):
 
     let stderr = '';
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('error', reject);
 
     proc.on('close', async (code) => {
       if (code !== 0) {
@@ -216,6 +340,115 @@ function runOmrConversion(inputPath: string, outDir: string, outputMxl: string):
       }
     });
   });
+}
+
+async function runAudiverisAllSheets(inputPath: string, outDir: string) {
+  const timeoutMs = 300000;
+  const [classpath, tesseractPrefix] = await Promise.all([
+    resolveAudiverisClasspath(),
+    resolveTesseractPrefix(),
+  ]);
+  const tesseractData = process.env.AUDIVERIS_TESSDATA_PREFIX
+    || process.env.TESSDATA_PREFIX
+    || join(tesseractPrefix, 'share', 'tessdata');
+
+  await runProcess(AUDIVERIS_JAVA, [
+    '-cp',
+    classpath,
+    `-Djna.library.path=${join(tesseractPrefix, 'lib')}`,
+    'Audiveris',
+    '-batch',
+    '-transcribe',
+    '-export',
+    '-constant',
+    `${AUDIVERIS_TESSERACT_CONSTANT}=${tesseractData}`,
+    '-output',
+    outDir,
+    '--',
+    inputPath,
+  ], {
+    cwd: outDir,
+    timeoutMs,
+    errorPrefix: 'Audiveris multi-page OMR failed',
+  });
+}
+
+async function resolveAudiverisClasspath() {
+  const entries = await readdir(AUDIVERIS_APP_DIR);
+  const jars = entries
+    .filter((name) => name.toLowerCase().endsWith('.jar'))
+    .sort()
+    .map((name) => join(AUDIVERIS_APP_DIR, name));
+
+  if (jars.length === 0) {
+    throw new Error(`No Audiveris jars were found in ${AUDIVERIS_APP_DIR}`);
+  }
+  return jars.join(delimiter);
+}
+
+async function resolveTesseractPrefix() {
+  const configured = process.env.AUDIVERIS_TESSERACT_PREFIX
+    || process.env.TESSERACT_PREFIX;
+  if (configured) return configured;
+
+  for (const brew of ['brew', '/opt/homebrew/bin/brew', '/usr/local/bin/brew']) {
+    try {
+      return await readCommandStdout(brew, ['--prefix', 'tesseract']);
+    } catch {
+      // Try the next common Homebrew location.
+    }
+  }
+
+  throw new Error('Could not resolve Tesseract for Audiveris. Set AUDIVERIS_TESSERACT_PREFIX or install Homebrew tesseract.');
+}
+
+function readCommandStdout(command: string, args: string[]) {
+  return new Promise<string>((resolve, reject) => {
+    const proc = spawn(command, args, { timeout: 10000 });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code, signal) => {
+      if (code !== 0) {
+        reject(new Error(`${command} ${args.join(' ')} failed (exit ${code}, signal ${signal ?? 'none'}): ${stderr}`));
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
+function runProcess(
+  command: string,
+  args: string[],
+  options: { cwd: string; timeoutMs: number; errorPrefix: string },
+) {
+  return new Promise<void>((resolve, reject) => {
+    const proc = spawn(command, args, {
+      timeout: options.timeoutMs,
+      cwd: options.cwd,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code, signal) => {
+      if (code !== 0) {
+        reject(new Error(`${options.errorPrefix} (exit ${code}, signal ${signal ?? 'none'}): ${formatProcessOutput(stdout, stderr)}`));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function formatProcessOutput(stdout: string, stderr: string) {
+  const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join('\n');
+  return combined.slice(-5000);
 }
 
 async function readOmrOutputMxl(outDir: string, inputPath: string, outputMxl: string) {

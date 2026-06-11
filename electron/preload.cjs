@@ -10,6 +10,21 @@ function markElectronDocument() {
 markElectronDocument();
 globalThis.addEventListener?.('DOMContentLoaded', markElectronDocument);
 
+function isOpenFilePayload(payload) {
+  return Boolean(payload)
+    && typeof payload.name === 'string'
+    && typeof payload.base64 === 'string'
+    && (typeof payload.type === 'string' || typeof payload.type === 'undefined');
+}
+
+function isOpenFileBatchPayload(payload) {
+  return Boolean(payload)
+    && Array.isArray(payload.files)
+    && payload.files.length > 0
+    && (typeof payload.name === 'string' || typeof payload.name === 'undefined')
+    && payload.files.every(isOpenFilePayload);
+}
+
 contextBridge.exposeInMainWorld('nexNoteElectron', {
   isElectron: true,
   onMenuCommand(callback) {
@@ -25,12 +40,7 @@ contextBridge.exposeInMainWorld('nexNoteElectron', {
   onOpenFile(callback) {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => {
-      if (
-        payload
-        && typeof payload.name === 'string'
-        && typeof payload.base64 === 'string'
-        && (typeof payload.type === 'string' || typeof payload.type === 'undefined')
-      ) {
+      if (isOpenFilePayload(payload) || isOpenFileBatchPayload(payload)) {
         callback(payload);
       }
     };
