@@ -627,6 +627,11 @@ function findCommandEventIndex(
   return findEventIndex(voice, locator.timestampNum, locator.timestampDen);
 }
 
+function pitchMidiNumber(pitch: { step: string; alter?: number; octave: number }) {
+  const STEP_TO_SEMITONE: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  return ((pitch.octave + 1) * 12) + (STEP_TO_SEMITONE[pitch.step] ?? 0) + (pitch.alter ?? 0);
+}
+
 function isTabStaff(part: ScoreDocumentModel['score']['parts'][number], staffIndex: number) {
   return part.staves
     .find((staff) => staff.staffIndex === staffIndex)
@@ -3359,7 +3364,11 @@ export function executeCoreCommands(
           const tuning = resolveGuitarTuning(command.tuning ?? event.guitar?.tuning);
           const pitch = resolveGuitarFretPitch(command.string, command.fret, tuning);
           const previous = event.guitar;
-          event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+          // Keep the existing spelling when the sounding pitch is unchanged —
+          // a string change at constant pitch must not respell Bb as A#.
+          if (pitchMidiNumber(event.pitch) !== pitch.midi) {
+            event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+          }
           event.guitar = {
             string: command.string,
             fret: pitch.fret,
@@ -3379,7 +3388,9 @@ export function executeCoreCommands(
             command.timestampDen,
           );
           if (paired?.event) {
-            paired.event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+            if (pitchMidiNumber(paired.event.pitch) !== pitch.midi) {
+              paired.event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+            }
             if (paired.isTab) {
               const previousPairedGuitar = paired.event.guitar;
               paired.event.guitar = {

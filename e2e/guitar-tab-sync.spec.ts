@@ -123,3 +123,103 @@ test('double-clicking a TAB fret number edits that digit and keeps notation in s
     };
   })).toEqual({ notationD3: true, tabFret5: true });
 });
+
+const SEPARATE_PARTS_TAB_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Guitar</part-name></score-part>
+    <score-part id="P2"><part-name>Guitar (Tab)</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>TAB</sign></clef>
+        <staff-details>
+          <staff-lines>6</staff-lines>
+        </staff-details>
+      </attributes>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>1</string><fret>7</fret></technical></notations></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>3</string><fret>9</fret></technical></notations></note>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type></note>
+      <note><rest/><duration>4</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+test('dragging a TAB fret to another string keeps the pitch and recomputes the fret @smoke', async ({ page }) => {
+  await page.addInitScript(({ xml }) => {
+    localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'separate-parts-tab-drag.musicxml' }));
+  }, { xml: SEPARATE_PARTS_TAB_XML });
+
+  await page.goto('/?debug=true&visual-debug=true');
+  await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('svg text').filter({ hasText: /^7$/ }).first()).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  const noteInputOn = await page.evaluate(() => (
+    (window as typeof window & { __NEX_NOTE_E2E_STATE__?: { noteInputMode?: boolean } }).__NEX_NOTE_E2E_STATE__?.noteInputMode ?? false
+  ));
+  if (noteInputOn) await page.getByTitle('Toggle note input (N)').click();
+
+  // The fret texts mark the TAB rows: "7" sits on string 1, "9" on string 3,
+  // so one TAB line is half their vertical distance.
+  const fret7 = await page.locator('svg text').filter({ hasText: /^7$/ }).first().boundingBox();
+  const fret9 = await page.locator('svg text').filter({ hasText: /^9$/ }).first().boundingBox();
+  if (!fret7 || !fret9) throw new Error('missing TAB fret texts');
+  const start = { x: fret7.x + fret7.width / 2, y: fret7.y + fret7.height / 2 };
+  const lineDistance = (fret9.y + fret9.height / 2 - start.y) / 2;
+  expect(lineDistance).toBeGreaterThan(4);
+
+  // Drag B4 from the high E string (fret 7) one string down onto the B string.
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x, start.y + lineDistance * 1.5, { steps: 4 });
+
+  const ghost = page.locator('[data-testid="ghost-note-preview"]');
+  await expect(ghost).toHaveAttribute('data-ghost-tab-fret', '12');
+  await expect(ghost).toHaveAttribute('data-ghost-tab-string', '2');
+  await expect(ghost).toHaveAttribute('data-ghost-pitch', 'B4');
+
+  await page.mouse.up();
+
+  await expect.poll(async () => page.evaluate(() => {
+    const xml = (window as typeof window & { __NEX_NOTE_E2E_STATE__?: { xml: string } }).__NEX_NOTE_E2E_STATE__?.xml ?? '';
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const parts = Array.from(doc.getElementsByTagName('part'));
+    const tabPart = parts.find((part) => part.getAttribute('id') === 'P2');
+    const notationPart = parts.find((part) => part.getAttribute('id') === 'P1');
+    const tabNote = tabPart ? Array.from(tabPart.getElementsByTagName('note'))
+      .find((note) => note.getElementsByTagName('string').length > 0) : null;
+    const notationNote = notationPart?.getElementsByTagName('note')[0] ?? null;
+    return {
+      tabPitch: tabNote
+        ? `${tabNote.getElementsByTagName('step')[0]?.textContent}${tabNote.getElementsByTagName('octave')[0]?.textContent}`
+        : null,
+      tabString: tabNote?.getElementsByTagName('string')[0]?.textContent ?? null,
+      tabFret: tabNote?.getElementsByTagName('fret')[0]?.textContent ?? null,
+      notationPitch: notationNote
+        ? `${notationNote.getElementsByTagName('step')[0]?.textContent}${notationNote.getElementsByTagName('octave')[0]?.textContent}`
+        : null,
+    };
+  })).toEqual({
+    tabPitch: 'B4',
+    tabString: '2',
+    tabFret: '12',
+    notationPitch: 'B4',
+  });
+});

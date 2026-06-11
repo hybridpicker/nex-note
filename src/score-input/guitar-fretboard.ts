@@ -95,6 +95,24 @@ function clampFret(fret: number) {
   return Math.max(0, Math.min(24, Math.trunc(fret)));
 }
 
+export const MAX_GUITAR_FRET = 24;
+
+/**
+ * Fret that produces `midi` on the given string, or null when the pitch is
+ * not reachable there (below the open string or beyond the last fret).
+ */
+export function fretForMidiOnString(
+  midi: number,
+  string: 1 | 2 | 3 | 4 | 5 | 6,
+  tuning: GuitarStringTuning[] | GuitarTuningPreset = STANDARD_GUITAR_TUNING,
+): number | null {
+  const strings = Array.isArray(tuning) ? tuning : tuning.strings;
+  const stringTuning = strings.find((candidate) => candidate.string === string);
+  if (!stringTuning || !Number.isFinite(midi)) return null;
+  const fret = Math.round(midi) - stringTuning.openMidi;
+  return fret >= 0 && fret <= MAX_GUITAR_FRET ? fret : null;
+}
+
 export function resolveGuitarFretPitch(
   string: 1 | 2 | 3 | 4 | 5 | 6,
   fret: number,

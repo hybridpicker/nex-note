@@ -192,6 +192,12 @@ interface DragTransposeCommitTarget {
   alter: number;
 }
 
+interface DragStringCommitTarget {
+  note: SelectedNote;
+  string: GuitarStringNumber;
+  fret: number;
+}
+
 interface LegacyPointerPlacementTarget {
   coreMeasureId?: string | null;
   corePartId?: string | null;
@@ -2847,6 +2853,51 @@ export function useNoteEditor(
     options?.onActiveNotePreview?.(updated);
   }, [applyEditorCommands, onApplyCommands, options, selectedNote, selectedNotes, warnNoOpEdit, xml]);
 
+  // Commit a TAB-staff string drag: same pitch, new string, fret recomputed by
+  // the caller from the tuning. Reuses setGuitarFret so paired staves stay in sync.
+  const commitDraggedGuitarString = useCallback((target: DragStringCommitTarget) => {
+    const note = target.note;
+    if (note.isRest || !note.guitar) return;
+    const command: ScoreCommand = {
+      type: 'setGuitarFret',
+      coreEntityId: note.coreEntityId ?? null,
+      coreMeasureId: note.coreMeasureId ?? null,
+      corePartId: note.corePartId ?? null,
+      step: note.step,
+      octave: note.octave,
+      alter: note.alter,
+      measureNumber: note.measureNumber,
+      staffIndex: note.staffIndex,
+      voiceId: note.voiceId,
+      timestampNum: note.timestampNum,
+      timestampDen: note.timestampDen,
+      string: target.string,
+      fret: target.fret,
+      tuning: note.guitar.tuning ? resolveGuitarTuning(note.guitar.tuning).id : undefined,
+      techniques: note.guitar.techniques,
+    };
+    const commands = [command];
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      warnNoOpEdit('commitDraggedGuitarString', command);
+      return;
+    }
+    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(note, selectedNotesRef.current) });
+    const updated = {
+      ...note,
+      guitar: {
+        ...note.guitar,
+        string: target.string,
+        fret: target.fret,
+      },
+    };
+    setSelectedNote(updated);
+    selectedNotesRef.current = [updated];
+    setSelectedNotes([updated]);
+    lastSelectedRef.current = updated;
+    options?.onActiveNotePreview?.(updated);
+  }, [applyEditorCommands, onApplyCommands, options, warnNoOpEdit, xml]);
+
   // Select all notes in the current staff+voice across all measures.
   const selectAllInVoice = useCallback(() => {
     if (!selectedNote) return;
@@ -3360,6 +3411,7 @@ export function useNoteEditor(
     toggleSlur,
     transposeSemitones,
     commitDraggedPitch,
+    commitDraggedGuitarString,
     setBarline,
     addGraceNoteAtSelection,
     addTupletToSelection,

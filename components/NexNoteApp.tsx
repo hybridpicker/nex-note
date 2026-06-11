@@ -939,7 +939,7 @@ export default function Home({ searchParams }: HomeProps) {
     toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
     toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
     changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, toggleArticulation, clearArticulations, addDynamic, toggleTie, toggleSlur,
-    transposeSemitones, commitDraggedPitch, setBarline, addGraceNoteAtSelection, addTupletToSelection, placeNoteAt,
+    transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, placeNoteAt,
   } = useNoteEditor(
     xml,
     coreDocument,
@@ -4342,6 +4342,7 @@ export default function Home({ searchParams }: HomeProps) {
       dragTransposeMode={transposeMode}
       onDragTransposeCommit={viewOnly ? undefined : ({ note, step, alter, octave }) => commitDraggedPitch({ note, step, alter, octave })}
       onDragPitchPreview={viewOnly ? undefined : previewNote}
+      onDragStringCommit={viewOnly ? undefined : ({ note, string, fret }) => commitDraggedGuitarString({ note, string, fret })}
       onMeasureSelectionChange={viewOnly ? undefined : handleMeasureSelectionChange}
       clearMeasureSelectionSignal={clearMeasureSelectionSignal}
       sessionViewMode={session.viewMode}

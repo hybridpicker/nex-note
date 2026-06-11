@@ -210,6 +210,69 @@ test('setGuitarFret keeps Guitar Pro style staff-details TAB imports paired with
   assert.match(result.xml, /<staff>2<\/staff>/);
 });
 
+const DUAL_STAFF_TAB_FLAT_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>TAB</sign><line>5</line></clef>
+      </attributes>
+      <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>1</duration></backup>
+      <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>1</string><fret>6</fret></technical></notations></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+test('setGuitarFret moves a TAB note to another string without changing the pitch', () => {
+  // C4 = 3rd fret on the A string ↔ 10th fret on the D string.
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
+    type: 'setGuitarFret',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 2,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    string: 4,
+    fret: 10,
+    tuning: 'standard',
+  } as any]);
+
+  const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
+  const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'C', alter: 0, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'C', alter: 0, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 4, fret: 10, tuning: 'standard', techniques: [] });
+});
+
+test('setGuitarFret keeps flat spelling when the sounding pitch is unchanged', () => {
+  // Bb4 from string 1 fret 6 to string 2 fret 11 must stay Bb, not become A#.
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_FLAT_XML), [{
+    type: 'setGuitarFret',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 2,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    string: 2,
+    fret: 11,
+    tuning: 'standard',
+  } as any]);
+
+  const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
+  const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'B', alter: -1, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'B', alter: -1, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 2, fret: 11, tuning: 'standard', techniques: [] });
+});
+
 test('insertNoteAt with guitar converts the paired notation rest at the same rhythmic anchor', () => {
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), [{
     type: 'insertNoteAt',

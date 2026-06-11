@@ -39,6 +39,7 @@ import {
   buildGraphicalMeasureRectsById,
   staffIndexForMeasureId,
   unionRects,
+  type AugmentedMeasureLayout,
   type DetailedContext,
   type StaffDetail,
 } from '@/src/score-core/GeometryProxy';
@@ -61,6 +62,7 @@ import {
   resolveGhostPlacementIntent,
   type GhostPlacementMode,
 } from '@/src/score-input/smart-ghost-note';
+import { fretForMidiOnString, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
 import { resolveDragTransposePitch, type DragTransposeMode } from '@/src/score-input/transpose-logic';
 import type { ResolvedEditTarget } from '@/src/score-input/types';
 import {
@@ -182,6 +184,11 @@ interface Props {
     mode: DragTransposeMode;
   }) => void;
   onDragPitchPreview?: (note: SelectedNote | null) => void;
+  onDragStringCommit?: (target: {
+    note: SelectedNote;
+    string: 1 | 2 | 3 | 4 | 5 | 6;
+    fret: number;
+  }) => void;
   onMeasureSelectionChange?: (selection: { measureIds: string[]; measureNumbers: number[] }) => void;
   clearMeasureSelectionSignal?: number;
   sessionViewMode?: ScoreViewMode;
@@ -375,6 +382,8 @@ interface GhostNoteTarget {
   isTuplet?: boolean;
   tupletLabel?: string | null;
   transposeMode?: DragTransposeMode;
+  tabFret?: number | null;
+  tabString?: number | null;
   placementLockedByModifier?: boolean;
   reflowHints?: Array<{
     left: number;
@@ -930,12 +939,29 @@ interface DragTransposeSession {
   pointerId: number;
   note: SelectedNote;
   startStaffStep: number;
+  startDomPoint: PointLike;
   currentStaffIndex: number;
   lastSemitoneDelta: number;
   lastPreviewStaffIndex: number;
   lastResolvedPitch: { step: string; alter: number; octave: number } | null;
+  /** Drag started on a TAB staff note: vertical drag picks the string, pitch stays fixed. */
+  tabDrag: boolean;
+  lastResolvedGuitar: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number } | null;
   dragStarted: boolean;
   pulseToken: number;
+}
+
+function isTabStaffSelectedNote(coreDocument: ScoreDocumentModel | null, note: SelectedNote) {
+  if (!coreDocument) return false;
+  const parts = note.corePartId
+    ? coreDocument.score.parts.filter((part) => part.id === note.corePartId)
+    : coreDocument.score.parts;
+  return parts.some((part) => part.staves.some((staff) => (
+    staff.staffIndex === note.staffIndex
+    && staff.measures.some((measure) => measure.attributes.some((attribute) => (
+      attribute.clefs.some((clef) => clef.staffIndex === note.staffIndex && clef.sign?.toUpperCase() === 'TAB')
+    )))
+  )));
 }
 
 function approximatelyEqual(a: number, b: number, epsilon = 0.5) {
@@ -1396,6 +1422,58 @@ function buildDragPreviewTarget(input: {
       top: context.measure.domRect.y,
       height: context.measure.domRect.height,
       isNearEscape,
+    },
+    dragPulse: pulse,
+  };
+}
+
+function buildTabStringDragPreviewTarget(input: {
+  measure: AugmentedMeasureLayout;
+  staff: StaffDetail;
+  note: SelectedNote;
+  domCenterX: number;
+  lineIndex: number;
+  tabString: 1 | 2 | 3 | 4 | 5 | 6;
+  tabFret: number;
+  pulse: boolean;
+}): GhostNoteTarget {
+  const { measure, staff, note, domCenterX, lineIndex, tabString, tabFret, pulse } = input;
+  const snappedY = staff.topLineDomY + (lineIndex * staff.lineDistanceDom);
+  const previewMetrics = buildGhostPreviewMetrics(domCenterX, snappedY, 0, false, '4', 'up');
+  return {
+    measureId: measure.measureId,
+    corePartId: note.corePartId ?? null,
+    measureNumber: note.measureNumber,
+    staffIndex: note.staffIndex,
+    voiceId: note.voiceId,
+    timestampNum: note.timestampNum,
+    timestampDen: note.timestampDen,
+    step: note.step,
+    octave: note.octave,
+    alter: note.alter,
+    domCenter: { x: domCenterX, y: snappedY },
+    domRect: {
+      x: domCenterX - 8,
+      y: snappedY - 8,
+      width: 16,
+      height: 16,
+    },
+    previewLeft: previewMetrics.previewLeft,
+    previewTop: previewMetrics.previewTop,
+    previewWidth: previewMetrics.previewWidth,
+    previewHeight: previewMetrics.previewHeight,
+    accidentalOffsetX: previewMetrics.accidentalOffsetX,
+    noteheadCenterX: previewMetrics.noteheadCenterX,
+    stemDirection: 'up',
+    placementMode: 'replace',
+    tabFret,
+    tabString,
+    ledgerLines: [],
+    dragLockLine: {
+      x: domCenterX,
+      top: measure.domRect.y,
+      height: measure.domRect.height,
+      isNearEscape: false,
     },
     dragPulse: pulse,
   };
@@ -10894,6 +10972,7 @@ export default function ScoreEditor({
   dragTransposeMode = 'chromatic',
   onDragTransposeCommit,
   onDragPitchPreview,
+  onDragStringCommit,
   onMeasureSelectionChange,
   clearMeasureSelectionSignal = 0,
   sessionViewMode,
@@ -11374,6 +11453,46 @@ export default function ScoreEditor({
       if (!dragSession.dragStarted && Math.abs(e.movementY) < 2 && Math.abs(e.movementX) < 2) return;
 
       const rendered = findRenderedSelectionTarget(dragSession.note, renderedNotesRef.current, coreDocument);
+
+      if (dragSession.tabDrag && dragSession.note.guitar) {
+        // TAB staff drag: the pitch is fixed; vertical movement picks the target
+        // string (one per TAB line) and the fret follows from the tuning.
+        const tabContext = geometryProxyRef.current.getDetailedContext(domPoint, {
+          preferredStaffIndex: dragSession.note.staffIndex,
+          hysteresisPx: ghostStaffHysteresisPx(zoomPercent, true) * 2.5,
+        });
+        const measure = tabContext?.measure;
+        if (!measure || (dragSession.note.coreMeasureId && measure.measureId !== dragSession.note.coreMeasureId)) return;
+        const staffDetail = measure.staffDetails.find((detail) => detail.staffIndex === dragSession.note.staffIndex)
+          ?? tabContext?.staff
+          ?? null;
+        if (!staffDetail || staffDetail.lineCount < 4) return;
+        dragSession.dragStarted = dragSession.dragStarted || (Math.abs(e.movementY) + Math.abs(e.movementX) >= 2);
+        const lineIndex = clamp(
+          Math.round((domPoint.y - staffDetail.topLineDomY) / Math.max(staffDetail.lineDistanceDom, 1)),
+          0,
+          staffDetail.lineCount - 1,
+        );
+        const targetString = (lineIndex + 1) as 1 | 2 | 3 | 4 | 5 | 6;
+        const tuning = resolveGuitarTuning(dragSession.note.guitar.tuning);
+        const noteMidi = notePitchToMidi(dragSession.note.step, dragSession.note.alter, dragSession.note.octave);
+        const fret = fretForMidiOnString(noteMidi, targetString, tuning);
+        if (fret == null) return; // pitch not playable on that string — keep the last valid preview
+        const stringChanged = dragSession.lastResolvedGuitar?.string !== targetString;
+        dragSession.lastResolvedGuitar = { string: targetString, fret };
+        setDragPreviewTarget(buildTabStringDragPreviewTarget({
+          measure,
+          staff: staffDetail,
+          note: dragSession.note,
+          domCenterX: rendered?.domCenter.x ?? dragSession.startDomPoint.x,
+          lineIndex,
+          tabString: targetString,
+          tabFret: fret,
+          pulse: stringChanged,
+        }));
+        return;
+      }
+
       if (!rendered) return;
 
       const context = geometryProxyRef.current.getDetailedContext(domPoint, {
@@ -11615,14 +11734,18 @@ export default function ScoreEditor({
         preferredStaffIndex: directNote.staffIndex,
         hysteresisPx: ghostStaffHysteresisPx(zoomPercent, true) * 2.5,
       });
-      dragSessionRef.current = startContext?.staffStep != null ? {
+      const tabDrag = Boolean(directNote.guitar) && isTabStaffSelectedNote(coreDocument, directNote);
+      dragSessionRef.current = startContext?.staffStep != null || tabDrag ? {
         pointerId: e.pointerId,
         note: directNote,
-        startStaffStep: startContext.staffStep,
+        startStaffStep: startContext?.staffStep ?? 0,
+        startDomPoint: startPoint,
         currentStaffIndex: directNote.staffIndex,
         lastSemitoneDelta: 0,
         lastPreviewStaffIndex: directNote.staffIndex,
         lastResolvedPitch: null,
+        tabDrag,
+        lastResolvedGuitar: null,
         dragStarted: false,
         pulseToken: 0,
       } : null;
@@ -13450,6 +13573,22 @@ export default function ScoreEditor({
       dragSessionRef.current = null;
       setDragPreviewTarget(null);
       lastGhostStaffIndexRef.current = null;
+      if (dragSession.tabDrag) {
+        const resolvedGuitar = dragSession.lastResolvedGuitar;
+        if (
+          dragSession.dragStarted
+          && resolvedGuitar
+          && (resolvedGuitar.string !== dragSession.note.guitar?.string
+            || resolvedGuitar.fret !== dragSession.note.guitar?.fret)
+        ) {
+          onDragStringCommit?.({
+            note: dragSession.note,
+            string: resolvedGuitar.string,
+            fret: resolvedGuitar.fret,
+          });
+        }
+        return;
+      }
       if (dragSession.dragStarted && resolvedPitch) {
         onDragTransposeCommit?.({
           note: dragSession.note,
@@ -13463,7 +13602,7 @@ export default function ScoreEditor({
 
     window.addEventListener('pointerup', handlePointerUp, true);
     return () => window.removeEventListener('pointerup', handlePointerUp, true);
-  }, [dragTransposeMode, onDragTransposeCommit]);
+  }, [dragTransposeMode, onDragTransposeCommit, onDragStringCommit]);
 
   useEffect(() => {
     if (noteInputMode) return;
@@ -13685,13 +13824,18 @@ export default function ScoreEditor({
   }, [dragPreviewTarget, ghostNoteTarget, noteInputMode, overlayLayerOffset]);
 
   const rawSemanticAnchorTarget = dragPreviewTarget ?? ghostNoteTarget;
-  const activeSemanticAnchorTarget = discardGhostTargetOffRenderedSnap(
-    alignReplaceGhostToRenderedSnap(
-      rawSemanticAnchorTarget,
-      renderedGhostGridRef.current,
-    ),
-    renderedGhostGridRef.current,
-  );
+  // TAB string-drag previews are pinned to a rendered TAB note; the rendered
+  // snap grid only models notation staves and would discard or move them.
+  const isTabStringDragPreview = dragPreviewTarget?.tabFret != null;
+  const activeSemanticAnchorTarget = isTabStringDragPreview
+    ? rawSemanticAnchorTarget
+    : discardGhostTargetOffRenderedSnap(
+        alignReplaceGhostToRenderedSnap(
+          rawSemanticAnchorTarget,
+          renderedGhostGridRef.current,
+        ),
+        renderedGhostGridRef.current,
+      );
   const semanticAnchorDebugBoxes = semanticGridDebugEnabled
     ? buildSemanticAnchorDebugBoxes({
         ghostIndex: ghostNoteIndexRef.current,
@@ -13738,11 +13882,11 @@ export default function ScoreEditor({
       viewportBox,
     })
     : [];
-  const visibleScoreInputTarget = ghostTargetOverlapsProtectedRect(
+  const visibleScoreInputTarget = !isTabStringDragPreview && (ghostTargetOverlapsProtectedRect(
     activeSemanticAnchorTarget,
     semanticProtectedDebugRects,
   ) || ghostTargetOverlapsBarlineGuard(activeSemanticAnchorTarget, measureLayoutOverlays)
-    || ghostTargetOverlapsLeadingTimeSignatureGuard(activeSemanticAnchorTarget, measureLayoutOverlays)
+    || ghostTargetOverlapsLeadingTimeSignatureGuard(activeSemanticAnchorTarget, measureLayoutOverlays))
     ? null
     : activeSemanticAnchorTarget;
   const scoreInputLeadingGuardOverlay = activeSemanticAnchorTarget

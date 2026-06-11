@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveGuitarFretPitch, resolveGuitarTuning } from '../src/score-input/guitar-fretboard.ts';
+import { fretForMidiOnString, resolveGuitarFretPitch, resolveGuitarTuning } from '../src/score-input/guitar-fretboard.ts';
 
 test('resolveGuitarFretPitch maps standard guitar strings and frets to score pitches', () => {
   assert.deepEqual(
@@ -31,4 +31,27 @@ test('resolveGuitarFretPitch honors alternate guitar tunings', () => {
     resolveGuitarFretPitch(5, 0, resolveGuitarTuning('open-g')),
     { string: 5, fret: 0, step: 'G', octave: 2, alter: 0, label: 'G2', midi: 43 },
   );
+});
+
+test('fretForMidiOnString finds the fret that keeps the pitch on the target string', () => {
+  // B4 (midi 71): 7th fret on the high E string ↔ 12th fret on the B string.
+  assert.equal(fretForMidiOnString(71, 1), 7);
+  assert.equal(fretForMidiOnString(71, 2), 12);
+  assert.equal(fretForMidiOnString(71, 3), 16);
+  assert.equal(fretForMidiOnString(71, 4), 21);
+});
+
+test('fretForMidiOnString rejects strings that cannot reach the pitch', () => {
+  // B4 is beyond the 24th fret on the A and low E strings.
+  assert.equal(fretForMidiOnString(71, 5), null);
+  assert.equal(fretForMidiOnString(71, 6), null);
+  // E2 sits below the open pitch of every string but the low E.
+  assert.equal(fretForMidiOnString(40, 6), 0);
+  assert.equal(fretForMidiOnString(40, 5), null);
+});
+
+test('fretForMidiOnString honors alternate tunings', () => {
+  // D2 (midi 38) is the open 6th string in drop D but unreachable in standard.
+  assert.equal(fretForMidiOnString(38, 6, resolveGuitarTuning('drop-d')), 0);
+  assert.equal(fretForMidiOnString(38, 6), null);
 });

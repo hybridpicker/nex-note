@@ -49,6 +49,8 @@ export interface GhostPreviewTarget {
   dragPulse?: boolean;
   isTuplet?: boolean;
   tupletLabel?: string | null;
+  tabFret?: number | null;
+  tabString?: number | null;
   reflowHints?: Array<{
     left: number;
     top: number;
@@ -193,7 +195,8 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
   const transposeBadge = target.transposeMode === 'chromatic' ? 'C'
     : target.transposeMode === 'diatonic' ? 'D'
       : null;
-  const showPianoRoll = Boolean(target.transposeMode);
+  const isTabPreview = target.tabFret != null;
+  const showPianoRoll = Boolean(target.transposeMode) && !isTabPreview;
   const showPlacementBadge = Boolean(target.transposeMode) || target.isGraceTarget || target.placementMode !== 'insert';
   const placementLabels = {
     replace: t('note.placementReplace'),
@@ -230,6 +233,8 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       data-ghost-snap-trace={target.snapResolution ? JSON.stringify(target.snapResolution) : ''}
       data-ghost-notehead-center-x={target.noteheadCenterX}
       data-ghost-notehead-center-y={28}
+      data-ghost-tab-fret={target.tabFret ?? ''}
+      data-ghost-tab-string={target.tabString ?? ''}
       style={{
         left: `${target.previewLeft}px`,
         top: `${target.previewTop}px`,
@@ -284,22 +289,41 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
               opacity="0.9"
             />
           ))}
-          {renderAccidental({ alter, color: palette.accidental })}
-          {renderNoteHead({ noteheadCenterX: target.noteheadCenterX, duration, color: palette.notehead })}
-          {renderStem({
-            noteheadCenterX: target.noteheadCenterX,
-            duration,
-            direction: target.stemDirection,
-            color: palette.stem,
-          })}
-          {renderFlags({
-            noteheadCenterX: target.noteheadCenterX,
-            duration,
-            direction: target.stemDirection,
-            color: palette.stem,
-          })}
-          {isDotted && renderAugmentationDot({ noteheadCenterX: target.noteheadCenterX, color: palette.stem })}
-          {target.isTuplet && renderTupletBadge({ width: target.previewWidth, label: target.tupletLabel ?? '3', color: palette.stem })}
+          {isTabPreview ? (
+            <text
+              x={target.noteheadCenterX}
+              y={28}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize="15"
+              fontWeight="700"
+              fill={palette.notehead}
+              stroke="rgba(255, 255, 255, 0.92)"
+              strokeWidth="3"
+              paintOrder="stroke"
+            >
+              {target.tabFret}
+            </text>
+          ) : (
+            <>
+              {renderAccidental({ alter, color: palette.accidental })}
+              {renderNoteHead({ noteheadCenterX: target.noteheadCenterX, duration, color: palette.notehead })}
+              {renderStem({
+                noteheadCenterX: target.noteheadCenterX,
+                duration,
+                direction: target.stemDirection,
+                color: palette.stem,
+              })}
+              {renderFlags({
+                noteheadCenterX: target.noteheadCenterX,
+                duration,
+                direction: target.stemDirection,
+                color: palette.stem,
+              })}
+              {isDotted && renderAugmentationDot({ noteheadCenterX: target.noteheadCenterX, color: palette.stem })}
+              {target.isTuplet && renderTupletBadge({ width: target.previewWidth, label: target.tupletLabel ?? '3', color: palette.stem })}
+            </>
+          )}
         </svg>
       </div>
       {showPianoRoll && (
