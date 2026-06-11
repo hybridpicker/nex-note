@@ -222,7 +222,7 @@ test('buildRealizationPlan scopes materialized voices to the requested source pa
   assert.deepEqual(lowerVoices.map((voice) => voice.voiceId).sort((left, right) => left - right), [1, 2, 3]);
 });
 
-test('buildRealizationPlan warns when a paired TAB part is not mirrored', () => {
+test('buildRealizationPlan mirrors realized voices onto the paired TAB staff', () => {
   const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
   assert.ok(fixture);
   if (!fixture) return;
@@ -247,7 +247,85 @@ test('buildRealizationPlan warns when a paired TAB part is not mirrored', () => 
   });
 
   assert.ok(result.plan);
-  assert.ok(result.issues.some((issue) => issue.code === 'paired-tab-not-mirrored' && issue.severity === 'warning'));
+  assert.equal(result.issues.some((issue) => issue.code === 'paired-tab-not-mirrored'), false);
+  assert.equal(result.plan?.mirrors?.length, 1);
+  assert.equal(result.plan?.mirrors?.[0]?.target.corePartId, 'part:P2');
+  assert.deepEqual(result.plan?.mirrors?.[0]?.target.voiceIds, [1, 2, 3]);
+  assert.equal(result.plan?.mirrors?.[0]?.events.length, 12);
+
+  const commands = emitScoreCommandsFromRealizationPlan(result.plan);
+  const tabDeletes = commands.filter((command) => command.type === 'deleteRange' && command.corePartId === 'part:P2');
+  const tabInserts = commands.filter((command) => command.type === 'insertNoteAt' && command.corePartId === 'part:P2');
+  assert.equal(tabDeletes.length, 3);
+  assert.equal(tabInserts.length, 12);
+  assert.ok(tabInserts.every((command) => command.type === 'insertNoteAt' && command.guitar));
+  const firstMelodyTabInsert = tabInserts.find((command) => (
+    command.type === 'insertNoteAt'
+    && command.voiceId === 1
+    && command.timestampNum === 0
+    && command.timestampDen === 1
+  ));
+  assert.deepEqual(
+    firstMelodyTabInsert?.type === 'insertNoteAt' ? firstMelodyTabInsert.guitar : null,
+    { string: 4, fret: 24 },
+  );
+  const firstBassTabInsert = tabInserts.find((command) => (
+    command.type === 'insertNoteAt'
+    && command.voiceId === 3
+    && command.timestampNum === 0
+    && command.timestampDen === 1
+  ));
+  assert.deepEqual(
+    firstBassTabInsert?.type === 'insertNoteAt' ? firstBassTabInsert.guitar : null,
+    { string: 3, fret: 0 },
+  );
+});
+
+test('buildRealizationPlan warns when a paired TAB pitch is below guitar range', () => {
+  const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
+  assert.ok(fixture);
+  if (!fixture) return;
+  const documentState = buildDocumentState(NOTATION_AND_TAB_PARTS_XML);
+  const spec: ArrangementSpec = {
+    ...fixture.response.spec,
+    sourceMelody: {
+      ...fixture.response.spec.sourceMelody,
+      source: 'primary-voice',
+      partId: 'P1',
+    },
+  };
+  const voicingCandidate: VoicingCandidate = {
+    candidateId: 'below-guitar-range',
+    summary: 'One note below the playable TAB range',
+    confidence: 'high',
+    slices: [
+      {
+        measure: 1,
+        beatNum: 1,
+        beatDen: 4,
+        harmony: 'C',
+        functionLabel: 'tonic',
+        voices: [
+          { voiceIndex: 1, role: 'bass', pitch: { step: 'C', alter: 0, octave: 1 } },
+        ],
+      },
+    ],
+  };
+
+  const result = buildRealizationPlan({
+    documentState,
+    spec,
+    voicingCandidate,
+    harmonicCandidate: fixture.response.harmonicPlanCandidates[0],
+  });
+
+  assert.ok(result.plan);
+  const warning = result.issues.find((issue) => issue.code === 'paired-tab-not-mirrored');
+  assert.equal(warning?.severity, 'warning');
+  assert.match(warning?.message ?? '', /below standard guitar range/);
+  const commands = result.plan ? emitScoreCommandsFromRealizationPlan(result.plan) : [];
+  assert.equal(commands.filter((command) => command.type === 'deleteRange' && command.corePartId === 'part:P2').length, 1);
+  assert.equal(commands.filter((command) => command.type === 'insertNoteAt' && command.corePartId === 'part:P2').length, 0);
 });
 
 test('realizeArrangement preserves cross-measure durations via insertNoteAt overflow ties', () => {

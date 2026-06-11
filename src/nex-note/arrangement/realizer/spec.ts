@@ -1,6 +1,7 @@
 import type { WrittenPitch } from '@/src/nex-note/arrangement/pitch';
 import type { ArrangementSpec, HarmonicPlanCandidate, VoicingCandidate } from '@/src/nex-note/arrangement/spec';
 import type { DocumentState } from '@/src/score-core/commands/apply-document-commands';
+import type { NoteEvent } from '@/src/score-core/model/types';
 import type { ScoreCommand } from '@/src/shared/schemas/score-command';
 
 export interface RealizationTarget {
@@ -28,12 +29,24 @@ export interface RealizedSpanEvent {
   sourceSliceIndex: number;
 }
 
+export interface RealizedTabMirrorEvent extends Omit<RealizedSpanEvent, 'kind' | 'pitch'> {
+  kind: 'note';
+  pitch: WrittenPitch;
+  guitar: NonNullable<NoteEvent['guitar']>;
+}
+
+export interface RealizationMirrorTarget {
+  target: RealizationTarget;
+  events: RealizedTabMirrorEvent[];
+}
+
 export interface RealizationPlan {
   spec: ArrangementSpec;
   harmonicCandidate?: Pick<HarmonicPlanCandidate, 'candidateId' | 'summary'>;
   voicingCandidate: Pick<VoicingCandidate, 'candidateId' | 'summary'>;
   target: RealizationTarget;
   events: RealizedSpanEvent[];
+  mirrors?: RealizationMirrorTarget[];
 }
 
 export interface RealizerIssue {

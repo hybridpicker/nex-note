@@ -1,7 +1,13 @@
 import type { DocumentState } from '@/src/score-core/commands/apply-document-commands';
-import type { ScoreDocumentModel } from '@/src/score-core/model/types';
+import type { NoteEvent, ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { ArrangementSpec, HarmonicPlanCandidate, VoicingCandidate, VoicingSlice } from '@/src/nex-note/arrangement/spec';
-import type { RealizationPlan, RealizationTarget, RealizedSpanEvent, RealizerIssue } from '@/src/nex-note/arrangement/realizer/spec';
+import type { RealizationMirrorTarget, RealizationPlan, RealizationTarget, RealizedSpanEvent, RealizerIssue } from '@/src/nex-note/arrangement/realizer/spec';
+import {
+  describeGuitarPlacementFailure,
+  findPairedTabSourceNote,
+  guitarPlacementForPitch,
+  isTabStaffForArrangement,
+} from '@/src/nex-note/arrangement/guitar-tab-pairing';
 
 interface Fraction {
   num: number;
@@ -114,21 +120,6 @@ function resolvePartByPrimaryVoice(coreDocument: ScoreDocumentModel) {
     ))[0]?.part ?? coreDocument.score.parts[0] ?? null;
 }
 
-function isTabStaff(part: ScoreDocumentModel['score']['parts'][number], staffIndex: number) {
-  return part.staves
-    .find((staff) => staff.staffIndex === staffIndex)
-    ?.measures.some((measure) => measure.attributes.some((attribute) => (
-      attribute.clefs.some((clef) => clef.staffIndex === staffIndex && clef.sign?.toUpperCase() === 'TAB')
-    ))) ?? false;
-}
-
-function hasUnmirroredPairedTabStaff(coreDocument: ScoreDocumentModel, target: RealizationTarget) {
-  return coreDocument.score.parts.some((part) => part.staves.some((staff) => (
-    !(part.id === target.corePartId && staff.staffIndex === target.staffIndex)
-    && isTabStaff(part, staff.staffIndex)
-  )));
-}
-
 function resolveTargetPart(coreDocument: ScoreDocumentModel | null, spec: ArrangementSpec): { target: RealizationTarget | null; issues: RealizerIssue[] } {
   if (!coreDocument) {
     return {
@@ -190,6 +181,98 @@ function describeDuration(duration: Fraction) {
   return candidate ?? null;
 }
 
+function findPairedTabTarget(coreDocument: ScoreDocumentModel, target: RealizationTarget): RealizationTarget | null {
+  const sourcePart = coreDocument.score.parts.find((part) => part.id === target.corePartId);
+  if (!sourcePart || isTabStaffForArrangement(sourcePart, target.staffIndex)) return null;
+  const sourcePartIndex = coreDocument.score.parts.findIndex((part) => part.id === sourcePart.id);
+  const paired = coreDocument.score.parts
+    .flatMap((part, partIndex) => part.staves.map((staff) => ({
+      part,
+      partIndex,
+      staff,
+      isTab: isTabStaffForArrangement(part, staff.staffIndex),
+    })))
+    .filter((candidate) => (
+      candidate.isTab
+      && !(candidate.part.id === target.corePartId && candidate.staff.staffIndex === target.staffIndex)
+    ))
+    .sort((left, right) => (
+      Number(left.part.id !== sourcePart.id) - Number(right.part.id !== sourcePart.id)
+      || Math.abs(left.staff.staffIndex - target.staffIndex) - Math.abs(right.staff.staffIndex - target.staffIndex)
+      || Math.abs(left.partIndex - sourcePartIndex) - Math.abs(right.partIndex - sourcePartIndex)
+    ))[0];
+
+  if (!paired) return null;
+  return {
+    partId: paired.part.sourcePartId,
+    corePartId: paired.part.id,
+    staffIndex: paired.staff.staffIndex,
+    voiceIds: [...target.voiceIds],
+    measureRange: { ...target.measureRange },
+    mode: 'replace-range',
+  };
+}
+
+function findExistingSourceNoteForEvent(
+  coreDocument: ScoreDocumentModel,
+  target: RealizationTarget,
+  event: RealizedSpanEvent,
+) {
+  const sourcePart = coreDocument.score.parts.find((part) => part.id === target.corePartId);
+  const sourceStaff = sourcePart?.staves.find((staff) => staff.staffIndex === target.staffIndex);
+  const measure = sourceStaff?.measures.find((entry) => entry.measureNumber === event.measureNumber);
+  const note = measure?.voices
+    .find((voice) => voice.voiceId === event.voiceId)
+    ?.events.find((candidate): candidate is NoteEvent => (
+      candidate.kind === 'note'
+      && candidate.timestampNum * event.timestampDen === event.timestampNum * candidate.timestampDen
+    ));
+  if (!sourcePart || !measure || !note) return null;
+  return {
+    partId: sourcePart.sourcePartId,
+    corePartId: sourcePart.id,
+    partName: sourcePart.name,
+    note,
+    measure,
+  };
+}
+
+function buildPairedTabMirrorTarget(params: {
+  documentState: DocumentState;
+  target: RealizationTarget;
+  events: RealizedSpanEvent[];
+  issues: RealizerIssue[];
+}): RealizationMirrorTarget | null {
+  const coreDocument = params.documentState.coreDocument;
+  if (!coreDocument) return null;
+  const mirrorTarget = findPairedTabTarget(coreDocument, params.target);
+  if (!mirrorTarget) return null;
+
+  const events = params.events.flatMap((event) => {
+    if (event.kind !== 'note' || !event.pitch) return [];
+    const existingSource = findExistingSourceNoteForEvent(coreDocument, params.target, event);
+    const sourceGuitar = existingSource ? findPairedTabSourceNote(params.documentState, existingSource)?.note.guitar : undefined;
+    const guitar = guitarPlacementForPitch(event.pitch, sourceGuitar);
+    if (!guitar) {
+      params.issues.push({
+        code: 'paired-tab-not-mirrored',
+        severity: 'warning',
+        message: `Could not mirror measure ${event.measureNumber}, voice ${event.voiceId} to paired TAB staff: ${describeGuitarPlacementFailure(event.pitch)}.`,
+      });
+      return [];
+    }
+    return [{
+      ...event,
+      kind: 'note' as const,
+      staffIndex: mirrorTarget.staffIndex,
+      pitch: event.pitch,
+      guitar,
+    }];
+  });
+
+  return { target: mirrorTarget, events };
+}
+
 export function buildRealizationPlan(params: {
   documentState: DocumentState;
   spec: ArrangementSpec;
@@ -201,14 +284,6 @@ export function buildRealizationPlan(params: {
   const issues: RealizerIssue[] = [...targetResolution.issues];
   const target = targetResolution.target;
   if (!target || !documentState.coreDocument) return { plan: null, issues };
-
-  if (hasUnmirroredPairedTabStaff(documentState.coreDocument, target)) {
-    issues.push({
-      code: 'paired-tab-not-mirrored',
-      severity: 'warning',
-      message: 'The realized voicing is scoped to the notation part; a paired TAB staff was detected but is not mirrored by the arrangement realizer yet.',
-    });
-  }
 
   const part = documentState.coreDocument.score.parts.find((entry) => entry.id === target.corePartId);
   const staff = part?.staves.find((entry) => entry.staffIndex === target.staffIndex) ?? null;
@@ -316,6 +391,13 @@ export function buildRealizationPlan(params: {
     return { plan: null, issues };
   }
 
+  const pairedTabMirror = buildPairedTabMirrorTarget({
+    documentState,
+    target,
+    events: rawEvents,
+    issues,
+  });
+
   const plan: RealizationPlan = {
     spec,
     harmonicCandidate: harmonicCandidate
@@ -324,6 +406,7 @@ export function buildRealizationPlan(params: {
     voicingCandidate: { candidateId: voicingCandidate.candidateId, summary: voicingCandidate.summary },
     target,
     events: rawEvents,
+    ...(pairedTabMirror ? { mirrors: [pairedTabMirror] } : {}),
   };
 
   return { plan, issues };
