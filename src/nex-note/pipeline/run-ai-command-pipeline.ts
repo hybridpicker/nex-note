@@ -419,8 +419,16 @@ function isLikelyGerman(message: string, appLocale?: SupportedAppLocale) {
   return isLocalResponseGerman(message, appLocale);
 }
 
-function shouldPreferLocalArrangementPreview(message: string) {
-  return /\b(simple support|practical expression|beginner arrangement|easy arrangement)\b/i.test(message);
+const SIMPLE_LOCAL_ARRANGEMENT_REQUEST_PATTERNS = [
+  /\b(simple support|practical expression|beginner arrangement|easy arrangement)\b/i,
+  /\b(einfache(?:r|s|n)?\s+(?:begleitung|stuetze|stütze|satz|fassung)|praktische(?:r|s|n|m)?\s+ausdruck|anfaenger(?:arrangement|satz|fassung)|anfänger(?:arrangement|satz|fassung)|leicht(?:es|er|e|en)?\s+(?:arrangement|satz|fassung|begleitung))\b/i,
+];
+
+function shouldPreferLocalSimpleArrangementPreview(message: string) {
+  // Deliberately simple catalog-style arrangements stay local: the heuristic
+  // engine can produce deterministic chord/expression previews without spending
+  // a provider call, while larger arrangement requests still go to the planner.
+  return SIMPLE_LOCAL_ARRANGEMENT_REQUEST_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 function describeClefSign(sign?: string, line?: number, german = false) {
@@ -615,7 +623,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
       documentState,
       selection,
       sessionContext,
-      arrangementScope: shouldPreferLocalArrangementPreview(workflow.cleanedMessage) ? 'full' : 'materialized-only',
+      arrangementScope: shouldPreferLocalSimpleArrangementPreview(workflow.cleanedMessage) ? 'full' : 'materialized-only',
     });
     if (localPriorityResponse) return respondWithLocalMusicianIntent(localPriorityResponse);
 

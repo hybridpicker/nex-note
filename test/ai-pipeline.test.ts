@@ -1289,7 +1289,7 @@ test('runAiCommandPipeline routes arrangement requests through the arrangement a
   assert.ok(result.riskReasons.includes('Arrangement suggestions should stay previewable before apply'));
 });
 
-test('runAiCommandPipeline keeps simple catalog arrangements local', async () => {
+test('runAiCommandPipeline keeps English simple catalog arrangements local', async () => {
   let askCalled = false;
   const result = await runAiCommandPipeline({
     message: '/arrange Arrange a one-bar C-major stepwise melody C-D-E-F for flute with clear melody, simple support, and practical expression.',
@@ -1310,6 +1310,34 @@ test('runAiCommandPipeline keeps simple catalog arrangements local', async () =>
   assert.equal(result.requiresConfirmation, true);
   assert.ok(result.commands.some((command) => command.type === 'addChords'));
   assert.ok(result.commands.some((command) => command.type === 'addExpressionText'));
+  const fitCommand = result.commands.find((command) => command.type === 'fitPartToInstrument');
+  assert.ok(fitCommand);
+  if (!fitCommand || fitCommand.type !== 'fitPartToInstrument') return;
+  assert.equal(fitCommand.instrument, 'flute');
+});
+
+test('runAiCommandPipeline keeps German simple catalog arrangements local', async () => {
+  let askCalled = false;
+  const result = await runAiCommandPipeline({
+    message: '/arrange Arrangiere eine eintaktige C-Dur-Melodie C-D-E-F fuer Floete mit klarer Melodie, einfacher Begleitung und praktischem Ausdruck.',
+    xml: SAMPLE_XML,
+    provider: 'ollama',
+    ask: async (): Promise<AIResponse> => {
+      askCalled = true;
+      throw new Error('simple German catalog arrangement should stay local');
+    },
+    sessionContext: { appLocale: 'de' },
+  });
+
+  assert.equal(askCalled, false);
+  assert.ok(!('error' in result));
+  if ('error' in result) return;
+  assert.equal(result.workflow, 'arrangement-assist');
+  assert.equal(result.provider, 'local-layout');
+  assert.equal(result.model, 'musician-arrangement-engine');
+  assert.equal(result.requiresConfirmation, true);
+  assert.match(result.explanation, /Ich bereite/);
+  assert.equal(result.rawIntent.planner, undefined);
   const fitCommand = result.commands.find((command) => command.type === 'fitPartToInstrument');
   assert.ok(fitCommand);
   if (!fitCommand || fitCommand.type !== 'fitPartToInstrument') return;
