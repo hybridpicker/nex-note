@@ -1,6 +1,6 @@
 # Next Session Manual Test Plan
 
-Historical validation checklist and findings log from a prior release-hardening pass. For the current release status and latest evidence, use [execution-tracker.md](./execution-tracker.md) and [final-release-readiness-summary.md](./final-release-readiness-summary.md).
+Historical validation checklist and findings log from a prior release-hardening pass. For the current release status, use [final-release-readiness-summary.md](./final-release-readiness-summary.md).
 
 ## Release Validation Status
 

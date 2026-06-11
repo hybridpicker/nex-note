@@ -6,7 +6,6 @@
 
 - Repository overview: [README.md](./README.md)
 - Documentation map: [docs/README.md](./docs/README.md)
-- Current project status: [docs/execution-tracker.md](./docs/execution-tracker.md)
 - Target architecture: [docs/architecture-blueprint.md](./docs/architecture-blueprint.md)
 
 ## Environment
@@ -86,7 +85,6 @@ npm run harness:metrics -- .nex/harness-real-cli-events-YYYY-MM-DD.jsonl
 
 ## Documentation Rules
 
-- `docs/execution-tracker.md` is the canonical implementation-progress log.
 - `docs/final-release-readiness-summary.md` is the short executive summary, not the detailed source of truth.
 - `docs/phase-roadmap.md` describes the initial Phase 1 to Phase 5 roadmap only.
 - Historical handoff/checklist docs should stay clearly marked as archival if they are no longer the active status source.

@@ -1,6 +1,6 @@
 # Product Roadmap: Phase 1 to Phase 5
 
-This document is the initial delivery roadmap, not the current progress tracker. For the current state of the repository, post-roadmap phases, and release evidence, use [execution-tracker.md](./execution-tracker.md).
+This document is the initial delivery roadmap, not the current progress tracker.
 
 ## Purpose
 

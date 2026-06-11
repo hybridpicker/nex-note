@@ -2,7 +2,7 @@
 
 Updated: 2026-05-13
 
-This file is the short executive summary. For the detailed source of truth, use [execution-tracker.md](./execution-tracker.md).
+This file is the short executive summary; the detailed progress log is maintained privately.
 
 ## Recommendation
 
@@ -45,6 +45,5 @@ A tagged binary release still needs desktop packaging evidence, signing/notariza
 
 ## Related Docs
 
-- Detailed status and evidence: [execution-tracker.md](./execution-tracker.md)
 - Manual regression matrix: [user-visible-audible-test-plan.md](./user-visible-audible-test-plan.md)
 - Architecture direction: [architecture-blueprint.md](./architecture-blueprint.md)

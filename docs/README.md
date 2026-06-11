@@ -9,18 +9,9 @@ This directory mixes current status docs, architecture docs, validation material
 - Language/i18n developer note: [i18n.md](./i18n.md)
 - Keyboard shortcuts: [keyboard-shortcuts.md](./keyboard-shortcuts.md)
 - Contributor workflow: [CONTRIBUTING.md](../CONTRIBUTING.md)
-- Current implementation and release state: [execution-tracker.md](./execution-tracker.md)
-- Post-AGPL 0.0.1 launch plan: [launch-plan.md](./launch-plan.md)
 - Founder test file intake: [founder-test-file-intake.md](./founder-test-file-intake.md)
-- Founder outreach: [founder-outreach.md](./founder-outreach.md)
 
 ## Current Source Of Truth
-
-- [execution-tracker.md](./execution-tracker.md)
-  - Canonical detailed progress log
-  - Current implementation status and validation evidence
-  - Current coverage/build/test evidence
-  - Post-roadmap phase tracking
 
 - [final-release-readiness-summary.md](./final-release-readiness-summary.md)
   - Executive summary of public alpha and final-release readiness
@@ -43,14 +34,8 @@ This directory mixes current status docs, architecture docs, validation material
   - Architecture and QA specification for rights-safe known-song catalog import
   - Source-provider candidates, license gate rules, and required tests before enabling
 
-- [launch-plan.md](./launch-plan.md)
-  - Current six-step plan after AGPL 0.0.1 relaunch and HTTPS test-domain deployment
-
 - [founder-test-file-intake.md](./founder-test-file-intake.md)
   - Rights-safe real file intake rules and compatibility tracking template
-
-- [founder-outreach.md](./founder-outreach.md)
-  - Founder messages, interview questions, and validation criteria
 
 ## Architecture And Design
 
@@ -76,14 +61,10 @@ This directory mixes current status docs, architecture docs, validation material
   - Useful for intent and sequencing
   - Not the current progress tracker
 
-- [next-step-prompt.md](./next-step-prompt.md)
-  - Historical implementation handoff prompt from a prior pass
-
 - [next-session-manual-test-plan.md](./next-session-manual-test-plan.md)
   - Historical validation checklist and findings log from a prior release-hardening session
 
 ## Rule Of Thumb
 
 - If you want to know what the repo is trying to become, read the architecture blueprint.
-- If you want to know what is true today, read the execution tracker.
 - If you want to know whether a workflow is supposed to be release-ready, read the release summary and manual test plan.

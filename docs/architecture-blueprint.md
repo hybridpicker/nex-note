@@ -3,7 +3,6 @@
 Related planning docs:
 
 - [Product roadmap phases](./phase-roadmap.md)
-- [Execution tracker](./execution-tracker.md)
 - [AI song source catalogs](./ai-song-source-catalogs.md)
 
 ## Purpose

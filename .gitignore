@@ -58,3 +58,6 @@ artifacts/**/*.omr
 # private founder/tester score fixtures
 /private-fixtures/
 /test/private-fixtures/
+
+# AI tool state
+.deepseek/
