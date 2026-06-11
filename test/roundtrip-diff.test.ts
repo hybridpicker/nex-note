@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
+import { DOMParser, type Document as XmlDocument, type Element as XmlElement } from '@xmldom/xmldom';
 
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import { exportCoreToMusicXml } from '../src/musicxml-adapter/export/export-core-to-musicxml.ts';
@@ -50,7 +50,7 @@ function loadFixture(name: string) {
   return readFileSync(path.join(process.cwd(), 'test', 'fixtures', 'roundtrip', name), 'utf8');
 }
 
-function parseMusicXml(xml: string) {
+function parseMusicXml(xml: string): XmlDocument {
   return new DOMParser().parseFromString(xml, 'application/xml');
 }
 
@@ -59,7 +59,7 @@ function directElementChildren(parent: XmlElement, tagName?: string) {
     .filter((child): child is XmlElement => child.nodeType === 1 && (!tagName || (child as XmlElement).tagName === tagName));
 }
 
-function countElements(parent: XmlElement | Document, tagName: string) {
+function countElements(parent: XmlElement | XmlDocument, tagName: string) {
   return parent.getElementsByTagName(tagName).length;
 }
 

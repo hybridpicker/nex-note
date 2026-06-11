@@ -21,14 +21,14 @@ function makeCoreDocument(): ScoreDocumentModel {
             {
               id: 'm1',
               measureNumber: 1,
-              attributes: [{ divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }],
+              attributes: [{ id: 'm1:a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }],
               voices: [],
               directions: [],
             },
             {
               id: 'm2',
               measureNumber: 2,
-              attributes: [{ divisions: 1, time: { beats: 3, beatType: 4 }, clefs: [], keyFifths: 0 }],
+              attributes: [{ id: 'm2:a1', divisions: 1, time: { beats: 3, beatType: 4 }, clefs: [], keyFifths: 0 }],
               voices: [],
               directions: [],
             },
@@ -57,7 +57,7 @@ function makeRepeatCoreDocument(): ScoreDocumentModel {
   const document = makeCoreDocument();
   const measures = document.score.parts[0].staves[0].measures;
   measures[0].leftBarline = 'repeat-start';
-  measures[1].attributes = [{ divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }];
+  measures[1].attributes = [{ id: 'm2:a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }];
   measures[1].rightBarline = 'repeat-end';
   return document;
 }
@@ -66,7 +66,7 @@ function makeVoltaCoreDocument(): ScoreDocumentModel {
   const document = makeCoreDocument();
   const measures = document.score.parts[0].staves[0].measures;
   measures[0].leftBarline = 'repeat-start';
-  measures[1].attributes = [{ divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }];
+  measures[1].attributes = [{ id: 'm2:a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }];
   measures[1].leftEnding = { number: '1', type: 'start' };
   measures[1].rightEnding = { number: '1', type: 'stop' };
   measures[1].rightBarline = 'repeat-end';
@@ -74,7 +74,7 @@ function makeVoltaCoreDocument(): ScoreDocumentModel {
     {
       id: 'm3',
       measureNumber: 3,
-      attributes: [{ divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }],
+      attributes: [{ id: 'm3:a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }],
       voices: [],
       directions: [],
       leftEnding: { number: '2', type: 'start' },
@@ -83,7 +83,7 @@ function makeVoltaCoreDocument(): ScoreDocumentModel {
     {
       id: 'm4',
       measureNumber: 4,
-      attributes: [{ divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }],
+      attributes: [{ id: 'm4:a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [], keyFifths: 0 }],
       voices: [],
       directions: [],
     },
