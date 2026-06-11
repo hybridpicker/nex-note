@@ -158,7 +158,7 @@ function summarizeSemantics(xml: string) {
   const allMeasures = core.score.parts.flatMap((part) => part.staves.flatMap((staff) => staff.measures));
   return {
     parts: core.score.parts.length,
-    notes: core.score.parts.flatMap((part) => part.staves.flatMap((staff) => staff.measures.flatMap((measure) => measure.voices.flatMap((voice) => voice.events)))).length,
+    notes: core.score.parts.flatMap((part) => part.staves.flatMap((staff) => staff.measures.flatMap((measure) => measure.voices.flatMap((voice) => voice.events)))).filter((event) => !event.hidden).length,
     slurs: core.slurs.length,
     beams: core.beams.length,
     tuplets: core.tuplets.length,

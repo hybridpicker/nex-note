@@ -549,6 +549,7 @@ function buildEventElement(
   chord = false,
 ) {
   const note = doc.createElement('note');
+  if (event.hidden) note.setAttribute('print-object', 'no');
   const grace = coreDocument.graceNotes.find((entry) => entry.eventId === event.id);
   if (grace) {
     const graceEl = doc.createElement('grace');

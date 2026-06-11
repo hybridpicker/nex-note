@@ -1,4 +1,5 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/xmldom';
+import { describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type {
   ArpeggioMark,
   BeamGroup,
@@ -232,6 +233,10 @@ function readGuitarTechnical(note: XmlElement): { string: 1 | 2 | 3 | 4 | 5 | 6;
 function fractionFromOffset(offset: number, divisions: number) {
   const denominator = Math.max(divisions * 4, 1);
   return { timestampNum: offset, timestampDen: denominator };
+}
+
+function expectedMeasureDuration(beats: number, beatType: number, divisions: number) {
+  return Math.round((beats * 4 * divisions) / beatType);
 }
 
 function directChildrenByTag(parent: XmlElement, tagName: string): XmlElement[] {
@@ -576,27 +581,105 @@ function buildVoices(
   staffIndex: number,
   divisions: number,
   collectors: SemanticCollectors,
+  expectedDuration?: number,
 ): VoiceNode[] {
   const eventsByVoice = new Map<number, TimedEvent[]>();
-  const offsetsByVoice = new Map<number, number>();
-  const notes = directChildrenByTag(measure, 'note');
   const openSlurs = new Map<string, SlurSpan>();
   const beamGroups = new Map<string, BeamGroup>();
   const tupletGroups = new Map<string, TupletSpan>();
+  let cursor = 0;
 
-  for (const note of notes) {
+  const voiceEnd = (voiceId: number) => {
+    const events = eventsByVoice.get(voiceId) ?? [];
+    return events.reduce((end, event) => (
+      event.isChord ? end : Math.max(end, event.timestampNum + event.durationDivisions)
+    ), 0);
+  };
+
+  const addHiddenRest = (voiceId: number, start: number, end: number) => {
+    if (end <= start) return;
+    const { timestampNum, timestampDen } = fractionFromOffset(start, divisions);
+    const durationDivisions = end - start;
+    const duration = describeDuration(durationDivisions, divisions);
+    const representableDuration = isRepresentableDuration(durationDivisions, divisions);
+    const rest: TimedEvent = {
+      id: makeId('event', partId, measureNumber, staffIndex, voiceId, 'hidden-rest', start, end),
+      kind: 'rest',
+      measureNumber,
+      staffIndex,
+      voiceId,
+      timestampNum,
+      timestampDen,
+      durationDivisions,
+      durationType: representableDuration ? duration.type : undefined,
+      isDotted: representableDuration ? duration.dotted : undefined,
+      isChord: false,
+      hidden: true,
+    };
+    const existing = eventsByVoice.get(voiceId) ?? [];
+    existing.push(rest);
+    eventsByVoice.set(voiceId, existing);
+  };
+
+  const measureChildren = Array.from(measure.childNodes).filter((child): child is XmlElement => child.nodeType === 1);
+  const shouldRepairCursorGaps = expectedDuration != null
+    && measureChildren.some((element) => element.tagName === 'forward');
+  for (const element of measureChildren) {
+    if (element.tagName === 'backup') {
+      cursor = Math.max(0, cursor - parseIntSafe(element.getElementsByTagName('duration')[0]?.textContent, 0));
+      continue;
+    }
+
+    if (element.tagName === 'forward') {
+      cursor += parseIntSafe(element.getElementsByTagName('duration')[0]?.textContent, 0);
+      continue;
+    }
+
+    if (element.tagName !== 'note') continue;
+
+    const note = element;
     const noteStaff = parseIntSafe(note.getElementsByTagName('staff')[0]?.textContent, 1);
-    if (noteStaff !== staffIndex) continue;
 
     const voiceId = parseIntSafe(note.getElementsByTagName('voice')[0]?.textContent, 1);
-    const durationDivisions = parseIntSafe(note.getElementsByTagName('duration')[0]?.textContent, 0);
+    const rawDurationDivisions = parseIntSafe(note.getElementsByTagName('duration')[0]?.textContent, 0);
     const isChord = note.getElementsByTagName('chord').length > 0;
-    const nextOffset = offsetsByVoice.get(voiceId) ?? 0;
-    const currentOffset = isChord
-      ? (eventsByVoice.get(voiceId)?.[eventsByVoice.get(voiceId)!.length - 1]?.timestampNum ?? nextOffset)
-      : nextOffset;
+    const previousVoiceEvent = eventsByVoice.get(voiceId)?.[eventsByVoice.get(voiceId)!.length - 1];
+    const currentOffset = shouldRepairCursorGaps
+      ? (
+          isChord
+            ? (previousVoiceEvent?.timestampNum ?? cursor)
+            : cursor
+        )
+      : (
+          isChord
+            ? (previousVoiceEvent?.timestampNum ?? voiceEnd(voiceId))
+            : voiceEnd(voiceId)
+        );
+
+    if (noteStaff !== staffIndex) {
+      if (shouldRepairCursorGaps && !isChord) cursor += rawDurationDivisions;
+      continue;
+    }
+
+    if (expectedDuration != null && !isChord && currentOffset >= expectedDuration) {
+      cursor += rawDurationDivisions;
+      continue;
+    }
+
+    const durationDivisions = expectedDuration != null
+      && currentOffset < expectedDuration
+      && currentOffset + rawDurationDivisions > expectedDuration
+      ? expectedDuration - currentOffset
+      : rawDurationDivisions;
+    if (shouldRepairCursorGaps && !isChord) {
+      addHiddenRest(voiceId, voiceEnd(voiceId), Math.min(currentOffset, expectedDuration ?? currentOffset));
+    }
+
     const { timestampNum, timestampDen } = fractionFromOffset(currentOffset, divisions);
-    const durationType = note.getElementsByTagName('type')[0]?.textContent ?? undefined;
+    const repairedDuration = durationDivisions !== rawDurationDivisions
+      ? describeDuration(durationDivisions, divisions)
+      : null;
+    const durationType = repairedDuration?.type ?? note.getElementsByTagName('type')[0]?.textContent ?? undefined;
     const noteheadText = (note.getElementsByTagName('notehead')[0]?.textContent ?? '').trim();
     const stemText = (note.getElementsByTagName('stem')[0]?.textContent ?? '').trim();
     const modeledStem = stemText === 'none' || stemText === 'up' || stemText === 'down' ? stemText : undefined;
@@ -612,8 +695,9 @@ function buildVoices(
       timestampDen,
       durationDivisions,
       durationType,
-      isDotted: note.getElementsByTagName('dot').length > 0,
+      isDotted: repairedDuration?.dotted ?? (note.getElementsByTagName('dot').length > 0),
       isChord,
+      hidden: note.getAttribute('print-object') === 'no' || undefined,
       notehead: noteheadText === 'slash' ? 'slash' : undefined,
       stem: modeledStem,
       articulations: Array.from(note.getElementsByTagName('articulations')[0]?.childNodes ?? [])
@@ -661,7 +745,13 @@ function buildVoices(
       tupletGroups,
     });
 
-    if (!isChord) offsetsByVoice.set(voiceId, currentOffset + durationDivisions);
+    if (!isChord) cursor += rawDurationDivisions;
+  }
+
+  if (shouldRepairCursorGaps) {
+    for (const voiceId of eventsByVoice.keys()) {
+      addHiddenRest(voiceId, voiceEnd(voiceId), expectedDuration!);
+    }
   }
 
   return Array.from(eventsByVoice.entries()).map(([voiceId, events]) => {
@@ -704,12 +794,28 @@ function buildStaffs(part: XmlElement, collectors: SemanticCollectors): StaffNod
     const staffValues = Array.from(measure.getElementsByTagName('staff')).map((staff) => parseIntSafe(staff.textContent, 1));
     return Math.max(maxStaff, ...staffValues, 1);
   }, 1);
-  const effectiveDivisionsByMeasure = new Map<XmlElement, number>();
+  const effectiveTimingByMeasure = new Map<XmlElement, {
+    divisions: number;
+    time?: { beats: number; beatType: number };
+  }>();
   let currentDivisions = 1;
+  let currentTime: { beats: number; beatType: number } | undefined;
   for (const measure of measures) {
-    const explicitDivisions = parseIntSafe(measure.getElementsByTagName('divisions')[0]?.textContent, 0);
+    const attributes = directChildrenByTag(measure, 'attributes');
+    const explicitDivisions = attributes.reduce((value, attribute) => (
+      parseIntSafe(attribute.getElementsByTagName('divisions')[0]?.textContent, 0) || value
+    ), 0);
     if (explicitDivisions > 0) currentDivisions = explicitDivisions;
-    effectiveDivisionsByMeasure.set(measure, currentDivisions);
+    for (const attribute of attributes) {
+      const time = attribute.getElementsByTagName('time')[0];
+      if (!time) continue;
+      const beats = parseIntSafe(time.getElementsByTagName('beats')[0]?.textContent, 0);
+      const beatType = parseIntSafe(time.getElementsByTagName('beat-type')[0]?.textContent, 0);
+      if (beats > 0 && beatType > 0) {
+        currentTime = { beats, beatType };
+      }
+    }
+    effectiveTimingByMeasure.set(measure, { divisions: currentDivisions, time: currentTime });
   }
 
   return Array.from({ length: explicitStaffCount }, (_, index) => {
@@ -718,7 +824,11 @@ function buildStaffs(part: XmlElement, collectors: SemanticCollectors): StaffNod
       const sourceMeasureNumber = sourceMeasureNumbers[measureIndex] ?? measureIndex + 1;
       const measureNumber = hasImplicitZeroPickup ? measureIndex + 1 : sourceMeasureNumber;
       const implicit = measure.getAttribute('implicit') === 'yes' || undefined;
-      const divisions = effectiveDivisionsByMeasure.get(measure) ?? 1;
+      const timing = effectiveTimingByMeasure.get(measure);
+      const divisions = timing?.divisions ?? 1;
+      const expectedDuration = implicit || !timing?.time
+        ? undefined
+        : expectedMeasureDuration(timing.time.beats, timing.time.beatType, divisions);
       const print = measure.getElementsByTagName('print')[0];
 
       if (print?.getAttribute('new-system') === 'yes') {
@@ -762,7 +872,7 @@ function buildStaffs(part: XmlElement, collectors: SemanticCollectors): StaffNod
         measureNumber,
         sourceMeasureNumber,
         implicit,
-        voices: buildVoices(measure, part.getAttribute('id') ?? 'P?', measureNumber, staffIndex, divisions, collectors),
+        voices: buildVoices(measure, part.getAttribute('id') ?? 'P?', measureNumber, staffIndex, divisions, collectors, expectedDuration),
         directions: buildDirections(measure, measureNumber, divisions).filter((direction) => !direction.staffIndex || direction.staffIndex === staffIndex),
         attributes: buildMeasureAttributes(measure, measureNumber),
         measureRepeat: (() => {

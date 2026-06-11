@@ -109,6 +109,7 @@ export interface BaseTimedEvent {
   isChord: boolean;
   notehead?: 'slash';
   stem?: 'none' | 'up' | 'down';
+  hidden?: boolean;
   articulations?: string[];
   tieStart?: boolean;
   lyrics?: Array<{
