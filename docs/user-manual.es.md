@@ -1,6 +1,6 @@
 # Manual de usuario de nex-note
 
-Actualizado: 2026-05-01. Este manual describe las funciones de usuario disponibles actualmente en nex-note. Los atajos de teclado y raton estan documentados por separado en [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+Actualizado: 2026-06-11. Este manual describe las funciones de usuario disponibles actualmente en nex-note. Los atajos de teclado y raton estan documentados por separado en [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 Idiomas: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
 
@@ -122,9 +122,15 @@ La reproduccion incluye play/pause (`Space`), stop, tempo, metronomo, salto con 
 
 ## Asistente AI
 
-La pestaña AI acepta lenguaje natural. Puede cambiar tonalidad o tempo, quitar dinamicas, agregar acordes, crear versiones de practica y trabajar sobre la seleccion actual si el contexto es claro.
+La pestana AI abre el chat para trabajar sobre la partitura en lenguaje natural. Puedes describir cambios directamente o usar workflows slash como `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair` y solicitudes de limpieza MIDI/import. Si hay una nota, rango, compas o parte seleccionada, el asistente recibe ese contexto y puede limitar la propuesta a la musica actual.
 
-Los cambios riesgosos pasan por preview con compases afectados, riesgos y diagnosticos. Escribe `apply` para aplicar o `cancel` para descartar. Comandos locales: `undo`, `redo`, `apply`, `confirm`, `yes`, `cancel`, `no` y variantes alemanas.
+Las solicitudes de arreglo usan ahora el asistente de arreglos. Los planes de un proveedor se revisan con el critic y despues, si el contexto de la partitura lo permite, se materializan como voces escritas y simbolos de acorde. El resultado aparece como preview con operaciones preparadas, por ejemplo limpiar el rango de la voz destino, insertar las notas realizadas y agregar acordes; los pentagramas TAB de guitarra emparejados se reflejan cuando las notas son tocables.
+
+Los arreglos, cambios de layout y otros lotes con riesgo quedan protegidos por preview. La partitura no cambia cuando aparece la preview. Haz clic en **Apply** o escribe `apply` para escribir las operaciones en la partitura; haz clic en **Cancel** o escribe `cancel` para descartarlas. La preview lista compases afectados, riesgos, diagnosticos y el resumen de comandos preparados.
+
+La configuracion de proveedores esta en **AI model settings**. Claude y Gemini necesitan sus API keys alli; Ollama usa tu servidor local de Ollama y puede usar modelos detectados o un `model:tag` personalizado. El proveedor y modelo elegidos aparecen en la cabecera y en las respuestas del asistente.
+
+Si no hay proveedor configurado, si una llamada falla o si la solicitud coincide con un workflow local determinista, nex-note usa ayudas locales. Pueden analizar la partitura, sugerir versiones de practica, preparar previews de acordes o expresion, manejar arreglos simples y ejecutar limpieza de layout sin enviar la partitura a un proveedor cloud. Los fallbacks locales que cambian la partitura usan el mismo modelo preview/apply/cancel.
 
 ## Proveedores AI y benchmarks
 

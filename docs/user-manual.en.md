@@ -1,6 +1,6 @@
 # nex-note User Manual
 
-Updated: 2026-05-13. This manual covers the current user-facing features in nex-note. Keyboard and mouse shortcuts are documented separately in [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+Updated: 2026-06-11. This manual covers the current user-facing features in nex-note. Keyboard and mouse shortcuts are documented separately in [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 Languages: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
 
@@ -150,9 +150,15 @@ Playback includes play/pause (`Space`), stop, tempo slider, metronome, progress-
 
 ## AI Assistant
 
-The AI tab accepts natural language in supported languages. It can change key or tempo, remove dynamics, add chord symbols, generate practice-oriented edits, and operate on the current selection when context is clear.
+The AI tab opens the chat panel for natural-language score work. You can describe edits directly or use slash workflows such as `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair`, and MIDI/import cleanup prompts. When a note, range, measure, or part is selected, the assistant receives that context and can scope its proposal to the current music.
 
-Risky edits enter a preview/confirm state with affected measures, risks, and validator notes. Type `apply` to accept or `cancel` to discard. Local chat commands include `undo`, `redo`, `apply`, `confirm`, `yes`, `cancel`, `no`, and their German equivalents.
+Arrangement requests now use the arrangement assistant. Provider-backed plans are checked by the critic, then materialized as written-out voices plus chord symbols when the score context supports it. The result is shown as a preview with prepared operations such as clearing the target voice range, inserting realized notes, and adding chords; paired guitar TAB staves are mirrored when playable.
+
+Score-changing arrangement, layout, and other risky batches stay preview-gated. The score is not changed when the preview appears. Click **Apply** or type `apply` to write it into the score; click **Cancel** or type `cancel` to discard it. The preview lists affected measures, risks, validator findings, and the prepared command summary. Local chat commands include `undo`, `redo`, `apply`, `confirm`, `yes`, `cancel`, `no`, and their German equivalents.
+
+Provider setup is in **AI model settings**. Claude and Gemini need their API keys there; Ollama uses your local Ollama server and can use discovered models or a custom `model:tag`. The selected provider and model are shown in the header and included in assistant responses.
+
+When no provider is configured, a provider call fails, or the request matches a deterministic local workflow, nex-note falls back to local helpers. These can analyze the score, suggest practice versions, add chord/expression previews, handle simple arrangements, and run layout cleanup without sending the score to a cloud provider. Local fallbacks still use the same preview/apply/cancel model for score-changing batches.
 
 ## AI Providers and Benchmarks
 

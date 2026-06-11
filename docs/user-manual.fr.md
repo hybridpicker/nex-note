@@ -1,6 +1,6 @@
 # Manuel utilisateur nex-note
 
-Mis a jour le 2026-05-01. Ce manuel decrit les fonctions utilisateur actuellement disponibles dans nex-note. Les raccourcis clavier et souris sont documentes separement dans [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+Mis a jour le 2026-06-11. Ce manuel decrit les fonctions utilisateur actuellement disponibles dans nex-note. Les raccourcis clavier et souris sont documentes separement dans [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 Langues: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
 
@@ -124,9 +124,15 @@ La lecture fournit play/pause (`Space`), stop, tempo, metronome, recherche via b
 
 ## Assistant AI
 
-L'onglet AI accepte des demandes en langage naturel. Il peut changer tonalite ou tempo, enlever des nuances, ajouter des accords, creer des versions de pratique et travailler sur la selection courante si le contexte est clair.
+L'onglet AI ouvre le chat pour travailler sur la partition en langage naturel. Vous pouvez decrire une modification directement ou utiliser des workflows slash comme `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair` et les demandes de nettoyage MIDI/import. Si une note, une plage, une mesure ou une partie est selectionnee, l'assistant recoit ce contexte et peut limiter sa proposition a la musique courante.
 
-Les modifications risquees passent par une preview avec mesures affectees, risques et diagnostics. Tapez `apply` pour appliquer ou `cancel` pour annuler. Les commandes locales incluent `undo`, `redo`, `apply`, `confirm`, `yes`, `cancel`, `no` et des variantes allemandes.
+Les demandes d'arrangement utilisent maintenant l'assistant d'arrangement. Les plans venant d'un fournisseur sont controles par le critic puis materialises, quand le contexte le permet, sous forme de voix ecrites et de symboles d'accord. Le resultat apparait comme une preview avec les operations preparees, par exemple vider la plage de voix cible, inserer les notes realisees et ajouter les accords; les portees TAB de guitare appariees sont reproduites quand les notes sont jouables.
+
+Les arrangements, changements de mise en page et autres lots a risque restent soumis a confirmation. La partition n'est pas modifiee quand la preview apparait. Cliquez **Apply** ou tapez `apply` pour ecrire les operations dans la partition; cliquez **Cancel** ou tapez `cancel` pour les rejeter. La preview liste les mesures affectees, les risques, les diagnostics et le resume des commandes preparees.
+
+La configuration des fournisseurs se trouve dans **AI model settings**. Claude et Gemini demandent leurs cles API; Ollama utilise votre serveur Ollama local et peut employer les modeles detectes ou un `model:tag` personnalise. Le fournisseur et le modele choisis sont visibles dans l'en-tete et dans les reponses de l'assistant.
+
+Si aucun fournisseur n'est configure, si l'appel echoue ou si la demande correspond a un workflow local deterministe, nex-note utilise des aides locales. Elles peuvent analyser la partition, proposer des versions de pratique, preparer des apercus d'accords ou d'expression, traiter des arrangements simples et lancer un nettoyage de mise en page sans envoyer la partition a un fournisseur cloud. Les fallbacks locaux qui modifient la partition utilisent le meme modele preview/apply/cancel.
 
 ## Fournisseurs AI et benchmarks
 

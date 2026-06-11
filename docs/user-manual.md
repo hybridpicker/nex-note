@@ -1,6 +1,6 @@
 # nex-note Manual
 
-Stand: 2026-05-13. Dieses Manual beschreibt die aktuell verfügbaren Nutzerfunktionen in nex-note. Tastaturkuerzel sind separat in [keyboard-shortcuts.md](./keyboard-shortcuts.md) dokumentiert.
+Stand: 2026-06-11. Dieses Manual beschreibt die aktuell verfügbaren Nutzerfunktionen in nex-note. Tastaturkuerzel sind separat in [keyboard-shortcuts.md](./keyboard-shortcuts.md) dokumentiert.
 
 Sprachen: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
 
@@ -252,17 +252,15 @@ MIDI- und Soundfont-Ladevorgaenge koennen beim ersten Start kurz dauern.
 
 ## AI Assistant
 
-Der AI-Tab nimmt natuerliche Sprache auf Deutsch oder Englisch entgegen. Beispiele:
+Der AI-Tab oeffnet den Chat fuer natuerliche Score-Arbeit. Du kannst Aenderungen frei beschreiben oder Slash-Workflows wie `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair` und MIDI-/Import-Cleanup-Prompts verwenden. Wenn eine Note, ein Bereich, ein Takt oder eine Stimme ausgewaehlt ist, bekommt der Assistant diesen Kontext und kann den Vorschlag auf die aktuelle Musik begrenzen.
 
-| Prompt | Erwartetes Ergebnis |
-| --- | --- |
-| `Ändere Tonart auf G-Dur` | Key Signature wird angepasst. |
-| `Setze Tempo 140` | Tempo-Markierung wird gesetzt. |
-| `Entferne alle Dynamik` | Dynamics werden entfernt, ggf. mit Preview. |
-| `Füge Akkorde in Takt 1 G, Takt 3 D hinzu` | Chords werden als Akkordsymbole gesetzt. |
-| `Mach daraus eine Übefassung` | Practice-/Arrangement-orientierter Workflow, wenn passend. |
+Arrangement-Anfragen laufen ueber den Arrangement Assistant. Provider-gestuetzte Plaene werden vom Critic geprueft und danach, wenn der Score-Kontext es erlaubt, als ausgeschriebene Stimmen mit Akkordsymbolen materialisiert. Die Vorschau zeigt vorbereitete Operationen wie das Leeren des Zielstimmenbereichs, das Einfuegen der realisierten Noten und das Setzen von Akkorden; gekoppelte Gitarren-TAB-Systeme werden gespiegelt, soweit die Toene spielbar sind.
 
-AI-Ergebnisse koennen direkt angewendet werden oder in eine Preview/Confirm-Phase gehen. Bei riskanten oder mehrteiligen Aenderungen zeigt nex-note betroffene Takte, Risiken und Validator-Hinweise. Du bestaetigst mit `apply` oder brichst mit `cancel` ab.
+Score-aendernde Arrangements, Layout-Aenderungen und andere riskante Batches bleiben preview-gated. Die Partitur aendert sich nicht, wenn die Vorschau erscheint. Klicke **Apply** oder tippe `apply`, um die Operationen in die Partitur zu schreiben; klicke **Cancel** oder tippe `cancel`, um sie zu verwerfen. Die Preview listet betroffene Takte, Risiken, Validator-Hinweise und eine Zusammenfassung der vorbereiteten Commands.
+
+Provider richtest du in **AI model settings** ein. Claude und Gemini benoetigen dort ihre API-Keys; Ollama nutzt deinen lokalen Ollama-Server und kann erkannte Modelle oder ein eigenes `model:tag` verwenden. Ausgewaehlter Provider und Modell werden in der Kopfzeile und in Assistant-Antworten angezeigt.
+
+Wenn kein Provider eingerichtet ist, ein Provider-Aufruf fehlschlaegt oder die Anfrage zu einem deterministischen lokalen Workflow passt, nutzt nex-note lokale Helfer. Diese koennen die Partitur analysieren, Practice-Versionen vorschlagen, Akkord-/Ausdrucks-Previews erzeugen, einfache Arrangements behandeln und Layout Cleanup ausfuehren, ohne die Partitur an einen Cloud-Provider zu senden. Score-aendernde lokale Fallbacks verwenden dasselbe Preview/Apply/Cancel-Modell.
 
 Lokale Chat-Kommandos:
 

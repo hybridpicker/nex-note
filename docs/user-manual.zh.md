@@ -1,6 +1,6 @@
 # nex-note 用户手册
 
-更新日期：2026-05-01。本手册说明 nex-note 当前面向用户的主要功能。键盘和鼠标快捷键另见 [keyboard-shortcuts.md](./keyboard-shortcuts.md)。
+更新日期：2026-06-11。本手册说明 nex-note 当前面向用户的主要功能。键盘和鼠标快捷键另见 [keyboard-shortcuts.md](./keyboard-shortcuts.md)。
 
 语言：[Deutsch](./user-manual.md)、[English](./user-manual.en.md)、[Français](./user-manual.fr.md)、[Español](./user-manual.es.md)、[中文](./user-manual.zh.md)。
 
@@ -122,9 +122,15 @@ Find/Go to 可从底部按钮或 `Cmd/Ctrl+F` 打开，支持小节号和 `p2` �
 
 ## AI 助手
 
-AI 标签页接受自然语言请求。它可以更改调号或速度、删除力度、添加和弦符号、创建练习版本，并在上下文清晰时只处理当前选择。
+AI 标签页会打开聊天面板，用自然语言处理乐谱工作。你可以直接描述要做的修改，也可以使用 `/arrange`、`/analyze`、`/practice`、`/layout`、`/repair` 以及 MIDI/导入清理等 slash 工作流。如果当前选中了音符、范围、小节或声部，助手会收到这个上下文，并把建议限制在相关音乐上。
 
-风险较高的修改会进入 preview/confirm 状态，显示受影响小节、风险和验证信息。输入 `apply` 应用，输入 `cancel` 放弃。可用本地命令包括 `undo`、`redo`、`apply`、`confirm`、`yes`、`cancel`、`no` 以及德语变体。
+编曲请求现在会使用编曲助手。由提供方生成的计划会先经过 critic 检查；如果乐谱上下文允许，会被实现为写出的声部和和弦符号。结果会以预览形式显示，列出准备执行的操作，例如清空目标声部范围、插入实现后的音符、添加和弦；如果有配对的吉他 TAB 谱表，并且音符可演奏，也会同步镜像。
+
+编曲、布局修改和其他风险较高的批量操作都会停留在预览确认状态。预览出现时，乐谱还没有被修改。点击 **Apply** 或输入 `apply` 会把操作写入乐谱；点击 **Cancel** 或输入 `cancel` 会放弃。预览会列出受影响小节、风险、验证信息以及准备好的命令摘要。
+
+提供方在 **AI model settings** 中配置。Claude 和 Gemini 需要在这里填写 API key；Ollama 使用你的本地 Ollama 服务器，可以选择发现到的模型，也可以添加自定义 `model:tag`。当前提供方和模型会显示在顶部栏，并出现在助手回复中。
+
+如果没有配置提供方、提供方调用失败，或者请求匹配确定性的本地工作流，nex-note 会使用本地辅助逻辑。它们可以分析乐谱、建议练习版本、准备和弦/表情预览、处理简单编曲，并在不把乐谱发送到云提供方的情况下运行布局清理。会修改乐谱的本地 fallback 仍然使用同样的 preview/apply/cancel 模型。
 
 ## AI 提供方和 Benchmark
 
