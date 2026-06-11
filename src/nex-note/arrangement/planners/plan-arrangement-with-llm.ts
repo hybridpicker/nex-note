@@ -8,6 +8,8 @@ import {
 import type { ProviderName } from '@/lib/ai-provider-config';
 import type { AIResponse } from '@/lib/ai-providers';
 import { runArrangementCritic } from '@/src/nex-note/arrangement/critic/run-arrangement-critic';
+import { realizeArrangement } from '@/src/nex-note/arrangement/realizer/realize-arrangement';
+import type { RealizerIssue } from '@/src/nex-note/arrangement/realizer/spec';
 import { tonalCenterFromKeyFifths } from '@/src/nex-note/arrangement/harmony';
 import type {
   ArrangementSpec,
@@ -20,6 +22,7 @@ import type {
 import { getArrangementStylePack } from '@/src/nex-note/arrangement/style-packs';
 import type { ParsedIntentJson } from '@/src/nex-note/intent/parse-intent-json';
 import type { DocumentState } from '@/src/score-core/commands/apply-document-commands';
+import type { ScoreCommand } from '@/src/shared/schemas/score-command';
 
 type ArrangementAsk = (prompt: string, provider: ProviderName, ollamaModel?: string) => Promise<AIResponse>;
 
@@ -208,11 +211,13 @@ function buildPlannerIntent(params: {
   voicingCandidate: VoicingCandidate;
   retriesUsed: number;
   unresolvedIssues: CriticIssue[];
+  realizedCommands: ScoreCommand[];
   sessionContext?: AiSessionContext;
 }) {
-  const { message, spec, harmonicCandidate, voicingCandidate, retriesUsed, unresolvedIssues, sessionContext } = params;
+  const { message, spec, harmonicCandidate, voicingCandidate, retriesUsed, unresolvedIssues, realizedCommands, sessionContext } = params;
   const german = isLikelyGerman(message);
-  const commands: ParsedIntentJson['commands'] = [];
+  const materialized = realizedCommands.length > 0;
+  const commands: ParsedIntentJson['commands'] = [...realizedCommands];
   const chordPlan = collapseChordPlan(harmonicCandidate.segments);
   if (chordPlan) commands.push({ type: 'addChords', chords: chordPlan });
   commands.push({ type: 'addExpressionText', measureNumber: voicingCandidate.slices[0]?.measure ?? 1, text: detectExpressionText(message, german), placement: 'above' });
@@ -223,19 +228,23 @@ function buildPlannerIntent(params: {
   if (instrument) commands.push({ type: 'fitPartToInstrument', instrument, ...(partId ? { partId } : {}) });
 
   const unresolvedIssueCodes = unresolvedIssues.map((issue) => issue.code);
+  const styleLabelDe = spec.stylePack === 'jazz-close' ? 'jazznahes' : spec.stylePack === 'generalbass' ? 'generalbassnahes' : 'dreistimmiges';
+  const styleLabelEn = spec.stylePack === 'jazz-close' ? 'jazz-leaning' : spec.stylePack === 'generalbass' ? 'figured-bass-informed' : 'three-part';
   const explanation = german
-    ? `Ich bereite ein ${spec.stylePack === 'jazz-close' ? 'jazznahes' : spec.stylePack === 'generalbass' ? 'generalbassnahes' : 'dreistimmiges'} Arrangement mit geplantem Harmonieverlauf und geprüfter Stimmführung vor${unresolvedIssues.length > 0 ? ', es bleiben aber noch einzelne Satzwarnungen im Entwurf' : ''}.`
-    : `I am preparing a ${spec.stylePack === 'jazz-close' ? 'jazz-leaning' : spec.stylePack === 'generalbass' ? 'figured-bass-informed' : 'three-part'} arrangement with a planned harmonic route and critic-checked voicing${unresolvedIssues.length > 0 ? ', but a few drafting warnings remain' : ''}.`;
+    ? `Ich bereite ein ${styleLabelDe} Arrangement mit geplantem Harmonieverlauf und geprüfter Stimmführung vor${materialized ? ' und notiere die geprüften Stimmen direkt aus' : ', notiere die Stimmen aber noch nicht aus'}${unresolvedIssues.length > 0 ? '; es bleiben noch einzelne Satzwarnungen im Entwurf' : ''}.`
+    : `I am preparing a ${styleLabelEn} arrangement with a planned harmonic route and critic-checked voicing${materialized ? ', materialized as written-out voices' : ', without written-out voices yet'}${unresolvedIssues.length > 0 ? '; a few drafting warnings remain' : ''}.`;
   const plan = german
     ? [
       'Plane den harmonischen Verlauf getrennt von der Stimmführung',
       'Erzeuge ein Voicing passend zum Style-Pack',
-      unresolvedIssues.length > 0 ? 'Markiere verbleibende Satzprobleme zur Nachprüfung' : 'Übernehme die stärksten unterstützten Arrangement-Kommandos',
+      materialized ? 'Notiere das geprüfte Voicing als Stimmen aus' : 'Übernehme die stärksten unterstützten Arrangement-Kommandos',
+      ...(unresolvedIssues.length > 0 ? ['Markiere verbleibende Satzprobleme zur Nachprüfung'] : []),
     ]
     : [
       'Plan harmony separately from voicing',
       'Generate a style-aware voicing candidate',
-      unresolvedIssues.length > 0 ? 'Flag remaining drafting issues for review' : 'Apply the strongest supported arrangement commands',
+      materialized ? 'Materialize the critic-checked voicing as written-out voices' : 'Apply the strongest supported arrangement commands',
+      ...(unresolvedIssues.length > 0 ? ['Flag remaining drafting issues for review'] : []),
     ];
 
   return {
@@ -261,6 +270,7 @@ export interface ArrangementPlannerResult {
   model: string;
   latencyMs: number;
   criticIssues: CriticIssue[];
+  realizerIssues: RealizerIssue[];
   repairAttempts: number;
   plannerResponse: PlannerResponse;
 }
@@ -348,6 +358,17 @@ export async function planArrangementWithLlm(params: {
     });
   }
 
+  // Materialize the critic-checked voicing as concrete note commands. When the
+  // realizer cannot produce a valid note batch (multi-part score, unsupported
+  // slice durations, ...), fall back to chord symbols only and surface why.
+  const realization = realizeArrangement({
+    documentState,
+    spec,
+    voicingCandidate,
+    harmonicCandidate,
+  });
+  const realizedCommands = realization.valid ? realization.commands : [];
+
   const intent = buildPlannerIntent({
     message,
     spec,
@@ -355,6 +376,7 @@ export async function planArrangementWithLlm(params: {
     voicingCandidate,
     retriesUsed: repairAttempts,
     unresolvedIssues: criticReport.issues,
+    realizedCommands,
     sessionContext,
   });
 
@@ -364,6 +386,7 @@ export async function planArrangementWithLlm(params: {
     model: finalResponseModel,
     latencyMs: totalLatencyMs,
     criticIssues: criticReport.issues,
+    realizerIssues: realization.valid ? [] : realization.issues.filter((issue) => issue.severity === 'error'),
     repairAttempts,
     plannerResponse: {
       plannerVersion: '0.1.0-two-step',

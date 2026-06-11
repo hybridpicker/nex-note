@@ -194,6 +194,10 @@ test('planArrangementWithLlm runs harmony, voicing, then repair while keeping ha
   assert.equal(result.intent.planner?.harmonicCandidateId, 'harm-classical-repair');
   assert.equal(result.intent.planner?.voicingCandidateId, 'voice-repaired');
   assert.ok(result.intent.commands?.some((command) => (command as { type?: string }).type === 'addChords'));
+  assert.deepEqual(result.realizerIssues, []);
+  const insertedNotes = (result.intent.commands ?? []).filter((command) => (command as { type?: string }).type === 'insertNoteAt');
+  assert.ok(insertedNotes.length >= 6, 'expected the critic-checked voicing to be materialized as note commands');
+  assert.ok(result.intent.commands?.some((command) => (command as { type?: string }).type === 'deleteRange'));
 });
 
 test('runAiCommandPipeline uses the LLM arrangement planner for advanced style-aware requests', async () => {

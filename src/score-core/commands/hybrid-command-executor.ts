@@ -50,34 +50,50 @@ export function executeHybridCommands(
 ): HybridExecutionResult {
   const unsafeTags = detectUnsafeCoreRoundtripTags(sourceXml);
   const hasUnsafeTags = unsafeTags.length > 0;
-  const supportedCommands = commands.filter((command) => (
+  const isSupportedCommand = (command: ValidatedScoreCommand) => (
     hasUnsafeTags
       ? supportsCoreExecutionWithUnsafeRoundtripTags(command)
       : supportsCoreExecution(command)
-  ));
-  const fallbackCommands = commands.filter((command) => !supportedCommands.includes(command));
-  const fallbackReasons = fallbackCommands.map((command) => (
+  );
+  const fallbackReason = (command: ValidatedScoreCommand) => (
     hasUnsafeTags && supportsCoreExecution(command)
       ? `unsafe_roundtrip_tags:${unsafeTags.join(',')}`
       : `unsupported_command:${command.type}`
-  ));
+  );
+
+  const supportedCommands = commands.filter(isSupportedCommand);
+  const fallbackCommands = commands.filter((command) => !isSupportedCommand(command));
+  const fallbackReasons = fallbackCommands.map(fallbackReason);
 
   let nextCoreDocument = coreDocument;
   let nextXml = sourceXml;
   let selectionRemap: SelectionRemap = {};
 
-  if (supportedCommands.length > 0 && coreDocument) {
-    const execution = executeCoreCommands(coreDocument, supportedCommands);
-    nextCoreDocument = execution.coreDocument;
-    selectionRemap = execution.selectionRemap;
-    nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
-    if (hasUnsafeTags && supportedCommands.some((command) => command.type === 'setGuitarFret')) {
-      nextCoreDocument = importMusicXmlToCore(nextXml);
+  let index = 0;
+  while (index < commands.length) {
+    const runIsSupported = isSupportedCommand(commands[index]!);
+    const run: ValidatedScoreCommand[] = [];
+    while (index < commands.length && isSupportedCommand(commands[index]!) === runIsSupported) {
+      run.push(commands[index]!);
+      index += 1;
     }
-  }
 
-  if (fallbackCommands.length > 0) {
-    nextXml = applyLegacyXmlScoreCommands(nextXml, fallbackCommands);
+    if (runIsSupported) {
+      nextCoreDocument = nextCoreDocument ?? (nextXml ? importMusicXmlToCore(nextXml) : null);
+      if (!nextCoreDocument) continue;
+
+      const execution = executeCoreCommands(nextCoreDocument, run);
+      nextCoreDocument = execution.coreDocument;
+      selectionRemap = { ...selectionRemap, ...execution.selectionRemap };
+      nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
+      if (hasUnsafeTags && run.some((command) => command.type === 'setGuitarFret')) {
+        nextCoreDocument = importMusicXmlToCore(nextXml);
+      }
+      continue;
+    }
+
+    nextXml = applyLegacyXmlScoreCommands(nextXml, run);
+    nextCoreDocument = nextXml ? importMusicXmlToCore(nextXml) : null;
   }
 
   return {

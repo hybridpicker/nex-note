@@ -1068,6 +1068,7 @@ function applyDurationChangeToVoice(
   fillVoiceTimelineGaps(input.staff, input.voiceId, {
     startMeasureNumber: input.measure.measureNumber,
     endMeasureNumber: input.measure.measureNumber,
+    preferExactTailRest: delta < 0 && simultaneousEvents.length > 1,
   });
   return true;
 }
@@ -1370,7 +1371,7 @@ function decomposeRestSpanDivisions(
         ? strongBoundaryFill
         : 0;
     const target = limitedToBoundary > 0 ? limitedToBoundary : remaining;
-    const next = limitedToBoundary > 0 && preferred && preferred.value === target
+    const next = preferred && preferred.value <= target
       ? preferred
       : candidates.find((candidate) => candidate.value <= target) ?? { value: 1, type: '64th', dotted: false };
     chunks.push(next.value);
@@ -2861,7 +2862,7 @@ function removeAndPullVoiceTimeline(
 function fillVoiceTimelineGaps(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   voiceId: number,
-  range?: { startMeasureNumber?: number; endMeasureNumber?: number },
+  range?: { startMeasureNumber?: number; endMeasureNumber?: number; preferExactTailRest?: boolean },
 ) {
   for (const measure of staff.measures) {
     if (range?.startMeasureNumber != null && measure.measureNumber < range.startMeasureNumber) continue;
@@ -2911,15 +2912,27 @@ function fillVoiceTimelineGaps(
 
     if (cursor < timing.durationDivisions) {
       const gapDuration = timing.durationDivisions - cursor;
-      rebuilt.push(...buildRestEventsForSpan(
-        measure,
-        timing.divisions,
-        staff.staffIndex,
-        voiceId,
-        cursor,
-        gapDuration,
-        gapDuration,
-      ));
+      const exactTailDuration = describeDuration(gapDuration, timing.divisions);
+      if (range?.preferExactTailRest && exactTailDuration.value === gapDuration) {
+        rebuilt.push(buildRestEventFromSpan(
+          measure,
+          timing.divisions,
+          staff.staffIndex,
+          voiceId,
+          cursor,
+          gapDuration,
+        ));
+      } else {
+        rebuilt.push(...buildRestEventsForSpan(
+          measure,
+          timing.divisions,
+          staff.staffIndex,
+          voiceId,
+          cursor,
+          gapDuration,
+          gapDuration,
+        ));
+      }
     }
 
     voice.events = rebuilt.sort((a, b) => (
@@ -4427,6 +4440,17 @@ export function executeCoreCommands(
         ensureStaffDivisionsForDuration(found.staff, found.measure.measureNumber, command.durationType, command.isDotted);
         const timing = resolveMeasureTiming(found.staff, found.measure);
         const isAbsoluteInsert = command.type === 'insertNoteAt' || command.type === 'insertRestAt';
+        if (isAbsoluteInsert && found.voice.voiceId === 1 && found.voice.events.length === 0) {
+          found.voice.events = buildRestEventsForSpan(
+            found.measure,
+            timing.divisions,
+            found.staff.staffIndex,
+            command.voiceId,
+            0,
+            timing.durationDivisions,
+            requestedDurationDivisions(command.durationType, command.isDotted, timing.divisions),
+          );
+        }
         const targetTimestampNum = isAbsoluteInsert ? command.timestampNum : command.afterTimestampNum;
         const targetTimestampDen = isAbsoluteInsert ? command.timestampDen : command.afterTimestampDen;
         const anchorIndex = isAbsoluteInsert ? -1 : findEventIndex(found.voice, targetTimestampNum, targetTimestampDen);

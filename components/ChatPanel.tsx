@@ -22,6 +22,11 @@ interface Message {
   latencyMs?: number;
 }
 
+// Recent conversation turns sent to the model so follow-up requests
+// ("make it minor", "same for the bass") can be resolved server-side.
+const CHAT_HISTORY_TURNS = 8;
+const CHAT_HISTORY_TEXT_LIMIT = 400;
+
 interface ChatSessionState {
   mode: string | null;
   pinnedScope: string | null;
@@ -375,6 +380,14 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
           scoreKey: scoreKey ?? sessionState.taskState.scoreKey ?? null,
         },
       };
+      const chatHistory = [...messages, { role: 'user' as const, text: msg }]
+        .slice(-CHAT_HISTORY_TURNS)
+        .map((entry) => ({
+          role: entry.role,
+          text: entry.text.length > CHAT_HISTORY_TEXT_LIMIT
+            ? `${entry.text.slice(0, CHAT_HISTORY_TEXT_LIMIT - 3)}...`
+            : entry.text,
+        }));
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -388,7 +401,7 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
           aiSettings,
           selection: serializedSelection,
           appLocale: locale,
-          sessionContext: nextSessionContext,
+          sessionContext: { ...nextSessionContext, chatHistory },
         }),
       });
       const data = await res.json();

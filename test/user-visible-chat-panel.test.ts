@@ -180,6 +180,59 @@ test('ChatPanel copies the full chat transcript for debugging', async () => {
   });
 });
 
+test('ChatPanel sends recent chat history with follow-up requests', async () => {
+  const payloads: Array<{
+    message?: string;
+    sessionContext?: {
+      chatHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
+    };
+  }> = [];
+
+  Object.assign(globalThis, {
+    fetch: async (_url: string, init?: { body?: string }) => {
+      const payload = init?.body ? JSON.parse(init.body) : {};
+      payloads.push(payload);
+      const firstResponse = payloads.length === 1;
+      return createFetchResponse({
+        requiresConfirmation: false,
+        explanation: firstResponse ? 'Prepared C and G.' : 'Changed the second chord to minor.',
+        workflowLabel: 'Harmony',
+        commands: [],
+        affectedMeasures: [],
+        validatorFindings: [],
+        provider: 'ollama',
+        model: 'gemma4:31b',
+        latencyMs: 8,
+        xml: SAMPLE_XML,
+        taskState: { scoreKey: 'score:test', lastWorkflow: 'harmony' },
+      });
+    },
+  });
+
+  let renderer: Renderer | null = null;
+  await act(async () => {
+    renderer = create(React.createElement(ChatPanel, buildChatPanelProps()));
+  });
+
+  const root = renderer!.root;
+  await sendMessage(root, 'add chords C and G');
+  await sendMessage(root, 'make the second chord minor');
+
+  assert.equal(payloads.length, 2);
+  assert.deepEqual(payloads[0]?.sessionContext?.chatHistory, [
+    { role: 'user', text: 'add chords C and G' },
+  ]);
+  assert.deepEqual(payloads[1]?.sessionContext?.chatHistory, [
+    { role: 'user', text: 'add chords C and G' },
+    { role: 'assistant', text: 'Harmony: Prepared C and G.' },
+    { role: 'user', text: 'make the second chord minor' },
+  ]);
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
 test('ChatPanel copy log includes pending preview apply state and command payload', async () => {
   let copiedText = '';
   let latestTranscript: Array<{ text: string }> = [];

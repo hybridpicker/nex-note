@@ -843,6 +843,7 @@ function buildArrangementResponse(
   documentState: DocumentState,
   selection?: EditorSelection,
   sessionContext?: AiSessionContext,
+  materializedOnly = false,
 ): ParsedIntentJson | null {
   const scoped = filterArrangementMelodySources(documentState, collectArrangementSourceNotes(documentState, selection));
   if (scoped.length === 0) return null;
@@ -857,6 +858,10 @@ function buildArrangementResponse(
   const targetPartId = scoped[0]?.partId;
   const materializedArrangement = buildMaterializedArrangementResponse(message, documentState, scoped, expression, tempo, chordPlan, instrument, targetPartId);
   if (materializedArrangement) return materializedArrangement;
+  // The generic chord-symbol suggestion is weaker than a model-planned
+  // arrangement, so callers can restrict this engine to the precise
+  // materialized path and let the LLM handle the rest.
+  if (materializedOnly) return null;
 
   if (chordPlan) commands.push({ type: 'addChords', chords: chordPlan });
   commands.push({ type: 'addExpressionText', measureNumber: scoped[0]!.measure.measureNumber, text: expression, placement: 'above' });
@@ -1759,8 +1764,9 @@ export function buildMusicianChatResponse(params: {
   documentState: DocumentState;
   selection?: EditorSelection;
   sessionContext?: AiSessionContext;
+  arrangementScope?: 'full' | 'materialized-only';
 }) {
-  const { message, workflow, documentState, selection, sessionContext } = params;
+  const { message, workflow, documentState, selection, sessionContext, arrangementScope = 'full' } = params;
   const normalized = message.toLowerCase();
 
   const knownSongSourceRequired = buildKnownSongSourceRequiredResponse(message);
@@ -1779,7 +1785,7 @@ export function buildMusicianChatResponse(params: {
   }
 
   if (workflow === 'arrangement-assist') {
-    return buildArrangementResponse(message, documentState, selection, sessionContext);
+    return buildArrangementResponse(message, documentState, selection, sessionContext, arrangementScope === 'materialized-only');
   }
 
   const melodyBriefQuestion = buildMelodyBriefQuestion(message);

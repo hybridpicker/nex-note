@@ -7,6 +7,7 @@ export interface AiSessionContext {
   mode?: string | null;
   pinnedScope?: string | null;
   recentUserRequests?: string[];
+  chatHistory?: Array<{ role: 'user' | 'assistant'; text: string }>;
   taskState?: {
     scoreKey?: string | null;
     preferredInstrument?: string | null;
@@ -164,7 +165,13 @@ export function buildIntentPrompt(message: string, context?: unknown, workflow?:
       : `Write explanation, ambiguities, and plan text in ${detectedLanguage}. Do not switch language because of appLocale or prior examples.`,
   ].join('\n');
   const sessionSection = sessionContext
-    ? `Session context:\n${JSON.stringify(sessionContext, null, 2)}\nappLocale is only a fallback when the current user message language is unclear.`
+    ? [
+      `Session context:\n${JSON.stringify(sessionContext, null, 2)}`,
+      'appLocale is only a fallback when the current user message language is unclear.',
+      sessionContext.chatHistory?.length
+        ? 'chatHistory lists the most recent conversation turns, oldest first. Use it to resolve follow-up references such as "the second chord", "make it minor", or "do the same for the bass".'
+        : '',
+    ].filter(Boolean).join('\n')
     : '';
   if (!context) {
     return [INTENT_SYSTEM_PROMPT, workflowSection, languageSection, sessionSection, `User instruction: ${message}`]

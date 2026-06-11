@@ -538,11 +538,17 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
         workflow: workflow.kind,
       });
       const normalizedPlan = normalizeAiPlan(assessment.plan, workflow);
-      const criticWarnings = plannerResult.criticIssues.map((issue) => issue.message);
+      const criticWarnings = [
+        ...plannerResult.criticIssues.map((issue) => issue.message),
+        ...plannerResult.realizerIssues.map((issue) => `${issue.code}: ${issue.message}`),
+      ];
       const riskReasons = [
         ...assessment.riskReasons,
         ...(plannerResult.criticIssues.some((issue) => issue.severity === 'error')
           ? ['Arrangement planner kept unresolved critic findings after repair attempts']
+          : []),
+        ...(plannerResult.realizerIssues.length > 0
+          ? ['Arrangement voicing could not be materialized as notes; falling back to chord symbols']
           : []),
       ];
       return {
@@ -572,17 +578,10 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
       };
     }
   }
-  const localMusicianResponse = buildMusicianChatResponse({
-    message: workflow.cleanedMessage,
-    workflow: workflow.kind,
-    documentState,
-    selection,
-    sessionContext,
-  });
-  if (localMusicianResponse) {
-    const repaired = repairCommandBatch(localMusicianResponse.commands ?? []);
+  const respondWithLocalMusicianIntent = (localIntent: ParsedIntentJson): RunAiCommandPipelineSuccessResult => {
+    const repaired = repairCommandBatch(localIntent.commands ?? []);
     const affectedMeasures = collectAffectedMeasures(repaired.validCommands);
-    const assessment = assessAiPlan(localMusicianResponse, {
+    const assessment = assessAiPlan(localIntent, {
       commands: repaired.validCommands,
       affectedMeasures,
       workflow: workflow.kind,
@@ -592,7 +591,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
       ? 'musician-arrangement-engine'
       : 'musician-analysis-engine';
     if (
-      isSimpleLocalMelodyDraft(repaired.validCommands, localMusicianResponse, workflow.kind)
+      isSimpleLocalMelodyDraft(repaired.validCommands, localIntent, workflow.kind)
       || isSafeLocalCreativeDraft(repaired.validCommands, assessment, workflow.kind)
     ) {
       const execution = applyDocumentCommands(documentState, repaired.validCommands);
@@ -603,7 +602,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
           ...execution.diagnostics,
           ...createRepairDiagnostics(repaired.droppedCommands),
         ],
-        explanation: localMusicianResponse.explanation,
+        explanation: localIntent.explanation,
         context,
         commands: execution.appliedCommands,
         operations: execution.appliedCommands,
@@ -617,7 +616,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
         riskReasons: [],
         validatorFindings: [],
         requiresConfirmation: false,
-        rawIntent: localMusicianResponse,
+        rawIntent: localIntent,
         workflow: workflow.kind,
         workflowLabel: workflow.label,
       };
@@ -629,7 +628,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
         ...documentState.diagnostics,
         ...createRepairDiagnostics(repaired.droppedCommands),
       ],
-      explanation: localMusicianResponse.explanation,
+      explanation: localIntent.explanation,
       context,
       commands: repaired.validCommands,
       operations: repaired.validCommands,
@@ -643,11 +642,34 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
       riskReasons: assessment.riskReasons,
       validatorFindings: [],
       requiresConfirmation: repaired.validCommands.length > 0,
-      rawIntent: localMusicianResponse,
+      rawIntent: localIntent,
       workflow: workflow.kind,
       workflowLabel: workflow.label,
     };
-  }
+  };
+
+  // For arrangement requests, only the precise materialized local path may
+  // pre-empt the model; the generic chord-symbol heuristic stays available as
+  // a fallback when the model fails (see buildLocalArrangementFallback).
+  const localMusicianResponse = buildMusicianChatResponse({
+    message: workflow.cleanedMessage,
+    workflow: workflow.kind,
+    documentState,
+    selection,
+    sessionContext,
+    arrangementScope: workflow.kind === 'arrangement-assist' ? 'materialized-only' : 'full',
+  });
+  if (localMusicianResponse) return respondWithLocalMusicianIntent(localMusicianResponse);
+
+  const buildLocalArrangementFallback = () => (workflow.kind === 'arrangement-assist'
+    ? buildMusicianChatResponse({
+      message: workflow.cleanedMessage,
+      workflow: workflow.kind,
+      documentState,
+      selection,
+      sessionContext,
+    })
+    : null);
   if (workflow.kind === 'layout-cleanup' && documentState.coreDocument) {
     const parsed = generateLayoutCleanupIntent(documentState.coreDocument, workflow.cleanedMessage);
     const repaired = repairCommandBatch(parsed.commands ?? []);
@@ -814,6 +836,8 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
   const aiResponse = await ask(prompt, provider, ollamaModel);
 
   if (aiResponse.error) {
+    const arrangementFallback = buildLocalArrangementFallback();
+    if (arrangementFallback) return respondWithLocalMusicianIntent(arrangementFallback);
     return {
       error: aiResponse.error,
       status: 502,
@@ -822,6 +846,8 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
 
   let parsed = parseIntentJSON(aiResponse.text);
   if (!parsed) {
+    const arrangementFallback = buildLocalArrangementFallback();
+    if (arrangementFallback) return respondWithLocalMusicianIntent(arrangementFallback);
     if (aiResponse.text.trim().length > 0) {
       return buildNonJsonFallbackResult({
         message: workflow.cleanedMessage,
