@@ -13,7 +13,6 @@ This directory mixes current status docs, architecture docs, validation material
 - Post-AGPL 0.0.1 launch plan: [launch-plan.md](./launch-plan.md)
 - Founder test file intake: [founder-test-file-intake.md](./founder-test-file-intake.md)
 - Founder outreach: [founder-outreach.md](./founder-outreach.md)
-- AlmaLinux 9 test-domain finalization: [almalinux9-finalize-domain.md](./almalinux9-finalize-domain.md)
 
 ## Current Source Of Truth
 
