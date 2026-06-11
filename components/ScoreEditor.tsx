@@ -11516,7 +11516,12 @@ export default function ScoreEditor({
     const pointerInLeadingProtectionZone = !crossVoiceDirectNotehead && nextGhostResolved?.pointerX != null
       && nextGhostResolved.placementMode === 'insert'
       && (
-        nextGhostResolved.domCenter.x - nextGhostResolved.pointerX > 1
+        // Forward-snapped ghosts only mark the leading area when they snap to
+        // the measure's FIRST anchor (pointer in the leading whitespace).
+        // Mid-measure forward snaps are legitimate targets — rejecting them
+        // turned every span left of a notehead into a hover dead zone on
+        // staves whose first note sits deep in the measure.
+        (nextGhostResolved.timestampNum === 0 && nextGhostResolved.domCenter.x - nextGhostResolved.pointerX > 1)
         || firstSlotGhostPulledBehindPointer(nextGhostResolved)
         || pointerInLeadingFirstSlotBuffer(nextGhostResolved, overlayAtPoint, domPoint.x, measureLayoutOverlaysRef.current)
       );
