@@ -1741,6 +1741,30 @@ export function resolveVisibleGhostSnapX(input: {
   return input.snappedX;
 }
 
+// A diatonic step is half a staff-line distance — single-digit pixels at any
+// sane zoom. Chord members share one rendered glyph, so their bbox-derived
+// sample pairs can fake enormous per-step gaps; those candidates must never
+// reach the median or the whole staff collapses onto the sampled pitches.
+const MIN_PLAUSIBLE_PITCH_STEP_PX = 1.5;
+const MAX_PLAUSIBLE_PITCH_STEP_PX = 24;
+
+function collectPitchStepCandidates(sorted: Array<{ index: number; y: number }>) {
+  const stepCandidates: number[] = [];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1]!;
+    const current = sorted[index]!;
+    const deltaIndex = current.index - previous.index;
+    const deltaY = Math.abs(current.y - previous.y);
+    if (deltaIndex > 0 && deltaY > 0.5) {
+      const candidate = deltaY / deltaIndex;
+      if (candidate >= MIN_PLAUSIBLE_PITCH_STEP_PX && candidate <= MAX_PLAUSIBLE_PITCH_STEP_PX) {
+        stepCandidates.push(candidate);
+      }
+    }
+  }
+  return stepCandidates;
+}
+
 export function quantizeGhostPitchIndex(
   pointerY: number,
   fallbackIndex: number,
@@ -1750,16 +1774,7 @@ export function quantizeGhostPitchIndex(
   const sorted = [...samples]
     .filter((sample) => Number.isFinite(sample.index) && Number.isFinite(sample.y))
     .sort((a, b) => a.index - b.index || a.y - b.y);
-  const stepCandidates: number[] = [];
-  for (let index = 1; index < sorted.length; index += 1) {
-    const previous = sorted[index - 1]!;
-    const current = sorted[index]!;
-    const deltaIndex = current.index - previous.index;
-    const deltaY = Math.abs(current.y - previous.y);
-    if (deltaIndex > 0 && deltaY > 0.5) {
-      stepCandidates.push(deltaY / deltaIndex);
-    }
-  }
+  const stepCandidates = collectPitchStepCandidates(sorted);
 
   const stepPx = Math.max(median(stepCandidates) ?? 0, 4);
   const interceptCandidates = sorted.map((sample) => sample.y + stepPx * sample.index);
@@ -1778,16 +1793,7 @@ function filterPitchCalibrationEntries<T extends { index: number; y: number }>(s
     .sort((a, b) => a.index - b.index || a.y - b.y);
   if (sorted.length <= 2) return sorted;
 
-  const stepCandidates: number[] = [];
-  for (let index = 1; index < sorted.length; index += 1) {
-    const previous = sorted[index - 1]!;
-    const current = sorted[index]!;
-    const deltaIndex = current.index - previous.index;
-    const deltaY = Math.abs(current.y - previous.y);
-    if (deltaIndex > 0 && deltaY > 0.5) {
-      stepCandidates.push(deltaY / deltaIndex);
-    }
-  }
+  const stepCandidates = collectPitchStepCandidates(sorted);
 
   const stepPx = Math.max(median(stepCandidates) ?? 0, 4);
   const intercept = median(sorted.map((sample) => sample.y + stepPx * sample.index))
@@ -3555,6 +3561,12 @@ function firstSlotGhostPulledBehindPointer(target: GhostNoteTarget | null | unde
   if (!target || target.pointerX == null || target.placementMode !== 'insert') return false;
   if (target.timestampNum !== 0) return false;
   if (target.placementAnchorIsRest !== false || target.semanticAnchorIsRest) return false;
+  // Nearest-anchor snaps legitimately target beat 1 from anywhere inside its
+  // span — only advanced-anchor retargets can pull the ghost far behind the
+  // pointer. Guarding plain snaps made beat 1 untargetable right of its
+  // notehead.
+  const resolver = target.snapResolution?.resolver ?? '';
+  if (!resolver.includes('retarget')) return false;
   return target.pointerX - ghostVisibleNoteheadCenterX(target) > 1;
 }
 
