@@ -388,23 +388,32 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
             ? `${entry.text.slice(0, CHAT_HISTORY_TEXT_LIMIT - 3)}...`
             : entry.text,
         }));
-      const res = await fetch('/api/chat', {
+      const chatRequestBody = {
+        message: msg,
+        scoreKey,
+        scoreRevision,
+        provider,
+        ollamaModel,
+        aiSettings,
+        selection: serializedSelection,
+        appLocale: locale,
+        sessionContext: { ...nextSessionContext, chatHistory },
+      };
+      const postChat = (payloadXml: string | undefined) => fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: msg,
-          xml: scoreSessionReady ? undefined : xml,
-          scoreKey,
-          scoreRevision,
-          provider,
-          ollamaModel,
-          aiSettings,
-          selection: serializedSelection,
-          appLocale: locale,
-          sessionContext: { ...nextSessionContext, chatHistory },
-        }),
+        body: JSON.stringify({ ...chatRequestBody, xml: payloadXml }),
       });
-      const data = await res.json();
+      let res = await postChat(scoreSessionReady ? undefined : xml);
+      let data = await res.json();
+      if (!res.ok && data?.code === 'score_session_unavailable' && xml) {
+        // The server lost the synced score session (restart or cache
+        // eviction); retry once with the full score, which also re-primes
+        // the server-side session cache.
+        dbg.warn('chat', 'score session unavailable, retrying with inline xml');
+        res = await postChat(xml);
+        data = await res.json();
+      }
       const nextTaskState = typeof data.taskState === 'object' && data.taskState
         ? data.taskState as PersistedChatTaskState
         : nextSessionContext.taskState;

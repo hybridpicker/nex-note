@@ -43,6 +43,17 @@ export async function POST(req: NextRequest) {
 
     const effectiveXml = resolveChatScoreXml({ message, xml, scoreKey, scoreRevision });
 
+    if (message && !effectiveXml && scoreKey && !xml?.trim()) {
+      // The client relied on a previously synced score session, but the
+      // in-memory cache no longer holds it (server restart, worker change,
+      // or eviction). Tell the client to retry with the full score payload.
+      dbg.warn('chat', 'score session unavailable', { scoreKey, scoreRevision: scoreRevision ?? null });
+      return NextResponse.json({
+        error: 'The synced score session is no longer available on the server. Retry the request with the full score xml.',
+        code: 'score_session_unavailable',
+      }, { status: 409 });
+    }
+
     if (!message || !effectiveXml) {
       return NextResponse.json({
         error: 'message and score xml required unless the chat message contains an inline melody to seed a new score',

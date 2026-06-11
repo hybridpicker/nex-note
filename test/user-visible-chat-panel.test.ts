@@ -180,6 +180,55 @@ test('ChatPanel copies the full chat transcript for debugging', async () => {
   });
 });
 
+test('ChatPanel retries with inline xml when the server score session is gone', async () => {
+  const payloads: Array<{ message?: string; xml?: string }> = [];
+
+  Object.assign(globalThis, {
+    fetch: async (_url: string, init?: { body?: string }) => {
+      const payload = init?.body ? JSON.parse(init.body) : {};
+      payloads.push(payload);
+      if (payloads.length === 1) {
+        return createFetchResponse({
+          error: 'The synced score session is no longer available on the server. Retry the request with the full score xml.',
+          code: 'score_session_unavailable',
+        }, false);
+      }
+      return createFetchResponse({
+        requiresConfirmation: false,
+        explanation: 'Prepared the arrangement.',
+        workflowLabel: 'Arrangement assistant',
+        commands: [],
+        affectedMeasures: [],
+        validatorFindings: [],
+        provider: 'ollama',
+        model: 'gemma4:31b',
+        latencyMs: 8,
+        xml: SAMPLE_XML,
+        taskState: { scoreKey: 'score:test', lastWorkflow: 'arrangement-assist' },
+      });
+    },
+  });
+
+  let renderer: Renderer | null = null;
+  await act(async () => {
+    renderer = create(React.createElement(ChatPanel, buildChatPanelProps({ scoreSessionReady: true })));
+  });
+
+  const root = renderer!.root;
+  await sendMessage(root, 'Mach mir daraus einen dreistimmigen Satz');
+
+  assert.equal(payloads.length, 2);
+  assert.equal(payloads[0]?.xml, undefined, 'first request should rely on the synced score session');
+  assert.equal(payloads[1]?.xml, SAMPLE_XML, 'retry should carry the full score xml');
+  const text = collectText(root);
+  assert.match(text, /Prepared the arrangement\./);
+  assert.doesNotMatch(text, /score xml required/);
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
 test('ChatPanel sends recent chat history with follow-up requests', async () => {
   const payloads: Array<{
     message?: string;
