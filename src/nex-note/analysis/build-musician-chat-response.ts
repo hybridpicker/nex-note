@@ -1816,16 +1816,6 @@ function buildMelodyBriefQuestion(message: string): ParsedIntentJson | null {
   };
 }
 
-const SIMPLE_MELODY_PITCH_PATTERN = [
-  ['C', 5], ['D', 5], ['E', 5], ['G', 5], ['A', 5],
-  ['G', 5], ['E', 5], ['D', 5], ['C', 5], ['E', 5],
-  ['G', 5], ['E', 5], ['D', 5], ['F', 5], ['A', 5],
-  ['G', 5], ['E', 5], ['G', 5], ['C', 6], ['B', 5],
-  ['A', 5], ['G', 5], ['F', 5], ['E', 5], ['D', 5],
-  ['E', 5], ['F', 5], ['G', 5], ['C', 5], ['G', 4],
-  ['C', 5], ['D', 5], ['E', 5], ['D', 5], ['C', 5],
-] as const;
-
 const SIMPLE_MELODY_RHYTHM_PATTERN = [
   [
     { timestampNum: 0, timestampDen: 4, durationType: 'quarter' },
@@ -1880,22 +1870,227 @@ const SIMPLE_MELODY_RHYTHM_PATTERN = [
   ],
 ] as const;
 
+const KEY_TONICS_BY_FIFTHS: Record<number, { step: string; alter: number }> = {
+  '-7': { step: 'C', alter: -1 },
+  '-6': { step: 'G', alter: -1 },
+  '-5': { step: 'D', alter: -1 },
+  '-4': { step: 'A', alter: -1 },
+  '-3': { step: 'E', alter: -1 },
+  '-2': { step: 'B', alter: -1 },
+  '-1': { step: 'F', alter: 0 },
+  0: { step: 'C', alter: 0 },
+  1: { step: 'G', alter: 0 },
+  2: { step: 'D', alter: 0 },
+  3: { step: 'A', alter: 0 },
+  4: { step: 'E', alter: 0 },
+  5: { step: 'B', alter: 0 },
+  6: { step: 'F', alter: 1 },
+  7: { step: 'C', alter: 1 },
+};
+
+const STEP_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+const SHARP_KEY_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+const FLAT_KEY_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+
+type SimpleMelodyCharacter = 'calm' | 'upbeat' | 'default';
+
+function hashTextSeed(text: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function seededChoice(seed: number, index: number, modulo: number) {
+  if (modulo <= 1) return 0;
+  let value = (seed + Math.imul(index + 1, 0x9e3779b9)) >>> 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x85ebca6b) >>> 0;
+  value ^= value >>> 13;
+  return value % modulo;
+}
+
+function detectSimpleMelodyCharacter(message: string): SimpleMelodyCharacter {
+  const normalized = message.toLowerCase();
+  if (/\b(ruhig|calm|slow|langsam|adagio|dolce|lyrisch|lyrical|zart|tender)\b/.test(normalized)) return 'calm';
+  if (/\b(lebhaft|upbeat|bright|schnell|quick|animato|dance|tanz|frohlich|fröhlich)\b/.test(normalized)) return 'upbeat';
+  return 'default';
+}
+
+function accidentalMapForKey(fifths: number) {
+  const accidentals = new Map<string, number>();
+  if (fifths > 0) {
+    SHARP_KEY_ORDER.slice(0, Math.min(7, fifths)).forEach((step) => accidentals.set(step, 1));
+  } else if (fifths < 0) {
+    FLAT_KEY_ORDER.slice(0, Math.min(7, Math.abs(fifths))).forEach((step) => accidentals.set(step, -1));
+  }
+  return accidentals;
+}
+
+function simpleMelodyPitch(input: {
+  keyFifths: number;
+  degree: number;
+  staffIndex: number;
+  octaveShift?: number;
+}) {
+  const tonic = KEY_TONICS_BY_FIFTHS[Math.max(-7, Math.min(7, input.keyFifths))] ?? KEY_TONICS_BY_FIFTHS[0]!;
+  const tonicIndex = STEP_ORDER.indexOf(tonic.step as typeof STEP_ORDER[number]);
+  const absoluteDegree = Math.max(0, input.degree);
+  const stepIndex = tonicIndex + absoluteDegree;
+  const step = STEP_ORDER[stepIndex % STEP_ORDER.length]!;
+  const accidentals = accidentalMapForKey(input.keyFifths);
+  const baseOctave = input.staffIndex === 1
+    ? (tonicIndex <= STEP_ORDER.indexOf('E') ? 5 : 4)
+    : (tonicIndex <= STEP_ORDER.indexOf('E') ? 3 : 2);
+  return {
+    step,
+    alter: accidentals.get(step) ?? 0,
+    octave: baseOctave + Math.floor(stepIndex / STEP_ORDER.length) + (input.octaveShift ?? 0),
+  };
+}
+
+function currentTimeSignature(documentState: DocumentState) {
+  const time = getFirstTimeSignature(documentState);
+  return {
+    beats: time?.beats && time.beats > 0 ? time.beats : 4,
+    beatType: time?.beatType && time.beatType > 0 ? time.beatType : 4,
+  };
+}
+
+function generatedRhythmForMeasure(
+  measureIndex: number,
+  time: { beats: number; beatType: number },
+  character: SimpleMelodyCharacter,
+) {
+  const { beats, beatType } = time;
+  if (beatType === 4 && beats === 4 && character === 'default') {
+    return SIMPLE_MELODY_RHYTHM_PATTERN[measureIndex % SIMPLE_MELODY_RHYTHM_PATTERN.length];
+  }
+  if (beatType === 4 && beats === 4 && character === 'calm') {
+    return measureIndex % 4 === 3
+      ? [
+          { timestampNum: 0, timestampDen: 4, durationType: 'half' },
+          { timestampNum: 2, timestampDen: 4, durationType: 'half' },
+        ]
+      : [
+          { timestampNum: 0, timestampDen: 4, durationType: 'half' },
+          { timestampNum: 2, timestampDen: 4, durationType: 'quarter' },
+          { timestampNum: 3, timestampDen: 4, durationType: 'quarter' },
+        ];
+  }
+  if (beatType === 4 && beats === 4 && character === 'upbeat') {
+    return measureIndex % 2 === 0
+      ? [
+          { timestampNum: 0, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 1, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 1, timestampDen: 4, durationType: 'quarter' },
+          { timestampNum: 4, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 5, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 3, timestampDen: 4, durationType: 'quarter' },
+        ]
+      : [
+          { timestampNum: 0, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 1, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 2, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 3, timestampDen: 8, durationType: 'eighth' },
+          { timestampNum: 2, timestampDen: 4, durationType: 'quarter' },
+          { timestampNum: 3, timestampDen: 4, durationType: 'quarter' },
+        ];
+  }
+  if (beatType === 4) {
+    if (character === 'calm' && beats >= 3) {
+      return [
+        { timestampNum: 0, timestampDen: 4, durationType: beats >= 4 ? 'half' : 'quarter' },
+        { timestampNum: Math.max(1, beats - 1), timestampDen: 4, durationType: 'quarter' },
+      ];
+    }
+    return Array.from({ length: beats }, (_entry, beatIndex) => ({
+      timestampNum: beatIndex,
+      timestampDen: 4,
+      durationType: 'quarter',
+    }));
+  }
+  if (beatType === 8 && character === 'calm' && beats >= 6) {
+    return [
+      { timestampNum: 0, timestampDen: 8, durationType: 'quarter', isDotted: true },
+      { timestampNum: 3, timestampDen: 8, durationType: 'quarter', isDotted: true },
+    ];
+  }
+  return Array.from({ length: beats }, (_entry, beatIndex) => ({
+    timestampNum: beatIndex,
+    timestampDen: beatType,
+    durationType: beatType === 8 ? 'eighth' : beatType === 2 ? 'half' : 'quarter',
+  }));
+}
+
+function phraseTargetDegree(measureIndex: number, measureCount: number, character: SimpleMelodyCharacter) {
+  const finalMeasure = measureIndex === measureCount - 1;
+  if (finalMeasure) return 0;
+  const phrasePosition = measureIndex % 4;
+  if (phrasePosition === 3) return measureIndex < 4 && measureCount >= 8 ? 4 : 0;
+  const defaultTargets = character === 'upbeat' ? [2, 4, 5] : character === 'calm' ? [1, 2, 3] : [2, 4, 3];
+  return defaultTargets[phrasePosition] ?? 2;
+}
+
+function nextMelodyDegree(input: {
+  currentDegree: number;
+  targetDegree: number;
+  eventIndex: number;
+  eventCount: number;
+  seed: number;
+  seedIndex: number;
+  character: SimpleMelodyCharacter;
+}) {
+  if (input.eventIndex === input.eventCount - 1) return input.targetDegree;
+  const stepChoices = input.character === 'calm'
+    ? [-1, 0, 1, 1]
+    : input.character === 'upbeat'
+      ? [-2, -1, 1, 2, 3]
+      : [-1, 0, 1, 2, -2];
+  const choice = stepChoices[seededChoice(input.seed, input.seedIndex, stepChoices.length)] ?? 1;
+  const steered = input.currentDegree + choice + Math.sign(input.targetDegree - input.currentDegree) * (input.eventIndex > input.eventCount / 2 ? 1 : 0);
+  return Math.max(0, Math.min(7, steered));
+}
+
 export function buildSimpleMelodyDraftResponse(message: string, documentState: DocumentState): ParsedIntentJson | null {
   if (!shouldCreateSimpleMelody(message) || !documentState.coreDocument) return null;
   const german = isLikelyGerman(message);
   const measureCount = requestedMeasureCount(message);
   const staffIndex = detectMelodyTargetStaff(documentState, message);
+  const keyFifths = getDocumentKeyFifths(documentState);
+  const keyName = keyNameFromFifths(keyFifths, german);
+  const time = currentTimeSignature(documentState);
+  const character = detectSimpleMelodyCharacter(message);
+  const seed = hashTextSeed(`${message}|${keyFifths}|${time.beats}/${time.beatType}|${staffIndex}`);
   const commands: ParsedIntentJson['commands'] = [
-    { type: 'setKey', fifths: 0 },
-    { type: 'setTimeSignature', beats: 4, beatType: 4, measureNumber: 1 },
+    { type: 'setKey', fifths: keyFifths },
+    { type: 'setTimeSignature', beats: time.beats, beatType: time.beatType, measureNumber: 1 },
   ];
 
-  let pitchIndex = 0;
+  let currentDegree = seededChoice(seed, 0, 3);
+  let seedIndex = 1;
   for (let measure = 1; measure <= measureCount; measure += 1) {
-    const rhythm = SIMPLE_MELODY_RHYTHM_PATTERN[(measure - 1) % SIMPLE_MELODY_RHYTHM_PATTERN.length];
-    for (const event of rhythm) {
-      const [step, octave] = SIMPLE_MELODY_PITCH_PATTERN[pitchIndex % SIMPLE_MELODY_PITCH_PATTERN.length];
-      pitchIndex += 1;
+    const rhythm = generatedRhythmForMeasure(measure - 1, time, character);
+    const targetDegree = phraseTargetDegree(measure - 1, measureCount, character);
+    for (let eventIndex = 0; eventIndex < rhythm.length; eventIndex += 1) {
+      const event = rhythm[eventIndex]!;
+      currentDegree = nextMelodyDegree({
+        currentDegree,
+        targetDegree,
+        eventIndex,
+        eventCount: rhythm.length,
+        seed,
+        seedIndex,
+        character,
+      });
+      seedIndex += 1;
+      const pitch = simpleMelodyPitch({
+        keyFifths,
+        degree: measure === measureCount && eventIndex === rhythm.length - 1 ? 0 : currentDegree,
+        staffIndex,
+      });
       commands.push({
         type: 'insertNoteAt',
         measureNumber: measure,
@@ -1903,9 +2098,9 @@ export function buildSimpleMelodyDraftResponse(message: string, documentState: D
         voiceId: 1,
         timestampNum: event.timestampNum,
         timestampDen: event.timestampDen,
-        step,
-        octave,
-        alter: 0,
+        step: pitch.step,
+        octave: pitch.octave,
+        alter: pitch.alter,
         durationType: event.durationType,
         ...('isDotted' in event && event.isDotted ? { isDotted: true } : {}),
       });
@@ -1915,13 +2110,13 @@ export function buildSimpleMelodyDraftResponse(message: string, documentState: D
   return {
     commands,
     explanation: german
-      ? `Ich bereite eine einfache ${measureCount}-taktige Melodie in C-Dur mit abwechslungsreicher Rhythmik für die ${staffIndex === 1 ? 'rechte Hand' : 'linke Hand'} vor.`
-      : `I am preparing a simple ${measureCount}-bar melody in C major with varied rhythm for the ${staffIndex === 1 ? 'right hand' : 'left hand'}.`,
+      ? `Ich bereite eine einfache ${measureCount}-taktige Melodie in ${keyName} und ${time.beats}/${time.beatType} mit ${character === 'calm' ? 'ruhiger' : character === 'upbeat' ? 'lebhaftem' : 'abwechslungsreicher'} Rhythmik für die ${staffIndex === 1 ? 'rechte Hand' : 'linke Hand'} vor.`
+      : `I am preparing a simple ${measureCount}-bar melody in ${keyName} and ${time.beats}/${time.beatType} with ${character === 'calm' ? 'calm' : character === 'upbeat' ? 'upbeat' : 'varied'} rhythm for the ${staffIndex === 1 ? 'right hand' : 'left hand'}.`,
     confidence: 'high',
     ambiguities: [],
     plan: german
-      ? ['Setze C-Dur und 4/4', `Fülle ${measureCount} Takte mit einer einfachen Melodie aus Achteln, Vierteln und Halben`, 'Platziere die Melodie im Zielsystem']
-      : ['Set C major and 4/4', `Fill ${measureCount} measures with a simple melody using eighth, quarter, and half notes`, 'Place the melody in the target staff'],
+      ? [`Setze ${keyName} und ${time.beats}/${time.beatType}`, `Fülle ${measureCount} Takte mit einer einfachen Periodenmelodie`, 'Schließe auf dem Grundton im Zielsystem']
+      : [`Set ${keyName} and ${time.beats}/${time.beatType}`, `Fill ${measureCount} measures with a simple period melody`, 'Cadence on the tonic in the target staff'],
   };
 }
 

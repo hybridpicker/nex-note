@@ -91,6 +91,28 @@ const II_V_I_SEVENTHS_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const G_MAJOR_THREE_FOUR_PIANO_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>1</fifths></key>
+        <time><beats>3</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><rest measure="yes"/><duration>3</duration><voice>1</voice><type>half</type><dot/><staff>1</staff></note>
+      <backup><duration>3</duration></backup>
+      <note><rest measure="yes"/><duration>3</duration><voice>1</voice><type>half</type><dot/><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
 const TWO_MEASURE_A7_LICK_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list>
@@ -1042,6 +1064,39 @@ test('runAiCommandPipeline drafts explicit simple German melody requests with va
   assert.ok(insertedNotes.some((command) => (command as { durationType?: string }).durationType === 'half'));
   assert.ok(insertedNotes.some((command) => (command as { isDotted?: boolean }).isDotted === true));
   assert.match(result.explanation, /abwechslungsreicher Rhythmik/);
+});
+
+test('runAiCommandPipeline drafts simple melodies from key, meter, staff, and character', async () => {
+  const runDraft = () => runAiCommandPipeline({
+    message: 'write a calm 4 bar melody for left hand',
+    xml: G_MAJOR_THREE_FOUR_PIANO_XML,
+    provider: 'ollama',
+    ask: async (): Promise<AIResponse> => {
+      throw new Error('local melody draft should not call model');
+    },
+  });
+
+  const first = await runDraft();
+  const second = await runDraft();
+  assert.ok(!('error' in first));
+  assert.ok(!('error' in second));
+  if ('error' in first || 'error' in second) return;
+  assert.deepEqual(first.commands, second.commands);
+  assert.equal(first.commands[0]?.type, 'setKey');
+  assert.equal(first.commands[0]?.type === 'setKey' ? first.commands[0].fifths : null, 1);
+  assert.equal(first.commands[1]?.type, 'setTimeSignature');
+  assert.equal(first.commands[1]?.type === 'setTimeSignature' ? first.commands[1].beats : null, 3);
+  assert.equal(first.commands[1]?.type === 'setTimeSignature' ? first.commands[1].beatType : null, 4);
+  const insertedNotes = first.commands.filter((command): command is Extract<typeof command, { type: 'insertNoteAt' }> => (
+    command.type === 'insertNoteAt'
+  ));
+  assert.equal(insertedNotes.length, 8);
+  assert.ok(insertedNotes.every((command) => command.staffIndex === 2));
+  assert.ok(insertedNotes.every((command) => command.durationType === 'half' || command.durationType === 'quarter'));
+  const finalNote = insertedNotes.at(-1);
+  assert.equal(finalNote?.step, 'G');
+  assert.equal(finalNote?.alter, 0);
+  assert.match(first.explanation, /G major \/ E minor and 3\/4 with calm rhythm/);
 });
 
 test('runAiCommandPipeline tolerates common German melody request typos when asking for a brief', async () => {
