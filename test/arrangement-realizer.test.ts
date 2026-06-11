@@ -59,6 +59,34 @@ const TWO_PART_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const NOTATION_AND_TAB_PARTS_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Guitar</part-name></score-part>
+    <score-part id="P2"><part-name>Guitar TAB</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>TAB</sign><line>5</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff><notations><technical><string>5</string><fret>3</fret></technical></notations></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
 test('buildRealizationPlan derives replace-range note events from a valid voicing candidate', () => {
   const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
   assert.ok(fixture);
@@ -137,7 +165,7 @@ test('realizeArrangement materializes a simple three-voice voicing into the scor
   assert.ok(voices.every((voice) => voice.events.some((event) => event.kind === 'note')));
 });
 
-test('buildRealizationPlan rejects materialized mode for ambiguous multi-part scores', () => {
+test('buildRealizationPlan scopes materialized voices to the requested source part', () => {
   const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
   assert.ok(fixture);
   if (!fixture) return;
@@ -145,16 +173,81 @@ test('buildRealizationPlan rejects materialized mode for ambiguous multi-part sc
   const voicingCandidate = fixture.response.voicingCandidates[0];
   assert.ok(voicingCandidate);
   if (!voicingCandidate) return;
+  const spec: ArrangementSpec = {
+    ...fixture.response.spec,
+    sourceMelody: {
+      ...fixture.response.spec.sourceMelody,
+      source: 'primary-voice',
+      partId: 'P2',
+    },
+  };
 
-  const result = buildRealizationPlan({
+  const built = buildRealizationPlan({
     documentState,
-    spec: fixture.response.spec,
+    spec,
     voicingCandidate,
     harmonicCandidate: fixture.response.harmonicPlanCandidates[0],
   });
 
-  assert.equal(result.plan, null);
-  assert.ok(result.issues.some((issue) => issue.code === 'ambiguous-target-part'));
+  assert.equal(built.issues.length, 0);
+  assert.ok(built.plan);
+  if (!built.plan) return;
+  assert.equal(built.plan.target.partId, 'P2');
+  assert.equal(built.plan.target.corePartId, 'part:P2');
+  const commands = emitScoreCommandsFromRealizationPlan(built.plan);
+  assert.ok(commands.every((command) => (
+    command.type !== 'deleteRange'
+    || (
+      command.corePartId === 'part:P2'
+      && command.range.start.corePartId === 'part:P2'
+      && command.range.end.corePartId === 'part:P2'
+    )
+  )));
+  assert.ok(commands.every((command) => (
+    command.type !== 'insertNoteAt'
+    || command.corePartId === 'part:P2'
+  )));
+
+  const realized = realizeArrangement({
+    documentState,
+    spec,
+    voicingCandidate,
+    harmonicCandidate: fixture.response.harmonicPlanCandidates[0],
+  });
+  assert.equal(realized.valid, true);
+  const parts = realized.documentState?.coreDocument?.score.parts ?? [];
+  const upperVoices = parts.find((part) => part.id === 'part:P1')?.staves[0]?.measures[0]?.voices ?? [];
+  const lowerVoices = parts.find((part) => part.id === 'part:P2')?.staves[0]?.measures[0]?.voices ?? [];
+  assert.equal(upperVoices.length, 1);
+  assert.deepEqual(lowerVoices.map((voice) => voice.voiceId).sort((left, right) => left - right), [1, 2, 3]);
+});
+
+test('buildRealizationPlan warns when a paired TAB part is not mirrored', () => {
+  const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
+  assert.ok(fixture);
+  if (!fixture) return;
+  const documentState = buildDocumentState(NOTATION_AND_TAB_PARTS_XML);
+  const voicingCandidate = fixture.response.voicingCandidates[0];
+  assert.ok(voicingCandidate);
+  if (!voicingCandidate) return;
+  const spec: ArrangementSpec = {
+    ...fixture.response.spec,
+    sourceMelody: {
+      ...fixture.response.spec.sourceMelody,
+      source: 'primary-voice',
+      partId: 'P1',
+    },
+  };
+
+  const result = buildRealizationPlan({
+    documentState,
+    spec,
+    voicingCandidate,
+    harmonicCandidate: fixture.response.harmonicPlanCandidates[0],
+  });
+
+  assert.ok(result.plan);
+  assert.ok(result.issues.some((issue) => issue.code === 'paired-tab-not-mirrored' && issue.severity === 'warning'));
 });
 
 test('realizeArrangement preserves cross-measure durations via insertNoteAt overflow ties', () => {

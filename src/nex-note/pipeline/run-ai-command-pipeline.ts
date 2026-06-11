@@ -639,12 +639,13 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
         ...plannerResult.criticIssues.map((issue) => issue.message),
         ...plannerResult.realizerIssues.map((issue) => `${issue.code}: ${issue.message}`),
       ];
+      const hasRealizerErrors = plannerResult.realizerIssues.some((issue) => issue.severity === 'error');
       const riskReasons = [
         ...assessment.riskReasons,
         ...(plannerResult.criticIssues.some((issue) => issue.severity === 'error')
           ? ['Arrangement planner kept unresolved critic findings after repair attempts']
           : []),
-        ...(plannerResult.realizerIssues.length > 0
+        ...(hasRealizerErrors
           ? ['Arrangement voicing could not be materialized as notes; falling back to chord symbols']
           : []),
       ];

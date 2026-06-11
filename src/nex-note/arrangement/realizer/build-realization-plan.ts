@@ -83,6 +83,52 @@ function fractionToTimestamp(offset: Fraction) {
   };
 }
 
+function noteMidi(pitch: { step: string; alter: number; octave: number }) {
+  const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  return (stepToSemitone[pitch.step] ?? 0) + pitch.alter + (pitch.octave + 1) * 12;
+}
+
+function partMatchesId(part: ScoreDocumentModel['score']['parts'][number], partId: string) {
+  return part.id === partId
+    || part.sourcePartId === partId
+    || `part:${part.sourcePartId}` === partId;
+}
+
+function resolvePartByPrimaryVoice(coreDocument: ScoreDocumentModel) {
+  return coreDocument.score.parts
+    .flatMap((part, partIndex) => part.staves.flatMap((staff) => {
+      const noteEvents = staff.measures.flatMap((measure) => (
+        measure.voices.flatMap((voice) => voice.events.filter((event) => event.kind === 'note'))
+      ));
+      if (noteEvents.length === 0) return [];
+      const averageMidi = noteEvents.reduce((sum, event) => (
+        sum + (event.kind === 'note' ? noteMidi(event.pitch) : 0)
+      ), 0) / noteEvents.length;
+      return [{ part, partIndex, staffIndex: staff.staffIndex, noteCount: noteEvents.length, averageMidi }];
+    }))
+    .sort((left, right) => (
+      right.noteCount - left.noteCount
+      || right.averageMidi - left.averageMidi
+      || left.staffIndex - right.staffIndex
+      || left.partIndex - right.partIndex
+    ))[0]?.part ?? coreDocument.score.parts[0] ?? null;
+}
+
+function isTabStaff(part: ScoreDocumentModel['score']['parts'][number], staffIndex: number) {
+  return part.staves
+    .find((staff) => staff.staffIndex === staffIndex)
+    ?.measures.some((measure) => measure.attributes.some((attribute) => (
+      attribute.clefs.some((clef) => clef.staffIndex === staffIndex && clef.sign?.toUpperCase() === 'TAB')
+    ))) ?? false;
+}
+
+function hasUnmirroredPairedTabStaff(coreDocument: ScoreDocumentModel, target: RealizationTarget) {
+  return coreDocument.score.parts.some((part) => part.staves.some((staff) => (
+    !(part.id === target.corePartId && staff.staffIndex === target.staffIndex)
+    && isTabStaff(part, staff.staffIndex)
+  )));
+}
+
 function resolveTargetPart(coreDocument: ScoreDocumentModel | null, spec: ArrangementSpec): { target: RealizationTarget | null; issues: RealizerIssue[] } {
   if (!coreDocument) {
     return {
@@ -91,14 +137,11 @@ function resolveTargetPart(coreDocument: ScoreDocumentModel | null, spec: Arrang
     };
   }
 
-  if (coreDocument.score.parts.length !== 1) {
-    return {
-      target: null,
-      issues: [{ code: 'ambiguous-target-part', severity: 'error', message: 'Materialized arrangement mode currently requires a single-part score because note commands are not part-scoped yet.' }],
-    };
-  }
-
-  const part = coreDocument.score.parts[0];
+  const requestedPartId = spec.sourceMelody.partId;
+  const requestedPart = requestedPartId
+    ? coreDocument.score.parts.find((entry) => partMatchesId(entry, requestedPartId))
+    : null;
+  const part = requestedPart ?? resolvePartByPrimaryVoice(coreDocument);
   const staff = part?.staves.find((entry) => entry.staffIndex === 1) ?? part?.staves[0];
   if (!part || !staff) {
     return {
@@ -109,7 +152,8 @@ function resolveTargetPart(coreDocument: ScoreDocumentModel | null, spec: Arrang
 
   return {
     target: {
-      partId: spec.sourceMelody.partId ?? part.id,
+      partId: spec.sourceMelody.partId ?? part.sourcePartId,
+      corePartId: part.id,
       staffIndex: staff.staffIndex,
       voiceIds: [],
       measureRange: { start: 1, end: 1 },
@@ -158,7 +202,15 @@ export function buildRealizationPlan(params: {
   const target = targetResolution.target;
   if (!target || !documentState.coreDocument) return { plan: null, issues };
 
-  const part = documentState.coreDocument.score.parts[0];
+  if (hasUnmirroredPairedTabStaff(documentState.coreDocument, target)) {
+    issues.push({
+      code: 'paired-tab-not-mirrored',
+      severity: 'warning',
+      message: 'The realized voicing is scoped to the notation part; a paired TAB staff was detected but is not mirrored by the arrangement realizer yet.',
+    });
+  }
+
+  const part = documentState.coreDocument.score.parts.find((entry) => entry.id === target.corePartId);
   const staff = part?.staves.find((entry) => entry.staffIndex === target.staffIndex) ?? null;
   if (!staff) {
     return {

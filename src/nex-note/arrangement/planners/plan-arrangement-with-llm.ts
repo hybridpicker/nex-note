@@ -375,6 +375,9 @@ export async function planArrangementWithLlm(params: {
     harmonicCandidate,
   });
   const realizedCommands = realization.valid ? realization.commands : [];
+  const surfacedRealizerIssues = realization.issues.filter((issue) => (
+    issue.severity === 'error' || issue.code !== 'post-realization-validation'
+  ));
 
   const intent = buildPlannerIntent({
     message,
@@ -393,7 +396,7 @@ export async function planArrangementWithLlm(params: {
     model: finalResponseModel,
     latencyMs: totalLatencyMs,
     criticIssues: criticReport.issues,
-    realizerIssues: realization.valid ? [] : realization.issues.filter((issue) => issue.severity === 'error'),
+    realizerIssues: surfacedRealizerIssues,
     repairAttempts,
     plannerResponse: {
       plannerVersion: '0.1.0-two-step',

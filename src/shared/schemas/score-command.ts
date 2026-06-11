@@ -19,7 +19,7 @@ export type NoteLocatorLike = {
 
 export type LegacyScoreOperation =
   | { type: 'removeArticulations' }
-  | { type: 'deleteRange'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
+  | { type: 'deleteRange'; corePartId?: string | null; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
   | { type: 'clearMeasureVoice'; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number }
   | ({ type: 'rippleDelete' } & NoteLocatorLike)
   | { type: 'rippleDeleteRange'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
@@ -391,8 +391,10 @@ function getTarget(command: Record<string, unknown>): ScoreCommandTarget {
     const start = range.start as Record<string, unknown> | undefined;
     const end = range.end as Record<string, unknown> | undefined;
     if (start && end) {
+      const commandCorePartId = typeof command.corePartId === 'string' ? command.corePartId : undefined;
       target.range = {
         start: {
+          corePartId: typeof start.corePartId === 'string' ? start.corePartId : commandCorePartId,
           measureNumber: Number(start.measureNumber),
           staffIndex: Number(start.staffIndex),
           voiceId: Number(start.voiceId),
@@ -400,6 +402,7 @@ function getTarget(command: Record<string, unknown>): ScoreCommandTarget {
           timestampDen: Number(start.timestampDen),
         },
         end: {
+          corePartId: typeof end.corePartId === 'string' ? end.corePartId : commandCorePartId,
           measureNumber: Number(end.measureNumber),
           staffIndex: Number(end.staffIndex),
           voiceId: Number(end.voiceId),
@@ -484,6 +487,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
     case 'deleteRange':
     case 'rippleDeleteRange':
     case 'clearRangeArticulations':
+      if (command.corePartId != null) ensureString(command, 'corePartId', issues);
       ensureRange(command, issues);
       break;
     case 'clearMeasureVoice':

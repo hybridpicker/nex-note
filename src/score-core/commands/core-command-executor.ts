@@ -713,9 +713,11 @@ function collectEventsInRange(
 ) {
   const start = compareLocators(range.start, range.end) <= 0 ? range.start : range.end;
   const end = start === range.start ? range.end : range.start;
+  const corePartId = start.corePartId ?? end.corePartId ?? null;
   const collected: Array<{ voice: VoiceNode; eventIndex: number }> = [];
 
   document.score.parts.forEach((part) => {
+    if (corePartId && part.id !== corePartId) return;
     part.staves.forEach((staff) => {
       if (staff.staffIndex !== start.staffIndex) return;
       staff.measures.forEach((measure) => {

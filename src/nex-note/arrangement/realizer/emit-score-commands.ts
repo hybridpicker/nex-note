@@ -22,8 +22,10 @@ export function emitScoreCommandsFromRealizationPlan(plan: RealizationPlan): Sco
   for (const voiceId of plan.target.voiceIds) {
     commands.push({
       type: 'deleteRange',
+      corePartId: plan.target.corePartId,
       range: {
         start: {
+          corePartId: plan.target.corePartId,
           measureNumber: plan.target.measureRange.start,
           staffIndex: plan.target.staffIndex,
           voiceId,
@@ -31,6 +33,7 @@ export function emitScoreCommandsFromRealizationPlan(plan: RealizationPlan): Sco
           timestampDen: 1,
         },
         end: {
+          corePartId: plan.target.corePartId,
           measureNumber: plan.target.measureRange.end,
           staffIndex: plan.target.staffIndex,
           voiceId,
@@ -45,6 +48,7 @@ export function emitScoreCommandsFromRealizationPlan(plan: RealizationPlan): Sco
     if (event.kind === 'note' && event.pitch) {
       commands.push({
         type: 'insertNoteAt',
+        corePartId: plan.target.corePartId,
         measureNumber: event.measureNumber,
         staffIndex: event.staffIndex,
         voiceId: event.voiceId,
@@ -61,6 +65,7 @@ export function emitScoreCommandsFromRealizationPlan(plan: RealizationPlan): Sco
 
     commands.push({
       type: 'insertRestAt',
+      corePartId: plan.target.corePartId,
       measureNumber: event.measureNumber,
       staffIndex: event.staffIndex,
       voiceId: event.voiceId,

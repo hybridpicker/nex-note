@@ -5,6 +5,7 @@ import type { ScoreCommand } from '@/src/shared/schemas/score-command';
 
 export interface RealizationTarget {
   partId?: string;
+  corePartId: string;
   staffIndex: number;
   voiceIds: number[];
   measureRange: {
@@ -39,6 +40,7 @@ export interface RealizerIssue {
   code:
     | 'missing-core-document'
     | 'ambiguous-target-part'
+    | 'paired-tab-not-mirrored'
     | 'missing-target-staff'
     | 'missing-measure-timing'
     | 'empty-voicing'
