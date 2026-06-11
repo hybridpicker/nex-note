@@ -5,6 +5,7 @@ import type { MeasureNode, NoteEvent } from '@/src/score-core/model/types';
 import type { ParsedIntentJson } from '@/src/nex-note/intent/parse-intent-json';
 import type { AiWorkflowKind } from '@/src/nex-note/workflows/ai-workflows';
 import { STANDARD_GUITAR_TUNING } from '@/src/score-input/guitar-fretboard';
+import { isLocalResponseGerman, type SupportedAppLocale } from '@/src/nex-note/language/local-response-language';
 
 type InstrumentKey = 'voice' | 'flute' | 'violin' | 'clarinet-bb' | 'trumpet-bb' | 'alto-sax-eb' | 'cello';
 
@@ -25,8 +26,8 @@ const INSTRUMENT_PROFILES: Record<InstrumentKey, InstrumentProfile> = {
   cello: { labelEn: 'cello', labelDe: 'Cello', minMidi: 36, maxMidi: 76 },
 };
 
-function isLikelyGerman(message: string) {
-  return /\b(der|die|das|ein|eine|takt|umfang|analyse|probe|üb|uebe|singbar|spielbar|schwer|melodie|notier|quelle|lizenz)\b/i.test(message);
+function isLikelyGerman(message: string, appLocale?: SupportedAppLocale) {
+  return isLocalResponseGerman(message, appLocale);
 }
 
 function noteToMidi(note: NoteEvent) {
@@ -1012,7 +1013,7 @@ function buildArrangementResponse(
   const scoped = filterArrangementMelodySources(documentState, collectArrangementSourceNotes(documentState, selection));
   if (scoped.length === 0) return null;
 
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, sessionContext?.appLocale);
   const keyFifths = getDocumentKeyFifths(documentState);
   const preferFlats = keyFifths < 0;
   const instrument = inferInstrument(message, sessionContext);
@@ -1068,7 +1069,7 @@ function extractExplicitChordTarget(message: string) {
   return null;
 }
 
-function buildHarmonyResponse(message: string, documentState: DocumentState): ParsedIntentJson | null {
+function buildHarmonyResponse(message: string, documentState: DocumentState, appLocale?: SupportedAppLocale): ParsedIntentJson | null {
   if (/\badd chords?\s*:\s*measure\s+\d+/i.test(message)) return null;
   if (/\badd chord symbols?\s+to\s+measures?\b/i.test(message)) return null;
   if (/\bchord(?:\s+symbols?)?\b/i.test(message) && /\bmeasures?\s+\d/i.test(message)) return null;
@@ -1076,7 +1077,7 @@ function buildHarmonyResponse(message: string, documentState: DocumentState): Pa
   if (!isHarmonyEditLike(tokens)) return null;
 
   const targetChord = extractExplicitChordTarget(message);
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
   const sourceNotes = detectPrimaryVoiceNotes(documentState);
   const keyFifths = getDocumentKeyFifths(documentState);
   const preferFlats = keyFifths < 0 || Boolean(targetChord && /b|♭/.test(targetChord));
@@ -1104,10 +1105,10 @@ function buildHarmonyResponse(message: string, documentState: DocumentState): Pa
   };
 }
 
-function buildCatalogNotationCleanupResponse(message: string): ParsedIntentJson | null {
+function buildCatalogNotationCleanupResponse(message: string, appLocale?: SupportedAppLocale): ParsedIntentJson | null {
   if (!/\b(clean up|normalize|repair|clarify|preserve)\b/i.test(message)) return null;
   if (!/\b(notation|articulations|microtonal|quarter-tone|bow pressure|air sounds|key clicks|extended techniques|performability|musical identity)\b/i.test(message)) return null;
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
   return {
     commands: [],
     explanation: german
@@ -1163,7 +1164,7 @@ function buildAnalysisSummary(
     .sort((a, b) => a.note.measureNumber - b.note.measureNumber || a.note.timestampNum - b.note.timestampNum);
   if (scoped.length === 0) return null;
 
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, sessionContext?.appLocale);
   const keyFifths = getDocumentKeyFifths(documentState);
   const preferFlats = keyFifths < 0;
   const keyName = keyNameFromFifths(keyFifths, german);
@@ -1288,6 +1289,7 @@ function buildScoreReadingSummary(
   message: string,
   documentState: DocumentState,
   selection?: EditorSelection,
+  appLocale?: SupportedAppLocale,
 ): ParsedIntentJson | null {
   const scoped = collectScopedNotes(documentState, selection)
     .sort((a, b) => (
@@ -1298,7 +1300,7 @@ function buildScoreReadingSummary(
     ));
   if (scoped.length === 0) return null;
 
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
   const requestedRange = parseRequestedMeasureRange(message);
   const minMeasure = requestedRange?.start ?? Math.min(...scoped.map((entry) => entry.measure.measureNumber));
   const maxMeasure = requestedRange?.end ?? Math.max(...scoped.map((entry) => entry.measure.measureNumber));
@@ -1357,7 +1359,7 @@ function buildPracticeResponse(
 ): ParsedIntentJson | null {
   const core = documentState.coreDocument;
   if (!core) return null;
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, sessionContext?.appLocale);
   const highestMeasure = Math.max(...core.score.parts.flatMap((part) => part.staves.flatMap((staff) => staff.measures.map((measure) => measure.measureNumber))), 1);
   const instrument = inferInstrument(message, sessionContext);
   const practiceProfile = sessionContext?.taskState?.practiceProfile ?? 'rehearsal';
@@ -1583,9 +1585,9 @@ function isKnownSongNotationRequest(message: string) {
   );
 }
 
-function buildKnownSongSourceRequiredResponse(message: string): ParsedIntentJson | null {
+function buildKnownSongSourceRequiredResponse(message: string, appLocale?: SupportedAppLocale): ParsedIntentJson | null {
   if (!isKnownSongNotationRequest(message)) return null;
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
   return {
     commands: [],
     explanation: german
@@ -1663,11 +1665,12 @@ function buildSemanticCommandResponse(
   message: string,
   workflow: AiWorkflowKind,
   documentState: DocumentState,
+  appLocale?: SupportedAppLocale,
 ): ParsedIntentJson | null {
   const normalized = message.toLowerCase();
   const range = semanticRangeFromMessage(message, documentState);
   const target = primaryPartTarget(documentState);
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
 
   if (
     (workflow === 'analysis' || workflow === 'arrangement-assist')
@@ -1797,9 +1800,9 @@ function detectMelodyTargetStaff(documentState: DocumentState, message: string) 
   return staffCount >= 2 ? 1 : 1;
 }
 
-function buildMelodyBriefQuestion(message: string): ParsedIntentJson | null {
+function buildMelodyBriefQuestion(message: string, appLocale?: SupportedAppLocale): ParsedIntentJson | null {
   if (!shouldAskForMelodyBrief(message)) return null;
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
   const measureCount = requestedMeasureCount(message);
   return {
     commands: [],
@@ -2054,9 +2057,9 @@ function nextMelodyDegree(input: {
   return Math.max(0, Math.min(7, steered));
 }
 
-export function buildSimpleMelodyDraftResponse(message: string, documentState: DocumentState): ParsedIntentJson | null {
+export function buildSimpleMelodyDraftResponse(message: string, documentState: DocumentState, sessionContext?: AiSessionContext): ParsedIntentJson | null {
   if (!shouldCreateSimpleMelody(message) || !documentState.coreDocument) return null;
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, sessionContext?.appLocale);
   const measureCount = requestedMeasureCount(message);
   const staffIndex = detectMelodyTargetStaff(documentState, message);
   const keyFifths = getDocumentKeyFifths(documentState);
@@ -2131,14 +2134,14 @@ export function buildMusicianChatResponse(params: {
   const { message, workflow, documentState, selection, sessionContext, arrangementScope = 'full' } = params;
   const normalized = message.toLowerCase();
 
-  const knownSongSourceRequired = buildKnownSongSourceRequiredResponse(message);
+  const knownSongSourceRequired = buildKnownSongSourceRequiredResponse(message, sessionContext?.appLocale);
   if (knownSongSourceRequired) return knownSongSourceRequired;
 
-  const semanticResponse = buildSemanticCommandResponse(message, workflow, documentState);
+  const semanticResponse = buildSemanticCommandResponse(message, workflow, documentState, sessionContext?.appLocale);
   if (semanticResponse) return semanticResponse;
 
   if (workflow === 'notation-repair') {
-    const notationCleanup = buildCatalogNotationCleanupResponse(message);
+    const notationCleanup = buildCatalogNotationCleanupResponse(message, sessionContext?.appLocale);
     if (notationCleanup) return notationCleanup;
   }
 
@@ -2150,13 +2153,13 @@ export function buildMusicianChatResponse(params: {
     return buildArrangementResponse(message, documentState, selection, sessionContext, arrangementScope === 'materialized-only');
   }
 
-  const melodyBriefQuestion = buildMelodyBriefQuestion(message);
+  const melodyBriefQuestion = buildMelodyBriefQuestion(message, sessionContext?.appLocale);
   if (melodyBriefQuestion) return melodyBriefQuestion;
 
-  const melodyDraft = buildSimpleMelodyDraftResponse(message, documentState);
+  const melodyDraft = buildSimpleMelodyDraftResponse(message, documentState, sessionContext);
   if (melodyDraft) return melodyDraft;
 
-  const harmonyResponse = buildHarmonyResponse(message, documentState);
+  const harmonyResponse = buildHarmonyResponse(message, documentState, sessionContext?.appLocale);
   if (harmonyResponse) return harmonyResponse;
 
   const shouldAnalyze = workflow === 'analysis'
@@ -2166,7 +2169,7 @@ export function buildMusicianChatResponse(params: {
     && /\b(score|partitur|measure|measures|takt|takte|m\.|t\.)\b/i.test(normalized);
 
   if (shouldReadScore) {
-    const reading = buildScoreReadingSummary(message, documentState, selection);
+    const reading = buildScoreReadingSummary(message, documentState, selection, sessionContext?.appLocale);
     if (reading) return reading;
   }
 

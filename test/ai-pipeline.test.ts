@@ -9,6 +9,7 @@ import { assessAiPlan } from '../src/nex-note/planning/assess-ai-plan.ts';
 import { repairCommandBatch } from '../src/nex-note/repair/repair-command-batch.ts';
 import { runAiCommandPipeline } from '../src/nex-note/pipeline/run-ai-command-pipeline.ts';
 import { PLANNER_RESPONSE_FIXTURES } from '../src/nex-note/arrangement/fixtures/planner-response-fixtures.ts';
+import { detectLocalResponseLanguage } from '../src/nex-note/language/local-response-language.ts';
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -239,6 +240,28 @@ test('buildIntentPrompt makes the current English user message override German a
   assert.match(prompt, /Detected user message language: English/);
   assert.match(prompt, /Write explanation, ambiguities, and plan text in English/);
   assert.match(prompt, /appLocale is only a fallback when the current user message language is unclear/);
+});
+
+test('buildIntentPrompt detects French, Spanish, and Chinese user messages', () => {
+  const cases = [
+    { message: 'Ajoute une mélodie simple à la mesure 1.', language: 'French' },
+    { message: 'Agrega una melodía simple en el compás 1.', language: 'Spanish' },
+    { message: '请在第一小节写一个简单旋律。', language: 'Chinese' },
+  ];
+
+  cases.forEach(({ message, language }) => {
+    const prompt = buildIntentPrompt(message, {}, undefined, { appLocale: 'en' });
+    assert.match(prompt, new RegExp(`Detected user message language: ${language}`));
+    assert.match(prompt, new RegExp(`Write explanation, ambiguities, and plan text in ${language}`));
+  });
+});
+
+test('local response language routes unsupported locales to English', () => {
+  assert.equal(detectLocalResponseLanguage('Ajoute une mélodie simple.', 'de'), 'en');
+  assert.equal(detectLocalResponseLanguage('Agrega una melodía simple.', 'de'), 'en');
+  assert.equal(detectLocalResponseLanguage('写一个简单旋律。', 'de'), 'en');
+  assert.equal(detectLocalResponseLanguage('unklarer lokaler Text', 'fr'), 'en');
+  assert.equal(detectLocalResponseLanguage('unklarer lokaler Text', 'de'), 'de');
 });
 
 test('repairCommandBatch keeps valid commands and drops invalid ones', () => {

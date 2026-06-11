@@ -2,6 +2,7 @@ import { projectLayoutToDocument } from '@/src/layout/project-layout-to-document
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { ParsedIntentJson } from '@/src/nex-note/intent/parse-intent-json';
 import type { ScoreCommand } from '@/src/shared/schemas/score-command';
+import { isLocalResponseGerman, type SupportedAppLocale } from '@/src/nex-note/language/local-response-language';
 
 export interface LayoutCleanupIntent extends ParsedIntentJson {
   commands: ScoreCommand[];
@@ -12,10 +13,6 @@ interface StaffSpacingTarget {
   partId?: string;
   staffIndex?: number;
   value: number;
-}
-
-function detectGerman(message: string) {
-  return /\b(partitur|layout|aufraeum|aufräum|ordn|sauber|satz|abstand|umbruch|bitte|aufgeraeumt|aufgeräumt)\b|[äöüß]/i.test(message);
 }
 
 function buildLayoutKey(measureNumber: number, partId?: string, staffIndex?: number) {
@@ -60,7 +57,7 @@ function collectStaffSpacing(document: ScoreDocumentModel) {
   return spacing;
 }
 
-export function generateLayoutCleanupIntent(document: ScoreDocumentModel, message: string): LayoutCleanupIntent {
+export function generateLayoutCleanupIntent(document: ScoreDocumentModel, message: string, appLocale?: SupportedAppLocale): LayoutCleanupIntent {
   const projected = projectLayoutToDocument(document);
   const currentSystemBreaks = collectBreakMeasures(document, 'newSystem');
   const currentPageBreaks = collectBreakMeasures(document, 'newPage');
@@ -113,11 +110,12 @@ export function generateLayoutCleanupIntent(document: ScoreDocumentModel, messag
 
   const breakCount = commands.filter((command) => command.type === 'setSystemBreak' || command.type === 'setPageBreak').length;
   const spacingCount = commands.filter((command) => command.type === 'setMeasureLayoutHint').length;
+  const german = isLocalResponseGerman(message, appLocale);
   const explanation = commands.length === 0
-    ? (detectGerman(message)
+    ? (german
       ? 'Das Layout wirkt bereits aufgeräumt; es wurden keine zusätzlichen Hinweise vorbereitet.'
       : 'The layout already looks organized; no additional cleanup hints were needed.')
-    : (detectGerman(message)
+    : (german
       ? `Layout-Bereinigung vorbereitet: ${breakCount} Umbruch-Hinweise und ${spacingCount} Abstands-Hinweise.`
       : `Prepared layout cleanup with ${breakCount} break hints and ${spacingCount} spacing hints.`);
 

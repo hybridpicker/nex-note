@@ -23,16 +23,13 @@ import { getArrangementStylePack } from '@/src/nex-note/arrangement/style-packs'
 import type { ParsedIntentJson } from '@/src/nex-note/intent/parse-intent-json';
 import type { DocumentState } from '@/src/score-core/commands/apply-document-commands';
 import type { ScoreCommand } from '@/src/shared/schemas/score-command';
+import { isLocalResponseGerman } from '@/src/nex-note/language/local-response-language';
 
 type ArrangementAsk = (prompt: string, provider: ProviderName, ollamaModel?: string) => Promise<AIResponse>;
 
 type InstrumentKey = 'voice' | 'flute' | 'violin' | 'clarinet-bb' | 'trumpet-bb' | 'alto-sax-eb' | 'cello';
 
 const MAX_VOICING_RETRIES = 3;
-
-function isLikelyGerman(message: string) {
-  return /\b(der|die|das|ein|eine|takt|satz|arrangiere|dreistimm|generalbass|reharmonisiere)\b/i.test(message);
-}
 
 function inferStylePack(message: string): ArrangementStylePackId {
   const normalized = message.toLowerCase();
@@ -222,7 +219,7 @@ function buildPlannerIntent(params: {
   sessionContext?: AiSessionContext;
 }) {
   const { message, spec, harmonicCandidate, voicingCandidate, retriesUsed, unresolvedIssues, realizedCommands, sessionContext } = params;
-  const german = isLikelyGerman(message);
+  const german = isLocalResponseGerman(message, sessionContext?.appLocale);
   const materialized = realizedCommands.length > 0;
   const commands: ParsedIntentJson['commands'] = [...realizedCommands];
   const chordPlan = collapseChordPlan(harmonicCandidate.segments);

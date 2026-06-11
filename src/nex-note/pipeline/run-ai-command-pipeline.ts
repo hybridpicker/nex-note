@@ -20,6 +20,7 @@ import { generateMidiReconstructionIntent } from '@/src/nex-note/midi/generate-m
 import { planArrangementWithLlm } from '@/src/nex-note/arrangement/planners/plan-arrangement-with-llm';
 import { buildDocumentDoctorReport, doctorReportBlocksTransaction } from '@/src/debug/doctor/document-doctor';
 import type { DoctorReport, DoctorSettings } from '@/src/debug/doctor/types';
+import { isLocalResponseGerman, type SupportedAppLocale } from '@/src/nex-note/language/local-response-language';
 
 export interface RunAiCommandPipelineParams {
   message: string;
@@ -414,8 +415,8 @@ function rewriteRedundantClefSettersAsRemoval(
   });
 }
 
-function isLikelyGerman(message: string) {
-  return /\b(der|die|das|den|dem|ein|eine|takt|schluessel|schlüssel|entferne|lösche|weg)\b/i.test(message);
+function isLikelyGerman(message: string, appLocale?: SupportedAppLocale) {
+  return isLocalResponseGerman(message, appLocale);
 }
 
 function shouldPreferLocalArrangementPreview(message: string) {
@@ -435,11 +436,12 @@ function buildClefAwarePresentation(
   coreDocument: ScoreDocumentModel | null,
   explanation: string,
   plan: string[],
+  appLocale?: SupportedAppLocale,
 ) {
   const clefRemoval = commands.find((command) => command.type === 'removeClefChange');
   if (!clefRemoval) return { explanation, plan };
 
-  const german = isLikelyGerman(message);
+  const german = isLikelyGerman(message, appLocale);
   const previousClef = getEffectiveClefAtMeasure(coreDocument, Math.max(clefRemoval.measureNumber - 1, 1), clefRemoval.staffIndex ?? 1);
   const clefName = describeClefSign(previousClef?.sign, previousClef?.line, german);
   if (clefRemoval.measureNumber <= 1 || !previousClef) return { explanation, plan };
@@ -471,9 +473,10 @@ function buildNonJsonFallbackResult(params: {
   documentState: ReturnType<typeof buildDocumentState>;
   context: ReturnType<typeof buildAiScoreContext>;
   workflow: ResolvedAiWorkflow;
+  appLocale?: SupportedAppLocale;
 }): RunAiCommandPipelineSuccessResult {
-  const { message, aiText, aiResponse, sourceXml, documentState, context, workflow } = params;
-  const german = isLikelyGerman(message);
+  const { message, aiText, aiResponse, sourceXml, documentState, context, workflow, appLocale } = params;
+  const german = isLikelyGerman(message, appLocale);
   const explanation = aiText.trim();
   const rawIntent: ParsedIntentJson = {
     commands: [],
@@ -694,7 +697,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
   if (localMusicianResponse) return respondWithLocalMusicianIntent(localMusicianResponse);
 
   if (workflow.kind === 'layout-cleanup' && documentState.coreDocument) {
-    const parsed = generateLayoutCleanupIntent(documentState.coreDocument, workflow.cleanedMessage);
+    const parsed = generateLayoutCleanupIntent(documentState.coreDocument, workflow.cleanedMessage, sessionContext?.appLocale);
     const repaired = repairCommandBatch(parsed.commands ?? []);
     const affectedMeasures = collectAffectedMeasures(repaired.validCommands);
     const assessment = assessAiPlan(parsed, {
@@ -880,6 +883,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
         documentState,
         context,
         workflow,
+        appLocale: sessionContext?.appLocale,
       });
     }
 
@@ -894,6 +898,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
     const fallbackMelodyDraft = buildSimpleMelodyDraftResponse(
       [workflow.cleanedMessage, parsed.explanation].filter(Boolean).join(' '),
       documentState,
+      sessionContext,
     );
     if (fallbackMelodyDraft) parsed = fallbackMelodyDraft;
   }
@@ -920,6 +925,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
     documentState.coreDocument,
     parsed.explanation ?? '',
     normalizedPlan,
+    sessionContext?.appLocale,
   );
 
   if (!assessment.shouldApply) {
@@ -992,6 +998,7 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
           documentState.coreDocument,
           repairedIntent.explanation ?? parsed.explanation ?? '',
           repairedLoopPlan,
+          sessionContext?.appLocale,
         );
         const repairedExecution = applyDocumentCommands(documentState, repairedLoopBatch.validCommands);
         const remainingFindings = collectNewValidatorDiagnostics(documentState.diagnostics, repairedExecution.diagnostics);

@@ -131,6 +131,7 @@ Response language:
 - The user's current message language is authoritative for explanation, ambiguities, and plan text.
 - If the user writes in English, respond in English even when appLocale, prior requests, or examples are German.
 - If the user writes in German, respond in German even when appLocale, prior requests, or examples are English.
+- If the user writes in French, Spanish, or Chinese, respond in that language.
 - Use appLocale only as a fallback when the user's current message language is unclear.
 
 Always include:
@@ -146,6 +147,15 @@ Compatibility fallback is allowed: {"operations":[...],"explanation":"...","conf
 function detectPromptLanguage(message: string) {
   if (/\b(der|die|das|den|dem|ein|eine|takt|schluessel|schlüssel|entferne|lösche|loesche|weg|bitte|transponiere|ändere|aendere|füge|fuege)\b/i.test(message)) {
     return 'German';
+  }
+  if (/\b(mesure|mélodie|melodie|partition|portée|portee|accord|arranger|transposer|ajoute|ajouter|supprime|supprimer|écris|ecris|majeur|mineur|s'il vous plait|s'il vous plaît)\b/i.test(message)) {
+    return 'French';
+  }
+  if (/\b(compas|compás|melodia|melodía|partitura|pentagrama|acorde|arregla|arreglar|transpone|transponer|agrega|agregar|añade|anade|quitar|elimina|escribe|mayor|menor|por favor)\b/i.test(message)) {
+    return 'Spanish';
+  }
+  if (/[\u4e00-\u9fff]/.test(message)) {
+    return 'Chinese';
   }
   if (/\b(the|this|that|please|change|transpose|arrange|layout|clean|add|remove|write|make|major|minor|score|measure|bar|melody|lick)\b/i.test(message)) {
     return 'English';
