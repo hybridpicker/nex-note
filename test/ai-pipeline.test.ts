@@ -8,6 +8,7 @@ import { applyDocumentCommands, buildDocumentState } from '../src/score-core/com
 import { assessAiPlan } from '../src/nex-note/planning/assess-ai-plan.ts';
 import { repairCommandBatch } from '../src/nex-note/repair/repair-command-batch.ts';
 import { runAiCommandPipeline } from '../src/nex-note/pipeline/run-ai-command-pipeline.ts';
+import { PLANNER_RESPONSE_FIXTURES } from '../src/nex-note/arrangement/fixtures/planner-response-fixtures.ts';
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -1117,33 +1118,92 @@ test('runAiCommandPipeline reports all measures encoded in addChords previews', 
 });
 
 test('runAiCommandPipeline routes arrangement requests through the arrangement assistant workflow', async () => {
+  const prompts: string[] = [];
+  const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'classical-authentic-cadence-valid');
+  assert.ok(fixture);
+  if (!fixture) return;
+
   const result = await runAiCommandPipeline({
     message: 'Arrangiere diese Melodie fuer Klavier',
     xml: SAMPLE_XML,
     provider: 'ollama',
-    ask: async (): Promise<AIResponse> => {
-      throw new Error('should not call model');
+    ask: async (prompt): Promise<AIResponse> => {
+      prompts.push(prompt);
+      if (prompt.includes('Stage: Harmonic planner')) {
+        return {
+          provider: 'ollama' satisfies ProviderName,
+          model: 'mock-harmony-model',
+          text: JSON.stringify({
+            harmonicPlanCandidates: fixture.response.harmonicPlanCandidates,
+            notes: ['plain arrangement harmonic fixture'],
+          }),
+          latencyMs: 5,
+        };
+      }
+      if (prompt.includes('Stage: Voicing planner')) {
+        return {
+          provider: 'ollama' satisfies ProviderName,
+          model: 'mock-voicing-model',
+          text: JSON.stringify({
+            voicingCandidates: fixture.response.voicingCandidates,
+            notes: ['plain arrangement voicing fixture'],
+          }),
+          latencyMs: 5,
+        };
+      }
+      throw new Error(`Unexpected prompt stage: ${prompt.slice(0, 80)}`);
     },
   });
 
   assert.ok(!('error' in result));
   if ('error' in result) return;
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[0] ?? '', /Stage: Harmonic planner/);
+  assert.match(prompts[1] ?? '', /Stage: Voicing planner/);
   assert.equal(result.workflow, 'arrangement-assist');
   assert.equal(result.workflowLabel, 'Arrangement assistant');
+  assert.equal(result.provider, 'ollama');
+  assert.equal(result.model, 'mock-voicing-model');
+  assert.equal(result.requiresConfirmation, true);
+  assert.equal(result.rawIntent.planner?.stage, 'two-step-arrangement');
+  assert.ok(result.commands.some((command) => command.type === 'addChords'));
+  assert.ok(result.commands.some((command) => command.type === 'deleteRange'));
+  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
+  assert.ok(result.riskReasons.includes('Arrangement suggestions should stay previewable before apply'));
+});
+
+test('runAiCommandPipeline keeps simple catalog arrangements local', async () => {
+  let askCalled = false;
+  const result = await runAiCommandPipeline({
+    message: '/arrange Arrange a one-bar C-major stepwise melody C-D-E-F for flute with clear melody, simple support, and practical expression.',
+    xml: SAMPLE_XML,
+    provider: 'ollama',
+    ask: async (): Promise<AIResponse> => {
+      askCalled = true;
+      throw new Error('simple catalog arrangement should stay local');
+    },
+  });
+
+  assert.equal(askCalled, false);
+  assert.ok(!('error' in result));
+  if ('error' in result) return;
+  assert.equal(result.workflow, 'arrangement-assist');
   assert.equal(result.provider, 'local-layout');
   assert.equal(result.model, 'musician-arrangement-engine');
   assert.equal(result.requiresConfirmation, true);
   assert.ok(result.commands.some((command) => command.type === 'addChords'));
-  assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
-  assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
-  assert.ok(result.riskReasons.includes('Arrangement suggestions should stay previewable before apply'));
+  assert.ok(result.commands.some((command) => command.type === 'addExpressionText'));
+  const fitCommand = result.commands.find((command) => command.type === 'fitPartToInstrument');
+  assert.ok(fitCommand);
+  if (!fitCommand || fitCommand.type !== 'fitPartToInstrument') return;
+  assert.equal(fitCommand.instrument, 'flute');
 });
 
 test('runAiCommandPipeline can prepare a local arrangement preview without calling the model', async () => {
   let askCalled = false;
   const result = await runAiCommandPipeline({
-    message: '/arrange arrangiere diese Melodie fuer Klavier',
-    xml: SAMPLE_XML,
+    message: '/arrange arrange other version over Gmaj7, F#m7',
+    xml: TWO_MEASURE_A7_LICK_XML,
     provider: 'ollama',
     ask: async (): Promise<AIResponse> => {
       askCalled = true;
@@ -1162,6 +1222,7 @@ test('runAiCommandPipeline can prepare a local arrangement preview without calli
   assert.ok(result.commands.some((command) => command.type === 'addExpressionText'));
   assert.ok(result.commands.some((command) => command.type === 'clearMeasureVoice'));
   assert.ok(result.commands.some((command) => command.type === 'insertNoteAt'));
+  assert.equal(result.rawIntent.planner, undefined);
   assert.ok(result.riskReasons.includes('Arrangement suggestions should stay previewable before apply'));
 });
 
@@ -1312,17 +1373,48 @@ test('runAiCommandPipeline pairs separate MuseScore notation and TAB parts', asy
 });
 
 test('runAiCommandPipeline targets arrangement instrument fitting at the detected part', async () => {
+  const prompts: string[] = [];
+  const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'classical-authentic-cadence-valid');
+  assert.ok(fixture);
+  if (!fixture) return;
+
   const result = await runAiCommandPipeline({
     message: '/arrange arrangiere diese Melodie fuer Klarinette',
     xml: SAMPLE_XML,
     provider: 'ollama',
-    ask: async (): Promise<AIResponse> => {
-      throw new Error('should not call model');
+    ask: async (prompt): Promise<AIResponse> => {
+      prompts.push(prompt);
+      if (prompt.includes('Stage: Harmonic planner')) {
+        return {
+          provider: 'ollama' satisfies ProviderName,
+          model: 'mock-harmony-model',
+          text: JSON.stringify({
+            harmonicPlanCandidates: fixture.response.harmonicPlanCandidates,
+            notes: ['instrument target harmonic fixture'],
+          }),
+          latencyMs: 5,
+        };
+      }
+      if (prompt.includes('Stage: Voicing planner')) {
+        return {
+          provider: 'ollama' satisfies ProviderName,
+          model: 'mock-voicing-model',
+          text: JSON.stringify({
+            voicingCandidates: fixture.response.voicingCandidates,
+            notes: ['instrument target voicing fixture'],
+          }),
+          latencyMs: 5,
+        };
+      }
+      throw new Error(`Unexpected prompt stage: ${prompt.slice(0, 80)}`);
     },
   });
 
   assert.ok(!('error' in result));
   if ('error' in result) return;
+  assert.equal(prompts.length, 2);
+  assert.equal(result.provider, 'ollama');
+  assert.equal(result.rawIntent.planner?.stage, 'two-step-arrangement');
   const fitCommand = result.commands.find((command) => command.type === 'fitPartToInstrument');
   assert.ok(fitCommand);
   if (!fitCommand || fitCommand.type !== 'fitPartToInstrument') return;

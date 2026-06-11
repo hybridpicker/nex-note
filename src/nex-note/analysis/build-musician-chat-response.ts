@@ -349,6 +349,11 @@ function shouldBuildMaterializedArrangement(message: string, explicitChordCount:
   return asksForArrangement && (explicitChordCount > 0 || asksForConcreteLine || !asksOnlyForSurfaceAnnotation);
 }
 
+export function shouldUseLocalMaterializedArrangement(message: string) {
+  const explicitChordCount = extractExplicitChordSymbols(message).length;
+  return explicitChordCount > 0 && shouldBuildMaterializedArrangement(message, explicitChordCount);
+}
+
 function parseChordRoot(symbol: string) {
   const match = symbol.match(/^([A-G])([#b]?)/);
   if (!match) return null;
@@ -624,7 +629,7 @@ function buildMaterializedArrangementResponse(
   targetPartId?: string,
 ): ParsedIntentJson | null {
   const explicitChords = extractExplicitChordSymbols(message);
-  if (!shouldBuildMaterializedArrangement(message, explicitChords.length)) return null;
+  if (!shouldUseLocalMaterializedArrangement(message)) return null;
   const targetChords = explicitChords.length > 0 ? explicitChords : extractChordSymbolsFromPlan(chordPlan);
   if (targetChords.length === 0) return null;
 

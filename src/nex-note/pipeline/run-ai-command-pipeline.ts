@@ -3,7 +3,10 @@ import { askProvider, type AIResponse } from '@/lib/ai-providers';
 import type { AiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { buildIntentPrompt, buildValidatorRepairPrompt, type AiSessionContext } from '@/lib/prompts';
 import { applyDocumentCommands, buildDocumentState, type DocumentDiagnostic } from '@/src/score-core/commands/apply-document-commands';
-import { buildMusicianChatResponse, buildSimpleMelodyDraftResponse } from '@/src/nex-note/analysis/build-musician-chat-response';
+import {
+  buildMusicianChatResponse,
+  buildSimpleMelodyDraftResponse,
+} from '@/src/nex-note/analysis/build-musician-chat-response';
 import { buildAiScoreContext } from '@/src/nex-note/context/build-ai-score-context';
 import type { EditorSelection } from '@/hooks/useNoteEditor';
 import { parseIntentJSON, type ParsedIntentJson } from '@/src/nex-note/intent/parse-intent-json';
@@ -415,6 +418,10 @@ function isLikelyGerman(message: string) {
   return /\b(der|die|das|den|dem|ein|eine|takt|schluessel|schlüssel|entferne|lösche|weg)\b/i.test(message);
 }
 
+function shouldPreferLocalArrangementPreview(message: string) {
+  return /\b(simple support|practical expression|beginner arrangement|easy arrangement)\b/i.test(message);
+}
+
 function describeClefSign(sign?: string, line?: number, german = false) {
   if (sign === 'G' && line === 2) return german ? 'Violinschlüssel' : 'treble clef';
   if (sign === 'F' && line === 4) return german ? 'Bassschlüssel' : 'bass clef';
@@ -518,66 +525,6 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
   const documentState = buildDocumentState(xml);
   const context = buildAiScoreContext(documentState, selectionToAiContext(selection));
   const workflow = resolveAiWorkflow(message);
-  if (workflow.kind === 'arrangement-assist') {
-    const plannerResult = await planArrangementWithLlm({
-      message: workflow.cleanedMessage,
-      provider,
-      ollamaModel,
-      ask,
-      documentState,
-      context,
-      selection,
-      sessionContext,
-    });
-    if (plannerResult) {
-      const repaired = repairCommandBatch(plannerResult.intent.commands ?? []);
-      const affectedMeasures = collectAffectedMeasures(repaired.validCommands);
-      const assessment = assessAiPlan(plannerResult.intent, {
-        commands: repaired.validCommands,
-        affectedMeasures,
-        workflow: workflow.kind,
-      });
-      const normalizedPlan = normalizeAiPlan(assessment.plan, workflow);
-      const criticWarnings = [
-        ...plannerResult.criticIssues.map((issue) => issue.message),
-        ...plannerResult.realizerIssues.map((issue) => `${issue.code}: ${issue.message}`),
-      ];
-      const riskReasons = [
-        ...assessment.riskReasons,
-        ...(plannerResult.criticIssues.some((issue) => issue.severity === 'error')
-          ? ['Arrangement planner kept unresolved critic findings after repair attempts']
-          : []),
-        ...(plannerResult.realizerIssues.length > 0
-          ? ['Arrangement voicing could not be materialized as notes; falling back to chord symbols']
-          : []),
-      ];
-      return {
-        xml,
-        coreDocument: documentState.coreDocument,
-        diagnostics: [
-          ...documentState.diagnostics,
-          ...createRepairDiagnostics(repaired.droppedCommands),
-        ],
-        explanation: plannerResult.intent.explanation,
-        context,
-        commands: repaired.validCommands,
-        operations: repaired.validCommands,
-        provider: plannerResult.provider,
-        model: plannerResult.model,
-        latencyMs: plannerResult.latencyMs,
-        confidence: assessment.confidence,
-        ambiguities: assessment.ambiguities,
-        affectedMeasures,
-        plan: normalizedPlan,
-        riskReasons,
-        validatorFindings: criticWarnings,
-        requiresConfirmation: true,
-        rawIntent: plannerResult.intent,
-        workflow: workflow.kind,
-        workflowLabel: workflow.label,
-      };
-    }
-  }
   const respondWithLocalMusicianIntent = (localIntent: ParsedIntentJson): RunAiCommandPipelineSuccessResult => {
     const repaired = repairCommandBatch(localIntent.commands ?? []);
     const affectedMeasures = collectAffectedMeasures(repaired.validCommands);
@@ -648,6 +595,90 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
     };
   };
 
+  const buildLocalArrangementFallback = () => (workflow.kind === 'arrangement-assist'
+    ? buildMusicianChatResponse({
+      message: workflow.cleanedMessage,
+      workflow: workflow.kind,
+      documentState,
+      selection,
+      sessionContext,
+    })
+    : null);
+
+  if (workflow.kind === 'arrangement-assist') {
+    const localPriorityResponse = buildMusicianChatResponse({
+      message: workflow.cleanedMessage,
+      workflow: workflow.kind,
+      documentState,
+      selection,
+      sessionContext,
+      arrangementScope: shouldPreferLocalArrangementPreview(workflow.cleanedMessage) ? 'full' : 'materialized-only',
+    });
+    if (localPriorityResponse) return respondWithLocalMusicianIntent(localPriorityResponse);
+
+    const plannerResult = await planArrangementWithLlm({
+      message: workflow.cleanedMessage,
+      provider,
+      ollamaModel,
+      ask,
+      documentState,
+      context,
+      selection,
+      sessionContext,
+    });
+    if (plannerResult) {
+      const repaired = repairCommandBatch(plannerResult.intent.commands ?? []);
+      const affectedMeasures = collectAffectedMeasures(repaired.validCommands);
+      const assessment = assessAiPlan(plannerResult.intent, {
+        commands: repaired.validCommands,
+        affectedMeasures,
+        workflow: workflow.kind,
+      });
+      const normalizedPlan = normalizeAiPlan(assessment.plan, workflow);
+      const criticWarnings = [
+        ...plannerResult.criticIssues.map((issue) => issue.message),
+        ...plannerResult.realizerIssues.map((issue) => `${issue.code}: ${issue.message}`),
+      ];
+      const riskReasons = [
+        ...assessment.riskReasons,
+        ...(plannerResult.criticIssues.some((issue) => issue.severity === 'error')
+          ? ['Arrangement planner kept unresolved critic findings after repair attempts']
+          : []),
+        ...(plannerResult.realizerIssues.length > 0
+          ? ['Arrangement voicing could not be materialized as notes; falling back to chord symbols']
+          : []),
+      ];
+      return {
+        xml,
+        coreDocument: documentState.coreDocument,
+        diagnostics: [
+          ...documentState.diagnostics,
+          ...createRepairDiagnostics(repaired.droppedCommands),
+        ],
+        explanation: plannerResult.intent.explanation,
+        context,
+        commands: repaired.validCommands,
+        operations: repaired.validCommands,
+        provider: plannerResult.provider,
+        model: plannerResult.model,
+        latencyMs: plannerResult.latencyMs,
+        confidence: assessment.confidence,
+        ambiguities: assessment.ambiguities,
+        affectedMeasures,
+        plan: normalizedPlan,
+        riskReasons,
+        validatorFindings: criticWarnings,
+        requiresConfirmation: true,
+        rawIntent: plannerResult.intent,
+        workflow: workflow.kind,
+        workflowLabel: workflow.label,
+      };
+    }
+
+    const arrangementFallback = buildLocalArrangementFallback();
+    if (arrangementFallback) return respondWithLocalMusicianIntent(arrangementFallback);
+  }
+
   // For arrangement requests, only the precise materialized local path may
   // pre-empt the model; the generic chord-symbol heuristic stays available as
   // a fallback when the model fails (see buildLocalArrangementFallback).
@@ -661,15 +692,6 @@ export async function runAiCommandPipeline(params: RunAiCommandPipelineParams): 
   });
   if (localMusicianResponse) return respondWithLocalMusicianIntent(localMusicianResponse);
 
-  const buildLocalArrangementFallback = () => (workflow.kind === 'arrangement-assist'
-    ? buildMusicianChatResponse({
-      message: workflow.cleanedMessage,
-      workflow: workflow.kind,
-      documentState,
-      selection,
-      sessionContext,
-    })
-    : null);
   if (workflow.kind === 'layout-cleanup' && documentState.coreDocument) {
     const parsed = generateLayoutCleanupIntent(documentState.coreDocument, workflow.cleanedMessage);
     const repaired = repairCommandBatch(parsed.commands ?? []);

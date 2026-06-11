@@ -105,8 +105,15 @@ function selectMelodyProjection(context: {
   return { preview: first?.preview, abcSnippet: first?.abcSnippet };
 }
 
-function shouldUseArrangementPlanner(message: string) {
-  return /\b(3-?voice(?:d)?|three(?: |-)?voice(?:d)?|three(?: |-)?part|dreistimm\w*|dreisatz|close(?: |-)?voicing|reharmoni\w*|generalbass|figured bass|voicing)\b/i.test(message);
+function hasUsableMelodySource(context: {
+  melodicContext?: {
+    selectedMelody?: { preview: string; abcSnippet?: string };
+    primaryVoice?: { preview: string; abcSnippet?: string };
+    voicePreviews: Array<{ preview: string; abcSnippet?: string }>;
+  };
+}) {
+  const source = selectMelodyProjection(context);
+  return Boolean(source.preview?.trim() || source.abcSnippet?.trim());
 }
 
 function buildArrangementSpec(params: {
@@ -292,7 +299,7 @@ export async function planArrangementWithLlm(params: {
   sessionContext?: AiSessionContext;
 }) {
   const { message, provider, ollamaModel, ask, documentState, context, sessionContext } = params;
-  if (!shouldUseArrangementPlanner(message)) return null;
+  if (!hasUsableMelodySource(context)) return null;
 
   const spec = buildArrangementSpec({ message, documentState, context });
   const melodyProjection = selectMelodyProjection(context);
