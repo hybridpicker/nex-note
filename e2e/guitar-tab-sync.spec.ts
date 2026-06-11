@@ -223,3 +223,41 @@ test('dragging a TAB fret to another string keeps the pitch and recomputes the f
     notationPitch: 'B4',
   });
 });
+
+test('note input hover shows no notehead ghost over the TAB staff @smoke', async ({ page }) => {
+  await page.addInitScript(({ xml }) => {
+    localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'separate-parts-tab-hover.musicxml' }));
+  }, { xml: SEPARATE_PARTS_TAB_XML });
+
+  await page.goto('/?debug=true&visual-debug=true');
+  await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('svg text').filter({ hasText: /^7$/ }).first()).toBeVisible();
+  await page.locator('[data-testid="score-viewport"]').focus();
+
+  await page.keyboard.press('N');
+  await expect.poll(async () => page.evaluate(() => (
+    (window as typeof window & { __NEX_NOTE_E2E_STATE__?: { noteInputMode?: boolean } }).__NEX_NOTE_E2E_STATE__?.noteInputMode ?? null
+  ))).toBe(true);
+
+  const overlays = await page.evaluate(() => (
+    Array.from(document.querySelectorAll('[data-measure-number="1"]')).map((el) => {
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      return { id: (el as HTMLElement).dataset.measureId ?? '', x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    })
+  ));
+  const notation = overlays.find((overlay) => overlay.id.includes('P1'));
+  const tab = overlays.find((overlay) => overlay.id.includes('P2'));
+  expect(notation).toBeTruthy();
+  expect(tab).toBeTruthy();
+  if (!notation || !tab) return;
+
+  const ghost = page.locator('[data-testid="ghost-note-preview"]');
+
+  // Hovering the notation staff shows the regular notehead ghost.
+  await page.mouse.move(notation.x + notation.width * 0.45, notation.y + notation.height * 0.5, { steps: 4 });
+  await expect(ghost).toHaveCount(1);
+
+  // Hovering the TAB staff must not offer a pitch-notehead ghost.
+  await page.mouse.move(tab.x + tab.width * 0.45, tab.y + tab.height * 0.5, { steps: 4 });
+  await expect(ghost).toHaveCount(0);
+});

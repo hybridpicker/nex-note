@@ -951,17 +951,37 @@ interface DragTransposeSession {
   pulseToken: number;
 }
 
-function isTabStaffSelectedNote(coreDocument: ScoreDocumentModel | null, note: SelectedNote) {
+function isTabStaffTarget(
+  coreDocument: ScoreDocumentModel | null,
+  target: { corePartId?: string | null; measureId?: string | null; staffIndex: number },
+) {
   if (!coreDocument) return false;
-  const parts = note.corePartId
-    ? coreDocument.score.parts.filter((part) => part.id === note.corePartId)
-    : coreDocument.score.parts;
+  const parts = coreDocument.score.parts.filter((part) => (
+    target.corePartId
+      ? part.id === target.corePartId
+      : !target.measureId || part.staves.some((staff) => staff.measures.some((measure) => measure.id === target.measureId))
+  ));
   return parts.some((part) => part.staves.some((staff) => (
-    staff.staffIndex === note.staffIndex
+    staff.staffIndex === target.staffIndex
     && staff.measures.some((measure) => measure.attributes.some((attribute) => (
-      attribute.clefs.some((clef) => clef.staffIndex === note.staffIndex && clef.sign?.toUpperCase() === 'TAB')
+      attribute.clefs.some((clef) => clef.staffIndex === target.staffIndex && clef.sign?.toUpperCase() === 'TAB')
     )))
   )));
+}
+
+function isTabStaffSelectedNote(coreDocument: ScoreDocumentModel | null, note: SelectedNote) {
+  return isTabStaffTarget(coreDocument, {
+    corePartId: note.corePartId,
+    measureId: note.coreMeasureId,
+    staffIndex: note.staffIndex,
+  });
+}
+
+/** Notehead hover ghosts carry pitch semantics that do not exist on a TAB
+ * staff — suppress them there (TAB entry works via fret input and drag). */
+function suppressGhostOnTabStaff(coreDocument: ScoreDocumentModel | null, target: GhostNoteTarget | null) {
+  if (!target || target.tabFret != null) return target;
+  return isTabStaffTarget(coreDocument, target) ? null : target;
 }
 
 function approximatelyEqual(a: number, b: number, epsilon = 0.5) {
@@ -11688,7 +11708,10 @@ export default function ScoreEditor({
           staffDetailsByMeasureRef.current,
         )
       : null;
-    const nextGhost = ghostRejectedByGuards ? guardedRestFallback : (nextGhostResolved ?? guardedRestFallback);
+    const nextGhost = suppressGhostOnTabStaff(
+      coreDocument,
+      ghostRejectedByGuards ? guardedRestFallback : (nextGhostResolved ?? guardedRestFallback),
+    );
     setGhostNoteTarget((current) => {
       visibleGhostPointerLockRef.current = nextGhost;
       lastGhostStaffIndexRef.current = nextGhost?.staffIndex ?? lastGhostStaffIndexRef.current;
@@ -13238,7 +13261,10 @@ export default function ScoreEditor({
           staffDetailsByMeasureRef.current,
         )
       : null;
-    const nextGhost2 = ghostRejectedByGuards2 ? guardedRestFallback2 : (nextGhostResolved2 ?? guardedRestFallback2);
+    const nextGhost2 = suppressGhostOnTabStaff(
+      coreDocument,
+      ghostRejectedByGuards2 ? guardedRestFallback2 : (nextGhostResolved2 ?? guardedRestFallback2),
+    );
     setGhostNoteTarget((current) => {
       lastGhostStaffIndexRef.current = nextGhost2?.staffIndex ?? lastGhostStaffIndexRef.current;
       if (ghostTargetsEqual(current, nextGhost2)) return current;
