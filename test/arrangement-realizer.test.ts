@@ -165,6 +165,75 @@ test('realizeArrangement materializes a simple three-voice voicing into the scor
   assert.ok(voices.every((voice) => voice.events.some((event) => event.kind === 'note')));
 });
 
+test('buildRealizationPlan preserves an existing score melody voice instead of overwriting it', () => {
+  const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
+  assert.ok(fixture);
+  if (!fixture) return;
+  const melodyXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const documentState = buildDocumentState(melodyXml);
+  const voicingCandidate = fixture.response.voicingCandidates[0];
+  assert.ok(voicingCandidate);
+  if (!voicingCandidate) return;
+  const spec: ArrangementSpec = {
+    ...fixture.response.spec,
+    sourceMelody: {
+      ...fixture.response.spec.sourceMelody,
+      source: 'primary-voice',
+      partId: 'P1',
+      voiceId: 1,
+    },
+  };
+
+  const built = buildRealizationPlan({
+    documentState,
+    spec,
+    voicingCandidate,
+    harmonicCandidate: fixture.response.harmonicPlanCandidates[0],
+  });
+
+  assert.ok(built.plan);
+  if (!built.plan) return;
+  // Voice 1 holds the user's melody and must stay out of the realized voices.
+  assert.deepEqual(built.plan.target.voiceIds, [2, 3]);
+  assert.ok(built.plan.events.every((event) => event.voiceId !== 1));
+
+  const commands = emitScoreCommandsFromRealizationPlan(built.plan);
+  assert.equal(commands.filter((command) => command.type === 'deleteRange').length, 2);
+  assert.ok(commands.every((command) => command.type !== 'deleteRange' || command.range.start.voiceId !== 1));
+  assert.ok(commands.every((command) => command.type !== 'insertNoteAt' || command.voiceId !== 1));
+
+  const realized = realizeArrangement({
+    documentState,
+    spec,
+    voicingCandidate,
+    harmonicCandidate: fixture.response.harmonicPlanCandidates[0],
+  });
+  assert.equal(realized.valid, true);
+  const voices = realized.documentState?.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices ?? [];
+  assert.deepEqual(voices.map((voice) => voice.voiceId).sort((left, right) => left - right), [1, 2, 3]);
+  const melodyVoice = voices.find((voice) => voice.voiceId === 1);
+  const melodyNote = melodyVoice?.events.find((event) => event.kind === 'note');
+  // The original E5 whole note survives untouched.
+  assert.equal(melodyNote?.kind, 'note');
+  assert.equal(melodyNote?.pitch.step, 'E');
+  assert.equal(melodyNote?.pitch.octave, 5);
+});
+
 test('buildRealizationPlan scopes materialized voices to the requested source part', () => {
   const fixture = PLANNER_RESPONSE_FIXTURES.find((entry) => entry.name === 'generalbass-outer-voice-valid');
   assert.ok(fixture);

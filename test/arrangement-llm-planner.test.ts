@@ -196,8 +196,13 @@ test('planArrangementWithLlm runs harmony, voicing, then repair while keeping ha
   assert.ok(result.intent.commands?.some((command) => (command as { type?: string }).type === 'addChords'));
   assert.deepEqual(result.realizerIssues, []);
   const insertedNotes = (result.intent.commands ?? []).filter((command) => (command as { type?: string }).type === 'insertNoteAt');
-  assert.ok(insertedNotes.length >= 6, 'expected the critic-checked voicing to be materialized as note commands');
-  assert.ok(result.intent.commands?.some((command) => (command as { type?: string }).type === 'deleteRange'));
+  assert.ok(insertedNotes.length >= 4, 'expected the critic-checked harmony voices to be materialized as note commands');
+  // The score already holds the melody in voice 1, so the arrangement must add
+  // harmony around it rather than overwrite it: no realized command touches voice 1.
+  assert.ok(insertedNotes.every((command) => (command as { voiceId?: number }).voiceId !== 1));
+  const deleteRanges = (result.intent.commands ?? []).filter((command) => (command as { type?: string }).type === 'deleteRange');
+  assert.ok(deleteRanges.length > 0);
+  assert.ok(deleteRanges.every((command) => (command as { range?: { start?: { voiceId?: number } } }).range?.start?.voiceId !== 1));
 });
 
 test('runAiCommandPipeline uses the LLM arrangement planner for advanced style-aware requests', async () => {

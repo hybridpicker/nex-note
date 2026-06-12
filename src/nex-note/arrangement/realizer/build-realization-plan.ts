@@ -306,9 +306,27 @@ export function buildRealizationPlan(params: {
   }
 
   const timingMap = buildMeasureTimingMap(staff);
-  const voiceIds = [...new Set(
+  const allVoiceIds = [...new Set(
     slices.flatMap((slice) => slice.voices.map((voice) => voice.voiceIndex)),
   )].sort((left, right) => left - right);
+
+  // When the melody already lives in the score (primary voice or an explicit
+  // selection), keep that voice untouched and only materialize the added
+  // harmony voices around it. Overwriting it would replace the user's melody
+  // with the model's text-reconstruction, which local models reproduce
+  // unreliably. Inline melodies supplied via chat have no score voice to
+  // protect, so they are written out in full.
+  const preservedMelodyVoiceId = (
+    spec.sourceMelody.source !== 'chat-inline'
+    && typeof spec.sourceMelody.voiceId === 'number'
+    && allVoiceIds.includes(spec.sourceMelody.voiceId)
+    && allVoiceIds.length > 1
+  )
+    ? spec.sourceMelody.voiceId
+    : null;
+  const voiceIds = preservedMelodyVoiceId !== null
+    ? allVoiceIds.filter((voiceId) => voiceId !== preservedMelodyVoiceId)
+    : allVoiceIds;
   target.voiceIds = voiceIds;
   target.measureRange = {
     start: Math.min(...slices.map((slice) => slice.measure)),
