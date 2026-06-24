@@ -49,6 +49,7 @@ Editing strategy:
 
 Commands:
 - {"type":"removeArticulations"} — removes dynamics, accents, staccato, tenuto, fermata, octave shifts (8va/8vb)
+- {"type":"setArticulationPlacement","articulation":"accent","placement":"below","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4} — places an existing selected articulation or fermata above/below
 - {"type":"setKey","fifths":N} — key: 0=C,1=G,2=D,3=A,-1=F,-2=Bb,-3=Eb
 - {"type":"transposeDocumentChromatic","semitones":N} — transpose all written notes in the whole score
 - {"type":"setTempo","bpm":N}

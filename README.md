@@ -49,7 +49,7 @@ The core value is:
 - Import `.musicxml`, `.xml`, `.mxl`, `.mscz`, GuitarPro files, MIDI, and `.nxn` project files. PDF/photo import is assisted and review-based.
 - Render MusicXML in-browser with OpenSheetMusicDisplay.
 - Edit notes directly with MuseScore-style keyboard and mouse workflows.
-- Use selection ranges, transpose tools, dynamics, articulations, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and layout hints.
+- Use selection ranges, transpose tools, dynamics, articulations with placement controls, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and layout hints.
 - Use an AI assistant with Ollama, Claude, Gemini, or benchmark mode.
 - Preview and confirm risky AI edits before applying them.
 - Run validator-guided repair when AI output introduces notation diagnostics.

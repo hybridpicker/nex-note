@@ -49,6 +49,7 @@ export type LegacyScoreOperation =
   | ({ type: 'toggleStemDirection' } & NoteLocatorLike)
   | ({ type: 'setGuitarFret'; string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } & NoteLocatorLike)
   | ({ type: 'toggleGuitarTechnique'; technique: string } & NoteLocatorLike)
+  | ({ type: 'setArticulationPlacement'; articulation: string; placement?: 'above' | 'below' } & NoteLocatorLike)
   | ({ type: 'setSlurPlacement'; placement: 'above' | 'below'; stopLocator: NoteLocatorLike } & NoteLocatorLike)
   | { type: 'addRehearsalMark'; text: string; measureNumber: number }
   | { type: 'addRehearsalMarksEvery'; interval: number; startMeasureNumber?: number; endMeasureNumber?: number; style?: 'letters' | 'numbers' }
@@ -171,7 +172,7 @@ export type LegacyScoreOperation =
       clipboardData: ScoreClipboardPayload;
       mode: 'insert' | 'overwrite';
     }
-  | ({ type: 'addFermata' } & NoteLocatorLike)
+  | ({ type: 'addFermata'; placement?: 'above' | 'below' } & NoteLocatorLike)
   | ({ type: 'removeFermata' } & NoteLocatorLike)
   | ({ type: 'addTremolo'; lines: 1 | 2 | 3; tremoloType: 'single' | 'start' | 'stop' } & NoteLocatorLike)
   | {
@@ -257,6 +258,7 @@ const NOTE_EDIT_TYPES = new Set([
   'setGuitarFret',
   'toggleGuitarTechnique',
   'toggleArticulation',
+  'setArticulationPlacement',
   'clearArticulations',
   'addDynamic',
   'toggleTie',
@@ -378,7 +380,7 @@ function getCategory(type: string): ScoreCommandCategory {
   if (['setSwing'].includes(type)) return 'layoutHints';
   if (['setInstrumentChange', 'setMultiMeasureRest'].includes(type)) return 'structure';
   if (['addGuitarBend', 'addGuitarTap'].includes(type)) return 'notation';
-  if (['removeArticulations', 'toggleArticulation', 'clearArticulations', 'clearRangeArticulations', 'addDynamic', 'toggleTie', 'setTiePlacement', 'toggleSlur', 'setSlurPlacement', 'addWords', 'addExpressionText', 'addAnalysisAnnotation', 'addTechniqueInstruction', 'addSyncPoint', 'addOrchestrationNote', 'addRehearsalMark', 'addRehearsalMarksEvery', 'removeDirection', 'setHarmonyAt', 'setNoteStyle', 'toggleStemDirection', 'setGuitarFret', 'toggleGuitarTechnique', 'fillSlashMeasure', 'setLyricLine', 'removeLyricLine', 'addTuplet', 'addGraceNote', 'removeGraceNote', 'addFingering', 'addOrnament', 'addWedge', 'addPedalSpan', 'addOttava', 'addFermata', 'removeFermata', 'addTremolo', 'addGlissando', 'addArpeggio'].includes(type)) return 'notation';
+  if (['removeArticulations', 'toggleArticulation', 'setArticulationPlacement', 'clearArticulations', 'clearRangeArticulations', 'addDynamic', 'toggleTie', 'setTiePlacement', 'toggleSlur', 'setSlurPlacement', 'addWords', 'addExpressionText', 'addAnalysisAnnotation', 'addTechniqueInstruction', 'addSyncPoint', 'addOrchestrationNote', 'addRehearsalMark', 'addRehearsalMarksEvery', 'removeDirection', 'setHarmonyAt', 'setNoteStyle', 'toggleStemDirection', 'setGuitarFret', 'toggleGuitarTechnique', 'fillSlashMeasure', 'setLyricLine', 'removeLyricLine', 'addTuplet', 'addGraceNote', 'removeGraceNote', 'addFingering', 'addOrnament', 'addWedge', 'addPedalSpan', 'addOttava', 'addFermata', 'removeFermata', 'addTremolo', 'addGlissando', 'addArpeggio'].includes(type)) return 'notation';
   return 'content';
 }
 
@@ -555,6 +557,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
     case 'deleteNote':
     case 'rippleDelete':
     case 'toggleArticulation':
+    case 'setArticulationPlacement':
     case 'clearArticulations':
     case 'addDynamic':
     case 'toggleTie':
@@ -571,7 +574,12 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
         ensureString(command, 'durationType', issues);
         ensureBoolean(command, 'isDotted', issues);
       }
-      if (type === 'toggleArticulation') ensureString(command, 'articulation', issues);
+      if (type === 'toggleArticulation' || type === 'setArticulationPlacement') {
+        ensureString(command, 'articulation', issues);
+      }
+      if ((type === 'toggleArticulation' || type === 'setArticulationPlacement') && command.placement != null && !['above', 'below'].includes(String(command.placement))) {
+        issues.push('placement must be above or below');
+      }
       if (type === 'addDynamic') {
         ensureString(command, 'dynamic', issues);
         if (command.placement != null && !['above', 'below'].includes(String(command.placement))) {
@@ -849,6 +857,9 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
     case 'addFermata':
     case 'removeFermata':
       ensureLocator(command, issues);
+      if (command.type === 'addFermata' && command.placement != null && !['above', 'below'].includes(String(command.placement))) {
+        issues.push('placement must be above or below');
+      }
       break;
     case 'addTremolo':
       ensureLocator(command, issues);

@@ -53,6 +53,40 @@ function normalizePlacement(value: string | null | undefined): 'above' | 'below'
   return undefined;
 }
 
+function normalizeFermataPlacement(element: XmlElement | undefined): 'above' | 'below' | undefined {
+  if (!element) return undefined;
+  const explicit = normalizePlacement(element.getAttribute('placement') ?? element.getAttribute('orientation'));
+  if (explicit) return explicit;
+  const type = element.getAttribute('type');
+  if (type === 'upright') return 'above';
+  if (type === 'inverted') return 'below';
+  return undefined;
+}
+
+function readArticulationElements(note: XmlElement) {
+  const articulations: string[] = [];
+  const placements: Record<string, 'above' | 'below'> = {};
+
+  for (const container of Array.from(note.getElementsByTagName('articulations'))) {
+    for (const child of Array.from(container.childNodes)) {
+      if (child.nodeType !== 1) continue;
+      const element = child as XmlElement;
+      articulations.push(element.tagName);
+      const placement = normalizePlacement(
+        element.getAttribute('placement')
+          ?? element.getAttribute('orientation')
+          ?? element.getAttribute('direction'),
+      );
+      if (placement) placements[element.tagName] = placement;
+    }
+  }
+
+  return {
+    articulations,
+    placements: Object.keys(placements).length > 0 ? placements : undefined,
+  };
+}
+
 function serializeElement(element: XmlElement) {
   return new XMLSerializer().serializeToString(element);
 }
@@ -692,10 +726,19 @@ function buildVoices(
     const guitar = readGuitarTechnical(note);
     const eventId = makeId('event', partId, measureNumber, staffIndex, voiceId, timestampNum, timestampDen, eventsByVoice.get(voiceId)?.length ?? 0);
     const notations = note.getElementsByTagName('notations')[0];
+    const fermataEl = Array.from(notations?.childNodes ?? []).find(
+      (child) => child.nodeType === 1 && (child as XmlElement).tagName === 'fermata',
+    ) as XmlElement | undefined;
     const tiedStart = Array.from(notations?.getElementsByTagName('tied') ?? [])
       .find((tied) => tied.getAttribute('type') === 'start');
     const tieStart = Array.from(note.getElementsByTagName('tie')).some((tie) => tie.getAttribute('type') === 'start')
       || Boolean(tiedStart);
+    const articulationInfo = readArticulationElements(note);
+    const fermataPlacement = normalizeFermataPlacement(fermataEl);
+    const articulationPlacements = {
+      ...(articulationInfo.placements ?? {}),
+      ...(fermataPlacement ? { fermata: fermataPlacement } : {}),
+    };
 
     const baseEvent = {
       id: eventId,
@@ -711,9 +754,8 @@ function buildVoices(
       hidden: note.getAttribute('print-object') === 'no' || undefined,
       notehead: noteheadText === 'slash' ? 'slash' : undefined,
       stem: modeledStem,
-      articulations: Array.from(note.getElementsByTagName('articulations')[0]?.childNodes ?? [])
-        .filter((child): child is XmlElement => child.nodeType === 1)
-        .map((child) => child.tagName),
+      articulations: articulationInfo.articulations,
+      articulationPlacements: Object.keys(articulationPlacements).length > 0 ? articulationPlacements : undefined,
       tieStart,
       tiePlacement: tieStart
         ? normalizePlacement(tiedStart?.getAttribute('placement') ?? tiedStart?.getAttribute('orientation'))

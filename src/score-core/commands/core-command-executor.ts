@@ -45,6 +45,7 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'transposeChromatic',
   'transposeRangeChromatic',
   'toggleArticulation',
+  'setArticulationPlacement',
   'clearArticulations',
   'clearRangeArticulations',
   'toggleTie',
@@ -153,6 +154,28 @@ function defaultStemDirection(document: ScoreDocumentModel, event: TimedEvent): 
   const middleLine = clefMiddleLineDiatonicIndex(clef.sign, clef.line);
   const pitch = diatonicPitchIndex(event.pitch.step, event.pitch.octave);
   return pitch < middleLine ? 'up' : 'down';
+}
+
+function setEventArticulationPlacement(
+  event: TimedEvent,
+  articulation: string,
+  placement?: 'above' | 'below',
+) {
+  const nextPlacements = { ...(event.articulationPlacements ?? {}) };
+  if (placement) nextPlacements[articulation] = placement;
+  else delete nextPlacements[articulation];
+  event.articulationPlacements = Object.keys(nextPlacements).length > 0 ? nextPlacements : undefined;
+}
+
+function clearEventArticulationPlacement(event: TimedEvent, articulation: string) {
+  if (!event.articulationPlacements?.[articulation]) return;
+  setEventArticulationPlacement(event, articulation, undefined);
+}
+
+function clearEventArticulations(document: ScoreDocumentModel, event: TimedEvent) {
+  event.articulations = [];
+  event.articulationPlacements = undefined;
+  document.fermataEventIds.delete(event.id);
 }
 
 export function supportsCoreExecution(command: ValidatedScoreCommand) {
@@ -2173,6 +2196,7 @@ function buildTimelineFragmentsForEvent(
     const overrides: Partial<TimedEvent> = {
       id: fragmentId,
       articulations: isFirst ? [...(entry.event.articulations ?? [])] : [],
+      articulationPlacements: isFirst ? structuredClone(entry.event.articulationPlacements) : undefined,
       lyrics: isFirst ? structuredClone(entry.event.lyrics ?? []) : [],
       preservedXml: isFirst ? structuredClone(entry.event.preservedXml) : undefined,
     };
@@ -3041,7 +3065,7 @@ export function executeCoreCommands(
             staff.measures.forEach((measure) => {
               measure.voices.forEach((voice) => {
                 voice.events.forEach((event) => {
-                  event.articulations = [];
+                  clearEventArticulations(nextDocument, event);
                 });
               });
               measure.directions = measure.directions.filter((direction) => !['dynamics', 'octave-shift'].includes(direction.kind));
@@ -3578,17 +3602,48 @@ export function executeCoreCommands(
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
+          if (command.articulation === 'fermata') {
+            if (nextDocument.fermataEventIds.has(event.id)) {
+              nextDocument.fermataEventIds.delete(event.id);
+              clearEventArticulationPlacement(event, 'fermata');
+            } else {
+              nextDocument.fermataEventIds.add(event.id);
+              if (command.placement === 'above' || command.placement === 'below') {
+                setEventArticulationPlacement(event, 'fermata', command.placement);
+              }
+            }
+            break;
+          }
           const articulations = new Set(event.articulations ?? []);
-          if (articulations.has(command.articulation)) articulations.delete(command.articulation);
-          else articulations.add(command.articulation);
+          if (articulations.has(command.articulation)) {
+            articulations.delete(command.articulation);
+            clearEventArticulationPlacement(event, command.articulation);
+          } else {
+            articulations.add(command.articulation);
+            if (command.placement === 'above' || command.placement === 'below') {
+              setEventArticulationPlacement(event, command.articulation, command.placement);
+            }
+          }
           event.articulations = [...articulations];
+        }
+        break;
+      }
+      case 'setArticulationPlacement': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (!event) break;
+        const articulationExists = command.articulation === 'fermata'
+          ? nextDocument.fermataEventIds.has(event.id)
+          : (event.articulations ?? []).includes(command.articulation);
+        if (articulationExists) {
+          setEventArticulationPlacement(event, command.articulation, command.placement);
         }
         break;
       }
       case 'clearArticulations': {
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (event) event.articulations = [];
+        if (event) clearEventArticulations(nextDocument, event);
         break;
       }
       case 'clearRangeArticulations': {
@@ -3597,7 +3652,7 @@ export function executeCoreCommands(
         const targets = collectEventsInRange(nextDocument, range);
         targets.forEach(({ voice, eventIndex }) => {
           const event = voice.events[eventIndex];
-          if (event) event.articulations = [];
+          if (event) clearEventArticulations(nextDocument, event);
         });
         break;
       }
@@ -4636,6 +4691,9 @@ export function executeCoreCommands(
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           nextDocument.fermataEventIds.add(event.id);
+          if (command.placement === 'above' || command.placement === 'below') {
+            setEventArticulationPlacement(event, 'fermata', command.placement);
+          }
         }
         break;
       }
@@ -4644,6 +4702,7 @@ export function executeCoreCommands(
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           nextDocument.fermataEventIds.delete(event.id);
+          clearEventArticulationPlacement(event, 'fermata');
         }
         break;
       }

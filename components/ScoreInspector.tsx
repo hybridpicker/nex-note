@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EditorSelection, SelectedNote } from '@/hooks/useNoteEditor';
-import type { DynamicKind } from '@/lib/note-editor';
+import type { ArticulationKind, DynamicKind } from '@/lib/note-editor';
 import { summarizeScoreDocument, type ScoreCommand } from '@/lib/score-commands';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { findEventReference } from '@/src/score-core/query/note-editor';
@@ -49,6 +49,14 @@ const PRINT_LAYOUT_PRESETS = [
 ];
 
 const DYNAMIC_CHOICES: DynamicKind[] = ['pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz'];
+const ARTICULATION_LABELS: Record<string, string> = {
+  staccato: 'Staccato',
+  staccatissimo: 'Staccatissimo',
+  accent: 'Accent',
+  'strong-accent': 'Marcato',
+  tenuto: 'Tenuto',
+  fermata: 'Fermata',
+};
 
 type InspectorSectionId =
   | 'selection'
@@ -207,6 +215,31 @@ function resolveSelectedTie(
   };
 }
 
+function resolveSelectedArticulations(
+  coreDocument: ScoreDocumentModel | null,
+  selectedNote: SelectedNote | null,
+): Array<{ kind: ArticulationKind; label: string; placement: 'above' | 'below' }> {
+  if (!coreDocument || !selectedNote || selectedNote.isRest) return [];
+  const event = findEventReference(coreDocument, selectedNote)?.event;
+  if (!event?.id) return [];
+  const kinds = new Set<string>(event.articulations ?? []);
+  if (coreDocument.fermataEventIds.has(event.id)) kinds.add('fermata');
+  return [...kinds]
+    .filter((kind): kind is ArticulationKind => (
+      kind === 'staccato'
+      || kind === 'staccatissimo'
+      || kind === 'accent'
+      || kind === 'strong-accent'
+      || kind === 'tenuto'
+      || kind === 'fermata'
+    ))
+    .map((kind) => ({
+      kind,
+      label: ARTICULATION_LABELS[kind] ?? kind,
+      placement: event.articulationPlacements?.[kind] === 'below' ? 'below' : 'above',
+    }));
+}
+
 function buildPerNoteCommands(
   selectedNotes: SelectedNote[],
   mapNote: (note: SelectedNote) => ScoreCommand,
@@ -274,6 +307,8 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   const [textPlacement, setTextPlacement] = useState<'above' | 'below'>('above');
   const [dynamicMarking, setDynamicMarking] = useState<DynamicKind>('mf');
   const [dynamicPlacement, setDynamicPlacement] = useState<'above' | 'below'>('below');
+  const [articulationPlacementKind, setArticulationPlacementKind] = useState<ArticulationKind | ''>('');
+  const [articulationPlacement, setArticulationPlacement] = useState<'above' | 'below'>('above');
   const [tiePlacement, setTiePlacement] = useState<'above' | 'below'>('above');
   const [slurPlacement, setSlurPlacement] = useState<'above' | 'below'>('above');
   const [title, setTitle] = useState('');
@@ -304,6 +339,8 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   const pitchedSelection = useMemo(() => sortSelection(selectedNotes).filter((note) => !note.isRest), [selectedNotes]);
   const selectedTie = useMemo(() => resolveSelectedTie(coreDocument, selectedNote), [coreDocument, selectedNote]);
   const selectedSlur = useMemo(() => resolveSelectedSlur(coreDocument, selectedNotes), [coreDocument, selectedNotes]);
+  const selectedArticulations = useMemo(() => resolveSelectedArticulations(coreDocument, selectedNote), [coreDocument, selectedNote]);
+  const selectedArticulationKey = selectedArticulations.map((entry) => `${entry.kind}:${entry.placement}`).join('|');
   const range = useMemo(() => buildSelectionRange(selectedNotes), [selectedNotes]);
   const summary = useMemo(() => {
     if (coreDocument) {
@@ -368,6 +405,13 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   useEffect(() => {
     setTiePlacement(selectedTie?.placement ?? 'above');
   }, [selectedTie?.placement]);
+
+  useEffect(() => {
+    const current = selectedArticulations.find((entry) => entry.kind === articulationPlacementKind)
+      ?? selectedArticulations[0];
+    setArticulationPlacementKind(current?.kind ?? '');
+    setArticulationPlacement(current?.placement ?? 'above');
+  }, [selectedArticulationKey]);
 
   const submitRehearsalMark = () => {
     if (!rehearsalText.trim()) return;
@@ -663,6 +707,54 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
               ) : null}
             </div>
           )}
+          {selectedNote && selectedArticulations.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <label className="sr-only" htmlFor="inspector-articulation-kind">Articulation</label>
+              <select
+                id="inspector-articulation-kind"
+                value={articulationPlacementKind}
+                onChange={(event) => {
+                  const nextKind = event.target.value as ArticulationKind;
+                  const nextArticulation = selectedArticulations.find((entry) => entry.kind === nextKind);
+                  setArticulationPlacementKind(nextKind);
+                  setArticulationPlacement(nextArticulation?.placement ?? 'above');
+                }}
+                className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-900"
+              >
+                {selectedArticulations.map((entry) => (
+                  <option key={entry.kind} value={entry.kind}>{entry.label}</option>
+                ))}
+              </select>
+              <label className="sr-only" htmlFor="inspector-articulation-placement">Articulation placement</label>
+              <select
+                id="inspector-articulation-placement"
+                value={articulationPlacement}
+                onChange={(event) => setArticulationPlacement(event.target.value === 'below' ? 'below' : 'above')}
+                className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-900"
+              >
+                <option value="above">Articulation above</option>
+                <option value="below">Articulation below</option>
+              </select>
+              <button
+                onClick={() => {
+                  if (!articulationPlacementKind) return;
+                  onApplyCommands([{
+                    type: 'setArticulationPlacement',
+                    articulation: articulationPlacementKind,
+                    placement: articulationPlacement,
+                    measureNumber: selectedNote.measureNumber,
+                    staffIndex: selectedNote.staffIndex,
+                    voiceId: selectedNote.voiceId,
+                    timestampNum: selectedNote.timestampNum,
+                    timestampDen: selectedNote.timestampDen,
+                  }], `Set ${ARTICULATION_LABELS[articulationPlacementKind] ?? articulationPlacementKind} ${articulationPlacement}`);
+                }}
+                className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-medium text-stone-800 hover:bg-stone-200"
+              >
+                Apply articulation placement
+              </button>
+            </div>
+          ) : null}
           {selectedTie ? (
             <div className="mt-2 flex flex-wrap gap-2">
               <label className="sr-only" htmlFor="inspector-tie-placement">Tie placement</label>

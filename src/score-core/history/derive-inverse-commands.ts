@@ -318,6 +318,24 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
         timestampDen: command.timestampDen,
         articulation: command.articulation,
       });
+    case 'setArticulationPlacement': {
+      const previous = findEvent(document, command);
+      if (!previous) return null;
+      const hasArticulation = command.articulation === 'fermata'
+        ? document.fermataEventIds.has(previous.id)
+        : (previous.articulations ?? []).includes(command.articulation);
+      if (!hasArticulation) return null;
+      return stripEnvelopeMeta({
+        type: 'setArticulationPlacement',
+        measureNumber: command.measureNumber,
+        staffIndex: command.staffIndex,
+        voiceId: command.voiceId,
+        timestampNum: command.timestampNum,
+        timestampDen: command.timestampDen,
+        articulation: command.articulation,
+        placement: previous.articulationPlacements?.[command.articulation],
+      });
+    }
     case 'transposeDocumentChromatic':
       return stripEnvelopeMeta({ type: 'transposeDocumentChromatic', semitones: -command.semitones });
     case 'transposeChromatic':

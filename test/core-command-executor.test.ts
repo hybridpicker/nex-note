@@ -979,6 +979,36 @@ test('addFermata adds fermata to a note event', () => {
   assert.ok(next.fermataEventIds.has('n1'));
 });
 
+test('toggleArticulation models fermata separately from articulation elements', () => {
+  const doc = buildDocumentFromStaves({
+    staves: [{ staffIndex: 1, measures: [buildMeasure('m1', 1, 1, { beats: 4, beatType: 4 })] }],
+  });
+  doc.score.parts[0]!.staves[0]!.measures[0]!.voices = [{
+    id: 'v1', voiceId: 1,
+    events: [buildNoteEvent({ id: 'n1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 4, durationType: 'whole', step: 'C', octave: 4 })],
+  }];
+
+  const next = applyCoreCommands(doc, [{
+    type: 'toggleArticulation',
+    articulation: 'fermata',
+    placement: 'below',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+  } as never]);
+
+  const event = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  assert.ok(next.fermataEventIds.has('n1'));
+  assert.deepEqual(event.articulations, []);
+  assert.equal(event.articulationPlacements?.fermata, 'below');
+
+  const exported = exportCoreToMusicXml(FERMATA_XML, next);
+  assert.match(exported, /<fermata placement="below"\/>/);
+  assert.doesNotMatch(exported, /<articulations><fermata/);
+});
+
 test('removeFermata removes fermata from a note event', () => {
   const doc = buildDocumentFromStaves({
     staves: [{ staffIndex: 1, measures: [buildMeasure('m1', 1, 1, { beats: 4, beatType: 4 })] }],
@@ -999,6 +1029,69 @@ test('fermata survives MusicXML roundtrip', () => {
   assert.match(exported, /<fermata\/>/);
   const reimported = importMusicXmlToCore(exported);
   assert.equal(reimported.fermataEventIds.size, 1);
+});
+
+test('articulation placement survives command and MusicXML roundtrip', () => {
+  const imported = importMusicXmlToCore(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><notations><articulations><accent placement="above"/></articulations></notations><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`);
+
+  const event = imported.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  assert.deepEqual(event.articulations, ['accent']);
+  assert.equal(event.articulationPlacements?.accent, 'above');
+
+  const next = applyCoreCommands(imported, [{
+    type: 'setArticulationPlacement',
+    articulation: 'accent',
+    placement: 'below',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+  } as never]);
+  const exported = exportCoreToMusicXml(FERMATA_XML, next);
+  assert.match(exported, /<accent placement="below"\/>/);
+
+  const reimported = importMusicXmlToCore(exported);
+  const reimportedEvent = reimported.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  assert.equal(reimportedEvent.articulationPlacements?.accent, 'below');
+});
+
+test('clearArticulations clears articulation placements and fermata state', () => {
+  const doc = buildDocumentFromStaves({
+    staves: [{ staffIndex: 1, measures: [buildMeasure('m1', 1, 1, { beats: 4, beatType: 4 })] }],
+  });
+  doc.score.parts[0]!.staves[0]!.measures[0]!.voices = [{
+    id: 'v1', voiceId: 1,
+    events: [{
+      ...buildNoteEvent({ id: 'n1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 4, durationType: 'whole', step: 'C', octave: 4 }),
+      articulations: ['accent'],
+      articulationPlacements: { accent: 'above', fermata: 'below' },
+    }],
+  }];
+  doc.fermataEventIds.add('n1');
+
+  const next = applyCoreCommands(doc, [{
+    type: 'clearArticulations',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+  } as never]);
+  const event = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+
+  assert.deepEqual(event.articulations, []);
+  assert.equal(event.articulationPlacements, undefined);
+  assert.equal(next.fermataEventIds.has('n1'), false);
 });
 
 // --- Tremolo tests ---

@@ -98,6 +98,36 @@ test('deriveInverseCommands covers deterministic note and transposition commands
   ]);
 });
 
+test('deriveInverseCommands restores previous articulation placement', () => {
+  const state = buildDocumentState(`<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        <notations><articulations><accent placement="above"/></articulations></notations>
+        <staff>1</staff>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`);
+
+  const result = deriveInverseCommands(state.coreDocument, [
+    { type: 'setArticulationPlacement', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, articulation: 'accent', placement: 'below' },
+  ]);
+
+  assert.equal(result.supportedCommandCount, 1);
+  assert.equal(result.unsupported.length, 0);
+  assert.deepEqual(result.inverseCommands, [
+    { type: 'setArticulationPlacement', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, articulation: 'accent', placement: 'above' },
+  ]);
+});
+
 test('deriveInverseCommands scopes note duration inverses by core part identity', () => {
   const state = buildDocumentState(`<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">

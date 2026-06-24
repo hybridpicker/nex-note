@@ -1768,3 +1768,73 @@ test('ScoreInspector exposes tie placement for an existing selected tie start', 
     renderer?.unmount();
   });
 });
+
+test('ScoreInspector exposes articulation placement for an existing selected articulation', async () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        <notations><articulations><accent placement="above"/></articulations></notations>
+        <staff>1</staff>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const coreDocument = importMusicXmlToCore(xml);
+  const selectedNotes = makeSelectedNotes(xml).slice(0, 1);
+  const calls: Array<{ label?: string; commands: unknown[] }> = [];
+
+  let renderer: ReturnType<typeof create> | null = null;
+  await act(async () => {
+    renderer = create(React.createElement(ScoreInspector, {
+      xml,
+      coreDocument,
+      selection: undefined,
+      selectedNote: selectedNotes[0] ?? null,
+      selectedNotes,
+      currentMeasure: 1,
+      onApplyCommands(commands, label) {
+        calls.push({ commands, label });
+      },
+      onOpenExtractedPart() {},
+    }));
+  });
+
+  const root = renderer!.root;
+  const kindSelect = root.findAllByProps({ id: 'inspector-articulation-kind' })[0];
+  const placementSelect = root.findAllByProps({ id: 'inspector-articulation-placement' })[0];
+  assert.equal(kindSelect.props.value, 'accent');
+  assert.equal(placementSelect.props.value, 'above');
+
+  await act(async () => {
+    placementSelect.props.onChange({ target: { value: 'below' } });
+  });
+  await act(async () => {
+    buttonWithText(root, 'Apply articulation placement').props.onClick();
+  });
+
+  assert.deepEqual(calls[0], {
+    label: 'Set Accent below',
+    commands: [{
+      type: 'setArticulationPlacement',
+      articulation: 'accent',
+      placement: 'below',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+    }],
+  });
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});

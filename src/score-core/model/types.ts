@@ -111,6 +111,7 @@ export interface BaseTimedEvent {
   stem?: 'none' | 'up' | 'down';
   hidden?: boolean;
   articulations?: string[];
+  articulationPlacements?: Record<string, 'above' | 'below'>;
   tieStart?: boolean;
   tiePlacement?: 'above' | 'below';
   lyrics?: Array<{

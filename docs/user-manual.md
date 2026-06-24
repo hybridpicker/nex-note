@@ -161,7 +161,7 @@ Die Note Input Toolbar bietet schnelle Artikulationen fuer die aktive Note. Die 
 | Slash notehead | `Shift+X` toggelt den Slash-Notehead der ausgewaehlten Note ueber die semantische Notenstil-Operation. |
 
 Hinweis: Einige visuelle Notationszeichen koennen je nach Playback-Engine nur visuell wirken und nicht hoerbar interpretiert werden.
-Richtungs-/Placement-Bearbeitung bleibt bewusst konservativ: Der Inspector bietet jetzt semantisches Placement fuer Staff Text, Expression Text, Dynamics, bereits vorhandene Tie-Starts und bereits vorhandene Slur-Spans, waehrend Direction-Placement fuer Wedges oder Ottavas im Core/Import/Export weiterhin roundtrip-sicher erhalten bleibt. Neue UI-Flips fuer Artikulationsrichtung werden noch nicht angeboten, solange diese Semantik im Core nicht explizit modelliert ist.
+Richtungs-/Placement-Bearbeitung bleibt bewusst konservativ: Der Inspector bietet jetzt semantisches Placement fuer Staff Text, Expression Text, Dynamics, vorhandene Artikulationen/Fermaten, bereits vorhandene Tie-Starts und bereits vorhandene Slur-Spans, waehrend Direction-Placement fuer Wedges oder Ottavas im Core/Import/Export weiterhin roundtrip-sicher erhalten bleibt.
 
 ## Barlines, Repeats und Slashes
 
@@ -192,7 +192,7 @@ Zusaetzliche Funktionen:
 | Staff Text / Expression | Inspector, Bereich Text & Rehearsal. |
 | Lyrics | Inspector, Note auswaehlen, Text und Versnummer setzen, dann Attach lyric line. |
 
-`Cmd/Ctrl+K` oeffnet bei ausgewaehlter Note den Inline-Harmony-Editor direkt an der Partiturposition. Der Cursor laedt ein vorhandenes Akkordsymbol der selektierten Note zum direkten Ueberschreiben; `Enter` uebernimmt, `Escape` bricht ab. Ohne Notenauswahl bleibt `Cmd/Ctrl+K` der Einstieg ins Command Center. Im Inspector laden Lyrics-Felder sowie Dynamics bei aktiver Note vorhandene semantische Werte vor; bei Dynamics wird jetzt auch das vorhandene Placement uebernommen. Staff Text und Expression Text koennen ober- oder unterhalb des Staffs gesetzt werden, eine ausgewaehlte Tie-Start-Note kann den Tie ober- oder unterhalb setzen, und eine bereits vorhandene Slur ueber der aktuellen semantischen Auswahl kann dort ebenfalls auf ober- oder unterhalb gestellt werden. `Enter` uebernimmt Rehearsal Mark, Staff Text, Lyrics oder Dynamics direkt ueber den Command-Pfad.
+`Cmd/Ctrl+K` oeffnet bei ausgewaehlter Note den Inline-Harmony-Editor direkt an der Partiturposition. Der Cursor laedt ein vorhandenes Akkordsymbol der selektierten Note zum direkten Ueberschreiben; `Enter` uebernimmt, `Escape` bricht ab. Ohne Notenauswahl bleibt `Cmd/Ctrl+K` der Einstieg ins Command Center. Im Inspector laden Lyrics-Felder sowie Dynamics bei aktiver Note vorhandene semantische Werte vor; bei Dynamics wird jetzt auch das vorhandene Placement uebernommen. Staff Text und Expression Text koennen ober- oder unterhalb des Staffs gesetzt werden, eine bestehende Artikulation oder Fermate der selektierten Note kann ober- oder unterhalb gesetzt werden, eine ausgewaehlte Tie-Start-Note kann den Tie ober- oder unterhalb setzen, und eine bereits vorhandene Slur ueber der aktuellen semantischen Auswahl kann dort ebenfalls auf ober- oder unterhalb gestellt werden. `Enter` uebernimmt Rehearsal Mark, Staff Text, Lyrics oder Dynamics direkt ueber den Command-Pfad.
 
 Der AI-Chat kann ebenfalls Akkordsymbole und Texte erzeugen, wenn der Prompt klar genug ist.
 
@@ -203,7 +203,7 @@ Die Bereiche sind als ein- und ausklappbare Sektionen organisiert. Die Chips dir
 
 | Abschnitt | Funktionen |
 | --- | --- |
-| Selection | Ausgewaehlte Range transponieren, Artikulationen loeschen, Staccato/Accent toggeln, `mf` setzen, Slur ueber Auswahl toggeln sowie bestehende Tie-Starts und Slur-Spans ober-/unterhalb platzieren. |
+| Selection | Ausgewaehlte Range transponieren, Artikulationen loeschen, Staccato/Accent toggeln, `mf` setzen, Slur ueber Auswahl toggeln sowie bestehende Artikulationen, Fermaten, Tie-Starts und Slur-Spans ober-/unterhalb platzieren. |
 | Score Setup | Titel, Untertitel, Komponist, Arrangeur setzen. |
 | Key | Presets fuer C, G, D, A, F und Bb major. |
 | Repeats & Endings | Start repeat, End repeat, 1st ending, 2nd ending. |
@@ -227,7 +227,7 @@ In der Palette zeigen Selection- sowie Tie/Slur-Aktionen beim Hover dieselben Sh
 | --- | --- |
 | Selection | Copy, Paste, Duplicate, Delete, Clear selection. |
 | Transpose | Oktave, Halbton, Ganzton, perfekte Quinte nach oben/unten. |
-| Articulations | Staccato, Staccatissimo, Accent, Marcato, Tenuto, Fermata, Clear articulations. |
+| Articulations | Staccato, Staccatissimo, Accent, Marcato, Tenuto, Fermata, Clear articulations; Placement fuer bestehende selektierte Zeichen liegt im Inspector. |
 | Dynamics | pp bis fff und sfz. |
 | Ties / Slurs | Tie und Slur toggeln. |
 | Barlines | Regular, double, final, repeat start, repeat end. |

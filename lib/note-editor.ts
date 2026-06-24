@@ -59,7 +59,8 @@ export type NoteEditOperation =
   | ({ type: 'setNoteStyle'; notehead?: 'slash'; stem?: 'none' } & NoteLocator)
   | ({ type: 'setGuitarFret'; string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } & NoteLocator)
   | ({ type: 'toggleGuitarTechnique'; technique: string } & NoteLocator)
-  | ({ type: 'toggleArticulation'; articulation: ArticulationKind } & NoteLocator)
+  | ({ type: 'toggleArticulation'; articulation: ArticulationKind; placement?: 'above' | 'below' } & NoteLocator)
+  | ({ type: 'setArticulationPlacement'; articulation: ArticulationKind; placement?: 'above' | 'below' } & NoteLocator)
   | ({ type: 'clearArticulations' } & NoteLocator)
   | ({ type: 'addDynamic'; dynamic: DynamicKind; placement?: 'above' | 'below' } & NoteLocator)
   | ({ type: 'toggleTie' } & NoteLocator)
@@ -430,8 +431,12 @@ export function applyNoteEdit(xml: string, op: NoteEditOperation): string {
     }
   } else if (op.type === 'toggleArticulation') {
     const note = findNoteElement(doc, op);
-    if (note) toggleArticulationOnNote(doc, note, op.articulation);
+    if (note) toggleArticulationOnNote(doc, note, op.articulation, op.placement);
     else warnMissingNote(op, 'toggleArticulation');
+  } else if (op.type === 'setArticulationPlacement') {
+    const note = findNoteElement(doc, op);
+    if (note) setArticulationPlacementOnNote(note, op.articulation, op.placement);
+    else warnMissingNote(op, 'setArticulationPlacement');
   } else if (op.type === 'clearArticulations') {
     const note = findNoteElement(doc, op);
     if (note) clearArticulationsOnNote(note);
@@ -1086,7 +1091,7 @@ const ARTICULATION_IN_ARTICULATIONS = new Set<string>([
   'staccato', 'staccatissimo', 'accent', 'strong-accent', 'tenuto',
 ]);
 
-function toggleArticulationOnNote(doc: XmlDocument, note: El, kind: string) {
+function toggleArticulationOnNote(doc: XmlDocument, note: El, kind: string, placement?: 'above' | 'below') {
   const notations = getOrCreateChild(doc, note, 'notations');
 
   if (kind === 'fermata') {
@@ -1097,7 +1102,9 @@ function toggleArticulationOnNote(doc: XmlDocument, note: El, kind: string) {
         existing[i].parentNode?.removeChild(existing[i]);
       }
     } else {
-      notations.appendChild(doc.createElement('fermata'));
+      const fermata = doc.createElement('fermata');
+      if (placement) fermata.setAttribute('placement', placement);
+      notations.appendChild(fermata);
     }
     cleanEmptyNotations(note);
     return;
@@ -1112,9 +1119,22 @@ function toggleArticulationOnNote(doc: XmlDocument, note: El, kind: string) {
       existing[i].parentNode?.removeChild(existing[i]);
     }
   } else {
-    articulations.appendChild(doc.createElement(kind));
+    const articulation = doc.createElement(kind);
+    if (placement) articulation.setAttribute('placement', placement);
+    articulations.appendChild(articulation);
   }
   cleanEmptyNotations(note);
+}
+
+function setArticulationPlacementOnNote(note: El, kind: string, placement?: 'above' | 'below') {
+  const target = kind === 'fermata'
+    ? Array.from(note.getElementsByTagName('notations')[0]?.childNodes ?? [])
+      .find((child): child is El => child.nodeType === 1 && (child as El).tagName === 'fermata')
+    : Array.from(note.getElementsByTagName('articulations')[0]?.childNodes ?? [])
+      .find((child): child is El => child.nodeType === 1 && (child as El).tagName === kind);
+  if (!target) return;
+  if (placement) target.setAttribute('placement', placement);
+  else target.removeAttribute('placement');
 }
 
 function clearArticulationsOnNote(note: El) {

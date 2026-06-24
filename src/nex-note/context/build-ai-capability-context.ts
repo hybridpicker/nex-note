@@ -25,6 +25,7 @@ const CORE_BACKED_COMMANDS = [
   'insertRest',
   'transposeChromatic',
   'toggleArticulation',
+  'setArticulationPlacement',
   'clearArticulations',
   'toggleTie',
   'toggleSlur',

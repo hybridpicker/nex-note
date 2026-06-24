@@ -680,7 +680,12 @@ function buildEventElement(
     const notations = doc.createElement('notations');
     if ((event.articulations?.length ?? 0) > 0) {
       const articulations = doc.createElement('articulations');
-      event.articulations?.forEach((articulation) => articulations.appendChild(doc.createElement(articulation)));
+      event.articulations?.forEach((articulation) => {
+        const articulationEl = doc.createElement(articulation);
+        const placement = event.articulationPlacements?.[articulation];
+        if (placement) articulationEl.setAttribute('placement', placement);
+        articulations.appendChild(articulationEl);
+      });
       notations.appendChild(articulations);
     }
     if (hasTieStop) {
@@ -777,7 +782,10 @@ function buildEventElement(
       notations.appendChild(technical);
     }
     if (hasFermata) {
-      notations.appendChild(doc.createElement('fermata'));
+      const fermata = doc.createElement('fermata');
+      const placement = event.articulationPlacements?.fermata;
+      if (placement) fermata.setAttribute('placement', placement);
+      notations.appendChild(fermata);
     }
     if (eventTremolo) {
       const tremolo = doc.createElement('tremolo');

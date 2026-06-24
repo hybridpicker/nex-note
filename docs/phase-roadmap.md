@@ -230,7 +230,7 @@ Phase 8 closeout is now covered by the current repository state:
 
 1. standard multi-voice MusicXML with `<backup>` and `<forward>` no longer forces legacy fallback by itself
 2. remaining unsafe roundtrip tags remain explicit and documented
-3. selected tie starts now expose semantic above/below placement through the Inspector, persist in the core model, and roundtrip through MusicXML `<tied placement="...">`
+3. selected tie starts and selected articulations/fermatas now expose semantic above/below placement through the Inspector, persist in the core model, and roundtrip through MusicXML placement attributes
 4. `npm test`, `npm run build`, and MuseScore CLI MusicXML -> MXL -> MusicXML smoke were rerun on 2026-06-24
 5. `npm run smoke:musescore-roundtrip` now captures source MusicXML, app-style MXL, and MSCZ create/reopen steps with retries, artifacts, and local-MuseScore crash classification
 6. core MusicXML export no longer appends empty root metadata such as trailing `<identification/>` after `<part>`

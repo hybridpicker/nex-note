@@ -154,6 +154,8 @@ For each articulation, record whether playback is audible or visual-only by desi
 | Tenuto | Select note and apply from toolbar | Tenuto line | Full-length if engine applies it |
 | Fermata | Select note and apply from palette | Fermata over note | Held note if engine applies it |
 
+Placement check: import or create an articulated note, select it, use Inspector -> Selection to set the articulation or fermata below and above, then export/reimport MusicXML. The mark should visibly move and the MusicXML should retain the placement attribute.
+
 Dynamics:
 
 - `pp` through `fff` and `sfz` should appear below the staff.
