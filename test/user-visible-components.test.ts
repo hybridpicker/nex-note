@@ -705,6 +705,46 @@ test('NotationToolbar changes the selected note duration without starting note i
   });
 });
 
+test('NotationToolbar exposes MuseScore 1-9 duration buttons including breve and longa', () => {
+  const chosenDurations: string[] = [];
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NotationToolbar, toolbarProps({
+      noteInputMode: true,
+      selectedDuration: 'breve',
+      onDurationChange(duration) { chosenDurations.push(duration); },
+    })));
+  });
+
+  const root = renderer!.root;
+  const titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
+  assert.ok(titles.some((title) => (
+    typeof title === 'string'
+    && title.startsWith('Breve: 8')
+    && title.includes('Long: 9')
+  )));
+  assert.ok(titles.some((title) => (
+    typeof title === 'string'
+    && title.startsWith('Long: 9')
+    && title.includes('Breve: 8')
+  )));
+
+  const longButton = root.findAllByType('button').find((button) => (
+    typeof button.props.title === 'string'
+    && button.props.title.startsWith('Long: 9')
+  ));
+  act(() => {
+    longButton!.props.onClick();
+  });
+
+  assert.deepEqual(chosenDurations, ['long']);
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
 test('NotationToolbar explains selection-required disabled edit buttons', () => {
   let renderer: ReturnType<typeof create> | null = null;
 
@@ -789,6 +829,8 @@ test('NotationToolbar exposes consistent shortcut hints and pitched-note disable
     && title.startsWith('Quarter note: 5')
     && title.includes('Duration shortcuts (only when Note Input is active)')
     && title.includes('64th note: 1')
+    && title.includes('Breve: 8')
+    && title.includes('Long: 9')
     && title.includes('Dotted note: .')
   )));
   assert.ok(titles.includes('Voice 3 (Cmd/Ctrl+Alt/Option+3)'));
@@ -831,6 +873,8 @@ test('NoteInputToolbar exposes the full Notes shortcut map on the sidebar header
 
   assert.ok(notesHeader.props.title.includes('64th note: 1'));
   assert.ok(notesHeader.props.title.includes('Quarter note: 5'));
+  assert.ok(notesHeader.props.title.includes('Breve: 8'));
+  assert.ok(notesHeader.props.title.includes('Long: 9'));
   assert.ok(notesHeader.props.title.includes('Dotted note: .'));
   assert.ok(notesHeader.props.title.includes('Sharp: +'));
 

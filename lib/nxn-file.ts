@@ -47,7 +47,7 @@ export class NxnFileError extends Error {
 export const DEFAULT_NXN_SESSION: NxnSessionStateV1 = DEFAULT_SCORE_DOCUMENT_SESSION;
 
 const VALID_VIEW_MODES = new Set<ScoreViewMode>(['page', 'continuous-vertical', 'continuous-horizontal']);
-const VALID_DURATIONS = new Set<ScoreDocumentSelectedDuration>(['1', '2', '4', '8', '16', '32', '64']);
+const VALID_DURATIONS = new Set<ScoreDocumentSelectedDuration>(['breve', 'long', '1', '2', '4', '8', '16', '32', '64']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

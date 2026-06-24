@@ -99,7 +99,7 @@ Note Input wird mit dem Button `Note Input` oder `N` aktiviert. Die Eingabe ist 
 
 | Funktion | Beschreibung |
 | --- | --- |
-| Dauern | `1` bis `7` waehlen 64tel bis Ganze; `8` und `9` sind fuer Breve/Longa reserviert und aendern aktuell nichts. |
+| Dauern | `1` bis `9` waehlen 64tel bis Longa; `8` ist Breve/Doppelganze, `9` ist Longa. |
 | Punktierung | `.` toggelt die punktierte Dauer. |
 | Tonhoehen | `A` bis `G` geben Noten ein oder aendern die aktive Tonhoehe. |
 | Rest | `R` oder `0` fuegt einen Rest mit aktiver Dauer ein. |
@@ -383,7 +383,7 @@ Doctor Mode und Visual Debug helfen bei Note-Input-, Rhythmus-, Layout- und Sema
 
 1. Note oder Taktposition anklicken.
 2. `N` druecken.
-3. Dauer mit `1` bis `7` waehlen.
+3. Dauer mit `1` bis `9` waehlen.
 4. Tonhoehe mit `A` bis `G` eingeben.
 5. Optional `.` fuer Punktierung, `R` fuer Rest, `Shift+A...G` fuer Akkordton.
 

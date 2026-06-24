@@ -31,6 +31,8 @@ const DURATIONS: { key: NoteDuration; titleKey: TranslationKey }[] = [
   { key: '4',  titleKey: 'note.duration.4' },
   { key: '2',  titleKey: 'note.duration.2' },
   { key: '1',  titleKey: 'note.duration.1' },
+  { key: 'breve', titleKey: 'note.duration.breve' },
+  { key: 'long', titleKey: 'note.duration.long' },
 ];
 
 const DURATION_SHORTCUTS: Record<NoteDuration, string> = {

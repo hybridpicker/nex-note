@@ -60,7 +60,7 @@ Activez la saisie avec `N` ou le bouton Note Input.
 
 | Fonction | Description |
 | --- | --- |
-| Durees | `1` a `7` choisissent 64e a ronde. |
+| Durees | `1` a `9` choisissent 64e a longa; `8` est breve/double ronde et `9` est longa. |
 | Point | `.` active/desactive la duree pointee. |
 | Hauteurs | `A` a `G` entrent ou changent les notes. |
 | Silences | `R` ou `0` insere un silence. |

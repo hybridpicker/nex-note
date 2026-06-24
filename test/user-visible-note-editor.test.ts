@@ -5775,6 +5775,18 @@ test('ghost preview metrics reserve extra left and lower room for down-stems', (
   assert.ok(down.noteheadCenterX > up.noteheadCenterX);
 });
 
+test('ghost preview metrics keep MuseScore long durations visible and finite', () => {
+  const whole = buildGhostPreviewMetrics(120, 90, 0, false, '1', 'up');
+  const breve = buildGhostPreviewMetrics(120, 90, 0, false, 'breve', 'up');
+  const longa = buildGhostPreviewMetrics(120, 90, 0, false, 'long', 'down');
+
+  assert.ok(Number.isFinite(breve.previewWidth));
+  assert.ok(Number.isFinite(longa.previewWidth));
+  assert.ok(breve.previewWidth > whole.previewWidth);
+  assert.ok(longa.previewWidth > breve.previewWidth);
+  assert.ok(longa.previewHeight > breve.previewHeight);
+});
+
 test('preview stem direction follows staff position and multi-voice defaults', () => {
   assert.equal(resolvePreviewStemDirection({ staffStep: 8, voiceId: 1 }), 'up');
   assert.equal(resolvePreviewStemDirection({ staffStep: 4, voiceId: 1 }), 'down');
@@ -5803,10 +5815,16 @@ test('getEffectiveDuration scales durations inside tuplets', () => {
   const dottedTripletQuarter = getEffectiveDuration('4', true, {
     timeScaling: { num: 2, den: 3 },
   });
+  const breve = getEffectiveDuration('breve', false, null);
+  const longa = getEffectiveDuration('long', false, null);
+  const dottedBreve = getEffectiveDuration('breve', true, null);
 
   assert.deepEqual(straight, { num: 1, den: 8 });
   assert.deepEqual(triplet, { num: 1, den: 12 });
   assert.deepEqual(dottedTripletQuarter, { num: 1, den: 4 });
+  assert.deepEqual(breve, { num: 2, den: 1 });
+  assert.deepEqual(longa, { num: 4, den: 1 });
+  assert.deepEqual(dottedBreve, { num: 3, den: 1 });
 });
 
 test('nested tuplets resolve to the innermost segment and compound time scaling', () => {

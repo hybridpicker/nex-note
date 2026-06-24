@@ -120,6 +120,21 @@ test('parseNxnText normalizes legacy JSON object fermata ids into a Set', () => 
   assert.doesNotThrow(() => exportCoreToMusicXml(SAMPLE_XML, parsed.document));
 });
 
+test('nxn session preserves MuseScore long duration selections', () => {
+  const document = importMusicXmlToCore(SAMPLE_XML);
+  const text = serializeNxnFile({
+    document,
+    sourceMusicXml: SAMPLE_XML,
+    session: {
+      selectedDuration: 'long',
+    },
+  });
+
+  const parsed = parseNxnText(text);
+
+  assert.equal(parsed.session.selectedDuration, 'long');
+});
+
 test('readNxnFile rejects wrong extensions and unsupported versions', async () => {
   const document = importMusicXmlToCore(SAMPLE_XML);
   const validText = serializeNxnFile({

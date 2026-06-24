@@ -58,7 +58,7 @@ Activa Note Input con `N` o el boton de la barra.
 
 | Funcion | Descripcion |
 | --- | --- |
-| Duraciones | `1` a `7` seleccionan de semifusa a redonda. |
+| Duraciones | `1` a `9` seleccionan de semifusa a longa; `8` es breve/doble redonda y `9` es longa. |
 | Puntillo | `.` activa/desactiva duracion con puntillo. |
 | Alturas | `A` a `G` introducen o cambian notas. |
 | Silencios | `R` o `0` inserta un silencio. |

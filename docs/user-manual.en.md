@@ -64,7 +64,7 @@ Turn note input on with the toolbar button or `N`.
 
 | Feature | Description |
 | --- | --- |
-| Durations | `1` to `7` select 64th through whole note; `8` and `9` are reserved for breve/longa and currently leave the active duration unchanged. |
+| Durations | `1` to `9` select 64th through longa; `8` is breve/double whole and `9` is longa. |
 | Dotted notes | `.` toggles dotted duration. |
 | Pitch entry | `A` to `G` enter or change notes. |
 | Rests | `R` or `0` inserts a rest using the active duration. |

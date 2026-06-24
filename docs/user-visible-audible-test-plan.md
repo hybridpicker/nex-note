@@ -123,7 +123,7 @@ Repeat the same flow for each accidental:
 
 | # | Action | See | Hear |
 | --- | --- | --- | --- |
-| 5.1 | Keys `1` to `7` | Duration button highlight cycles from 64th to whole | Silent |
+| 5.1 | Keys `1` to `9` | Duration button highlight cycles from 64th through breve and longa | Silent |
 | 5.2 | Note input on, press `5`, then `G` | Quarter-note `G` inserted and cursor advances | Piano `G` plays |
 | 5.3 | Press `.` | Dot button toggles and last inserted note becomes dotted | Silent |
 | 5.4 | Press `R` | Rest glyph inserted | Silent |

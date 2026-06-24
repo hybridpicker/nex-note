@@ -6,8 +6,7 @@ export type KeyboardDeleteAction = 'delete' | 'rippleDelete' | 'clearMeasureVoic
 export type KeyboardEntryModeShortcutAction = 'toggle' | KeyboardEntryMode;
 export type KeyboardChordInputShortcutAction = 'toggleChordInput' | 'focusChordSymbol';
 export type KeyboardDurationShortcutAction =
-  | { type: 'selectDuration'; key: string; duration: ScoreDocumentSelectedDuration }
-  | { type: 'unsupportedDuration'; key: '8' | '9'; durationType: 'breve' | 'long' };
+  | { type: 'selectDuration'; key: string; duration: ScoreDocumentSelectedDuration };
 
 export interface KeyboardAnchor {
   coreMeasureId?: string | null;

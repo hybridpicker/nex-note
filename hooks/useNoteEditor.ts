@@ -3229,9 +3229,7 @@ export function useNoteEditor(
       code: e.code,
     });
 
-    // Duration shortcuts — MuseScore layout: 1=64th … 7=whole.
-    // 8/9 are reserved for breve/longa and intentionally no-op until the
-    // selected-duration and ghost-note surfaces support values longer than whole.
+    // Duration shortcuts - MuseScore layout: 1=64th ... 7=whole, 8=breve, 9=longa.
     if (durationShortcut) {
       e.preventDefault();
       if (durationShortcut.type === 'selectDuration') {

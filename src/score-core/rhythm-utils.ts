@@ -49,7 +49,11 @@ function multiplyFractions(left: Fraction, right: Fraction): Fraction {
 }
 
 function noteDurationFraction(duration: string | number, isDotted = false): Fraction {
-  const base = normalizeFraction(1, Number.parseInt(String(duration), 10));
+  const base = duration === 'breve'
+    ? normalizeFraction(2, 1)
+    : duration === 'long'
+      ? normalizeFraction(4, 1)
+      : normalizeFraction(1, Number.parseInt(String(duration), 10));
   return isDotted ? multiplyFractions(base, normalizeFraction(3, 2)) : base;
 }
 

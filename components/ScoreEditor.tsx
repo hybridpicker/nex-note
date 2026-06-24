@@ -106,9 +106,9 @@ const INPUT_DURATION_TO_TYPE: Record<string, string> = {
   long: 'long',
 };
 
-const DURATION_TYPE_TO_INPUT: Record<string, string> = Object.fromEntries(
+const DURATION_TYPE_TO_INPUT: Record<string, NoteDuration> = Object.fromEntries(
   Object.entries(INPUT_DURATION_TO_TYPE).map(([input, durationType]) => [durationType, input]),
-);
+) as Record<string, NoteDuration>;
 
 const RENDER_LAYOUT_OPTIONS = {
   systemIdealWidth: 640,
@@ -1500,10 +1500,16 @@ function buildTabStringDragPreviewTarget(input: {
 }
 
 function durationToFlags(duration: Props['selectedDuration']) {
-  const value = Number.parseInt(duration, 10);
+  const value = selectedDurationNumber(duration);
   if (value >= 16) return 2;
   if (value >= 8) return 1;
   return 0;
+}
+
+function selectedDurationNumber(duration: Props['selectedDuration']) {
+  if (duration === 'breve') return 0.5;
+  if (duration === 'long') return 0.25;
+  return Number.parseInt(duration, 10);
 }
 
 export function resolvePreviewStemDirection(input: {
@@ -1570,9 +1576,11 @@ export function buildGhostPreviewMetrics(
 ) {
   const accidentalWidth = previewAccidentalWidth(alter);
   const accidentalGap = accidentalWidth > 0 ? 2 : 0;
-  const durationValue = Number.parseInt(selectedDuration, 10);
-  const noteheadWidth = durationValue === 1 ? 12 : 11;
-  const hasStem = Number.isFinite(durationValue) && durationValue > 1;
+  const durationValue = selectedDurationNumber(selectedDuration);
+  const isWideLongDuration = selectedDuration === 'breve' || selectedDuration === 'long';
+  const isWholeLike = durationValue === 1 || isWideLongDuration;
+  const noteheadWidth = isWholeLike ? (isWideLongDuration ? 22 : 12) : 11;
+  const hasStem = selectedDuration === 'long' || (Number.isFinite(durationValue) && durationValue > 1);
   const stemWidth = 5;
   const flagWidth = durationToFlags(selectedDuration) > 0 ? 5 : 0;
   const dotWidth = isDotted ? 5 : 0;
@@ -11542,13 +11550,9 @@ export default function ScoreEditor({
         rendered,
         dragPitch,
         transposeMode: dragTransposeMode,
-        selectedDuration: dragSession.note.durationType === 'whole' ? '1'
-          : dragSession.note.durationType === 'half' ? '2'
-            : dragSession.note.durationType === 'eighth' ? '8'
-              : dragSession.note.durationType === '16th' ? '16'
-                : dragSession.note.durationType === '32nd' ? '32'
-                  : dragSession.note.durationType === '64th' ? '64'
-                    : '4',
+        selectedDuration: dragSession.note.durationType
+          ? DURATION_TYPE_TO_INPUT[dragSession.note.durationType] ?? '4'
+          : '4',
         isDotted: Boolean(dragSession.note.isDotted),
         pulse: staffChanged,
         isNearEscape,

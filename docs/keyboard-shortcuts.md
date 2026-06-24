@@ -83,8 +83,8 @@ Stand: 2026-05-13. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `5` | Viertel wählen | Noteneditor |
 | `6` | Halbe wählen | Noteneditor |
 | `7` | Ganze wählen | Noteneditor |
-| `8` | Breve/Doppelganze reserviert; aktuell bewusst ohne Änderung der aktiven Dauer | Noteneditor |
-| `9` | Longa reserviert; aktuell bewusst ohne Änderung der aktiven Dauer | Noteneditor |
+| `8` | Breve/Doppelganze wählen | Noteneditor |
+| `9` | Longa wählen | Noteneditor |
 | `.` | Punktierung ein-/ausschalten | Noteneditor |
 | `Q` | Dauer halbieren | Noteneditor |
 | `W` | Dauer verdoppeln | Noteneditor |
@@ -164,14 +164,13 @@ Die linke Werkzeugleiste ist zusaetzlich als Gruppe `Palette` im Command Center 
 
 ## Aktuelle Lücken im Vergleich zu MuseScore und Finale
 
-Referenzpunkte: MuseScore Studio 4 nutzt unter anderem `N` für Note Input, `1` bis `7` für Dauern, `Ctrl/Cmd+Alt/Option+1` bis `4` für Stimmen, `Q/W` für Dauer halbieren/verdoppeln, `T` für Tie, `Shift+Left/Right` für Auswahl und `Ctrl/Cmd+2` bis `9` für Tuplets. Finale Simple Entry ist stark auf Tastatur- und Numpad-Workflows ausgelegt, inklusive Tool-Auswahl per Shortcut, Caret-basierter Eingabe und Shortcuts für Artikulationen, Expressions, Schlüssel-, Tonart- und Taktartwechsel.
+Referenzpunkte: MuseScore Studio 4 nutzt unter anderem `N` für Note Input, `1` bis `9` für Dauern, `Ctrl/Cmd+Alt/Option+1` bis `4` für Stimmen, `Q/W` für Dauer halbieren/verdoppeln, `T` für Tie, `Shift+Left/Right` für Auswahl und `Ctrl/Cmd+2` bis `9` für Tuplets. Finale Simple Entry ist stark auf Tastatur- und Numpad-Workflows ausgelegt, inklusive Tool-Auswahl per Shortcut, Caret-basierter Eingabe und Shortcuts für Artikulationen, Expressions, Schlüssel-, Tonart- und Taktartwechsel.
 
 Priorisierte Vorschläge:
 
 | Priorität | Vorschlag | Begründung |
 | --- | --- | --- |
 | Mittel | weitere Flip-Ziele fuer Tie-/Artikulationsrichtung und breitere Direction-Placements | Slur-Placement ist jetzt explizit im Inspector editierbar; Tie-/Artikulationsrichtung und weitere Direction-Typen brauchen weiterhin eigene semantische Properties bzw. eine bewusst groessere Inspector-Surface |
-| Mittel | echte Breve-/Longa-Eingabe fuer `8` und `9` implementieren | `8` und `9` sind jetzt als reservierte No-op-Shortcuts dokumentiert und getestet; die volle Umsetzung braucht noch Selected-Duration-, Ghost-Preview- und Toolbar-Unterstuetzung fuer Werte laenger als Ganze |
 | Mittel | weitere Text-Shortcuts prüfen: System Text, separates Expression-Popup und Dynamics-Eingabe | Phase D liefert explizite Placement-Controls fuer Staff Text, Expression Text und Dynamics im Inspector; zusaetzliche globale Shortcuts bleiben vorerst bewusst ausgesetzt |
 | Mittel | Akkordsymbol näher an Standards prüfen, z. B. alternative Chord-Symbol Shortcuts fuer Command-Center-Power-User | aktuell oeffnet `Cmd/Ctrl+K` bei Notenauswahl die Inline-Harmony-Eingabe und ohne Auswahl das Command Center; MuseScore verwendet fuer Chords haeufig eigene Text-Shortcuts, hier sollte Konfliktarmut getestet werden |
 | Mittel | Finale-orientierte Simple-Entry-Laptop/Numpad Map als optionales Preset | Finale-Nutzer erwarten teils Numpad-zentrierte Toolwahl; als Preset besser als harte Default-Änderung |
