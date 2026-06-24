@@ -171,6 +171,7 @@ Priorisierte Vorschläge:
 | Priorität | Vorschlag | Begründung |
 | --- | --- | --- |
 | Mittel | weitere Flip-Ziele fuer Artikulationsrichtung und breitere Direction-Placements | Tie- und Slur-Placement sind jetzt explizit im Inspector editierbar; Artikulationsrichtung und weitere Direction-Typen brauchen weiterhin eigene semantische Properties bzw. eine bewusst groessere Inspector-Surface |
+| Mittel | reale MuseScore-Paritaet weiter ueber Harness statt Shortcut-Versprechen pruefen | `npm run smoke:musescore-roundtrip` prueft MusicXML, app-style MXL und MSCZ mit Diagnose-Artefakten; lokale MuseScore-4.7.3-Abstuerze bleiben als Tool-Limit von echten nex-note Exportfehlern zu trennen |
 | Mittel | weitere Text-Shortcuts prüfen: System Text, separates Expression-Popup und Dynamics-Eingabe | Phase D liefert explizite Placement-Controls fuer Staff Text, Expression Text und Dynamics im Inspector; zusaetzliche globale Shortcuts bleiben vorerst bewusst ausgesetzt |
 | Mittel | Akkordsymbol näher an Standards prüfen, z. B. alternative Chord-Symbol Shortcuts fuer Command-Center-Power-User | aktuell oeffnet `Cmd/Ctrl+K` bei Notenauswahl die Inline-Harmony-Eingabe und ohne Auswahl das Command Center; MuseScore verwendet fuer Chords haeufig eigene Text-Shortcuts, hier sollte Konfliktarmut getestet werden |
 | Mittel | Finale-orientierte Simple-Entry-Laptop/Numpad Map als optionales Preset | Finale-Nutzer erwarten teils Numpad-zentrierte Toolwahl; als Preset besser als harte Default-Änderung |

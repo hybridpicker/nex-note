@@ -8,10 +8,13 @@ Before the manual matrix, run the automated gate in this order:
 
 ```bash
 npm test
+npm run smoke:musescore-roundtrip
 npm run test:e2e:smoke
 npm run test:e2e:regression
 npm run build
 ```
+
+`npm run smoke:musescore-roundtrip` is optional when MuseScore CLI is unavailable. When it runs, it checks source MusicXML, app-style MXL, and MSCZ create/reopen paths, retries crash-like failures, writes `summary.json` and `summary.txt` under `.nex/musescore-roundtrip-smoke-*`, and reports `passed-with-local-musescore-limit` when local MuseScore source-baseline crashes make nex-note-only crash attribution inconclusive.
 
 If an E2E browser test fails, inspect `test-results/playwright/.../nex-note-failure-artifacts/` first. That folder now contains the captured `e2e-state.json` and the live MusicXML from the failing browser session, alongside Playwright trace, screenshot, and video artifacts.
 For mouse note-input regressions, prefer the ghost-map harness in `e2e/support/ghost-map.ts`. It samples the visible ghost across a measure, records the actual timestamps the UI exposes, and then lets tests click those measured points instead of assuming a linear quarter-width layout.
@@ -69,8 +72,9 @@ All tests in this suite are `Silent`.
 | 1.6 | Click Save As | Prompt appears, filename pill updates, Library tab opens and shows new entry | Silent |
 | 1.7 | Click Export ABC | `<name>.abc` downloads | Silent |
 | 1.8 | Click Download MXL | `<name>.mxl` downloads | Silent |
-| 1.9 | Open MIDI export and verify round-trip | Exported file opens in external player | Plays identically in external app |
-| 1.10 | Reopen a recent file | File picker is targeted and load succeeds | Silent |
+| 1.9 | Run MuseScore roundtrip harness when MuseScore CLI is installed | Harness summary distinguishes pass, nex-note export failure, and local MuseScore crash limitation; artifacts are under `.nex/musescore-roundtrip-smoke-*` | Silent |
+| 1.10 | Open MIDI export and verify round-trip | Exported file opens in external player | Plays identically in external app |
+| 1.11 | Reopen a recent file | File picker is targeted and load succeeds | Silent |
 
 ## Suite 2: Selection and Preview
 

@@ -203,6 +203,49 @@ function getOrCreateDirectChild(doc: XmlDocument, parent: XmlEl, tag: string) {
   return created;
 }
 
+const SCORE_PARTWISE_CHILD_ORDER = [
+  'work',
+  'movement-number',
+  'movement-title',
+  'identification',
+  'defaults',
+  'credit',
+  'part-list',
+  'part',
+];
+
+function scorePartwiseChildOrder(tag: string) {
+  const index = SCORE_PARTWISE_CHILD_ORDER.indexOf(tag);
+  return index < 0 ? SCORE_PARTWISE_CHILD_ORDER.length : index;
+}
+
+function getDirectChild(parent: XmlEl, tag: string) {
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const child = parent.childNodes[i] as XmlEl;
+    if (child.nodeType === 1 && child.tagName === tag) return child;
+  }
+  return null;
+}
+
+function appendRootChildInMusicXmlOrder(doc: XmlDocument, root: XmlEl, tag: string) {
+  const created = doc.createElement(tag);
+  const order = scorePartwiseChildOrder(tag);
+  for (let i = 0; i < root.childNodes.length; i++) {
+    const child = root.childNodes[i] as XmlEl;
+    if (child.nodeType !== 1) continue;
+    if (scorePartwiseChildOrder(child.tagName) > order) {
+      root.insertBefore(created, child);
+      return created;
+    }
+  }
+  root.appendChild(created);
+  return created;
+}
+
+function getOrCreateRootChildInMusicXmlOrder(doc: XmlDocument, root: XmlEl, tag: string) {
+  return getDirectChild(root, tag) ?? appendRootChildInMusicXmlOrder(doc, root, tag);
+}
+
 function setOrCreateTextElement(doc: XmlDocument, parent: XmlEl, tag: string, value: string) {
   const element = getOrCreateDirectChild(doc, parent, tag);
   element.textContent = value;
@@ -219,11 +262,16 @@ function removeDirectChildrenByTag(parent: XmlEl, tag: string) {
 }
 
 function setCreator(doc: XmlDocument, root: XmlEl, type: 'arranger' | 'composer', value?: string) {
-  const identification = getOrCreateDirectChild(doc, root, 'identification');
+  let identification = getDirectChild(root, 'identification');
+  if (!identification && !value?.trim()) return;
+  identification ??= getOrCreateRootChildInMusicXmlOrder(doc, root, 'identification');
   const creators = Array.from(identification.getElementsByTagName('creator'));
   let creator = creators.find((entry) => entry.getAttribute('type') === type) ?? null;
   if (!value?.trim()) {
     if (creator) identification.removeChild(creator);
+    if (!Array.from(identification.childNodes).some((child) => child.nodeType === 1)) {
+      identification.parentNode?.removeChild(identification);
+    }
     return;
   }
   if (!creator) {
@@ -369,8 +417,7 @@ function updateMetadata(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
       setOrCreateTextElement(doc, work, 'work-title', coreDocument.metadata.title);
       if (movementTitle?.parentNode) movementTitle.parentNode.removeChild(movementTitle);
     } else {
-      const nextMovementTitle = movementTitle ?? doc.createElement('movement-title');
-      if (!movementTitle) root.insertBefore(nextMovementTitle, root.firstChild);
+      const nextMovementTitle = movementTitle ?? appendRootChildInMusicXmlOrder(doc, root, 'movement-title');
       nextMovementTitle.textContent = coreDocument.metadata.title;
     }
   } else {
@@ -379,7 +426,7 @@ function updateMetadata(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
   }
 
   if (coreDocument.metadata.subtitle?.trim()) {
-    const ensuredWork = getOrCreateDirectChild(doc, root, 'work');
+    const ensuredWork = getOrCreateRootChildInMusicXmlOrder(doc, root, 'work');
     setOrCreateTextElement(doc, ensuredWork, 'work-number', coreDocument.metadata.subtitle);
   } else if (work) {
     removeDirectChildrenByTag(work, 'work-number');

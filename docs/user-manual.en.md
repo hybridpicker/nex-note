@@ -181,7 +181,7 @@ For faster reopening, nex-note uses the `.nxn` working copy in the selected `nex
 | Export practice pack | Creates a JSON practice pack. |
 | Print view / Print score | Opens page preview or browser print. |
 
-MXL is the main round-trip format for MuseScore, Finale, Dorico, and Sibelius.
+MXL is the main round-trip format for MuseScore, Finale, Dorico, and Sibelius. Developer and release checks can also run `npm run smoke:musescore-roundtrip`; that harness checks MusicXML, app-style MXL, and MSCZ through MuseScore CLI and writes diagnostics under `.nex/musescore-roundtrip-smoke-*`.
 
 ## Layout and View
 
@@ -197,4 +197,4 @@ In debug mode, `Report bug` exports a bundle with score data, runtime state, rec
 
 ## Known Limits
 
-AI quality depends on the selected provider and model. PDF/image import depends on Audiveris. MSCZ, GuitarPro, MIDI, and best ABC output depend on MuseScore CLI. Some notation marks may be visual-only for playback. Some MuseScore/Finale shortcuts are still missing; see [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+AI quality depends on the selected provider and model. PDF/image import depends on Audiveris. MSCZ, GuitarPro, MIDI, and best ABC output depend on MuseScore CLI. The roundtrip harness now separates nex-note export failures from local MuseScore crashes; on the current macOS test machine, MuseScore 4.7.3 can still abort on source-baseline conversions with `mutex lock failed`, so MSCZ parity remains an accepted alpha limitation until verified on a stable MuseScore install. Some notation marks may be visual-only for playback. Some MuseScore/Finale shortcuts are still missing; see [keyboard-shortcuts.md](./keyboard-shortcuts.md).

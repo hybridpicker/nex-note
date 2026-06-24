@@ -18,7 +18,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
-- Recent validation on 2026-06-24: `npm test`, `npm run build`, and a MuseScore CLI MusicXML -> MXL -> MusicXML smoke passed. Coverage and high-severity audit last passed on 2026-05-13.
+- Recent validation on 2026-06-24: `npm test`, `npm run build`, and `npm run smoke:musescore-roundtrip` passed with a local MuseScore 4.7.3 crash limitation. Coverage and high-severity audit last passed on 2026-05-13.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
 
@@ -60,7 +60,7 @@ The core value is:
 
 ## First Paid Workflow
 
-Bring your private score/tab archive into nex-note. Use AI-assisted edit/arrange with preview-before-apply. Validate and export MusicXML/MXL/MSCZ/MIDI. Publish private embeds for students, members, or collaborators.
+Bring your private score/tab archive into nex-note. Use AI-assisted edit/arrange with preview-before-apply. Validate and export MusicXML/MXL/MIDI, with MSCZ checks handled through local MuseScore CLI diagnostics. Publish private embeds for students, members, or collaborators.
 
 Founder testing is focused on this loop rather than a hosted SaaS workflow. The public test website explains the app, collects founder build requests, and exposes `/nex-note-app` as a web alpha preview only.
 
@@ -71,6 +71,7 @@ Founder testing is focused on this loop rather than a hosted SaaS workflow. The 
 - MSCZ, GuitarPro, MIDI, and best-effort ABC workflows depend on MuseScore CLI.
 - Some imported MusicXML still uses compatibility fallback when unsupported round-trip tags are present.
 - Some notation marks are preserved or rendered but not fully editable yet.
+- MuseScore CLI round-trip validation now captures MusicXML, app-style MXL, and MSCZ diagnostics under `.nex/musescore-roundtrip-smoke-*`; the current local MuseScore 4.7.3 install can SIGABRT even on source fixtures, so native MSCZ parity remains an accepted alpha limit unless a clean external MuseScore run confirms it.
 - macOS desktop builds are currently ad-hoc signed; notarization and signing identity selection are still open.
 - Local debug/developer routes must be removed, gated, or explicitly documented before distributing polished binaries.
 
@@ -245,6 +246,7 @@ Run the core checks before merging release-sensitive work:
 
 ```bash
 npm test
+npm run smoke:musescore-roundtrip
 npm run test:coverage:check
 npm run build
 ```

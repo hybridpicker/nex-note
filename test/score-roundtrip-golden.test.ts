@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { DOMParser } from '@xmldom/xmldom';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import { exportCoreToMusicXml } from '../src/musicxml-adapter/export/export-core-to-musicxml.ts';
 import { applyCoreCommands } from '../src/score-core/commands/core-command-executor.ts';
@@ -10,6 +11,17 @@ import { validateScoreDocument } from '../src/score-core/validation/validate-sco
 
 function loadFixture(name: string) {
   return readFileSync(path.join(process.cwd(), 'test', 'fixtures', name), 'utf8');
+}
+
+function directRootElementNames(xml: string) {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  const names: string[] = [];
+  for (let index = 0; index < root.childNodes.length; index += 1) {
+    const child = root.childNodes[index] as Element;
+    if (child.nodeType === 1) names.push(child.tagName);
+  }
+  return names;
 }
 
 const FULL_REST_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -273,6 +285,16 @@ for (const fixture of [
     assert.deepEqual(reimported, summarizeSemantics(xml));
   });
 }
+
+test('core MusicXML export keeps root metadata before part-list and avoids trailing empty identification', () => {
+  const xml = loadFixture('leadsheet-repeat.musicxml');
+  const imported = importMusicXmlToCore(xml);
+  const exported = exportCoreToMusicXml(xml, imported);
+  const rootChildren = directRootElementNames(exported);
+
+  assert.deepEqual(rootChildren, ['part-list', 'part']);
+  assert.doesNotMatch(exported, /<part[\s>][\s\S]*<identification\/>/);
+});
 
 test('setMeasureLayoutHint writes semantic layout hints through the core path', () => {
   const xml = loadFixture('choir-lyrics.musicxml');

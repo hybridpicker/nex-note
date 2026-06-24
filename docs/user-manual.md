@@ -320,7 +320,7 @@ Nex-note verwendet fuer schnelles Wiedereroeffnen eine `.nxn` Arbeitskopie im ge
 | Export practice pack | Erstellt ein JSON Practice Pack. |
 | Print view / Print score | Wechselt in Druckansicht bzw. startet Browser-Print. |
 
-MXL ist der wichtigste Rueckweg nach MuseScore, Finale, Dorico oder Sibelius.
+MXL ist der wichtigste Rueckweg nach MuseScore, Finale, Dorico oder Sibelius. Fuer Entwickler- und Release-Pruefungen gibt es zusaetzlich `npm run smoke:musescore-roundtrip`; dieser Harness prueft MusicXML, app-style MXL und MSCZ ueber MuseScore CLI und schreibt Diagnose-Artefakte unter `.nex/musescore-roundtrip-smoke-*`.
 
 ## Layout und Ansicht
 
@@ -366,6 +366,7 @@ Doctor Mode und Visual Debug helfen bei Note-Input-, Rhythmus-, Layout- und Sema
 | AI | Qualitaet haengt vom Provider/Modell ab; riskante Aenderungen sollten ueber Preview geprueft werden. |
 | PDF/Bild-Import | Benoetigt Audiveris und kann bei komplexen Scans oder Fotos fehlschlagen. |
 | MSCZ/GuitarPro/ABC/MIDI | Benoetigt MuseScore CLI fuer beste Ergebnisse. |
+| MuseScore CLI Roundtrip | Der Harness unterscheidet nex-note Exportfehler von lokalen MuseScore-Abstuerzen. Auf der aktuellen macOS-Testmaschine stuerzt MuseScore 4.7.3 teils auch bei Source-Baseline-Konvertierungen mit `mutex lock failed` ab; MSCZ-Paritaet bleibt deshalb ein akzeptiertes Alpha-Limit bis zur Pruefung auf einer stabilen MuseScore-Installation. |
 | Playback | Manche Notationszeichen sind je nach Engine visuell, aber nicht zwingend hoerbar. |
 | Keyboard | Einige MuseScore/Finale-Shortcuts fehlen noch; siehe [keyboard-shortcuts.md](./keyboard-shortcuts.md). |
 | Text- und Layoutfeinheiten | Nicht alle Desktop-Notation-Feinheiten aus MuseScore/Finale sind bereits als direkte UI-Funktion vorhanden. |

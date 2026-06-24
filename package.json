@@ -34,6 +34,7 @@
     "harness:capture-real-cli": "node scripts/capture-real-cli-harness.mjs",
     "harness:metrics": "node scripts/harness-metrics.js",
     "harness:assistant-catalog": "node --import tsx scripts/run-assistant-task-catalog.tsx",
+    "smoke:musescore-roundtrip": "tsx scripts/musescore-roundtrip-smoke.ts",
     "benchmark": "node --env-file=.env.local scripts/benchmark-ollama.mjs",
     "benchmark:quick": "node --env-file=.env.local scripts/benchmark-ollama.mjs --quick"
   },
