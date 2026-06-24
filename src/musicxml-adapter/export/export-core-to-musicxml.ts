@@ -508,8 +508,8 @@ function findTieStopEvent(previous: TimedEvent, orderedEvents: TimedEvent[]) {
     .find((event) => notePitchesEqual(previous, event)) ?? null;
 }
 
-function buildTieStopEventIds(partNode: ScoreDocumentModel['score']['parts'][number]) {
-  const stopIds = new Set<string>();
+function buildTieStopEventPlacements(partNode: ScoreDocumentModel['score']['parts'][number]) {
+  const stopPlacements = new Map<string, TimedEvent['tiePlacement']>();
 
   for (const staff of partNode.staves) {
     const voices = new Map<number, VoiceNode[]>();
@@ -533,19 +533,19 @@ function buildTieStopEventIds(partNode: ScoreDocumentModel['score']['parts'][num
       for (const event of orderedEvents) {
         if (!event.tieStart) continue;
         const stopEvent = findTieStopEvent(event, orderedEvents);
-        if (stopEvent) stopIds.add(stopEvent.id);
+        if (stopEvent) stopPlacements.set(stopEvent.id, event.tiePlacement);
       }
     }
   }
 
-  return stopIds;
+  return stopPlacements;
 }
 
 function buildEventElement(
   doc: XmlDocument,
   coreDocument: ScoreDocumentModel,
   event: TimedEvent,
-  tieStopEventIds: Set<string>,
+  tieStopEventPlacements: Map<string, TimedEvent['tiePlacement']>,
   chord = false,
 ) {
   const note = doc.createElement('note');
@@ -604,7 +604,7 @@ function buildEventElement(
     setOrCreateTextElement(doc, timeModification, 'normal-notes', String(tuplet.normalNotes));
     note.appendChild(timeModification);
   }
-  const hasTieStop = tieStopEventIds.has(event.id);
+  const hasTieStop = tieStopEventPlacements.has(event.id);
   if (hasTieStop) {
     const tie = doc.createElement('tie');
     tie.setAttribute('type', 'stop');
@@ -639,11 +639,14 @@ function buildEventElement(
     if (hasTieStop) {
       const tied = doc.createElement('tied');
       tied.setAttribute('type', 'stop');
+      const stopPlacement = tieStopEventPlacements.get(event.id);
+      if (stopPlacement) tied.setAttribute('placement', stopPlacement);
       notations.appendChild(tied);
     }
     if (event.tieStart) {
       const tied = doc.createElement('tied');
       tied.setAttribute('type', 'start');
+      if (event.tiePlacement) tied.setAttribute('placement', event.tiePlacement);
       notations.appendChild(tied);
     }
     eventSlurs.forEach((slur) => {
@@ -1027,7 +1030,7 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
   coreDocument.score.parts.forEach((partNode, partIndex) => {
     const xmlPart = xmlParts.find((part) => part.getAttribute('id') === partNode.sourcePartId) as XmlEl | undefined;
     if (!xmlPart) return;
-    const tieStopEventIds = buildTieStopEventIds(partNode);
+    const tieStopEventPlacements = buildTieStopEventPlacements(partNode);
 
     const canonicalMeasures = findCanonicalMeasures(partNode);
     canonicalMeasures.forEach((measureRef) => {
@@ -1162,7 +1165,7 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
                 doc,
                 coreDocument,
                 event,
-                tieStopEventIds,
+                tieStopEventPlacements,
                 shouldWriteChordMarker(renderableEvents, index, coreDocument),
               ));
             });

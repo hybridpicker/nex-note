@@ -1,6 +1,6 @@
 # User-Visible and Audible Test Plan
 
-Updated: 2026-04-17
+Updated: 2026-06-24
 
 ## Automation Gate
 
@@ -129,8 +129,9 @@ Repeat the same flow for each accidental:
 | 5.4 | Press `R` | Rest glyph inserted | Silent |
 | 5.5 | Press `T` between two same-pitch notes | Tie arc drawn | Playback does not retrigger second notehead |
 | 5.6 | Press `T` again | Tie removed | Silent |
-| 5.7 | Press `S` over two or more notes | Slur arc drawn | Silent |
-| 5.8 | Grace-note button | Small grace note drawn before anchor | On playback, grace note precedes main note |
+| 5.7 | Select an existing tie-start note and set Tie below/above in the Inspector | Tie arc moves below/above and survives reload/export | Silent |
+| 5.8 | Press `S` over two or more notes | Slur arc drawn | Silent |
+| 5.9 | Grace-note button | Small grace note drawn before anchor | On playback, grace note precedes main note |
 
 Regression note for `5.5`:
 

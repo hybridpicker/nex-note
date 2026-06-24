@@ -48,6 +48,7 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'clearArticulations',
   'clearRangeArticulations',
   'toggleTie',
+  'setTiePlacement',
   'toggleSlur',
   'setSlurPlacement',
   'addDynamic',
@@ -3603,7 +3604,16 @@ export function executeCoreCommands(
       case 'toggleTie': {
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (event) event.tieStart = !event.tieStart;
+        if (event) {
+          event.tieStart = !event.tieStart;
+          if (!event.tieStart) event.tiePlacement = undefined;
+        }
+        break;
+      }
+      case 'setTiePlacement': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
+        if (event?.kind === 'note' && event.tieStart) event.tiePlacement = command.placement;
         break;
       }
       case 'toggleSlur': {

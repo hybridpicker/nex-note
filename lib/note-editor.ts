@@ -63,6 +63,7 @@ export type NoteEditOperation =
   | ({ type: 'clearArticulations' } & NoteLocator)
   | ({ type: 'addDynamic'; dynamic: DynamicKind; placement?: 'above' | 'below' } & NoteLocator)
   | ({ type: 'toggleTie' } & NoteLocator)
+  | ({ type: 'setTiePlacement'; placement: 'above' | 'below' } & NoteLocator)
   | ({ type: 'toggleSlur'; stopLocator?: NoteLocator } & NoteLocator)
   | ({ type: 'setSlurPlacement'; placement: 'above' | 'below'; stopLocator: NoteLocator } & NoteLocator)
   | ({ type: 'transposeChromatic'; semitones: number } & NoteLocator)
@@ -443,6 +444,10 @@ export function applyNoteEdit(xml: string, op: NoteEditOperation): string {
     const note = findNoteElement(doc, op);
     if (note) toggleTieOnNote(doc, note);
     else warnMissingNote(op, 'toggleTie');
+  } else if (op.type === 'setTiePlacement') {
+    const note = findNoteElement(doc, op);
+    if (note) setTiePlacementOnNote(doc, note, op.placement);
+    else warnMissingNote(op, 'setTiePlacement');
   } else if (op.type === 'transposeChromatic') {
     const note = findNoteElement(doc, op);
     if (note) transposeNoteChromatically(doc, note, op.semitones);
@@ -1193,6 +1198,27 @@ function toggleTieOnNote(doc: XmlDocument, note: El) {
   const tied = doc.createElement('tied');
   tied.setAttribute('type', 'start');
   notations.appendChild(tied);
+}
+
+function setTiePlacementOnNote(doc: XmlDocument, note: El, placement: 'above' | 'below') {
+  const directTieStart = Array.from(note.childNodes).some((node) => {
+    const element = node as El;
+    return element.nodeType === 1 && element.tagName === 'tie' && element.getAttribute('type') === 'start';
+  });
+  const notations = getOrCreateChild(doc, note, 'notations');
+  const tiedStarts = Array.from(notations.getElementsByTagName('tied'))
+    .filter((tied) => tied.getAttribute('type') === 'start');
+  if (!directTieStart && tiedStarts.length === 0) {
+    cleanEmptyNotations(note);
+    return;
+  }
+
+  const targets = tiedStarts.length > 0 ? tiedStarts : [doc.createElement('tied')];
+  targets.forEach((tied) => {
+    tied.setAttribute('type', 'start');
+    tied.setAttribute('placement', placement);
+    if (!tied.parentNode) notations.appendChild(tied);
+  });
 }
 
 function notePitchKey(note: El) {

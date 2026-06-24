@@ -260,6 +260,7 @@ const NOTE_EDIT_TYPES = new Set([
   'clearArticulations',
   'addDynamic',
   'toggleTie',
+  'setTiePlacement',
   'toggleSlur',
   'setSlurPlacement',
   'transposeChromatic',
@@ -377,7 +378,7 @@ function getCategory(type: string): ScoreCommandCategory {
   if (['setSwing'].includes(type)) return 'layoutHints';
   if (['setInstrumentChange', 'setMultiMeasureRest'].includes(type)) return 'structure';
   if (['addGuitarBend', 'addGuitarTap'].includes(type)) return 'notation';
-  if (['removeArticulations', 'toggleArticulation', 'clearArticulations', 'clearRangeArticulations', 'addDynamic', 'toggleTie', 'toggleSlur', 'setSlurPlacement', 'addWords', 'addExpressionText', 'addAnalysisAnnotation', 'addTechniqueInstruction', 'addSyncPoint', 'addOrchestrationNote', 'addRehearsalMark', 'addRehearsalMarksEvery', 'removeDirection', 'setHarmonyAt', 'setNoteStyle', 'toggleStemDirection', 'setGuitarFret', 'toggleGuitarTechnique', 'fillSlashMeasure', 'setLyricLine', 'removeLyricLine', 'addTuplet', 'addGraceNote', 'removeGraceNote', 'addFingering', 'addOrnament', 'addWedge', 'addPedalSpan', 'addOttava', 'addFermata', 'removeFermata', 'addTremolo', 'addGlissando', 'addArpeggio'].includes(type)) return 'notation';
+  if (['removeArticulations', 'toggleArticulation', 'clearArticulations', 'clearRangeArticulations', 'addDynamic', 'toggleTie', 'setTiePlacement', 'toggleSlur', 'setSlurPlacement', 'addWords', 'addExpressionText', 'addAnalysisAnnotation', 'addTechniqueInstruction', 'addSyncPoint', 'addOrchestrationNote', 'addRehearsalMark', 'addRehearsalMarksEvery', 'removeDirection', 'setHarmonyAt', 'setNoteStyle', 'toggleStemDirection', 'setGuitarFret', 'toggleGuitarTechnique', 'fillSlashMeasure', 'setLyricLine', 'removeLyricLine', 'addTuplet', 'addGraceNote', 'removeGraceNote', 'addFingering', 'addOrnament', 'addWedge', 'addPedalSpan', 'addOttava', 'addFermata', 'removeFermata', 'addTremolo', 'addGlissando', 'addArpeggio'].includes(type)) return 'notation';
   return 'content';
 }
 
@@ -557,6 +558,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
     case 'clearArticulations':
     case 'addDynamic':
     case 'toggleTie':
+    case 'setTiePlacement':
     case 'toggleSlur':
     case 'setSlurPlacement':
     case 'transposeChromatic':
@@ -575,6 +577,9 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
         if (command.placement != null && !['above', 'below'].includes(String(command.placement))) {
           issues.push('placement must be above or below');
         }
+      }
+      if (type === 'setTiePlacement' && !['above', 'below'].includes(String(command.placement))) {
+        issues.push('placement must be above or below');
       }
       if (type === 'setNoteStyle') {
         if (command.notehead != null && command.notehead !== 'slash') issues.push('notehead must be slash when provided');

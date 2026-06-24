@@ -1,6 +1,6 @@
 # nex-note User Manual
 
-Updated: 2026-06-11. This manual covers the current user-facing features in nex-note. Keyboard and mouse shortcuts are documented separately in [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+Updated: 2026-06-24. This manual covers the current user-facing features in nex-note. Keyboard and mouse shortcuts are documented separately in [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 Languages: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
 
@@ -109,7 +109,7 @@ Select a note and use `A` to `G`, the active-note buttons, arrow-key transpositi
 | Tuplets | Triplet and quintuplet via toolbar/palette or `Cmd/Ctrl+3` and `Cmd/Ctrl+5`. |
 
 Some notation marks may be visual-only depending on playback support.
-Direction and placement editing remains intentionally conservative: the Inspector now exposes semantic placement for staff text, expression text, dynamics, and already-existing slur spans, while direction placement for wedges and ottavas remains roundtrip-safe in the core/import/export path. nex-note still does not expose tie-direction or articulation-placement flips until those semantics are modeled explicitly in core.
+Direction and placement editing remains intentionally conservative: the Inspector now exposes semantic placement for staff text, expression text, dynamics, already-existing tie starts, and already-existing slur spans, while direction placement for wedges and ottavas remains roundtrip-safe in the core/import/export path. nex-note still does not expose articulation-placement flips until those semantics are modeled explicitly in core.
 
 ## Barlines, Repeats, and Slashes
 
@@ -117,7 +117,7 @@ The Edit Palette can set regular, double, final, start repeat, and end repeat ba
 
 ## Chord Symbols, Lyrics, and Text
 
-With a note selected, `Cmd/Ctrl+K` opens an inline harmony cursor directly at the score position. Existing chord symbols load for quick overwrite, `Enter` applies, and `Escape` cancels. Without a note selection, `Cmd/Ctrl+K` still opens the Command Center. The Inspector adds rehearsal marks, staff text, expressions, dynamics, and lyric lines. Staff text and expression text can be placed above or below the staff, selected-note dynamics now preload both the current semantic value and placement when available, and an existing slur selected as a semantic span can be flipped above or below without leaving the command path. Pressing `Enter` in rehearsal, staff-text, lyric, or dynamic fields still applies the edit directly through the command path.
+With a note selected, `Cmd/Ctrl+K` opens an inline harmony cursor directly at the score position. Existing chord symbols load for quick overwrite, `Enter` applies, and `Escape` cancels. Without a note selection, `Cmd/Ctrl+K` still opens the Command Center. The Inspector adds rehearsal marks, staff text, expressions, dynamics, and lyric lines. Staff text and expression text can be placed above or below the staff, selected-note dynamics now preload both the current semantic value and placement when available, an existing selected tie start can be placed above or below, and an existing slur selected as a semantic span can be flipped above or below without leaving the command path. Pressing `Enter` in rehearsal, staff-text, lyric, or dynamic fields still applies the edit directly through the command path.
 
 ## Inspector
 
@@ -125,7 +125,7 @@ The Inspector is the structured editor for score-wide and measure-level commands
 
 | Section | Features |
 | --- | --- |
-| Selection | Range transposition, clear articulations, toggle staccato/accent, add `mf`, toggle slur, and above/below placement for an existing selected slur span. |
+| Selection | Range transposition, clear articulations, toggle staccato/accent, add `mf`, toggle slur, and above/below placement for an existing selected tie start or slur span. |
 | Score Setup | Title, subtitle, composer, arranger. |
 | Key | C, G, D, A, F, and Bb major presets. |
 | Repeats & Endings | Start repeat, end repeat, first ending, second ending. |

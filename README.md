@@ -18,7 +18,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
-- Recent validation on 2026-05-13: `npm test`, `npm run test:coverage:check`, `npm run build`, and `npm audit --audit-level=high` passed.
+- Recent validation on 2026-06-24: `npm test`, `npm run build`, and a MuseScore CLI MusicXML -> MXL -> MusicXML smoke passed. Coverage and high-severity audit last passed on 2026-05-13.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
 
@@ -49,7 +49,7 @@ The core value is:
 - Import `.musicxml`, `.xml`, `.mxl`, `.mscz`, GuitarPro files, MIDI, and `.nxn` project files. PDF/photo import is assisted and review-based.
 - Render MusicXML in-browser with OpenSheetMusicDisplay.
 - Edit notes directly with MuseScore-style keyboard and mouse workflows.
-- Use selection ranges, transpose tools, dynamics, articulations, ties/slurs, repeats, endings, lyrics, text, part metadata, and layout hints.
+- Use selection ranges, transpose tools, dynamics, articulations, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and layout hints.
 - Use an AI assistant with Ollama, Claude, Gemini, or benchmark mode.
 - Preview and confirm risky AI edits before applying them.
 - Run validator-guided repair when AI output introduces notation diagnostics.

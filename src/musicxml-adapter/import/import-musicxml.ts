@@ -47,6 +47,12 @@ function parseIntSafe(value: string | null | undefined, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizePlacement(value: string | null | undefined): 'above' | 'below' | undefined {
+  if (value === 'above' || value === 'over') return 'above';
+  if (value === 'below' || value === 'under') return 'below';
+  return undefined;
+}
+
 function serializeElement(element: XmlElement) {
   return new XMLSerializer().serializeToString(element);
 }
@@ -685,6 +691,11 @@ function buildVoices(
     const modeledStem = stemText === 'none' || stemText === 'up' || stemText === 'down' ? stemText : undefined;
     const guitar = readGuitarTechnical(note);
     const eventId = makeId('event', partId, measureNumber, staffIndex, voiceId, timestampNum, timestampDen, eventsByVoice.get(voiceId)?.length ?? 0);
+    const notations = note.getElementsByTagName('notations')[0];
+    const tiedStart = Array.from(notations?.getElementsByTagName('tied') ?? [])
+      .find((tied) => tied.getAttribute('type') === 'start');
+    const tieStart = Array.from(note.getElementsByTagName('tie')).some((tie) => tie.getAttribute('type') === 'start')
+      || Boolean(tiedStart);
 
     const baseEvent = {
       id: eventId,
@@ -703,7 +714,10 @@ function buildVoices(
       articulations: Array.from(note.getElementsByTagName('articulations')[0]?.childNodes ?? [])
         .filter((child): child is XmlElement => child.nodeType === 1)
         .map((child) => child.tagName),
-      tieStart: Array.from(note.getElementsByTagName('tie')).some((tie) => tie.getAttribute('type') === 'start'),
+      tieStart,
+      tiePlacement: tieStart
+        ? normalizePlacement(tiedStart?.getAttribute('placement') ?? tiedStart?.getAttribute('orientation'))
+        : undefined,
       lyrics: Array.from(note.getElementsByTagName('lyric')).map((lyric) => ({
         verseNumber: parseIntSafe(lyric.getAttribute('number'), 1) || 1,
         text: lyric.getElementsByTagName('text')[0]?.textContent ?? '',

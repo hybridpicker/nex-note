@@ -1912,6 +1912,43 @@ test('applyDocumentCommands applies notation edits through the core path', () =>
   assert.equal(result.coreDocument?.score.parts[0].staves[0].measures[0].rightBarline, 'final');
 });
 
+test('tie placement edits stay semantic and roundtrip through MusicXML', () => {
+  const tieReadyXml = SAMPLE_XML.replace(
+    '</measure>',
+    `<note>
+      <pitch><step>C</step><octave>4</octave></pitch>
+      <duration>3</duration>
+      <voice>1</voice>
+      <type>half</type>
+      <dot/>
+      <staff>1</staff>
+    </note></measure>`,
+  );
+  const result = applyDocumentCommands(buildDocumentState(tieReadyXml), [
+    { type: 'toggleTie', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 },
+    { type: 'setTiePlacement', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, placement: 'below' },
+  ]);
+
+  assert.match(result.xml, /<tied type="start" placement="below"\/>/);
+  assert.match(result.xml, /<tied type="stop" placement="below"\/>/);
+
+  const event = result.coreDocument?.score.parts[0].staves[0].measures[0].voices[0].events[0];
+  assert.equal(event?.tieStart, true);
+  assert.equal(event?.tiePlacement, 'below');
+
+  const roundtripped = importMusicXmlToCore(result.xml);
+  const roundtrippedEvent = roundtripped.score.parts[0].staves[0].measures[0].voices[0].events[0];
+  assert.equal(roundtrippedEvent?.tieStart, true);
+  assert.equal(roundtrippedEvent?.tiePlacement, 'below');
+
+  const untied = applyDocumentCommands(result, [
+    { type: 'toggleTie', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 },
+  ]);
+  const untiedEvent = untied.coreDocument?.score.parts[0].staves[0].measures[0].voices[0].events[0];
+  assert.equal(Boolean(untiedEvent?.tieStart), false);
+  assert.equal(untiedEvent?.tiePlacement, undefined);
+});
+
 test('deleteNote and pitch changes repair tie continuity on the preceding note', () => {
   const tieReadyXml = SAMPLE_XML.replace(
     '</measure>',

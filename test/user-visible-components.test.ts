@@ -1690,3 +1690,81 @@ test('ScoreInspector exposes slur placement only for an existing selected slur s
     renderer?.unmount();
   });
 });
+
+test('ScoreInspector exposes tie placement for an existing selected tie start', async () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <tie type="start"/>
+        <notations><tied type="start" placement="above"/></notations>
+        <staff>1</staff>
+      </note>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <tie type="stop"/>
+        <notations><tied type="stop"/></notations>
+        <staff>1</staff>
+      </note>
+      <note><rest/><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const coreDocument = importMusicXmlToCore(xml);
+  const selectedNotes = makeSelectedNotes(xml).slice(0, 1);
+  const calls: Array<{ label?: string; commands: unknown[] }> = [];
+
+  let renderer: ReturnType<typeof create> | null = null;
+  await act(async () => {
+    renderer = create(React.createElement(ScoreInspector, {
+      xml,
+      coreDocument,
+      selection: undefined,
+      selectedNote: selectedNotes[0] ?? null,
+      selectedNotes,
+      currentMeasure: 1,
+      onApplyCommands(commands, label) {
+        calls.push({ commands, label });
+      },
+      onOpenExtractedPart() {},
+    }));
+  });
+
+  const root = renderer!.root;
+  const tiePlacementSelect = root.findAllByProps({ id: 'inspector-tie-placement' })[0];
+  assert.equal(tiePlacementSelect.props.value, 'above');
+
+  await act(async () => {
+    tiePlacementSelect.props.onChange({ target: { value: 'below' } });
+  });
+  await act(async () => {
+    buttonWithText(root, 'Apply tie placement').props.onClick();
+  });
+
+  assert.deepEqual(calls[0], {
+    label: 'Set tie below',
+    commands: [{
+      type: 'setTiePlacement',
+      placement: 'below',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+    }],
+  });
+
+  await act(async () => {
+    renderer?.unmount();
+  });
+});

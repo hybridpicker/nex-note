@@ -1,6 +1,6 @@
 # nex-note Manual
 
-Stand: 2026-06-11. Dieses Manual beschreibt die aktuell verfügbaren Nutzerfunktionen in nex-note. Tastaturkuerzel sind separat in [keyboard-shortcuts.md](./keyboard-shortcuts.md) dokumentiert.
+Stand: 2026-06-24. Dieses Manual beschreibt die aktuell verfügbaren Nutzerfunktionen in nex-note. Tastaturkuerzel sind separat in [keyboard-shortcuts.md](./keyboard-shortcuts.md) dokumentiert.
 
 Sprachen: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).
 
@@ -161,7 +161,7 @@ Die Note Input Toolbar bietet schnelle Artikulationen fuer die aktive Note. Die 
 | Slash notehead | `Shift+X` toggelt den Slash-Notehead der ausgewaehlten Note ueber die semantische Notenstil-Operation. |
 
 Hinweis: Einige visuelle Notationszeichen koennen je nach Playback-Engine nur visuell wirken und nicht hoerbar interpretiert werden.
-Richtungs-/Placement-Bearbeitung bleibt bewusst konservativ: Der Inspector bietet jetzt semantisches Placement fuer Staff Text, Expression Text, Dynamics und bereits vorhandene Slur-Spans, waehrend Direction-Placement fuer Wedges oder Ottavas im Core/Import/Export weiterhin roundtrip-sicher erhalten bleibt. Neue UI-Flips fuer Tie- oder Artikulationsrichtung werden noch nicht angeboten, solange diese Semantik im Core nicht explizit modelliert ist.
+Richtungs-/Placement-Bearbeitung bleibt bewusst konservativ: Der Inspector bietet jetzt semantisches Placement fuer Staff Text, Expression Text, Dynamics, bereits vorhandene Tie-Starts und bereits vorhandene Slur-Spans, waehrend Direction-Placement fuer Wedges oder Ottavas im Core/Import/Export weiterhin roundtrip-sicher erhalten bleibt. Neue UI-Flips fuer Artikulationsrichtung werden noch nicht angeboten, solange diese Semantik im Core nicht explizit modelliert ist.
 
 ## Barlines, Repeats und Slashes
 
@@ -192,7 +192,7 @@ Zusaetzliche Funktionen:
 | Staff Text / Expression | Inspector, Bereich Text & Rehearsal. |
 | Lyrics | Inspector, Note auswaehlen, Text und Versnummer setzen, dann Attach lyric line. |
 
-`Cmd/Ctrl+K` oeffnet bei ausgewaehlter Note den Inline-Harmony-Editor direkt an der Partiturposition. Der Cursor laedt ein vorhandenes Akkordsymbol der selektierten Note zum direkten Ueberschreiben; `Enter` uebernimmt, `Escape` bricht ab. Ohne Notenauswahl bleibt `Cmd/Ctrl+K` der Einstieg ins Command Center. Im Inspector laden Lyrics-Felder sowie Dynamics bei aktiver Note vorhandene semantische Werte vor; bei Dynamics wird jetzt auch das vorhandene Placement uebernommen. Staff Text und Expression Text koennen ober- oder unterhalb des Staffs gesetzt werden, und eine bereits vorhandene Slur ueber der aktuellen semantischen Auswahl kann dort ebenfalls auf ober- oder unterhalb gestellt werden. `Enter` uebernimmt Rehearsal Mark, Staff Text, Lyrics oder Dynamics direkt ueber den Command-Pfad.
+`Cmd/Ctrl+K` oeffnet bei ausgewaehlter Note den Inline-Harmony-Editor direkt an der Partiturposition. Der Cursor laedt ein vorhandenes Akkordsymbol der selektierten Note zum direkten Ueberschreiben; `Enter` uebernimmt, `Escape` bricht ab. Ohne Notenauswahl bleibt `Cmd/Ctrl+K` der Einstieg ins Command Center. Im Inspector laden Lyrics-Felder sowie Dynamics bei aktiver Note vorhandene semantische Werte vor; bei Dynamics wird jetzt auch das vorhandene Placement uebernommen. Staff Text und Expression Text koennen ober- oder unterhalb des Staffs gesetzt werden, eine ausgewaehlte Tie-Start-Note kann den Tie ober- oder unterhalb setzen, und eine bereits vorhandene Slur ueber der aktuellen semantischen Auswahl kann dort ebenfalls auf ober- oder unterhalb gestellt werden. `Enter` uebernimmt Rehearsal Mark, Staff Text, Lyrics oder Dynamics direkt ueber den Command-Pfad.
 
 Der AI-Chat kann ebenfalls Akkordsymbole und Texte erzeugen, wenn der Prompt klar genug ist.
 
@@ -203,7 +203,7 @@ Die Bereiche sind als ein- und ausklappbare Sektionen organisiert. Die Chips dir
 
 | Abschnitt | Funktionen |
 | --- | --- |
-| Selection | Ausgewaehlte Range transponieren, Artikulationen loeschen, Staccato/Accent toggeln, `mf` setzen, Slur ueber Auswahl toggeln und bestehende Slur-Spans ober-/unterhalb platzieren. |
+| Selection | Ausgewaehlte Range transponieren, Artikulationen loeschen, Staccato/Accent toggeln, `mf` setzen, Slur ueber Auswahl toggeln sowie bestehende Tie-Starts und Slur-Spans ober-/unterhalb platzieren. |
 | Score Setup | Titel, Untertitel, Komponist, Arrangeur setzen. |
 | Key | Presets fuer C, G, D, A, F und Bb major. |
 | Repeats & Endings | Start repeat, End repeat, 1st ending, 2nd ending. |

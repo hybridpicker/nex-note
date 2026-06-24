@@ -295,6 +295,19 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
         timestampNum: command.timestampNum,
         timestampDen: command.timestampDen,
       });
+    case 'setTiePlacement': {
+      const previous = findEvent(document, command);
+      if (!previous?.tieStart) return null;
+      return stripEnvelopeMeta({
+        type: 'setTiePlacement',
+        measureNumber: command.measureNumber,
+        staffIndex: command.staffIndex,
+        voiceId: command.voiceId,
+        timestampNum: command.timestampNum,
+        timestampDen: command.timestampDen,
+        placement: previous.tiePlacement === 'below' ? 'below' : 'above',
+      });
+    }
     case 'toggleArticulation':
       return stripEnvelopeMeta({
         type: 'toggleArticulation',

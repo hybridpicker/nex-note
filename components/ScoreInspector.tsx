@@ -194,6 +194,19 @@ function resolveSelectedSlur(
   };
 }
 
+function resolveSelectedTie(
+  coreDocument: ScoreDocumentModel | null,
+  selectedNote: SelectedNote | null,
+): { placement: 'above' | 'below'; note: SelectedNote } | null {
+  if (!coreDocument || !selectedNote || selectedNote.isRest) return null;
+  const event = findEventReference(coreDocument, selectedNote)?.event;
+  if (event?.kind !== 'note' || !event.tieStart) return null;
+  return {
+    placement: event.tiePlacement === 'below' ? 'below' : 'above',
+    note: selectedNote,
+  };
+}
+
 function buildPerNoteCommands(
   selectedNotes: SelectedNote[],
   mapNote: (note: SelectedNote) => ScoreCommand,
@@ -261,6 +274,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   const [textPlacement, setTextPlacement] = useState<'above' | 'below'>('above');
   const [dynamicMarking, setDynamicMarking] = useState<DynamicKind>('mf');
   const [dynamicPlacement, setDynamicPlacement] = useState<'above' | 'below'>('below');
+  const [tiePlacement, setTiePlacement] = useState<'above' | 'below'>('above');
   const [slurPlacement, setSlurPlacement] = useState<'above' | 'below'>('above');
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
@@ -288,6 +302,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   const lyricVerseLabel = selectedNote ? 'Lyric verse' : `Lyric verse - ${noteRequiredReason}`;
   const attachLyricLabel = selectedNote ? 'Attach lyric line' : `Attach lyric line - ${noteRequiredReason}`;
   const pitchedSelection = useMemo(() => sortSelection(selectedNotes).filter((note) => !note.isRest), [selectedNotes]);
+  const selectedTie = useMemo(() => resolveSelectedTie(coreDocument, selectedNote), [coreDocument, selectedNote]);
   const selectedSlur = useMemo(() => resolveSelectedSlur(coreDocument, selectedNotes), [coreDocument, selectedNotes]);
   const range = useMemo(() => buildSelectionRange(selectedNotes), [selectedNotes]);
   const summary = useMemo(() => {
@@ -349,6 +364,10 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   useEffect(() => {
     setSlurPlacement(selectedSlur?.placement ?? 'above');
   }, [selectedSlur?.placement]);
+
+  useEffect(() => {
+    setTiePlacement(selectedTie?.placement ?? 'above');
+  }, [selectedTie?.placement]);
 
   const submitRehearsalMark = () => {
     if (!rehearsalText.trim()) return;
@@ -644,6 +663,34 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
               ) : null}
             </div>
           )}
+          {selectedTie ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <label className="sr-only" htmlFor="inspector-tie-placement">Tie placement</label>
+              <select
+                id="inspector-tie-placement"
+                value={tiePlacement}
+                onChange={(event) => setTiePlacement(event.target.value === 'below' ? 'below' : 'above')}
+                className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs text-violet-900"
+              >
+                <option value="above">Tie above</option>
+                <option value="below">Tie below</option>
+              </select>
+              <button
+                onClick={() => onApplyCommands([{
+                  type: 'setTiePlacement',
+                  placement: tiePlacement,
+                  measureNumber: selectedTie.note.measureNumber,
+                  staffIndex: selectedTie.note.staffIndex,
+                  voiceId: selectedTie.note.voiceId,
+                  timestampNum: selectedTie.note.timestampNum,
+                  timestampDen: selectedTie.note.timestampDen,
+                }], `Set tie ${tiePlacement}`)}
+                className="rounded-xl bg-violet-100 px-3 py-2 text-xs font-medium text-violet-900 hover:bg-violet-200"
+              >
+                Apply tie placement
+              </button>
+            </div>
+          ) : null}
         </div>
       </InspectorSection>
 

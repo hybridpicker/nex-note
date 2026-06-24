@@ -112,6 +112,7 @@ export interface BaseTimedEvent {
   hidden?: boolean;
   articulations?: string[];
   tieStart?: boolean;
+  tiePlacement?: 'above' | 'below';
   lyrics?: Array<{
     verseNumber?: number;
     text: string;

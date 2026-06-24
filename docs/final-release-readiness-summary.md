@@ -1,6 +1,6 @@
 # Release Readiness Summary
 
-Updated: 2026-05-13
+Updated: 2026-06-24
 
 This file is the short executive summary; the detailed progress log is maintained privately.
 
@@ -14,11 +14,13 @@ A tagged binary release still needs desktop packaging evidence, signing/notariza
 
 ## Validated State
 
-- `npm test`: passed on 2026-05-13 (`645` tests)
-- `npm run test:coverage:check`: passed on 2026-05-13 (`84.96%` lines, `76.57%` branches, `85.33%` functions)
-- `npm run build`: passed on 2026-05-13
-- `npm audit --audit-level=high`: passed on 2026-05-13 (`0` vulnerabilities)
+- `npm test`: passed on 2026-06-24 (`826` tests)
+- `npm run build`: passed on 2026-06-24
+- MuseScore CLI MusicXML -> MXL -> MusicXML smoke: passed on 2026-06-24 with `/Applications/MuseScore 4.app/Contents/MacOS/mscore`
+- `npm run test:coverage:check`: last passed on 2026-05-13 (`84.96%` lines, `76.57%` branches, `85.33%` functions)
+- `npm audit --audit-level=high`: last passed on 2026-05-13 (`0` vulnerabilities)
 - release validation remained on the core-first command path; no parallel direct-XML edit route was introduced to work around the runtime issues
+- tie placement for selected tie starts now runs through the semantic command path, is visible in the Inspector, and roundtrips through MusicXML
 
 ## Manual Validation Highlights
 
@@ -31,6 +33,8 @@ A tagged binary release still needs desktop packaging evidence, signing/notariza
 
 - alpha users should expect local setup friction around AI providers, MuseScore CLI, Audiveris, and macOS-first desktop packaging
 - some imported MusicXML still intentionally uses compatibility fallback when unsafe roundtrip tags remain present
+- the local MuseScore CLI passed compressed-MusicXML roundtrip smoke, but a MusicXML -> MSCZ -> MusicXML smoke crashed while reopening the generated `.mscz`; native MSCZ validation remains a manual compatibility check
+- articulation direction/placement still is not modeled as a first-class semantic edit; tie and slur placement are the implemented above/below controls
 - chord input mode is available through the toolbar, `Shift+A...G`, and `Cmd/Ctrl+Shift+H`, but still lacks deeper desktop-style chord-editing polish
 - tuplet quick-insert is exposed in the note-input toolbar for ratios 2:3 through 9:8, matching the existing `Cmd/Ctrl+2...9` semantic command path
 - the existing Turbopack warning remains unchanged and non-blocking for release

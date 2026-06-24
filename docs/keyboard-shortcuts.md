@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-Stand: 2026-05-13. Diese Liste dokumentiert die im Code tatsächlich verdrahteten Shortcuts. `Cmd` auf macOS entspricht `Ctrl` auf Windows/Linux, sofern nicht anders angegeben.
+Stand: 2026-06-24. Diese Liste dokumentiert die im Code tatsächlich verdrahteten Shortcuts. `Cmd` auf macOS entspricht `Ctrl` auf Windows/Linux, sofern nicht anders angegeben.
 
 ## Workspace
 
@@ -147,7 +147,7 @@ Die TAB-Eingabe kann Standard, Drop D, DADGAD und Open G nutzen. String, Bund, T
 
 Command-Center-Suche akzeptiert mehrere Suchbegriffe in beliebiger Reihenfolge, z. B. `score create` fuer `Create new score`.
 Textbezogene Aktionen sind als gemeinsame Gruppe `Text input` organisiert; Suchbegriffe wie `text input`, `inspector text` oder `chord symbol` finden dieselben Textbefehle.
-Phase D fuegt bewusst keine neuen Shortcuts hinzu: Placement fuer Staff Text, Expression Text, Dynamics und bestehende Slur-Spans wird ueber die bestehenden Inspector-Fokuswege (`Cmd/Ctrl+T`, `Cmd/Ctrl+M`) plus die vorhandene Slur-Auswahl editiert, um Kollisionen mit Note Input, Browser-Konventionen und Command Center zu vermeiden.
+Phase D fuegt bewusst keine neuen Shortcuts hinzu: Placement fuer Staff Text, Expression Text, Dynamics, bestehende Tie-Starts und bestehende Slur-Spans wird ueber die bestehenden Inspector-Fokuswege (`Cmd/Ctrl+T`, `Cmd/Ctrl+M`) plus die vorhandene Auswahl editiert, um Kollisionen mit Note Input, Browser-Konventionen und Command Center zu vermeiden.
 Ansichts- und Navigationshilfen sind zusaetzlich als Gruppe `View` organisiert; Suchbegriffe wie `navigator`, `find`, `zoom`, `page view` oder `continuous horizontal` oeffnen dieselben Footer-Werkzeuge direkt ueber das Command Center.
 Takt- und Wiederholungswerkzeuge aus dem Inspector sind zusaetzlich als Gruppe `Structure` organisiert; Suchbegriffe wie `structure`, `repeat`, `ending`, `system break`, `page break` oder `insert measure` finden dieselben Befehle direkt ueber das Command Center.
 Inspector-Sektionen selbst sind zusaetzlich als Gruppe `Inspector` organisiert; Suchbegriffe wie `inspector score setup`, `inspector key signature`, `inspector measure tools`, `inspector lyrics` oder `inspector parts instruments` oeffnen direkt die passende Inspector-Sektion und fokussieren das erste relevante Steuerelement.
@@ -170,7 +170,7 @@ Priorisierte Vorschläge:
 
 | Priorität | Vorschlag | Begründung |
 | --- | --- | --- |
-| Mittel | weitere Flip-Ziele fuer Tie-/Artikulationsrichtung und breitere Direction-Placements | Slur-Placement ist jetzt explizit im Inspector editierbar; Tie-/Artikulationsrichtung und weitere Direction-Typen brauchen weiterhin eigene semantische Properties bzw. eine bewusst groessere Inspector-Surface |
+| Mittel | weitere Flip-Ziele fuer Artikulationsrichtung und breitere Direction-Placements | Tie- und Slur-Placement sind jetzt explizit im Inspector editierbar; Artikulationsrichtung und weitere Direction-Typen brauchen weiterhin eigene semantische Properties bzw. eine bewusst groessere Inspector-Surface |
 | Mittel | weitere Text-Shortcuts prüfen: System Text, separates Expression-Popup und Dynamics-Eingabe | Phase D liefert explizite Placement-Controls fuer Staff Text, Expression Text und Dynamics im Inspector; zusaetzliche globale Shortcuts bleiben vorerst bewusst ausgesetzt |
 | Mittel | Akkordsymbol näher an Standards prüfen, z. B. alternative Chord-Symbol Shortcuts fuer Command-Center-Power-User | aktuell oeffnet `Cmd/Ctrl+K` bei Notenauswahl die Inline-Harmony-Eingabe und ohne Auswahl das Command Center; MuseScore verwendet fuer Chords haeufig eigene Text-Shortcuts, hier sollte Konfliktarmut getestet werden |
 | Mittel | Finale-orientierte Simple-Entry-Laptop/Numpad Map als optionales Preset | Finale-Nutzer erwarten teils Numpad-zentrierte Toolwahl; als Preset besser als harte Default-Änderung |
