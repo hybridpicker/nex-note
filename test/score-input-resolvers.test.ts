@@ -1123,6 +1123,77 @@ test('inspectResolvedEditTarget rejects insert mode that would overfill the meas
   assert.equal(inspected.rejectionReason, 'overflow-rejected');
 });
 
+test('inspectResolvedEditTarget rejects arbitrary insert mode inside a spanning rest', () => {
+  const coreDocument = importMusicXmlToCore(FULL_REST_XML);
+  const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
+
+  const inspected = inspectResolvedEditTarget({
+    coreDocument,
+    target: {
+      source: 'pointer',
+      mode: 'insert',
+      measureId: measure.id,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      ratio: 0.25,
+      domX: 160,
+      step: 'G',
+      octave: 4,
+      alter: 0,
+      allowOccupiedInsert: true,
+      preserveOverflow: true,
+      diagnostics: [],
+    },
+    durationType: 'quarter',
+    isDotted: false,
+  });
+
+  assert.equal(inspected.target, null);
+  assert.equal(inspected.rejectionReason, 'target-inside-rest');
+  assert.match(inspected.diagnostics.join(' '), /validation:target-inside-rest-rejected/);
+});
+
+test('inspectResolvedEditTarget allows proven rest-only internal slot inserts', () => {
+  const coreDocument = importMusicXmlToCore(FULL_REST_XML);
+  const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
+
+  const inspected = inspectResolvedEditTarget({
+    coreDocument,
+    target: {
+      source: 'pointer',
+      mode: 'insert',
+      measureId: measure.id,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      ratio: 0.25,
+      domX: 160,
+      step: 'G',
+      octave: 4,
+      alter: 0,
+      allowOccupiedInsert: true,
+      preserveOverflow: true,
+      diagnostics: ['rest-only-quantized-internal-slot', 'rest-only-internal-slot-preserved'],
+    },
+    durationType: 'quarter',
+    isDotted: false,
+  });
+
+  assert.ok(inspected.target);
+  assert.equal(inspected.rejectionReason, null);
+  assert.equal(inspected.target?.existingEventKind, 'rest');
+  assert.equal(inspected.target?.existingEventStartsAtTarget, false);
+  assert.equal(inspected.target?.preserveOverflow, true);
+  assert.match(inspected.diagnostics.join(' '), /validation:insert-inside-rest-allowed/);
+});
+
 test('inspectResolvedEditTarget rejects occupied note-entry insert when the measure is already full', () => {
   const coreDocument = importMusicXmlToCore(FULL_EIGHTH_MEASURE_XML);
   const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
@@ -1154,4 +1225,39 @@ test('inspectResolvedEditTarget rejects occupied note-entry insert when the meas
   assert.equal(inspected.target, null);
   assert.equal(inspected.rejectionReason, 'overflow-rejected');
   assert.match(inspected.diagnostics.join(' '), /validation:occupied-insert-overflow-rejected/);
+});
+
+test('inspectResolvedEditTarget allows pointer inserts that explicitly preserve overflow', () => {
+  const coreDocument = importMusicXmlToCore(FULL_EIGHTH_MEASURE_XML);
+  const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
+
+  const inspected = inspectResolvedEditTarget({
+    coreDocument,
+    target: {
+      source: 'pointer',
+      mode: 'insert',
+      measureId: measure.id,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 8,
+      ratio: 0,
+      domX: 120,
+      step: 'D',
+      octave: 5,
+      alter: 0,
+      allowOccupiedInsert: true,
+      preserveOverflow: true,
+      diagnostics: [],
+    },
+    durationType: 'eighth',
+    isDotted: false,
+  });
+
+  assert.ok(inspected.target);
+  assert.equal(inspected.rejectionReason, null);
+  assert.equal(inspected.target?.preserveOverflow, true);
+  assert.match(inspected.diagnostics.join(' '), /validation:insert-occupied-allowed/);
 });

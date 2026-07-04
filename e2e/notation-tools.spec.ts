@@ -484,9 +484,16 @@ test('notation palette tools update clicked notes visually, semantically, and du
     await expectNoDoctorIssues(page, `after articulation ${articulation}`);
   }
   await expect.poll(async () => {
-    const event = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0]?.voices[0]?.events[0];
-    return event?.articulations?.sort() ?? [];
-  }).toEqual([...ARTICULATIONS].sort());
+    const core = await readCurrentCore(page);
+    const event = core.score.parts[0].staves[0].measures[0]?.voices[0]?.events[0];
+    return {
+      articulations: event?.articulations?.sort() ?? [],
+      fermata: event?.id ? core.fermataEventIds.has(event.id) : false,
+    };
+  }).toEqual({
+    articulations: ARTICULATIONS.filter((entry) => entry !== 'fermata').sort(),
+    fermata: true,
+  });
 
   await articulationsPanel.getByRole('button', { name: 'Clear articulations' }).click();
   await expectNoDoctorIssues(page, 'after clearing articulations');

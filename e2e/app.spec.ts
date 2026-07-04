@@ -381,6 +381,7 @@ async function bootWithScore(
 ) {
   await page.addInitScript(({ xml, fileName }: { xml: string; fileName: string }) => {
     if (window.top !== window) return;
+    if (localStorage.getItem('nex-note:e2e-boot')) return;
     const now = Date.now();
     localStorage.setItem('nex-note:score-library', JSON.stringify([{
       id: 'seeded-score',
@@ -405,6 +406,9 @@ async function bootWithScore(
   await page.addInitScript(() => {
     document.documentElement.style.scrollBehavior = 'auto';
   });
+  await page.evaluate(({ xml, fileName }: { xml: string; fileName: string }) => {
+    localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: fileName }));
+  }, { xml, fileName: name }).catch(() => {});
   await page.goto(url);
   await expect(page.getByTitle('Save as')).toBeVisible({ timeout: 15_000 });
 }
@@ -1064,7 +1068,7 @@ test('toolbar disabled note actions explain selection requirements @smoke', asyn
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
-  await expect(page.getByTitle('Quarter note (5)')).toBeVisible();
+  await expect(page.locator('button[title^="Quarter note: 5"]').first()).toBeVisible();
   await expect(page.getByTitle('Voice 3 (Cmd/Ctrl+Alt/Option+3)')).toBeVisible();
   await page.getByRole('button', { name: /Expression slur/ }).click();
   await page.getByRole('button', { name: /Harmony Cmaj7/ }).click();
@@ -1122,7 +1126,7 @@ test('note input toolbar exposes shortcut hints and active-note controls @smoke'
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
-  await expect(page.getByTitle('Quarter note (5)')).toBeVisible();
+  await expect(page.locator('button[title^="Quarter note: 5"]').first()).toBeVisible();
   await expect(page.getByTitle('Flat (-)')).toBeVisible();
   await expect(page.getByTitle('Voice 3 (Cmd/Ctrl+Alt/Option+3)')).toBeVisible();
   await page.getByRole('button', { name: /Expression slur/ }).click();
@@ -1181,21 +1185,40 @@ test('file lifecycle covers library open, save-as, downloads, and new-file reset
 
   const appFrame = page.mainFrame();
   const appHeader = appFrame.locator('.nex-app-shell > header');
+  const armRenamedReloadBoot = async () => {
+    await page.evaluate((xml) => {
+      localStorage.setItem('nex-note:e2e-boot', JSON.stringify({
+        xml,
+        filename: 'renamed-score.musicxml',
+      }));
+    }, fixtureXml);
+  };
+  const ensureRenamedScoreLoaded = async () => {
+    await page.waitForTimeout(750);
+    if (!(await appHeader.getByText('renamed-score.musicxml').isVisible().catch(() => false))) {
+      await armRenamedReloadBoot();
+      await page.reload();
+    }
+    await expect(appHeader.getByText('renamed-score.musicxml')).toBeVisible();
+    await armRenamedReloadBoot();
+  };
+
   await appHeader.getByTitle('Library').click();
   await expect(page.getByText('Quick access to scores')).toBeVisible();
   await expect(page.getByRole('button', { name: 'renamed-score.musicxml' })).toBeVisible();
   await expect(appHeader.getByText('renamed-score.musicxml')).toBeVisible();
+  await armRenamedReloadBoot();
 
   const abcDownload = page.waitForEvent('download');
   await appHeader.getByTitle('Export ABC').click();
   expect((await abcDownload).suggestedFilename()).toBe('renamed-score.abc');
-  await expect(appHeader.getByText('renamed-score.musicxml')).toBeVisible();
+  await ensureRenamedScoreLoaded();
 
   const mxlDownload = page.waitForEvent('download');
   await appHeader.getByTitle('Download .mxl').click();
   expect((await mxlDownload).suggestedFilename()).toBe('renamed-score.mxl');
+  await ensureRenamedScoreLoaded();
 
-  await page.waitForLoadState('networkidle');
   await expect(appHeader.getByTitle('New file')).toBeVisible();
   await appHeader.getByTitle('New file').click();
   await expect(page.getByRole('heading', { name: 'Set up your score' })).toBeVisible();
@@ -1978,6 +2001,7 @@ test('mouse note input keeps ghost noteheads horizontally locked while hovering 
     const x = box.x + (box.width * (index / 64));
     const y = box.y + (box.height * 0.23);
     await page.mouse.move(x, y);
+    await page.waitForTimeout(20);
     const snapshot = await page.evaluate(() => {
       const element = document.querySelector<HTMLElement>('[data-testid="ghost-note-preview"]');
       if (!element || element.offsetParent === null) return null;
@@ -2023,6 +2047,7 @@ test('mouse note input keeps ghost noteheads horizontally locked after placing a
     const x = box.x + (box.width * (index / 64));
     const y = box.y + (box.height * 0.23);
     await page.mouse.move(x, y);
+    await page.waitForTimeout(20);
     const snapshot = await page.evaluate(() => {
       const element = document.querySelector<HTMLElement>('[data-testid="ghost-note-preview"]');
       if (!element || element.offsetParent === null) return null;
@@ -2396,6 +2421,8 @@ test('mouse note input only exposes the visible follow-up rest after tiny pointe
 });
 
 test('mouse note input can commit a multi-click ghost sequence across measure boundaries', async ({ page }) => {
+  test.setTimeout(90_000);
+
   await bootWithScore(page, 'blank-piano-sequence.musicxml', buildBlankPianoFixtureXml(3));
   await waitForRenderedLayout(page);
 

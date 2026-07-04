@@ -22,6 +22,7 @@ export interface PointerEditCandidate {
   octave: number;
   alter: number;
   allowUnoccupiedVoice?: boolean;
+  preserveOverflow?: boolean;
 }
 
 export interface ResolvePointerEditTargetInput {
@@ -160,6 +161,7 @@ export function resolvePointerEditTarget(input: ResolvePointerEditTargetInput): 
     ratio: slot.ratio,
     domX: slot.domX,
     allowOccupiedInsert: candidate.mode === 'insert',
+    preserveOverflow: candidate.preserveOverflow,
     step,
     octave: candidate.octave,
     alter: candidate.alter,

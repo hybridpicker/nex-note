@@ -1,5 +1,17 @@
 import { expect, test } from '@playwright/test';
 
+const EMPTY_MIDI = Buffer.from('TVRoZAAAAAYAAQABAGBNVHJrAAAABAD/LwA=', 'base64');
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/midi', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'audio/midi',
+      body: EMPTY_MIDI,
+    });
+  });
+});
+
 const DUAL_STAFF_TAB_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list>
@@ -29,6 +41,8 @@ test('single-clicking a TAB fret selects it, keeps TAB visible, and does not rew
 
   await page.goto('/?debug=true&visual-debug=true');
   await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Hide notation tools' }).click();
+  await expect(page.getByRole('button', { name: 'Show notation tools' })).toBeVisible();
 
   const fretText = page.locator('svg text').filter({ hasText: /^3$/ }).first();
   await fretText.click();
@@ -97,7 +111,10 @@ test('double-clicking a TAB fret number edits that digit and keeps notation in s
   await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
 
   const fretText = page.locator('svg text').filter({ hasText: /^3$/ }).first();
-  await fretText.dblclick();
+  await expect(fretText).toBeVisible();
+  const fretBox = await fretText.boundingBox();
+  if (!fretBox) throw new Error('missing TAB fret text');
+  await page.mouse.click(fretBox.x + fretBox.width / 2, fretBox.y + fretBox.height / 2, { clickCount: 2, delay: 50 });
   const editor = page.getByLabel('Inline guitar fret');
   await expect(editor).toBeVisible();
   await editor.fill('5');

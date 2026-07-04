@@ -660,8 +660,16 @@ export default function Home({ searchParams }: HomeProps) {
   const [aiModelSettings, setAiModelSettings] = useState<AiModelSettings>(DEFAULT_AI_MODEL_SETTINGS);
   const [aiModelSettingsHydrated, setAiModelSettingsHydrated] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<'assistant' | 'library' | 'inspector'>('assistant');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => embedConfig.initialWorkspaceCollapsed ?? true);
-  const [leftNotationSidebarCollapsed, setLeftNotationSidebarCollapsed] = useState(true);
+  const initialLeftNotationSidebarCollapsed = embedConfig.enabled
+    ? embedConfig.initialLeftToolsCollapsed ?? false
+    : false;
+  const initialWorkspaceCollapsed = (
+    embedConfig.enabled
+      ? embedConfig.initialWorkspaceCollapsed ?? embedConfig.scoreOnly
+      : false
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => initialWorkspaceCollapsed);
+  const [leftNotationSidebarCollapsed, setLeftNotationSidebarCollapsed] = useState(() => initialLeftNotationSidebarCollapsed);
   const [leftNotationSidebarHydrated, setLeftNotationSidebarHydrated] = useState(false);
   const skipNextLeftNotationSidebarPersistRef = useRef(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
@@ -748,7 +756,7 @@ export default function Home({ searchParams }: HomeProps) {
       skipNextLeftNotationSidebarPersistRef.current = true;
       setLeftNotationSidebarCollapsed(embedConfig.initialLeftToolsCollapsed);
     } else {
-      setLeftNotationSidebarCollapsed(true);
+      setLeftNotationSidebarCollapsed(initialLeftNotationSidebarCollapsed);
     }
     setLeftNotationSidebarHydrated(true);
   }, []);
@@ -1104,6 +1112,7 @@ export default function Home({ searchParams }: HomeProps) {
 
   const focusEditPaletteSection = useCallback((section: EditPaletteSectionId) => {
     setPrintView(false);
+    setLeftNotationSidebarCollapsed(false);
     window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent('nex-note:focus-edit-palette-section', { detail: { section } }));
     }, 0);
@@ -1211,8 +1220,8 @@ export default function Home({ searchParams }: HomeProps) {
     });
     setScoreOpenStatus(`${t('library.rendering')} score…`);
     setNativeProjectCacheEnabled(Boolean(options.cacheNativeProject));
-    setLeftNotationSidebarCollapsed(true);
-    setSidebarCollapsed(true);
+    setLeftNotationSidebarCollapsed(initialLeftNotationSidebarCollapsed);
+    setSidebarCollapsed(initialWorkspaceCollapsed);
     const saved = saveLibraryScore({
       name,
       xml: newXml,
@@ -1248,7 +1257,7 @@ export default function Home({ searchParams }: HomeProps) {
       format: 'xml',
     });
     return saved;
-  }, [hydrateCurrentXml, loadXml, stop, t]);
+  }, [hydrateCurrentXml, initialLeftNotationSidebarCollapsed, initialWorkspaceCollapsed, loadXml, stop, t]);
 
   const handleEmbeddedXmlLoaded = useCallback((newXml: string, name: string) => {
     const deferred = shouldDeferImportPipeline(newXml);
@@ -1512,10 +1521,10 @@ export default function Home({ searchParams }: HomeProps) {
     handleXmlFileLoaded(xml, buildNewScoreFilename(draft.title));
     setPrintView(false);
     setWorkspaceTab('assistant');
-    setLeftNotationSidebarCollapsed(true);
-    setSidebarCollapsed(true);
+    setLeftNotationSidebarCollapsed(initialLeftNotationSidebarCollapsed);
+    setSidebarCollapsed(initialWorkspaceCollapsed);
     setNewScoreDialogOpen(false);
-  }, [handleXmlFileLoaded]);
+  }, [handleXmlFileLoaded, initialLeftNotationSidebarCollapsed, initialWorkspaceCollapsed]);
 
   const handleStartBlankScore = useCallback(() => {
     const draft = createDefaultNewScoreDraft();
@@ -1864,8 +1873,8 @@ export default function Home({ searchParams }: HomeProps) {
     setBenchmarkResults([]);
     setSuiteResults([]);
     setWorkspaceTab('assistant');
-    setLeftNotationSidebarCollapsed(true);
-    setSidebarCollapsed(true);
+    setLeftNotationSidebarCollapsed(initialLeftNotationSidebarCollapsed);
+    setSidebarCollapsed(initialWorkspaceCollapsed);
     setLastOperations([]);
     stop();
     recordBugReportEvent('library', 'open-score', {
@@ -1873,7 +1882,7 @@ export default function Home({ searchParams }: HomeProps) {
       filename: score.name,
       format: score.nativeName ? 'nxn' : 'xml',
     });
-  }, [loadFromNxn, loadXml, stop, t]);
+  }, [initialLeftNotationSidebarCollapsed, initialWorkspaceCollapsed, loadFromNxn, loadXml, stop, t]);
 
   const handleOpenExtractedPart = useCallback((partId: string, partName: string) => {
     if (!xml) return;
@@ -2691,6 +2700,18 @@ export default function Home({ searchParams }: HomeProps) {
     void handleRunSuite(['ollama']);
   }, [handleRunSuite]);
 
+  function downloadBlob(blob: Blob, downloadName: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   async function handleDownload() {
     const downloadName = getMxlFilename(filename);
     recordBugReportEvent('workspace', 'download-mxl:start', { filename: downloadName });
@@ -2701,12 +2722,7 @@ export default function Home({ searchParams }: HomeProps) {
     });
     if (!res.ok) return;
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = downloadName;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, downloadName);
     recordBugReportEvent('workspace', 'download-mxl:success', { filename: downloadName });
   }
 
@@ -2723,13 +2739,9 @@ export default function Home({ searchParams }: HomeProps) {
       return;
     }
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename.replace(/\.[^.]+$/, '') + '.abc' || 'score.abc';
-    a.click();
-    URL.revokeObjectURL(url);
-    recordBugReportEvent('workspace', 'download-abc:success', { filename: a.download });
+    const downloadName = filename.replace(/\.[^.]+$/, '') + '.abc' || 'score.abc';
+    downloadBlob(blob, downloadName);
+    recordBugReportEvent('workspace', 'download-abc:success', { filename: downloadName });
   }
 
   async function handleDownloadPracticePack() {
@@ -2745,13 +2757,9 @@ export default function Home({ searchParams }: HomeProps) {
       return;
     }
     const blob = new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${filename.replace(/\.[^.]+$/, '') || 'score'}.practice-pack.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    recordBugReportEvent('workspace', 'download-practice-pack:success', { filename: a.download });
+    const downloadName = `${filename.replace(/\.[^.]+$/, '') || 'score'}.practice-pack.json`;
+    downloadBlob(blob, downloadName);
+    recordBugReportEvent('workspace', 'download-practice-pack:success', { filename: downloadName });
   }
 
   useEffect(() => {

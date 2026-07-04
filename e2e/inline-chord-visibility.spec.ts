@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -31,6 +31,26 @@ const GUITAR_TAB_WITH_STAFF_DETAILS_XML = GUITAR_TAB_XML.replace(
   '<attributes>',
   '<attributes><staff-details number="1"><staff-lines>5</staff-lines></staff-details><staff-details number="2"><staff-lines>6</staff-lines></staff-details>',
 );
+
+async function clickFirstVisibleTabFret(page: Page, context: string) {
+  const handle = await page.waitForFunction(() => {
+    const svg = document.querySelector('[data-testid="score-canvas"] svg');
+    if (!svg) return null;
+    for (const element of Array.from(svg.querySelectorAll<SVGTextElement>('text'))) {
+      if (!/^\d+$/.test(element.textContent?.trim() ?? '')) continue;
+      const box = element.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) continue;
+      return {
+        x: box.x + (box.width / 2),
+        y: box.y + (box.height / 2),
+      };
+    }
+    return null;
+  }, null, { timeout: 10_000 });
+  const center = await handle.jsonValue() as { x: number; y: number } | null;
+  if (!center) throw new Error(`missing TAB fret text for ${context}`);
+  await page.mouse.click(center.x, center.y);
+}
 
 test('inline chord entry accepts German Fis half-diminished symbols after Command+K @smoke', async ({ page }) => {
   await page.addInitScript(({ xml }) => {
@@ -100,17 +120,18 @@ test('Command+K opens inline chord entry even when command search is focused @sm
 });
 
 test('command search accepts MuseScore-style chord symbols directly @smoke', async ({ page }) => {
+  await page.goto('/?debug=true&visual-debug=true');
+
   for (const chord of ['C', 'F#m7b5', 'Bb7#11']) {
-    await page.goto('/?debug=true&visual-debug=true');
     await page.evaluate(({ xml, name }) => {
       localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: name }));
     }, { xml: GUITAR_TAB_XML, name: `command-search-${chord.replace(/[^A-Za-z0-9]+/g, '-')}.musicxml` });
+    await page.goto('/?debug=true&visual-debug=true');
 
-    await page.reload();
     const scoreSvg = page.locator('[data-testid="score-canvas"] svg');
     await expect(scoreSvg).toBeVisible({ timeout: 15_000 });
 
-    await page.locator('[data-testid="score-canvas"] .vf-tabnote').first().click({ force: true });
+    await clickFirstVisibleTabFret(page, chord);
     await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
     const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
     await expect(commandSearch).toBeFocused();

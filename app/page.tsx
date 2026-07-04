@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 const founderMailto =
   "mailto:lukas@schoensgibl.com?subject=nex-note%20founder%20app%20build&body=Hi%20Lukas%2C%0A%0AI%20want%20to%20test%20the%20nex-note%20downloadable%20app.%0A%0AI%20am%20a%3A%20%5Bmusic%20teacher%2Fguitar%20teacher%2Fchoir%20director%2Fschool%2Farranger%2Fmusician%5D%0AMy%20main%20file%20formats%20are%3A%20%5BMusicXML%2FMXL%2FMSCZ%2FPDF%2Fphoto%2FGuitarPro%2FMIDI%5D%0AI%20can%20submit%20files%20that%20are%3A%20%5Bown%2Fself-created%2Flicensed%2Fpublic-domain%5D%0AI%20need%20nex-note%20for%3A%20%5Bprivate%20archive%2FAI%20editing%2Farranging%2Fexport%2Fprivate%20embeds%5D%0A";
+type SearchParamRecord = Record<string, string | string[] | undefined>;
 const webAlphaHref = "/nex-note-app?locale=en";
 
 const paidWorkflow =
@@ -66,10 +67,25 @@ function isLocalAppHost(host: string) {
     || normalized.startsWith("[::1]:");
 }
 
-export default async function LandingPage() {
+function buildLocalAppHref(searchParams: SearchParamRecord) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (entry !== undefined) params.append(key, entry);
+      });
+    } else if (value !== undefined) {
+      params.set(key, value);
+    }
+  }
+  if (!params.has("locale")) params.set("locale", "en");
+  return `/nex-note-app?${params.toString()}`;
+}
+
+export default async function LandingPage({ searchParams }: { searchParams?: Promise<SearchParamRecord> }) {
   const host = (await headers()).get("host") ?? "";
   if (isLocalAppHost(host)) {
-    redirect(webAlphaHref);
+    redirect(buildLocalAppHref((await searchParams) ?? {}));
   }
 
   return (

@@ -1,0 +1,99 @@
+# Note Input Parity Matrix
+
+Updated: 2026-07-04
+
+This matrix tracks MuseScore/Finale-style note-input behavior against the current NextNote semantic pipeline. It is not a marketing checklist: a row is `PASS` only when the workflow is present, goes through the semantic command path, has automated coverage, and has an explicit acceptance criterion.
+
+## Library Investigation
+
+Current local dependency usage:
+
+- `opensheetmusicdisplay` is installed and used by `components/ScoreEditor.tsx` and `components/ScorePreview.tsx` as the score renderer.
+- `VexFlow` is present transitively through OSMD (`package-lock.json` pins `vexflow@1.2.93`). NextNote reads OSMD/VexFlow-derived geometry, but commit identity is kept in the core model.
+- `@coderline/alphatab` is installed and used by `lib/alphatab-guitar-pro-import.ts` as a Guitar Pro fallback/import source.
+- MuseScore CLI is integrated through `lib/musescore-cli.ts`, `lib/musescore-roundtrip-smoke.ts`, import conversion routes, MIDI export, ABC export, and release smoke tests.
+- ABC export exists through `lib/abc-export.ts` and `/api/export-abc`; `abcjs` is not installed.
+- Verovio, LilyPond, and music21 are not installed.
+
+External fit check:
+
+- OSMD remains the best current renderer because it renders MusicXML in browser and is already the live render bridge. It should continue to provide geometry and visible snap evidence, not own mutation semantics. Source: https://github.com/opensheetmusicdisplay/opensheetmusicdisplay
+- VexFlow is a rendering API for SVG/canvas notation and TAB. Because NextNote already consumes it through OSMD, direct VexFlow use should be limited to future renderer-specific geometry probes where OSMD cannot expose enough data. Source: https://www.vexflow.com/
+- alphaTab is a strong Guitar Pro/TAB renderer/importer with a rich score model and MIDI generation. It is useful for Guitar Pro/TAB validation and fallback import, but it should not replace the semantic commit path. Source: https://alphatab.net/docs/introduction
+- Verovio is useful as an independent engraving/conversion oracle, especially for MEI/MusicXML comparison. Its MEI-first model is not a drop-in note-entry editor replacement. Source: https://www.verovio.org/
+- MuseScore CLI and source behavior remain the best external validation reference for MusicXML/MXL/MSCZ roundtrip and desktop notation expectations. Local MuseScore crashes must remain classified separately from NextNote export bugs. Source: https://github.com/musescore/MuseScore
+- LilyPond is useful as an engraving/export comparison target, not as an interactive desktop note-entry engine for this app. Source: https://lilypond.org/
+- abcjs is useful for ABC rendering/playback validation only if ABC import/export becomes a larger workflow. Source: https://www.abcjs.net/
+- music21 is useful for offline symbolic analysis and MusicXML sanity checks, but adding Python runtime dependency for core note entry would increase product complexity. Source: https://music21.org/
+
+Decision: do not rewrite the editor around a new notation library. Continue improving the existing semantic pipeline: `InteractiveEditMap`, pointer/keyboard resolvers, validator, commit resolver, `useNoteEditor`, and `ScoreEditor`. Use external tools as renderers, geometry sources, import/export validators, or comparison oracles.
+
+## Invariant Status
+
+| Invariant | Enforcement | Status |
+| --- | --- | --- |
+| Visible ghost may only appear if the same resolved target can commit | `bindResolvedEditTargetToGhost` binds preview through `resolvePointerEditTarget` and `inspectResolvedEditTarget`; unmapped fallback commit targets are rejected. | PASS |
+| Pointer X never commits as free pixel-derived timestamp | Pointer target resolves against `InteractiveEditMap` slots; fallback unmapped ghost commits are rejected. | PASS |
+| Pointer Y quantizes to staff steps or pitch lanes | `resolveGhostPitchFromCalibration`, `quantizeGhostPitchIndex`, and staff calibration tests cover quantization. | PASS |
+| Replace only when replaceable event exists | `inspectResolvedEditTarget` rejects missing/ambiguous replace targets. | PASS |
+| Insert only when duration fits measure and voice | Validator rejects overflow and unsafe occupied insert. | PASS |
+| Chord only on same-onset note anchor or explicit chord mode | Resolver and validator require chord anchor unless explicit keyboard chord path resolves from the selected anchor. | PASS |
+| Ambiguity no-ops with diagnostics | Resolver/validator return `null` with diagnostics; pointer handler records bug-report input-doctor events. | PASS |
+| Ghost, commit, selection, playback, export agree | Covered for critical note-input paths; broader playback/export agreement still needs more Electron evidence. | PARTIAL |
+| Undo/redo exactly reverses note-input mutation | Core history and replay tests exist, but not every matrix workflow has undo/redo proof. | PARTIAL |
+| Failed input attempts do not poison later input | Validator no-op tests and E2E stress exist for critical mouse flows; broaden by workflow. | PARTIAL |
+
+## Matrix
+
+| Workflow | MuseScore/Finale expectation | Current NextNote behavior | Relevant files | Missing behavior | Existing test coverage | Required change | Acceptance criterion | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| N toggles note input | `N` enters/leaves note input without text-field conflicts. | `N` toggles note input and Escape exits. | `hooks/useNoteEditor.ts`, `components/NoteInputToolbar.tsx` | Need Electron app smoke proof. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add Electron manual artifact. | Built app toggles toolbar state and accepts next note. | PARTIAL |
+| duration keys 1-9 | Number keys select 64th through longa. | Implemented for keyboard and toolbar. | `keyboard-resolver.ts`, `useNoteEditor.ts`, `NoteInputToolbar.tsx` | None known. | `test/user-visible-note-editor.test.ts`, `test/user-visible-components.test.ts`, `e2e/app.spec.ts` | Keep regression coverage. | All keys update visible duration and subsequent commit duration. | PASS |
+| dotted notes | Dot toggles dotted duration and applies to input. | Implemented for selected note and next input. | `useNoteEditor.ts`, `commit-resolver.ts` | More export/reimport proof by input workflow. | `test/note-duration-command.test.ts`, `test/user-visible-note-editor.test.ts` | Add workflow-specific export check. | Dotted input survives undo/redo and MusicXML reimport. | PARTIAL |
+| rest input | Rest key inserts/replaces rest through semantic commands. | `R` and `0` insert rests; `R` repeats last note after note input history. | `useNoteEditor.ts`, core commands | Rest export covered; Electron proof missing. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add Electron smoke. | Rest appears at selected voice/slot and roundtrips. | PARTIAL |
+| A-G pitch input | Letter keys repitch or insert at current cursor. | Implemented with note-input mode and selection-aware paths. | `keyboard-resolver.ts`, `useNoteEditor.ts` | Need per-letter parity matrix in E2E. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add A-G loop coverage. | Each letter commits expected pitch and advances deterministically. | PARTIAL |
+| QWERTY step keyboard | Piano-style QWERTY keys enter chromatic pitches. | `P` toggles step keyboard; two-octave map exists. | `repitch-mode.ts`, `useNoteEditor.ts`, `NoteInputToolbar.tsx` | Electron proof missing. | `test/repitch-and-tab-entry.test.ts`, `test/user-visible-components.test.ts`, `e2e/notation-tools.spec.ts` | Add Electron shortcut pass. | QWERTY key commits visible pitch and playback pitch. | PARTIAL |
+| mouse ghost preview | Hover shows only valid snapped ghost. | Implemented via rendered ghost grid, edit map, validator, overlay diagnostics. | `ScoreEditor.tsx`, `ScoreInputOverlay.tsx`, `rendered-ghost-grid.ts` | Broader score-class Electron proof missing. | `test/smart-ghost-note.test.ts`, `test/rendered-ghost-grid.test.ts`, `e2e/snap-ghost-debug.spec.ts` | Continue stress by score class. | Visible ghost has matching snap and validated commit target. | PARTIAL |
+| mouse replace | Click existing replaceable event replaces it. | Implemented and validator guarded. | `pointer-entry-mode.ts`, `pointer-resolver.ts`, `note-entry-validator.ts` | Electron proof missing. | `test/score-input-resolvers.test.ts`, `e2e/app.spec.ts` | Add app smoke. | Existing note/rest changes without measure corruption. | PARTIAL |
+| mouse insert | Click insert zone inserts only when duration fits. | Implemented with fit validation. | `smart-ghost-note.ts`, `note-entry-validator.ts`, `commit-resolver.ts` | More dense-measure stress. | `test/score-input-resolvers.test.ts`, `e2e/step-time-anchor-validation.spec.ts` | Add dense-measure no-op regression. | Overfill no-ops; valid insert preserves measure duration. | PARTIAL |
+| mouse chord | Click chord zone or modifier creates same-onset chord. | Implemented with validator requiring note anchor. | `smart-ghost-note.ts`, `note-entry-validator.ts`, `commit-resolver.ts` | More same-onset ambiguity stress. | `test/smart-ghost-note.test.ts`, `e2e/app.spec.ts` | Add multi-voice chord ambiguity test. | Chord only commits at real note onset. | PARTIAL |
+| Shift/Cmd/Alt mouse modifiers | Modifiers force range/additive/chord or insert placement as appropriate. | Shift/Cmd selection and Alt chord placement exist; Shift insert placement documented. | `ScoreEditor.tsx`, `smart-ghost-note.ts` | Complete modifier matrix in E2E/Electron. | `test/smart-ghost-note.test.ts`, `docs/keyboard-shortcuts.md` | Add Playwright modifier matrix. | Modifier intent is visible in ghost diagnostics and commit. | PARTIAL |
+| voices 1-4 | Voice shortcuts select active voice; input uses that voice. | Cmd/Ctrl+Alt+1..4 implemented. | `useNoteEditor.ts`, `keyboard-resolver.ts`, `pointer-resolver.ts` | More cross-part/staff voice proof. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add large-score multi-voice stress. | Note lands in selected voice only. | PARTIAL |
+| chord input mode | Explicit chord mode keeps cursor at onset and adds chord tones. | Toolbar and Cmd/Ctrl+Shift+H toggle chord input. | `useNoteEditor.ts`, `NoteInputToolbar.tsx`, `commit-resolver.ts` | Deeper desktop chord editing polish. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add UI state and undo/redo coverage. | Chord mode adds same-onset notes without shifting timeline. | PARTIAL |
+| accidentals including double-flat and double-sharp | Accidental shortcuts affect next/current pitch, including double accidentals. | Flat/natural/sharp/double-flat/double-sharp shortcuts exist. | `useNoteEditor.ts`, pitch helpers | Need export/playback verification for every accidental. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add export/reimport accidental matrix. | Rendered pitch, semantic alter, playback pitch, and MusicXML agree. | PARTIAL |
+| octave up/down | Shortcuts move active note by octave. | Shift+Arrow and Cmd/Ctrl+Arrow paths exist. | `useNoteEditor.ts` | Electron proof missing. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add Electron smoke. | Active/last input moves exactly 12 semitones. | PARTIAL |
+| chromatic arrow transposition | Arrow up/down transposes by semitone. | Implemented on selected notes. | `useNoteEditor.ts`, `transpose-logic.ts` | Playback/export proof for multi-selection can grow. | `test/user-visible-note-editor.test.ts`, `e2e/notation-tools.spec.ts` | Add roundtrip check. | Selection transposes semitone with correct spelling and no scope leak. | PARTIAL |
+| selection, range selection, select all | Click, shift range, Cmd/Ctrl additive/select-all work. | Implemented. | `ScoreEditor.tsx`, `useNoteEditor.ts` | Electron proof missing. | `test/note-editor-selection.test.ts`, `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add Electron manual evidence. | Highlighted notes and semantic selection IDs match. | PARTIAL |
+| delete, ripple delete, clear measure voice | Delete variants mutate only intended targets. | Implemented through semantic commands. | `keyboard-resolver.ts`, `useNoteEditor.ts`, core commands | More undo/redo proof for ripple/clear. | `test/user-visible-note-editor.test.ts`, `test/note-duration-command.test.ts`, `e2e/app.spec.ts` | Add history regression. | Delete variants preserve valid measure timing and undo exactly. | PARTIAL |
+| tuplets 2-9 | Tuplet shortcuts create valid ratio spans. | Cmd/Ctrl+2..9 and toolbar buttons exist. | `useNoteEditor.ts`, `NoteInputToolbar.tsx`, core commands | Mouse note input inside tuplets still needs broader stress. | `test/user-visible-note-editor.test.ts`, `test/score-roundtrip-golden.test.ts`, `e2e/app.spec.ts` | Add tuplet pointer entry tests. | Tuplet ratio survives export/reimport and later note input. | PARTIAL |
+| grace notes | Grace note command attaches to selection. | Implemented as selected-note command. | `useNoteEditor.ts`, core commands | Direct note-input grace placement is limited. | `test/score-roundtrip-golden.test.ts`, `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Decide whether desktop direct-entry UI is needed. | Grace note survives export/reimport and playback ordering. | PARTIAL |
+| ties, slurs, articulations | Shortcuts toggle semantic notation. | Implemented for selected notes/ranges with placement support for existing marks. | `useNoteEditor.ts`, `ScoreInspector.tsx`, core commands | More playback proof for articulations. | `test/score-architecture.test.ts`, `test/core-command-executor.test.ts`, `e2e/app.spec.ts` | Add audible/playback assertions where engine supports them. | Marks render, export, reimport, and undo/redo. | PARTIAL |
+| cross-staff movement | Shortcut moves selected notes to adjacent staff when target is valid. | Implemented with semantic target validation. | `useNoteEditor.ts`, core commands | More large piano/organ stress. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add Electron grand-staff pass. | Move fails closed unless adjacent staff has valid slot/chord target. | PARTIAL |
+| TAB synchronization | TAB edits preserve notation/TAB pitch identity. | Implemented for GuitarPro fallback, TAB selection, fret edits, notation/TAB pairing. | `guitar-tab-entry.ts`, `guitar-fretboard.ts`, `alphatab-guitar-pro-import.ts` | More heavy Guitar Pro app stress. | `test/guitar-pro-import-contract.test.ts`, `test/guitar-tab-semantics.test.ts`, `e2e/guitar-tab-sync.spec.ts` | Add Electron TAB-heavy file pass. | Fret/string edit updates semantic pitch and export technical tags. | PARTIAL |
+| undo/redo | Every mutation reverses exactly. | Core history exists. | `score-document-history.ts`, inverse command tests, `NexNoteApp.tsx` | Not every note-input workflow has explicit undo/redo proof. | `test/inverse-commands.test.ts`, `test/score-history-replay-fixtures.test.ts`, `e2e/app.spec.ts` | Add matrix-driven undo/redo loops. | Undo/redo restores byte/semantic state for critical workflows. | PARTIAL |
+| playback after input | Playback starts from selected/input anchor and sounds edited notes. | Playback start and cursor logic exist. | `usePlayback.ts`, `ScoreEditor.tsx`, `NexNoteApp.tsx` | Browser tests stub audio; real audible Mac proof missing. | `test/playback-cursor.test.ts`, `e2e/notation-tools.spec.ts`, `e2e/app.spec.ts` | Add Computer Use app playback pass. | Playback cursor and audible pitch match edited score. | PARTIAL |
+| MusicXML/MXL export and reimport | Exported files reopen cleanly with semantics preserved. | Core export/import and MXL smoke exist. | `export-core-to-musicxml.ts`, import adapter, export routes | Need per-workflow export matrix. | `test/score-roundtrip-golden.test.ts`, `test/roundtrip-diff.test.ts`, `test/user-visible-exports.test.ts` | Add note-input export fixtures. | Reimported core model matches committed notes/rests/marks. | PARTIAL |
+| MuseScore roundtrip | MuseScore CLI opens exported MusicXML/MXL/MSCZ or clearly classifies local crash. | Harness exists and classifies local MuseScore crash limitations. | `musescore-roundtrip-smoke.ts`, `musescore-cli.ts` | Stable external MuseScore pass still needed. | `test/musescore-roundtrip-smoke.test.ts` | Run on stable MuseScore CLI after local build. | NexNote output is not called passing if generated output is invalid. | PARTIAL |
+| Electron Mac app smoke test | Built `.app` works as real desktop app. | `npm run electron:build` now produces unsigned macOS arm64 zip/DMG artifacts. | `electron/main.cjs`, package build scripts | Full Computer Use evidence and signing/notarization are still missing. | `npm run electron:build` on 2026-07-04 | Run Computer Use score-class matrix on the built app. | Built app launches, edits, plays, exports, reopens, and stays responsive. | PARTIAL |
+
+## Immediate Hardening Result
+
+The visible ghost binder now rejects semantic targets that are not present in the visible snap grid unless a rendered or explicitly synthetic snap proves the same timestamp/staff/voice target. This closes the remaining fallback path where a pointer ghost could become a commit target after `resolvePointerEditTarget` failed while still allowing proven rest-only internal slots.
+
+Additional hardening completed on 2026-07-04:
+
+- Rest-only measures expose internal beat slots only through measured/synthetic snap evidence, with validator diagnostics such as `rest-only-internal-slot-preserved`.
+- Insert-mode overflow preservation is limited to explicitly validated targets; arbitrary overflow attempts still fail closed.
+- No-op clicked-note commits refresh the active note-input anchor so keyboard entry follows the clicked note.
+- Cross-measure blank-measure ghost input now covers six sequential placements from measure 1 into measure 2.
+- TAB fret entry follows the same rhythmic anchors as standard notation and mirrors the paired notation pitch.
+
+## Final Verification 2026-07-04
+
+- `npm test`: passed, `845` passed, `0` failed, `8813.13675ms`.
+- `npm run build`: passed; Next 16.2.6 compiled, TypeScript completed, and standalone assets synced.
+- `npm run test:e2e`: passed, `109` passed, `4` skipped, `31.5m`.
+- `npm run electron:build`: passed; unsigned macOS arm64 zip/DMG artifacts built under `dist/macos`.
+- `npm run smoke:musescore-roundtrip`: exit `0`, verdict `passed-with-local-musescore-limit`; local MuseScore 4.7.3 crashed on some source/baseline and nex-note conversions, so no nex-note-only export failure was isolated on this machine.
+
+QA artifacts for the step-time anchor validation pass are under `artifacts/qa/step-time-anchor-validation/`.

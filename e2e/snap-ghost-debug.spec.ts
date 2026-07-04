@@ -1311,7 +1311,7 @@ test('snap grid remains stable after note input and avoids title/protected-regio
 
   const { center, ghost } = await hoverSnap(page, firstSnap);
   expectGhostAndCommitOnSnapOrQuantizedRest(ghost, firstSnap, center.x, `before click ${formatSnap(firstSnap)}`);
-  await page.mouse.click(ghost.box.x + ghost.noteheadCenterX, ghost.box.y + ghost.noteheadCenterY);
+  await page.mouse.click(center.x, center.y);
 
   await expect.poll(async () => {
     const core = await readCurrentCore(page);
@@ -1390,7 +1390,7 @@ test('hover and click use the same snap without cross-measure retargeting', asyn
         noteCount: measure.voices.flatMap((voice) => voice.events).filter((event) => event.kind === 'note').length,
       }))
     ));
-    await page.mouse.click(ghost.box.x + ghost.noteheadCenterX, ghost.box.y + ghost.noteheadCenterY);
+    await page.mouse.click(center.x, center.y);
 
     await expect.poll(async () => {
       const core = await readCurrentCore(page);

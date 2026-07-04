@@ -39,6 +39,7 @@ This document describes the deterministic note-input pipeline introduced for poi
 - [src/score-input/note-entry-validator.ts](../src/score-input/note-entry-validator.ts)
   - validates resolved targets against canonical measure timing before mutation
   - rejects overfill, missing replace targets, incompatible slot coverage, and unsafe fragmented states
+  - preserves explicitly validated overflow only when the rendered/synthetic snap evidence proves the target is an intended insert slot
   - annotates targets with replacement diagnostics so preview and commit share the same acceptance rules
 
 - [src/score-input/commit-resolver.ts](../src/score-input/commit-resolver.ts)
@@ -53,11 +54,13 @@ This document describes the deterministic note-input pipeline introduced for poi
   - validates ghost candidates against canonical timing, not just rendered anchors
   - pointer commit now consumes the same resolved model used for ghost preview
   - stale visible ghosts are not allowed to commit after live resolution invalidates them
+  - rest-only internal slots are commit-capable only when the ghost target carries matching rendered/synthetic snap evidence and validator diagnostics
 
 - [hooks/useNoteEditor.ts](../hooks/useNoteEditor.ts)
   - keyboard entry resolves through `resolveKeyboardEditTarget(...)`
   - pointer and keyboard both commit through `buildNoteEntryCommitCommands(...)`
   - commit is rejected before mutation when target validation fails
+  - no-op clicked-note commits refresh the active note-input anchor so the next keyboard entry starts from the clicked note, not a stale cursor
 
 - [components/ScoreInputOverlay.tsx](../components/ScoreInputOverlay.tsx)
   - ghost overlay now exposes mode/voice diagnostics via:
@@ -71,11 +74,12 @@ This document describes the deterministic note-input pipeline introduced for poi
 - explicit active voice input
 - X (slot/onset) and Y (pitch lane) resolved independently
 - X is snap-locked: every visible ghost and every pointer commit must use the rendered snap-grid X for its timestamp. Pointer X may choose the nearest legal slot, but it must never become the notehead/commit X.
-- If no rendered snap-grid point exists for the resolved timestamp/staff/voice, pointer note input fails closed: no ghost and no commit.
+- If no rendered or explicitly synthetic snap-grid point exists for the resolved timestamp/staff/voice, pointer note input fails closed: no ghost and no commit.
 - ambiguous or non-visible targets resolve to `null` (fail-closed)
-- empty visible musical time is still editable musical time: whole-rest measures expose canonical beat slots even when no noteheads are rendered
+- empty visible musical time is still editable musical time: whole-rest measures expose canonical beat slots only through measured rendered anchors or synthetic snap evidence
 - replace mode is only valid when a replaceable event covers the target slot
 - insert mode is only valid when the requested duration fits the measure/voice capacity without unsafe overflow
+- insert mode may preserve overflow only for an explicitly validated target, such as a proven rest-only internal slot or trailing silent snap, where preview and commit share the same snap evidence
 - failed attempts must not mutate the measure or degrade future targeting in that measure
 
 ## Diagnostics
@@ -106,6 +110,8 @@ This document describes the deterministic note-input pipeline introduced for poi
   - ghost preview timestamp parity with committed note placement
   - keyboard flows: replace, insert-between, chord entry
   - zoom/view-mode stability for post-layout note commit
+  - cross-measure multi-click ghost sequences in blank piano measures
+  - step-time anchor validation for standard notation and TAB fret entry
   - existing multi-voice and mouse note-entry regressions remain in `e2e/app.spec.ts`
 
 ## Current Limitations / Follow-ups
@@ -113,4 +119,5 @@ This document describes the deterministic note-input pipeline introduced for poi
 - `InteractiveEditMap` is intentionally visible-scope: unresolved offscreen regions are not commit targets until rendered.
 - keyboard insert timing is anchor-driven and deterministic; no heuristic cross-staff fallback is performed.
 - ambiguous voice targets are intentionally rejected rather than auto-corrected.
-- intentional overflow placement is currently unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
+- arbitrary overflow placement remains unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
+- rest-only internal slots are intentionally narrow: they require snap evidence, validator approval, and matching ghost/commit diagnostics before mutation.

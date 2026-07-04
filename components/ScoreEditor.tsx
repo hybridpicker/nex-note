@@ -585,7 +585,7 @@ export function ghostHasTraceQuantizedRestFallbackSnap(input: {
   const internalRestOnlySlot = input.resolvedTarget?.diagnostics?.includes('rest-only-quantized-internal-slot') ?? false;
   if (!internalRestOnlySlot) return false;
   const fallback = input.snapResolution?.quantizedFallbackSnap;
-  if (!fallback || fallback.synthetic !== true) return false;
+  if (!fallback) return false;
   if (fallback.voice != null && fallback.voice !== input.voiceId) return false;
   if (typeof fallback.x !== 'number' || !Number.isFinite(fallback.x)) return false;
   const timestamp = normalizeFraction(input.timestampNum, Math.max(input.timestampDen, 1));
@@ -2632,6 +2632,29 @@ export function bindResolvedEditTargetToGhost(
     const inspected = inspectTargetWithMeasureNumberFallback(candidate.resolvedTarget);
     if (inspected.target) {
       resolvedTarget = inspected.target;
+    } else if (
+      inspected.rejectionReason === 'target-inside-rest'
+      && candidate.resolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')
+      && ghostHasTraceQuantizedRestFallbackSnap({
+        timestampNum: candidate.resolvedTarget.timestampNum,
+        timestampDen: candidate.resolvedTarget.timestampDen,
+        voiceId: candidate.resolvedTarget.voiceId,
+        resolvedTarget: candidate.resolvedTarget,
+        snapResolution: candidate.snapResolution,
+      })
+    ) {
+      resolvedTarget = {
+        ...candidate.resolvedTarget,
+        mode: 'insert',
+        allowOccupiedInsert: true,
+        preserveOverflow: true,
+        existingEventKind: 'rest',
+        existingEventStartsAtTarget: false,
+        diagnostics: [
+          ...candidate.resolvedTarget.diagnostics,
+          'rest-only-internal-slot-preserved',
+        ],
+      };
     }
   }
   for (const mode of placementModes) {
@@ -2652,6 +2675,7 @@ export function bindResolvedEditTargetToGhost(
         octave: candidate.octave,
         alter: candidate.alter,
         allowUnoccupiedVoice: Boolean(candidate.placementAnchorIsRest || candidate.semanticAnchorIsRest),
+        preserveOverflow: mode === 'insert',
       },
     });
     if (!gridTarget) continue;
@@ -2686,28 +2710,38 @@ export function bindResolvedEditTargetToGhost(
     }
   }
   if (!resolvedTarget) {
+    const snap = candidate.snapResolution?.effectiveSnap
+      ?? candidate.snapResolution?.quantizedFallbackSnap
+      ?? null;
     const timestamp = normalizeFraction(candidate.timestampNum, Math.max(candidate.timestampDen, 1));
-    const fallbackTarget: ResolvedEditTarget = {
-      source: 'pointer',
-      mode: candidate.placementMode,
-      measureId: candidate.measureId,
-      corePartId: candidate.corePartId,
-      measureNumber: candidate.measureNumber,
-      staffIndex: candidate.staffIndex,
-      voiceId: candidate.voiceId,
-      timestampNum: timestamp.num,
-      timestampDen: timestamp.den,
-      ratio: fractionToNumber(timestamp),
-      domX: candidate.domCenter.x,
-      allowOccupiedInsert: candidate.placementMode === 'insert',
-      step: candidate.step,
-      octave: candidate.octave,
-      alter: candidate.alter,
-      diagnostics: ['fallback-unmapped-ghost-slot'],
-    };
-    const inspected = inspectTargetWithMeasureNumberFallback(fallbackTarget);
-    if (inspected.target) {
-      resolvedTarget = inspected.target;
+    const snapTimestamp = snap?.timestamp ?? null;
+    const snapMatchesCandidate = snapTimestamp === `${timestamp.num}/${timestamp.den}`;
+    const snapX = typeof snap?.x === 'number' && Number.isFinite(snap.x) ? snap.x : null;
+    if (snapMatchesCandidate && snapX != null) {
+      const snapSource = snap?.source ?? 'unknown';
+      const fallbackTarget: ResolvedEditTarget = {
+        source: 'pointer',
+        mode: candidate.placementMode,
+        measureId: candidate.measureId,
+        corePartId: candidate.corePartId,
+        measureNumber: candidate.measureNumber,
+        staffIndex: candidate.staffIndex,
+        voiceId: candidate.voiceId,
+        timestampNum: timestamp.num,
+        timestampDen: timestamp.den,
+        ratio: fractionToNumber(timestamp),
+        domX: snapX,
+        allowOccupiedInsert: candidate.placementMode === 'insert',
+        preserveOverflow: candidate.placementMode === 'insert',
+        step: candidate.step,
+        octave: candidate.octave,
+        alter: candidate.alter,
+        diagnostics: [`snap-evidenced-unmapped-ghost-slot:${snapSource}`],
+      };
+      const inspected = inspectTargetWithMeasureNumberFallback(fallbackTarget);
+      if (inspected.target) {
+        resolvedTarget = inspected.target;
+      }
     }
   }
   if (!resolvedTarget) return null;
@@ -2800,7 +2834,7 @@ export function alignReplaceGhostToRenderedSnap(
   if (!target) return target;
   const preferredRestStatus = Boolean(target.placementAnchorIsRest ?? target.semanticAnchorIsRest ?? false);
   const directPoints = filterSelectableRenderedGhostSnapPoints(
-    getRenderedGhostStaffPoints(renderedGhostGrid, target.measureId, target.staffIndex),
+    getRenderedGhostStaffPoints(renderedGhostGrid, target.measureId, target.staffIndex, { includeSynthetic: true }),
   );
   const fallbackPoints = directPoints.length > 0
     ? directPoints
@@ -2996,8 +3030,14 @@ function discardGhostTargetOffRenderedSnap(
 ) {
   if (!target || target.placementMode === 'chord') return target;
   if (target.allowCrossVoiceRenderedSnap) return target;
+  if (
+    target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot')
+    && ghostHasTraceQuantizedRestFallbackSnap(target)
+  ) {
+    return target;
+  }
   const staffPoints = filterSelectableRenderedGhostSnapPoints(
-    getRenderedGhostStaffPoints(renderedGhostGrid, target.measureId, target.staffIndex),
+    getRenderedGhostStaffPoints(renderedGhostGrid, target.measureId, target.staffIndex, { includeSynthetic: true }),
   );
   const snapPoints = staffPoints.filter((point) => (
     timestampsEqual(point.timestampNum, point.timestampDen, target.timestampNum, target.timestampDen)
@@ -3020,7 +3060,7 @@ function findNextRenderedGhostPointForTarget(
 ) {
   if (!renderedGhostGrid || !target?.measureId) return null;
   const points = filterSelectableRenderedGhostSnapPoints(
-    getRenderedGhostStaffPoints(renderedGhostGrid, target.measureId, target.staffIndex),
+    getRenderedGhostStaffPoints(renderedGhostGrid, target.measureId, target.staffIndex, { includeSynthetic: true }),
   );
   const currentValue = target.timestampNum / Math.max(target.timestampDen, 1);
   return points.find((point) => (
@@ -3237,7 +3277,6 @@ function resolveClickedGuitarFretTextTarget(input: {
   visualText: string | null;
 }): SelectedNote | null {
   if (!input.coreDocument || !input.measureOverlay) return null;
-  if (!/^\d+$/.test(input.visualText?.trim() ?? '')) return null;
 
   const textCenters = Array.from(input.container.querySelectorAll<SVGTextElement>('svg text'))
     .map((element) => {
@@ -4650,6 +4689,34 @@ function buildSelectionConfidenceCandidate(input: {
   };
 }
 
+function compareChordGlyphCandidatesByPointerY(
+  left: SelectionConfidenceCandidate,
+  right: SelectionConfidenceCandidate,
+  renderedById: Map<string, RenderedNote>,
+  domPoint: PointLike,
+) {
+  const leftRendered = renderedById.get(left.renderedId);
+  const rightRendered = renderedById.get(right.renderedId);
+  const leftNote = leftRendered?.note;
+  const rightNote = rightRendered?.note;
+  if (!leftNote || !rightNote || leftNote.isRest || rightNote.isRest) return 0;
+  if (
+    leftNote.corePartId !== rightNote.corePartId
+    || leftNote.measureNumber !== rightNote.measureNumber
+    || leftNote.staffIndex !== rightNote.staffIndex
+    || leftNote.voiceId !== rightNote.voiceId
+    || leftNote.timestampNum !== rightNote.timestampNum
+    || leftNote.timestampDen !== rightNote.timestampDen
+  ) return 0;
+
+  const pitchDelta = selectedNotePitchRank(leftNote) - selectedNotePitchRank(rightNote);
+  if (pitchDelta === 0) return 0;
+  const sharedY = (leftRendered.domCenter.y + rightRendered.domCenter.y) / 2;
+  return domPoint.y <= sharedY + 1
+    ? -pitchDelta
+    : pitchDelta;
+}
+
 export function resolveRenderedGlyphHit(input: {
   renderedNotes: RenderedNote[];
   container?: HTMLElement | null;
@@ -4658,6 +4725,7 @@ export function resolveRenderedGlyphHit(input: {
   selectedVoice?: number | null;
   selectedPartId?: string | null;
 }): { rendered: RenderedNote | null; report: SelectionConfidenceReport } {
+  const renderedById = new Map(input.renderedNotes.map((rendered) => [rendered.id, rendered]));
   const candidates = input.renderedNotes
     .map((rendered, index) => buildSelectionConfidenceCandidate({
       rendered,
@@ -4669,7 +4737,13 @@ export function resolveRenderedGlyphHit(input: {
       selectedPartId: input.selectedPartId,
     }))
     .filter((candidate): candidate is SelectionConfidenceCandidate => Boolean(candidate))
-    .sort((a, b) => a.score - b.score || a.renderedId.localeCompare(b.renderedId))
+    .sort((a, b) => {
+      const scoreDelta = a.score - b.score;
+      if (Math.abs(scoreDelta) > 0.01) return scoreDelta;
+      return compareChordGlyphCandidatesByPointerY(a, b, renderedById, input.domPoint)
+        || scoreDelta
+        || a.renderedId.localeCompare(b.renderedId);
+    })
     .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
   const winner = candidates[0] ?? null;
   const rendered = winner
@@ -6967,6 +7041,7 @@ function buildSemanticSnapDebugPoints(input: {
   renderedGhostGrid: RenderedGhostGrid;
   measureOverlays: RenderedMeasureLayoutOverlay[];
   staffDetailsByMeasure: Map<number, StaffDetail[]> | null | undefined;
+  anchorBoxes?: SemanticAnchorDebugBox[];
   activeTarget: GhostNoteTarget | null;
   viewportBox?: {
     width: number;
@@ -6976,11 +7051,23 @@ function buildSemanticSnapDebugPoints(input: {
   } | null;
 }): SemanticSnapDebugPoint[] {
   const overlayByMeasureId = new Map(input.measureOverlays.map((overlay) => [overlay.measureId, overlay]));
+  const protectedStartByLane = new Map<string, number>();
+  for (const box of input.anchorBoxes ?? []) {
+    if (!box.protectedSystemStart || box.measureXStart <= box.measureLeft + 0.75) continue;
+    const key = [
+      box.measureId ?? box.measureNumber,
+      box.partId ?? 'partless',
+      box.staffIndex,
+    ].join(':');
+    const current = protectedStartByLane.get(key);
+    protectedStartByLane.set(key, current == null ? box.measureXStart : Math.max(current, box.measureXStart));
+  }
   const points: SemanticSnapDebugPoint[] = [];
   const roundX = (value: number) => Math.round(value * 100) / 100;
   const createDebugPointId = (
     point: RenderedGhostGridPoint,
     kind: 'visible' | 'synthetic-grid-collapsed',
+    pointX = point.domX,
   ) => {
     const timestamp = normalizeFraction(point.timestampNum, Math.max(point.timestampDen, 1));
     return [
@@ -6991,7 +7078,7 @@ function buildSemanticSnapDebugPoints(input: {
       `time:${timestamp.num}/${timestamp.den}`,
       point.synthetic ? 'synthetic' : 'rendered',
       point.isRest ? 'rest' : 'note',
-      `x:${roundX(point.domX)}`,
+      `x:${roundX(pointX)}`,
       `y:${Math.round(point.domY * 100) / 100}`,
       kind,
       point.id,
@@ -7014,6 +7101,17 @@ function buildSemanticSnapDebugPoints(input: {
       return overlay.domRect.y + (overlay.domRect.height / 2);
     }
     return point.domY;
+  };
+  const resolvePointX = (point: RenderedGhostGridPoint) => {
+    const protectedStart = protectedStartByLane.get([
+      point.measureId,
+      point.corePartId ?? 'partless',
+      point.staffIndex,
+    ].join(':'));
+    if (point.isRest && protectedStart != null && point.domX < protectedStart - 0.5) {
+      return protectedStart;
+    }
+    return point.domX;
   };
 
   for (const measureGrid of input.renderedGhostGrid.byMeasureId.values()) {
@@ -7058,7 +7156,8 @@ function buildSemanticSnapDebugPoints(input: {
           || left.domX - right.domX
           || left.id.localeCompare(right.id)
         ))[0]!;
-      const rawXs = [...new Set(validCandidates.map((candidate) => roundX(candidate.domX)))].sort((left, right) => left - right);
+      const pointX = resolvePointX(point);
+      const rawXs = [...new Set(validCandidates.map((candidate) => roundX(resolvePointX(candidate))))].sort((left, right) => left - right);
       const active = Boolean(input.activeTarget
         && point.measureId === input.activeTarget.measureId
         && point.staffIndex === input.activeTarget.staffIndex
@@ -7069,7 +7168,7 @@ function buildSemanticSnapDebugPoints(input: {
           input.activeTarget.timestampDen,
         ));
       points.push({
-        id: createDebugPointId(point, 'visible'),
+        id: createDebugPointId(point, 'visible', pointX),
         measureId: point.measureId,
         measureNumber: point.measureNumber,
         pageIndex: overlay?.pageIndex ?? null,
@@ -7080,7 +7179,7 @@ function buildSemanticSnapDebugPoints(input: {
         timestampNum: point.timestampNum,
         timestampDen: point.timestampDen,
         ratio: point.ratio,
-        x: point.domX,
+        x: pointX,
         y: resolvePointY(point, overlay),
         isRest: point.isRest,
         synthetic: point.synthetic,
@@ -8753,7 +8852,7 @@ function buildGhostIntentAnchorsFromGrid(
   graceEventIds: Set<string>,
 ): GhostOnsetAnchor[] {
   const staffPoints = filterSelectableRenderedGhostSnapPoints(
-    getRenderedGhostStaffPoints(renderedGhostGrid, measureId, staffIndex),
+    getRenderedGhostStaffPoints(renderedGhostGrid, measureId, staffIndex, { includeSynthetic: true }),
   );
   const anchors: GhostOnsetAnchor[] = [];
   const seen = new Set<string>();
@@ -8791,7 +8890,7 @@ function resolveRenderedGhostSnap(
   graceEventIds: Set<string>,
 ) {
   const staffPoints = filterSelectableRenderedGhostSnapPoints(
-    getRenderedGhostStaffPoints(renderedGhostGrid, measureId, staffIndex),
+    getRenderedGhostStaffPoints(renderedGhostGrid, measureId, staffIndex, { includeSynthetic: true }),
   );
   const activeVoicePoints = activeVoiceId != null
     ? staffPoints.filter((point) => point.voiceId === activeVoiceId)
@@ -8989,6 +9088,93 @@ function findRenderedGhostPointForQuantizedRatio(
   return points[0] ?? null;
 }
 
+function buildQuantizedTrailingSilentGhostPoint(
+  renderedGhostGrid: RenderedGhostGrid | null | undefined,
+  input: {
+    measureId: string;
+    measureNumber: number;
+    pageIndex?: number | null;
+    systemIndex?: number | null;
+    corePartId?: string | null;
+    staffIndex: number;
+    voiceId: number;
+    ratio: number;
+    pointerX: number;
+    slotDuration: number;
+    measureDurationRatio: number;
+    measureLeft: number;
+    measureRight: number;
+  },
+): RenderedGhostGridPoint | null {
+  const measureGrid = renderedGhostGrid?.byMeasureId.get(input.measureId);
+  if (!measureGrid) return null;
+  const staffPoints = filterSelectableRenderedGhostSnapPoints(
+    getRenderedGhostStaffPoints(renderedGhostGrid, input.measureId, input.staffIndex),
+  ).filter((point) => !point.synthetic && point.voiceId === input.voiceId);
+  let normalizedRatio = clamp(input.ratio, 0, Math.max(input.measureDurationRatio, 0));
+  if (normalizedRatio <= 0 || normalizedRatio >= input.measureDurationRatio - 1e-6) return null;
+  const finalPoint = staffPoints
+    .filter((point) => point.ratio < input.measureDurationRatio - 1e-6)
+    .sort((left, right) => right.ratio - left.ratio || right.domX - left.domX)[0] ?? null;
+  if (
+    finalPoint?.isRest
+    && input.slotDuration > 0
+    && input.pointerX > finalPoint.domX + 14
+  ) {
+    const nextSlotRatio = finalPoint.ratio + input.slotDuration;
+    if (nextSlotRatio > finalPoint.ratio + 1e-6 && nextSlotRatio < input.measureDurationRatio - 1e-6) {
+      normalizedRatio = nextSlotRatio;
+    }
+  }
+  if (staffPoints.some((point) => Math.abs(point.ratio - normalizedRatio) <= 1e-6)) return null;
+
+  const previousPoint = staffPoints
+    .filter((point) => point.ratio < normalizedRatio - 1e-6)
+    .sort((left, right) => right.ratio - left.ratio || right.domX - left.domX)[0] ?? null;
+  if (!previousPoint?.isRest) return null;
+  const nextPoint = staffPoints
+    .filter((point) => point.ratio > normalizedRatio + 1e-6)
+    .sort((left, right) => left.ratio - right.ratio || left.domX - right.domX)[0] ?? null;
+  if (nextPoint) return null;
+
+  const timestampBase = 64;
+  const timestamp = normalizeFraction(
+    Math.round(normalizedRatio * timestampBase),
+    timestampBase,
+  );
+  const tailWidthRatio = (normalizedRatio - previousPoint.ratio)
+    / Math.max(input.measureDurationRatio - previousPoint.ratio, 1e-6);
+  const domX = clamp(
+    previousPoint.domX + ((input.measureRight - previousPoint.domX) * tailWidthRatio),
+    input.measureLeft,
+    input.measureRight,
+  );
+  return {
+    id: [
+      'quantized-trailing-silent',
+      input.measureId,
+      input.staffIndex,
+      input.voiceId,
+      `${timestamp.num}/${timestamp.den}`,
+    ].join(':'),
+    coreEntityId: null,
+    corePartId: input.corePartId ?? previousPoint.corePartId ?? measureGrid.corePartId ?? null,
+    measureId: input.measureId,
+    measureNumber: input.measureNumber,
+    pageIndex: input.pageIndex ?? previousPoint.pageIndex ?? null,
+    systemIndex: input.systemIndex ?? previousPoint.systemIndex ?? null,
+    staffIndex: input.staffIndex,
+    voiceId: input.voiceId,
+    timestampNum: timestamp.num,
+    timestampDen: timestamp.den,
+    ratio: fractionToNumber(timestamp),
+    domX,
+    domY: previousPoint.domY,
+    isRest: true,
+    synthetic: false,
+  };
+}
+
 function buildQuantizedRestMeasureGhostPoint(
   renderedGhostGrid: RenderedGhostGrid | null | undefined,
   input: {
@@ -9005,12 +9191,91 @@ function buildQuantizedRestMeasureGhostPoint(
     measureRight: number;
   },
 ): RenderedGhostGridPoint | null {
-  // Element-anchor rule: never fabricate ghost targets inside a rest span.
-  // The only legal target over a rest is the rest's own start anchor, which
-  // already exists as a real grid point.
-  void renderedGhostGrid;
-  void input;
-  return null;
+  const measureGrid = renderedGhostGrid?.byMeasureId.get(input.measureId);
+  const staffPoints = filterSelectableRenderedGhostSnapPoints(
+    getRenderedGhostStaffPoints(renderedGhostGrid, input.measureId, input.staffIndex),
+  );
+  const allStaffPoints = getRenderedGhostStaffPoints(renderedGhostGrid, input.measureId, input.staffIndex, {
+    includeSynthetic: true,
+  });
+  const realRestPoints = staffPoints.filter((point) => !point.synthetic && point.isRest);
+  const hasRealPitchedPoint = staffPoints.some((point) => !point.synthetic && !point.isRest);
+  if (!measureGrid || realRestPoints.length !== 1 || hasRealPitchedPoint) return null;
+
+  const normalizedRatio = clamp(input.ratio, 0, Math.max(input.measureDurationRatio, 0));
+  const timestampBase = 64;
+  const timestamp = normalizeFraction(
+    Math.round(normalizedRatio * timestampBase),
+    timestampBase,
+  );
+  const existingPoint = staffPoints.find((point) => (
+    point.voiceId === input.voiceId
+    && timestampsEqual(point.timestampNum, point.timestampDen, timestamp.num, timestamp.den)
+  ));
+  if (existingPoint) return existingPoint;
+  const syntheticPoint = allStaffPoints.find((point) => (
+    point.synthetic
+    && point.voiceId === input.voiceId
+    && timestampsEqual(point.timestampNum, point.timestampDen, timestamp.num, timestamp.den)
+  )) ?? allStaffPoints.find((point) => (
+    point.synthetic
+    && timestampsEqual(point.timestampNum, point.timestampDen, timestamp.num, timestamp.den)
+  ));
+  if (!syntheticPoint) return null;
+
+  const restPoint = realRestPoints[0]!;
+  const domX = clamp(syntheticPoint.domX, input.measureLeft, input.measureRight);
+  return {
+    id: [
+      'quantized-rest',
+      input.measureId,
+      input.staffIndex,
+      input.voiceId,
+      `${timestamp.num}/${timestamp.den}`,
+    ].join(':'),
+    coreEntityId: null,
+    corePartId: input.corePartId ?? restPoint.corePartId ?? measureGrid.corePartId ?? null,
+    measureId: input.measureId,
+    measureNumber: input.measureNumber,
+    pageIndex: input.pageIndex ?? restPoint.pageIndex ?? null,
+    systemIndex: input.systemIndex ?? restPoint.systemIndex ?? null,
+    staffIndex: input.staffIndex,
+    voiceId: input.voiceId,
+    timestampNum: timestamp.num,
+    timestampDen: timestamp.den,
+    ratio: fractionToNumber(timestamp),
+    domX,
+    domY: syntheticPoint.domY ?? restPoint.domY,
+    isRest: true,
+    synthetic: false,
+  };
+}
+
+function findNearestRestOnlyMeasureGhostPoint(
+  renderedGhostGrid: RenderedGhostGrid | null | undefined,
+  input: {
+    measureId: string;
+    staffIndex: number;
+    voiceId: number;
+    pointerX: number;
+  },
+): RenderedGhostGridPoint | null {
+  const candidates = filterSelectableRenderedGhostSnapPoints(
+    getRenderedGhostStaffPoints(renderedGhostGrid, input.measureId, input.staffIndex, { includeSynthetic: true }),
+  ).filter((point) => (
+    point.isRest
+    && Number.isFinite(point.domX)
+    && (point.voiceId === input.voiceId || point.synthetic)
+  ));
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, point) => {
+    const bestScore = Math.abs(best.domX - input.pointerX)
+      + (best.voiceId === input.voiceId ? 0 : 2);
+    const pointScore = Math.abs(point.domX - input.pointerX)
+      + (point.voiceId === input.voiceId ? 0 : 2);
+    if (pointScore !== bestScore) return pointScore < bestScore ? point : best;
+    return Math.abs(point.ratio - 0) < Math.abs(best.ratio - 0) ? point : best;
+  }, candidates[0]!);
 }
 
 function quantizeRatioToDurationGrid(
@@ -9298,19 +9563,53 @@ function resolveGhostNoteTargetLegacy(
     Math.round((measureDuration > 0 ? (((safePointer.clampedX - overlay.domRect.x) / Math.max(overlay.domRect.width, 1)) * measureDuration) : 0) * 1024),
     1024,
   );
+  const fallbackRhythmicSegment = detectActiveRhythmicSegment(
+    coreDocument,
+    overlay.measureId,
+    reference.semantic.staffIndex,
+    selectedVoice,
+    fallbackPointerRatio,
+  );
+  const fallbackSlotDuration = fractionToNumber(getEffectiveDuration(selectedDuration, isDotted, fallbackRhythmicSegment));
+  const fallbackSegmentStartRatio = fractionToNumber(fallbackRhythmicSegment.start);
+  const fallbackMaxStartRatio = Math.max(
+    fractionToNumber(fallbackRhythmicSegment.end) - fallbackSlotDuration,
+    fallbackSegmentStartRatio,
+  );
+  const fallbackQuantizedRatio = quantizeRatioToDurationGrid(
+    fractionToNumber(fallbackPointerRatio),
+    fallbackSlotDuration,
+    fallbackSegmentStartRatio,
+    fallbackMaxStartRatio,
+  );
   const preferredSnap = preferRenderedOnsetSnap(snappedPoint, renderedOnsetSnap, safePointer.clampedX);
   const snapOptions = {
     pointerX: safePointer.clampedX,
-    pointerRatio: fractionToNumber(fallbackPointerRatio),
+    pointerRatio: fallbackQuantizedRatio,
   };
   const usablePreferredSnap = resolveUsableGhostPreferredSnap(preferredSnap, snapOptions);
+  const trailingSilentSnap = buildQuantizedTrailingSilentGhostPoint(renderedGhostGrid, {
+    measureId: overlay.measureId,
+    measureNumber: overlay.measureNumber,
+    pageIndex: overlay.pageIndex,
+    systemIndex: overlay.systemIndex,
+    corePartId: preferredPartId,
+    staffIndex: reference.semantic.staffIndex,
+    voiceId: selectedVoice,
+    ratio: fallbackQuantizedRatio,
+    pointerX: safePointer.clampedX,
+    slotDuration: fallbackSlotDuration,
+    measureDurationRatio: measureDuration,
+    measureLeft: overlay.domRect.x,
+    measureRight: overlay.domRect.x + overlay.domRect.width,
+  });
   const quantizedSnap = !usablePreferredSnap
     ? findRenderedGhostPointForQuantizedRatio(renderedGhostGrid, {
         measureId: overlay.measureId,
         staffIndex: reference.semantic.staffIndex,
         voiceId: selectedVoice,
-        ratio: fractionToNumber(fallbackPointerRatio),
-      }) ?? buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
+        ratio: fallbackQuantizedRatio,
+      }) ?? trailingSilentSnap ?? buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
         measureId: overlay.measureId,
         measureNumber: overlay.measureNumber,
         pageIndex: overlay.pageIndex,
@@ -9318,11 +9617,13 @@ function resolveGhostNoteTargetLegacy(
         corePartId: preferredPartId,
         staffIndex: reference.semantic.staffIndex,
         voiceId: selectedVoice,
-        ratio: fractionToNumber(fallbackPointerRatio),
+        ratio: fallbackQuantizedRatio,
         measureDurationRatio: measureDuration,
         measureLeft: overlay.domRect.x,
         measureRight: overlay.domRect.x + overlay.domRect.width,
       })
+    : trailingSilentSnap && Math.abs(usablePreferredSnap.ratio - fallbackQuantizedRatio) > 1e-6
+      ? trailingSilentSnap
     : null;
   const effectiveSnappedPoint = resolveEffectiveGhostSnap(usablePreferredSnap, quantizedSnap, snapOptions);
   if (!effectiveSnappedPoint) return null;
@@ -9977,11 +10278,6 @@ function mapProxyContextToGhostTarget(
   );
   const segmentStartRatio = fractionToNumber(rhythmicSegment.start);
   const maxStartRatio = Math.max(fractionToNumber(rhythmicSegment.end) - slotDuration, segmentStartRatio);
-  const pointerMeasureRatio = clamp(
-    context.relX * Math.max(getMeasureDurationRatio(coreDocument, overlay.measureId), 1e-6),
-    segmentStartRatio,
-    maxStartRatio,
-  );
   const measureDurationRatio = Math.max(getMeasureDurationRatio(coreDocument, overlay.measureId), 1e-6);
   const quantizedMeasureRect = staffCaptureRect ?? overlay.domRect;
   const quantizedMeasureRight = quantizedMeasureRect.x + quantizedMeasureRect.width;
@@ -9991,6 +10287,11 @@ function mapProxyContextToGhostTarget(
     protectLeadingModifiers,
     uniformNoteStartX: protectedUniformNoteStartX,
   });
+  const pointerMeasureRatio = clamp(
+    ((safePointer.clampedX - quantizedMeasureLeft) / Math.max(quantizedMeasureRight - quantizedMeasureLeft, 1)) * measureDurationRatio,
+    segmentStartRatio,
+    maxStartRatio,
+  );
   const fallbackQuantizedRatio = quantizeRatioToDurationGrid(
     pointerMeasureRatio,
     slotDuration,
@@ -10003,6 +10304,21 @@ function mapProxyContextToGhostTarget(
     pointerRatio: fallbackQuantizedRatio,
   };
   const usablePreferredSnap = resolveUsableGhostPreferredSnap(preferredSnap, snapOptions);
+  const trailingSilentSnap = buildQuantizedTrailingSilentGhostPoint(renderedGhostGrid, {
+    measureId: overlay.measureId,
+    measureNumber: overlay.measureNumber,
+    pageIndex: overlay.pageIndex,
+    systemIndex: overlay.systemIndex,
+    corePartId: preferredPartId,
+    staffIndex: targetStaffIndex,
+    voiceId: selectedVoice,
+    ratio: fallbackQuantizedRatio,
+    pointerX: safePointer.clampedX,
+    slotDuration,
+    measureDurationRatio,
+    measureLeft: quantizedMeasureLeft,
+    measureRight: quantizedMeasureRight,
+  });
   let quantizedFallbackSnap: RenderedGhostGridPoint | null = null;
   if (!usablePreferredSnap) {
     quantizedFallbackSnap = findRenderedGhostPointForQuantizedRatio(renderedGhostGrid, {
@@ -10010,7 +10326,7 @@ function mapProxyContextToGhostTarget(
       staffIndex: targetStaffIndex,
       voiceId: selectedVoice,
       ratio: fallbackQuantizedRatio,
-    }) ?? buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
+    }) ?? trailingSilentSnap ?? buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
       measureId: overlay.measureId,
       measureNumber: overlay.measureNumber,
       pageIndex: overlay.pageIndex,
@@ -10023,6 +10339,8 @@ function mapProxyContextToGhostTarget(
       measureLeft: quantizedMeasureLeft,
       measureRight: quantizedMeasureRight,
     });
+  } else if (trailingSilentSnap && Math.abs(usablePreferredSnap.ratio - fallbackQuantizedRatio) > 1e-6) {
+    quantizedFallbackSnap = trailingSilentSnap;
   }
   const effectiveSnappedPoint = resolveEffectiveGhostSnap(usablePreferredSnap, quantizedFallbackSnap, snapOptions);
   if (!effectiveSnappedPoint) return null;
@@ -10287,7 +10605,22 @@ function resolveRestOnlyGhostTarget(
     segmentStartRatio,
     maxStartRatio,
   );
-  const quantizedRestPoint = buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
+  const restTimestamp = normalizeFraction(restPoint.timestampNum, Math.max(restPoint.timestampDen, 1));
+  const nearestRestSlotPoint = findNearestRestOnlyMeasureGhostPoint(renderedGhostGrid, {
+    measureId: overlay.measureId,
+    staffIndex: staff.staffIndex,
+    voiceId: selectedVoice,
+    pointerX: domPoint.x,
+  });
+  const nearestRestSlotIsInternal = nearestRestSlotPoint
+    ? !timestampsEqual(
+        nearestRestSlotPoint.timestampNum,
+        nearestRestSlotPoint.timestampDen,
+        restTimestamp.num,
+        restTimestamp.den,
+      )
+    : false;
+  const quantizedRestPoint = nearestRestSlotIsInternal ? nearestRestSlotPoint : buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
     measureId: overlay.measureId,
     measureNumber: overlay.measureNumber,
     pageIndex: overlay.pageIndex,
@@ -10300,7 +10633,6 @@ function resolveRestOnlyGhostTarget(
     measureLeft,
     measureRight,
   });
-  const restTimestamp = normalizeFraction(restPoint.timestampNum, Math.max(restPoint.timestampDen, 1));
   const quantizedTimestamp = quantizedRestPoint
     ? normalizeFraction(quantizedRestPoint.timestampNum, Math.max(quantizedRestPoint.timestampDen, 1))
     : restTimestamp;
@@ -10728,7 +11060,6 @@ function isGhostTargetInLeadingProtectedArea(
     target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot')
     && target.resolvedTarget.domX != null
     && Number.isFinite(target.resolvedTarget.domX)
-    && target.resolvedTarget.domX >= protectedRight - 0.75
   ) {
     return false;
   }
@@ -13891,6 +14222,7 @@ export default function ScoreEditor({
         renderedGhostGrid: renderedGhostGridRef.current,
         measureOverlays: measureLayoutOverlays,
         staffDetailsByMeasure: staffDetailsByMeasureRef.current,
+        anchorBoxes: semanticAnchorDebugBoxes,
         activeTarget: activeSemanticAnchorTarget,
         viewportBox,
       })

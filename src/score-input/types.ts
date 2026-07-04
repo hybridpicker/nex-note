@@ -66,6 +66,7 @@ export interface ResolvedEditTarget {
   relativeAfterTimestampNum?: number;
   relativeAfterTimestampDen?: number;
   allowOccupiedInsert?: boolean;
+  preserveOverflow?: boolean;
   step: string;
   octave: number;
   alter: number;

@@ -254,16 +254,29 @@ function selectedDurationFraction(options: RenderedGhostGridBuildOptions): Fract
 }
 
 function buildRestMeasureSlotAnchors(duration: Fraction, slotDuration: Fraction | null): RhythmicAnchorTick[] {
-  // Element-anchor rule: a rest-only measure exposes exactly one input target —
-  // the start of the rest. Never synthesize a duration grid across it.
-  void duration;
-  void slotDuration;
-  return [{
+  const anchors: RhythmicAnchorTick[] = [{
     timestampNum: 0,
     timestampDen: 1,
     timestamp: normalizeFraction(0, 1),
     isRest: true,
   }];
+  if (!slotDuration || fractionToNumber(slotDuration) <= 0) return anchors;
+
+  let cursor = normalizeFraction(slotDuration.num, slotDuration.den);
+  const measureEnd = fractionToNumber(duration);
+  while (fractionToNumber(cursor) < measureEnd - 1e-9) {
+    anchors.push({
+      timestampNum: cursor.num,
+      timestampDen: cursor.den,
+      timestamp: cursor,
+      isRest: true,
+    });
+    cursor = normalizeFraction(
+      (cursor.num * slotDuration.den) + (slotDuration.num * cursor.den),
+      cursor.den * slotDuration.den,
+    );
+  }
+  return anchors;
 }
 
 function lcm(left: number, right: number) {
@@ -436,7 +449,7 @@ function collectCoreSyntheticSlotAnchors(input: {
     return buildRestMeasureSlotAnchors(input.measureDuration, input.slotDuration);
   }
   const hasOnlyRests = voice.events.every((event) => event.kind === 'rest' || event.isChord);
-  if (hasOnlyRests) return collectVoiceEventAnchors(voice);
+  if (hasOnlyRests) return buildRestMeasureSlotAnchors(input.measureDuration, input.slotDuration);
   const timing = getEffectiveMeasureTiming(input.coreDocument, {
     measureId: input.measureId,
     measureNumber: input.measureNumber,
@@ -1537,15 +1550,19 @@ export function getRenderedGhostStaffPoints(
   const measure = getRenderedGhostMeasure(grid, measureId);
   if (!measure) return [];
   if (staffIndex == null) {
+    const measurePoints = measure.points ?? [];
+    const syntheticMeasurePoints = measure.syntheticPoints ?? [];
     return options?.includeSynthetic
-      ? [...measure.points, ...measure.syntheticPoints].sort(comparePoints)
-      : measure.points;
+      ? [...measurePoints, ...syntheticMeasurePoints].sort(comparePoints)
+      : measurePoints;
   }
   const staff = measure.byStaffIndex.get(staffIndex);
   if (!staff) return [];
+  const staffPoints = staff.points ?? [];
+  const syntheticStaffPoints = staff.syntheticPoints ?? [];
   return options?.includeSynthetic
-    ? [...staff.points, ...staff.syntheticPoints].sort(comparePoints)
-    : staff.points;
+    ? [...staffPoints, ...syntheticStaffPoints].sort(comparePoints)
+    : staffPoints;
 }
 
 export function findNearestRenderedGhostPoint(

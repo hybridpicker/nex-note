@@ -2290,6 +2290,57 @@ test('semantic replace ghost drops stale previews inside a rest span', () => {
   assert.equal(rebound, null);
 });
 
+test('ghost binding rejects semantic targets that are missing from the visible snap grid', () => {
+  const coreDocument = importMusicXmlToCore(SAMPLE_XML);
+  const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
+  const editMap = buildInteractiveEditMap({
+    renderedGhostGrid: null,
+    renderedNotes: [],
+    measureOverlays: [{
+      measureId: measure.id,
+      measureNumber: measure.measureNumber,
+      pageIndex: 0,
+      systemIndex: 0,
+    }],
+  });
+  const unmappedGhost = {
+    measureId: measure.id,
+    corePartId: coreDocument.score.parts[0]!.id,
+    measureNumber: measure.measureNumber,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'D',
+    octave: 4,
+    alter: 0,
+    domCenter: { x: 164, y: 82 },
+    domRect: { x: 154, y: 64, width: 20, height: 36 },
+    pointerX: 164,
+    previewLeft: 154,
+    previewTop: 64,
+    previewWidth: 20,
+    previewHeight: 36,
+    accidentalOffsetX: 0,
+    noteheadCenterX: 10,
+    stemDirection: 'up' as const,
+    placementMode: 'replace' as const,
+    placementAnchorIsRest: false,
+    semanticAnchorIsRest: false,
+    ledgerLines: [],
+  };
+
+  const rebound = bindResolvedEditTargetToGhost(
+    unmappedGhost,
+    editMap,
+    coreDocument,
+    '4',
+    false,
+  );
+
+  assert.equal(rebound, null);
+});
+
 test('advanced retarget keeps note anchors marked as notes for fresh multi-voice entry', () => {
   const point = {
     id: 'm1:1:1:0/4:note',
@@ -2662,6 +2713,163 @@ test('ghost diagnostics accept quantized rest-only fallback snaps as represented
       },
     },
   }), false);
+});
+
+test('ghost binding preserves proven internal rest-only quantized slots', () => {
+  const coreDocument = importMusicXmlToCore(FULL_REST_XML);
+  const measureId = coreDocument.score.parts[0]!.staves[0]!.measures[0]!.id;
+  const renderedNotes: RenderedNote[] = [{
+    id: 'whole-rest',
+    coreEntityId: 'whole-rest',
+    note: {
+      coreEntityId: 'whole-rest',
+      coreMeasureId: measureId,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      step: 'C',
+      octave: 4,
+      alter: 0,
+      isRest: true,
+      graphicalNote: null,
+    },
+    svgCenter: { x: 180, y: 80 },
+    domCenter: { x: 180, y: 80 },
+    domRect: { x: 174, y: 74, width: 12, height: 12 },
+    svgElement: null,
+    tintElement: null,
+  }];
+  const overlay = {
+    measureId,
+    measureNumber: 1,
+    systemIndex: 0,
+    pageIndex: 0,
+    widthWeight: 1,
+    domRect: { x: 100, y: 40, width: 160, height: 80 },
+    breakBefore: false,
+    pageBreakBefore: false,
+    staffSpacing: null,
+    staffDetails: [{
+      staffIndex: 1,
+      topLineDomY: 60,
+      bottomLineDomY: 100,
+      lineDistanceDom: 10,
+      lineCount: 5,
+    }],
+  };
+  const renderedGhostGrid = buildRenderedGhostGrid(renderedNotes, {
+    coreDocument,
+    measureOverlays: [overlay],
+    selectedDuration: '4',
+    exposeRestMeasureSlots: true,
+  });
+  const hiddenQuarter = getRenderedGhostStaffPoints(renderedGhostGrid, measureId, 1, { includeSynthetic: true })
+    .find((point) => point.synthetic && point.timestampNum === 1 && point.timestampDen === 4);
+  assert.ok(hiddenQuarter);
+  const editMap = buildInteractiveEditMap({
+    renderedGhostGrid,
+    measureOverlays: [overlay],
+    renderedNotes,
+  });
+
+  const rebound = bindResolvedEditTargetToGhost({
+    measureId,
+    corePartId: coreDocument.score.parts[0]!.id,
+    measureNumber: 1,
+    pageIndex: 0,
+    systemIndex: 0,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'D',
+    octave: 4,
+    alter: 0,
+    domCenter: { x: hiddenQuarter.domX, y: 82 },
+    domRect: { x: hiddenQuarter.domX - 6, y: 76, width: 12, height: 12 },
+    pointerX: hiddenQuarter.domX,
+    previewLeft: hiddenQuarter.domX - 6,
+    previewTop: 76,
+    previewWidth: 16,
+    previewHeight: 24,
+    accidentalOffsetX: 0,
+    noteheadCenterX: 6,
+    stemDirection: 'up',
+    placementMode: 'replace',
+    placementAnchorIsRest: true,
+    semanticAnchorIsRest: true,
+    ledgerLines: [],
+    resolvedTarget: {
+      source: 'pointer',
+      mode: 'replace',
+      measureId,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      ratio: 0.25,
+      domX: hiddenQuarter.domX,
+      step: 'D',
+      octave: 4,
+      alter: 0,
+      existingEventKind: 'rest',
+      existingEventStartsAtTarget: true,
+      diagnostics: ['rest-only-snap-selected', 'rest-only-quantized-internal-slot'],
+    },
+    snapResolution: {
+      resolver: 'proxy',
+      reason: 'rest-only snap selected',
+      measureId,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestamp: '1/4',
+      rawPointerX: hiddenQuarter.domX,
+      safePointerX: hiddenQuarter.domX,
+      pointerMeasureRatio: 0.25,
+      fallbackQuantizedRatio: 0.25,
+      quantizedRatio: 0.25,
+      slotDuration: 0.25,
+      segmentStartRatio: 0,
+      maxStartRatio: 0.75,
+      gridSnap: null,
+      renderedOnsetSnap: null,
+      preferredSnap: null,
+      effectiveSnap: null,
+      quantizedFallbackSnap: {
+        timestamp: '1/4',
+        voice: 1,
+        synthetic: false,
+        x: hiddenQuarter.domX,
+      },
+      placementIntent: { mode: 'replace', targetVoiceId: 1, anchor: null },
+      committed: { snappedX: hiddenQuarter.domX, timestamp: '1/4', voiceId: 1 },
+      visible: {
+        domCenterX: hiddenQuarter.domX,
+        previewLeft: hiddenQuarter.domX - 6,
+        noteheadCenterX: 6,
+        visibleNoteheadX: hiddenQuarter.domX,
+        minimumVisibleX: null,
+      },
+      resolvedTarget: null,
+      deltas: {},
+    },
+  }, editMap, coreDocument, '4', false);
+
+  assert.ok(rebound?.resolvedTarget);
+  assert.equal(rebound.timestampNum, 1);
+  assert.equal(rebound.timestampDen, 4);
+  assert.equal(rebound.resolvedTarget.timestampNum, 1);
+  assert.equal(rebound.resolvedTarget.timestampDen, 4);
+  assert.equal(rebound.resolvedTarget.mode, 'insert');
+  assert.equal(rebound.resolvedTarget.existingEventKind, 'rest');
+  assert.equal(rebound.resolvedTarget.existingEventStartsAtTarget, false);
+  assert.match(rebound.resolvedTarget.diagnostics.join(' '), /rest-only-internal-slot-preserved/);
 });
 
 test('whole-rest semantic rest hover stays locked to the rest anchor', () => {

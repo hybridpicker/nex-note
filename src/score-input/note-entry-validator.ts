@@ -187,6 +187,13 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     && eventStartOffset(event, context.divisions) <= startOffset
     && eventEndOffset(event, context.divisions) > startOffset
   )) ?? null;
+  const isPreservedInternalRestSlot = input.target.mode === 'insert'
+    && input.target.allowOccupiedInsert
+    && spanningRest
+    && (
+      input.target.diagnostics.includes('rest-only-internal-slot-preserved')
+      || input.target.diagnostics.includes('rest-only-quantized-internal-slot')
+    );
 
   if (startOffset >= context.measureDurationDivisions) {
     diagnostics.push('validation:start-outside-measure');
@@ -332,6 +339,20 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
   // already have events. A still-empty voice has no anchors yet; its first
   // entry (e.g. starting voice 2 at a voice-1 anchor) must stay possible.
   if (voiceEvents.length > 0 && exactNotes.length === 0 && exactRests.length === 0) {
+    if (isPreservedInternalRestSlot) {
+      diagnostics.push('validation:insert-inside-rest-allowed');
+      return {
+        target: {
+          ...input.target,
+          corePartId: input.target.corePartId ?? context.partId,
+          existingEventKind: 'rest',
+          existingEventStartsAtTarget: false,
+          diagnostics,
+        },
+        rejectionReason: null,
+        diagnostics,
+      };
+    }
     diagnostics.push(spanningRest ? 'validation:target-inside-rest-rejected' : 'validation:insert-target-missing');
     return {
       target: null,
@@ -355,7 +376,11 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     const voiceEndAfterInsert = voiceEvents
       .filter((event) => !event.isChord)
       .reduce((max, event) => Math.max(max, eventEndOffset(event, context.divisions)), 0) + requestedDuration;
-    if (availableRestAfterStart < requestedDuration && voiceEndAfterInsert > context.measureDurationDivisions) {
+    if (
+      !input.target.preserveOverflow
+      && availableRestAfterStart < requestedDuration
+      && voiceEndAfterInsert > context.measureDurationDivisions
+    ) {
       diagnostics.push('validation:occupied-insert-overflow-rejected');
       return {
         target: null,

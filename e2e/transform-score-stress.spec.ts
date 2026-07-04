@@ -256,12 +256,29 @@ async function readGhost(page: Page) {
     const element = document.querySelector<HTMLElement>('[data-testid="ghost-note-preview"]');
     if (!element || element.offsetParent === null) return null;
     const box = element.getBoundingClientRect();
+    const commitX = Number.parseFloat(element.dataset.ghostCommitX ?? '');
+    const offsetParentBox = element.offsetParent instanceof HTMLElement
+      ? element.offsetParent.getBoundingClientRect()
+      : null;
+    const snapTrace = (() => {
+      try {
+        return JSON.parse(element.dataset.ghostSnapTrace ?? 'null') as unknown;
+      } catch {
+        return null;
+      }
+    })();
     return {
       measure: element.dataset.ghostMeasure ?? null,
       timestamp: element.dataset.ghostTimestamp ?? null,
       pitch: element.dataset.ghostPitch ?? null,
       staff: element.dataset.ghostStaff ?? null,
       mode: element.dataset.ghostMode ?? null,
+      diagnostics: element.dataset.ghostDiagnostics ?? '',
+      commitTimestamp: element.dataset.ghostCommitTimestamp ?? null,
+      commitMode: element.dataset.ghostCommitMode ?? null,
+      commitX,
+      commitClientX: offsetParentBox && Number.isFinite(commitX) ? offsetParentBox.left + commitX : null,
+      snapTrace,
       noteheadX: Number.parseFloat(element.dataset.ghostNoteheadCenterX ?? '0'),
       noteheadY: Number.parseFloat(element.dataset.ghostNoteheadCenterY ?? '28'),
       box: { x: box.x, y: box.y, width: box.width, height: box.height },
@@ -286,7 +303,7 @@ async function measureBoxes(page: Page, measureNumber: number) {
 function yRatiosForPitch(staff: StaffName, pitch: string) {
   const treble: Record<string, number[]> = {
     B4: [0.50, 0.48, 0.52, 0.46, 0.54],
-    D5: [0.20, 0.22, 0.24, 0.28, 0.32, 0.36],
+    D5: [-0.28, -0.20, -0.12, -0.04, 0.04, 0.12, 0.20, 0.22, 0.24, 0.28, 0.32, 0.36],
     G4: [0.62, 0.60, 0.64, 0.66],
   };
   const bass: Record<string, number[]> = {
@@ -318,6 +335,61 @@ async function findMousePoint(page: Page, input: {
   const boxes = await measureBoxes(page, input.measure);
   const staffBox = input.staff === 'treble' ? boxes[0] : (boxes[1] ?? boxes[0]);
   const searchBoxes = [staffBox, ...boxes.filter((box) => box !== staffBox)];
+  const observedGhosts: Array<{
+    x: number;
+    y: number;
+    measure: string | null;
+    staff: string | null;
+    timestamp: string | null;
+    commitTimestamp: string | null;
+    pitch: string | null;
+    mode: string | null;
+    diagnostics: string;
+  }> = [];
+  const targetObservedGhosts: typeof observedGhosts = [];
+  const rememberObservedGhost = (x: number, y: number, ghost: Awaited<ReturnType<typeof readGhost>>) => {
+    if (!ghost) return;
+    const observed = {
+      x: Math.round(x * 10) / 10,
+      y: Math.round(y * 10) / 10,
+      measure: ghost.measure,
+      staff: ghost.staff,
+      timestamp: ghost.timestamp,
+      commitTimestamp: ghost.commitTimestamp,
+      pitch: ghost.pitch,
+      mode: ghost.mode,
+      diagnostics: ghost.diagnostics,
+    };
+    observedGhosts.push(observed);
+    if (ghost.measure === String(input.measure) && ghost.staff === String(input.staff === 'treble' ? 1 : 2)) {
+      targetObservedGhosts.push(observed);
+      if (targetObservedGhosts.length > 180) targetObservedGhosts.shift();
+    }
+    if (observedGhosts.length > 320) observedGhosts.shift();
+  };
+  const ghostMatches = (ghost: Awaited<ReturnType<typeof readGhost>>) => Boolean(
+    ghost?.measure === String(input.measure)
+    && ghost.staff === String(input.staff === 'treble' ? 1 : 2)
+    && (
+      normalizeTimestamp(ghost.timestamp ?? '') === targetTimestamp
+      || normalizeTimestamp(ghost.commitTimestamp ?? '') === targetTimestamp
+    )
+    && ghost.pitch === input.pitch
+  );
+  const clickPointFor = (
+    x: number,
+    y: number,
+    ghost: NonNullable<Awaited<ReturnType<typeof readGhost>>>,
+  ) => {
+    if (
+      normalizeTimestamp(ghost.commitTimestamp ?? '') === targetTimestamp
+      && typeof ghost.commitClientX === 'number'
+      && Number.isFinite(ghost.commitClientX)
+    ) {
+      return { x: ghost.commitClientX, y: ghost.box.y + ghost.noteheadY, ghost };
+    }
+    return { x: ghost.box.x + ghost.noteheadX, y: ghost.box.y + ghost.noteheadY, ghost };
+  };
   if (input.chord) await page.keyboard.down('Alt');
   try {
     for (const box of searchBoxes) {
@@ -327,43 +399,31 @@ async function findMousePoint(page: Page, input: {
           const x = box.x + (box.width * xRatio);
           await page.mouse.move(x, y);
           const ghost = await readGhost(page);
-          if (
-            ghost?.measure === String(input.measure)
-            && ghost.staff === String(input.staff === 'treble' ? 1 : 2)
-            && normalizeTimestamp(ghost.timestamp ?? '') === targetTimestamp
-            && ghost.pitch === input.pitch
-          ) {
-            const clickX = ghost.box.x + ghost.noteheadX;
-            const clickY = ghost.box.y + ghost.noteheadY;
-            return { x: clickX, y: clickY, ghost };
-          }
+          rememberObservedGhost(x, y, ghost);
+          if (ghostMatches(ghost)) return clickPointFor(x, y, ghost!);
         }
       }
     }
     for (const box of searchBoxes) {
-      for (let yRatio = -0.20; yRatio <= 1.80; yRatio += 0.025) {
+      for (let yRatio = -0.80; yRatio <= 1.80; yRatio += 0.025) {
         const y = box.y + (box.height * yRatio);
         for (let xRatio = 0; xRatio <= 1.05; xRatio += 0.025) {
           const x = box.x + (box.width * xRatio);
           await page.mouse.move(x, y);
           const ghost = await readGhost(page);
-          if (
-            ghost?.measure === String(input.measure)
-            && ghost.staff === String(input.staff === 'treble' ? 1 : 2)
-            && normalizeTimestamp(ghost.timestamp ?? '') === targetTimestamp
-            && ghost.pitch === input.pitch
-          ) {
-            const clickX = ghost.box.x + ghost.noteheadX;
-            const clickY = ghost.box.y + ghost.noteheadY;
-            return { x: clickX, y: clickY, ghost };
-          }
+          rememberObservedGhost(x, y, ghost);
+          if (ghostMatches(ghost)) return clickPointFor(x, y, ghost!);
         }
       }
     }
   } finally {
     if (input.chord) await page.keyboard.up('Alt');
   }
-  throw new Error(`Could not find mouse point for m${input.measure} ${input.staff} ${input.timestamp} ${input.pitch}`);
+  throw new Error(
+    `Could not find mouse point for m${input.measure} ${input.staff} ${input.timestamp} ${input.pitch}. `
+    + `Target observed ghosts: ${JSON.stringify(targetObservedGhosts)}. `
+    + `Observed ghosts: ${JSON.stringify(observedGhosts)}`,
+  );
 }
 
 type RewriteEvent = {
@@ -527,11 +587,11 @@ const transformSteps: TransformStep[] = [
     async run(page) {
       await page.keyboard.press('N');
       await page.keyboard.press('5');
-      const point = await findMousePoint(page, { measure: 1, staff: 'treble', timestamp: '1/2', pitch: 'D5' });
+      const point = await findMousePoint(page, { measure: 1, staff: 'treble', timestamp: '3/8', pitch: 'D5' });
       await page.mouse.click(point.x, point.y);
       return { mouse: point };
     },
-    expected: [{ measure: 1, staff: 1, voice: 1, offset: '16/32', duration: '8', pitch: 'D5' }],
+    expected: [{ measure: 1, staff: 1, voice: 1, offset: '12/32', duration: '8', pitch: 'D5' }],
   },
   {
     label: 'add a lower-staff B2 chord tone by Alt-mouse on the existing bass onset',

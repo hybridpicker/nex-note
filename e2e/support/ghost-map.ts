@@ -117,7 +117,10 @@ export function expectGhostMapRatios(
       return unique;
     }, [])
     .map((entry) => entry.ratio);
-  expect(seen).toEqual(expectedRatios);
+  expect(
+    seen,
+    `ghost-map entries: ${entries.map((entry) => `${entry.timestamp}@${Math.round(entry.x * 100) / 100}#${entry.samples}`).join(', ')}`,
+  ).toEqual(expectedRatios);
   for (let index = 1; index < entries.length; index += 1) {
     expect(entries[index]!.x).toBeGreaterThan(entries[index - 1]!.x);
   }

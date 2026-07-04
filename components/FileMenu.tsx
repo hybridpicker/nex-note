@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 
 export interface FileMenuItem {
@@ -91,15 +91,19 @@ export default function FileMenu({ menuId, label, items }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    const index = pendingFocusIndex ?? firstEnabledIndex();
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const focusedIndex = itemRefs.current.findIndex((element) => element === document.activeElement);
+    const index = pendingFocusIndex ?? (focusedIndex >= 0 ? focusedIndex : activeIndex);
     setActiveIndex(index);
     setPendingFocusIndex(null);
     window.setTimeout(() => itemRefs.current[index]?.focus(), 0);
-  }, [items, open, pendingFocusIndex]);
+  }, [open, pendingFocusIndex]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
+    if (typeof window === 'undefined') return;
     itemRefs.current[activeIndex]?.focus();
+    window.setTimeout(() => itemRefs.current[activeIndex]?.focus(), 0);
   }, [activeIndex, open]);
 
   const runItem = (item: FileMenuItem) => {
@@ -132,6 +136,11 @@ export default function FileMenu({ menuId, label, items }: Props) {
   const openMenuAt = (index: number) => {
     setPendingFocusIndex(index);
     setOpen(true);
+  };
+
+  const focusMenuItem = (index: number) => {
+    setActiveIndex(index);
+    itemRefs.current[index]?.focus();
   };
 
   return (
@@ -216,22 +225,22 @@ export default function FileMenu({ menuId, label, items }: Props) {
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
-              setActiveIndex((index) => moveEnabledIndex(index, 1));
+              focusMenuItem(moveEnabledIndex(activeIndex, 1));
               return;
             }
             if (event.key === 'ArrowUp') {
               event.preventDefault();
-              setActiveIndex((index) => moveEnabledIndex(index, -1));
+              focusMenuItem(moveEnabledIndex(activeIndex, -1));
               return;
             }
             if (event.key === 'Home') {
               event.preventDefault();
-              setActiveIndex(firstEnabledIndex());
+              focusMenuItem(firstEnabledIndex());
               return;
             }
             if (event.key === 'End') {
               event.preventDefault();
-              setActiveIndex(lastEnabledIndex());
+              focusMenuItem(lastEnabledIndex());
               return;
             }
             if (event.key === 'ArrowRight') {
