@@ -190,7 +190,7 @@ For local testing against the latest pushed `devel`, use the guarded launcher:
 npm run electron:latest
 ```
 
-This fetches `origin/devel`, fast-forwards the local `devel` branch, builds the macOS package, quits any running Nex Note app, and opens the rebuilt app. Repo-local packaged apps also verify their embedded build commit against `origin/devel` on startup and refuse to run when stale.
+This fetches `origin/devel`, fast-forwards the local `devel` branch, builds the macOS package, quits any running Nex Note app, and opens the rebuilt app. Repo-local packaged apps also verify their embedded build commit against `origin/devel` on startup; when stale, they start the latest-devel rebuild/relaunch flow automatically.
 
 Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
 

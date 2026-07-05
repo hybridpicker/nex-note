@@ -468,6 +468,47 @@ async function readBuildInfo() {
   }
 }
 
+async function startLatestDevelRebuild(repoRoot) {
+  const dirty = await execFileText('git', ['-C', repoRoot, 'status', '--porcelain']);
+  if (dirty) {
+    dialog.showErrorBox(
+      'Nex Note cannot update from devel',
+      [
+        'This repo-local packaged app is stale, but the working tree has local changes.',
+        'Nex Note will not overwrite or hide those changes.',
+        '',
+        `Repo: ${repoRoot}`,
+        '',
+        'Commit, stash, or discard local changes, then run:',
+        `cd "${repoRoot}" && npm run electron:latest`,
+      ].join('\n'),
+    );
+    app.quit();
+    return false;
+  }
+
+  const updater = spawn('npm', ['run', 'electron:latest'], {
+    cwd: repoRoot,
+    detached: true,
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      NEX_NOTE_AUTO_LATEST_DEVEL_RELAUNCH: '1',
+    },
+  });
+  updater.unref();
+
+  dialog.showMessageBoxSync({
+    type: 'info',
+    title: 'Updating Nex Note',
+    message: 'Nex Note is updating to the latest pushed devel build.',
+    detail: 'The stale app will close now. The rebuilt app will reopen automatically when the update finishes.',
+    buttons: ['OK'],
+  });
+  app.quit();
+  return false;
+}
+
 async function verifyPackagedBuildFreshness() {
   if (process.env.NEX_NOTE_SKIP_DEVEL_FRESHNESS_CHECK === '1' || isElectronDevRuntime()) {
     return true;
@@ -503,21 +544,12 @@ async function verifyPackagedBuildFreshness() {
   }
 
   if (!buildCommit || buildDirty || buildCommit !== latestDevelCommit) {
-    dialog.showErrorBox(
-      'Nex Note build is stale',
-      [
-        'This packaged app was stopped because it is not the latest pushed devel build.',
-        '',
-        `Built commit: ${buildCommit ?? 'missing'}`,
-        `Latest origin/devel: ${latestDevelCommit}`,
-        `Dirty build: ${buildDirty ? 'yes' : 'no'}`,
-        '',
-        'Rebuild and relaunch with:',
-        `cd "${repoRoot}" && npm run electron:latest`,
-      ].join('\n'),
-    );
-    app.quit();
-    return false;
+    console.log('[electron] Packaged app is stale; rebuilding from latest origin/devel.', {
+      buildCommit,
+      latestDevelCommit,
+      buildDirty,
+    });
+    return startLatestDevelRebuild(repoRoot);
   }
 
   return true;
