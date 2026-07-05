@@ -655,6 +655,166 @@ function traceAnchorCandidate(
   };
 }
 
+function traceResolvedTarget(target: ResolvedEditTarget | null | undefined) {
+  if (!target) return null;
+  return {
+    mode: target.mode,
+    measureNumber: target.measureNumber,
+    staffIndex: target.staffIndex,
+    voiceId: target.voiceId,
+    timestamp: `${target.timestampNum}/${target.timestampDen}`,
+    domX: roundTraceNumber(target.domX),
+    diagnostics: target.diagnostics,
+  };
+}
+
+function traceSnapFromResolvedTarget(
+  target: ResolvedEditTarget | null | undefined,
+  snapX: number,
+  input: {
+    source: string;
+    pointerX?: number | null;
+  },
+): GhostSnapTraceCandidate | null {
+  if (!target) return null;
+  return {
+    source: input.source,
+    x: roundTraceNumber(snapX),
+    ratio: roundTraceNumber(target.ratio),
+    timestamp: `${target.timestampNum}/${target.timestampDen}`,
+    voice: target.voiceId,
+    synthetic: target.diagnostics.some((diagnostic) => diagnostic.includes('synthetic') || diagnostic.includes('internal-slot')),
+    isRest: target.existingEventKind === 'rest' || target.diagnostics.some((diagnostic) => diagnostic.includes('rest')),
+    distanceFromPointer: typeof input.pointerX === 'number'
+      ? roundTraceNumber(Math.abs(snapX - input.pointerX))
+      : null,
+    distanceFromGhost: 0,
+  };
+}
+
+function normalizeTraceSnapX(
+  snap: GhostSnapTraceCandidate | null | undefined,
+  snapX: number,
+  input: {
+    pointerX?: number | null;
+    source?: string;
+  } = {},
+): GhostSnapTraceCandidate | null {
+  if (!snap) return null;
+  return {
+    ...snap,
+    source: input.source ?? snap.source,
+    x: roundTraceNumber(snapX),
+    distanceFromPointer: typeof input.pointerX === 'number'
+      ? roundTraceNumber(Math.abs(snapX - input.pointerX))
+      : snap.distanceFromPointer ?? null,
+    distanceFromGhost: 0,
+  };
+}
+
+function alignGhostTargetToCanonicalSnap<T extends GhostNoteTarget>(
+  target: T,
+  input: {
+    canonicalSnapX: number;
+    resolvedTarget?: ResolvedEditTarget | null;
+    effectiveSnap?: GhostSnapTraceCandidate | null;
+    pointerX?: number | null;
+    snapSource?: string;
+    resolver?: string;
+    reason?: string;
+  },
+): T {
+  const canonicalSnapX = input.canonicalSnapX;
+  const previewLeft = canonicalSnapX - target.noteheadCenterX;
+  const previewDx = previewLeft - target.previewLeft;
+  const baseResolvedTarget = input.resolvedTarget ?? target.resolvedTarget ?? null;
+  const resolvedTarget = baseResolvedTarget
+    ? {
+        ...baseResolvedTarget,
+        domX: canonicalSnapX,
+      }
+    : undefined;
+  const pointerX = typeof input.pointerX === 'number' && Number.isFinite(input.pointerX)
+    ? input.pointerX
+    : typeof target.pointerX === 'number' && Number.isFinite(target.pointerX)
+      ? target.pointerX
+      : null;
+  const existingTrace = target.snapResolution ?? null;
+  const effectiveSnap = normalizeTraceSnapX(
+    input.effectiveSnap
+      ?? existingTrace?.effectiveSnap
+      ?? existingTrace?.quantizedFallbackSnap
+      ?? traceSnapFromResolvedTarget(resolvedTarget, canonicalSnapX, {
+        source: input.snapSource ?? 'resolved-edit-target',
+        pointerX,
+      }),
+    canonicalSnapX,
+    {
+      pointerX,
+      source: input.snapSource,
+    },
+  );
+  const nextVisible = {
+    ...(existingTrace?.visible ?? {
+      minimumVisibleX: null,
+    }),
+    domCenterX: roundTraceNumber(canonicalSnapX),
+    previewLeft: roundTraceNumber(previewLeft),
+    noteheadCenterX: roundTraceNumber(target.noteheadCenterX),
+    visibleNoteheadX: roundTraceNumber(canonicalSnapX),
+  };
+  const committedTimestamp = resolvedTarget
+    ? `${resolvedTarget.timestampNum}/${resolvedTarget.timestampDen}`
+    : existingTrace?.committed?.timestamp ?? `${target.timestampNum}/${target.timestampDen}`;
+  const committedVoiceId = resolvedTarget?.voiceId ?? existingTrace?.committed?.voiceId ?? target.voiceId;
+  const snapResolution: GhostSnapResolutionTrace = {
+    ...(existingTrace ?? {
+      resolver: input.resolver ?? 'canonical-snap',
+    }),
+    resolver: input.resolver ?? existingTrace?.resolver ?? 'canonical-snap',
+    reason: input.reason ?? existingTrace?.reason,
+    effectiveSnap: effectiveSnap ?? existingTrace?.effectiveSnap ?? null,
+    committed: {
+      ...(existingTrace?.committed ?? {
+        timestamp: committedTimestamp,
+        voiceId: committedVoiceId,
+      }),
+      snappedX: roundTraceNumber(canonicalSnapX),
+      timestamp: committedTimestamp,
+      voiceId: committedVoiceId,
+    },
+    visible: nextVisible,
+    resolvedTarget: resolvedTarget ? traceResolvedTarget(resolvedTarget) : existingTrace?.resolvedTarget ?? null,
+    deltas: {
+      ...(existingTrace?.deltas ?? {}),
+      pointerToGhost: pointerX == null ? existingTrace?.deltas?.pointerToGhost ?? null : roundTraceNumber(Math.abs(pointerX - canonicalSnapX)),
+      pointerToVisibleNotehead: pointerX == null ? existingTrace?.deltas?.pointerToVisibleNotehead ?? null : roundTraceNumber(Math.abs(pointerX - canonicalSnapX)),
+      ghostToSnap: 0,
+      visibleNoteheadToSnap: 0,
+      commitToSnap: resolvedTarget ? roundTraceNumber(Math.abs(canonicalSnapX - resolvedTarget.domX)) : existingTrace?.deltas?.commitToSnap ?? null,
+    },
+  };
+
+  return {
+    ...target,
+    domCenter: {
+      ...target.domCenter,
+      x: canonicalSnapX,
+    },
+    domRect: {
+      ...target.domRect,
+      x: target.domRect.x + previewDx,
+    },
+    previewLeft,
+    reflowHints: target.reflowHints?.map((hint) => ({
+      ...hint,
+      left: hint.left - previewDx,
+    })),
+    resolvedTarget,
+    snapResolution,
+  };
+}
+
 interface IndexedRenderedNote {
   rendered: RenderedNote;
   semantic: SelectedNote;
@@ -1342,6 +1502,7 @@ const MAX_ZOOM = 300;
 const ZOOM_STEP = 10;
 const STEP_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
 const BARLINE_GHOST_GUARD_PX = 7;
+const LEADING_REST_ANCHOR_HOVER_TOLERANCE_PX = 12;
 
 function leadingTimeSignatureGuardPx() {
   return BARLINE_GHOST_GUARD_PX * 2;
@@ -2397,9 +2558,22 @@ export function resolveNoteInputCommitTarget(
   visibleGhostTarget: GhostNoteTarget | null,
   resolvedGhostTarget: GhostNoteTarget | null,
 ) {
+  const alignVisibleCommitTarget = (target: GhostNoteTarget) => {
+    const canonicalSnapX = target.resolvedTarget?.domX != null && Number.isFinite(target.resolvedTarget.domX)
+      ? target.resolvedTarget.domX
+      : target.domCenter.x;
+    return alignGhostTargetToCanonicalSnap(target, {
+      canonicalSnapX,
+      resolvedTarget: target.resolvedTarget ?? null,
+      pointerX: target.pointerX ?? canonicalSnapX,
+      snapSource: target.snapResolution?.effectiveSnap?.source ?? 'visible-ghost-commit',
+      resolver: target.snapResolution?.resolver ?? 'visible-ghost-commit',
+    });
+  };
+
   if (visibleGhostTarget?.resolvedTarget) {
     if (visibleGhostTarget.resolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')) {
-      return visibleGhostTarget;
+      return alignVisibleCommitTarget(visibleGhostTarget);
     }
     if (
       resolvedGhostTarget?.resolvedTarget
@@ -2415,7 +2589,7 @@ export function resolveNoteInputCommitTarget(
         resolvedGhostTarget.timestampDen,
       )
     ) {
-      return {
+      return alignVisibleCommitTarget({
         ...visibleGhostTarget,
         step: resolvedGhostTarget.step,
         octave: resolvedGhostTarget.octave,
@@ -2452,9 +2626,9 @@ export function resolveNoteInputCommitTarget(
             'visible-ghost-pitch-refreshed',
           ],
         },
-      };
+      });
     }
-    return {
+    return alignVisibleCommitTarget({
       ...visibleGhostTarget,
       resolvedTarget: {
         ...visibleGhostTarget.resolvedTarget,
@@ -2475,7 +2649,7 @@ export function resolveNoteInputCommitTarget(
           'visible-ghost-commit-locked',
         ],
       },
-    };
+    });
   }
   return resolvedGhostTarget;
 }
@@ -2750,12 +2924,9 @@ export function bindResolvedEditTargetToGhost(
   const resolvedDomX = canonicalResolvedTarget.domX != null && Number.isFinite(canonicalResolvedTarget.domX)
     ? canonicalResolvedTarget.domX
     : null;
-  const visibleNoteheadX = candidate.previewLeft + candidate.noteheadCenterX;
-  const visualDx = resolvedDomX != null
-    ? resolvedDomX - visibleNoteheadX
-    : 0;
+  if (resolvedDomX == null) return null;
 
-  return {
+  return alignGhostTargetToCanonicalSnap({
     ...candidate,
     corePartId: canonicalResolvedTarget.corePartId,
     measureNumber: canonicalResolvedTarget.measureNumber,
@@ -2768,35 +2939,14 @@ export function bindResolvedEditTargetToGhost(
     alter: canonicalResolvedTarget.alter,
     placementMode: canonicalResolvedTarget.mode,
     placementLockedByModifier: candidate.placementLockedByModifier,
-    domCenter: {
-      ...candidate.domCenter,
-      x: resolvedDomX ?? candidate.domCenter.x,
-    },
-    domRect: {
-      ...candidate.domRect,
-      x: candidate.domRect.x + visualDx,
-    },
-    previewLeft: candidate.previewLeft + visualDx,
     resolvedTarget: canonicalResolvedTarget,
-    snapResolution: {
-      ...(candidate.snapResolution ?? {
-        resolver: 'unknown',
-      }),
-      resolvedTarget: {
-        mode: canonicalResolvedTarget.mode,
-        measureNumber: canonicalResolvedTarget.measureNumber,
-        staffIndex: canonicalResolvedTarget.staffIndex,
-        voiceId: canonicalResolvedTarget.voiceId,
-        timestamp: `${canonicalResolvedTarget.timestampNum}/${canonicalResolvedTarget.timestampDen}`,
-        domX: roundTraceNumber(canonicalResolvedTarget.domX),
-        diagnostics: canonicalResolvedTarget.diagnostics,
-      },
-      deltas: {
-        ...(candidate.snapResolution?.deltas ?? {}),
-        pointerToGhost: roundTraceNumber(Math.abs(pointerReferenceX - (resolvedDomX ?? candidate.domCenter.x))),
-      },
-    },
-  };
+  }, {
+    canonicalSnapX: resolvedDomX,
+    resolvedTarget: canonicalResolvedTarget,
+    pointerX: pointerReferenceX,
+    snapSource: candidate.snapResolution?.effectiveSnap?.source ?? 'resolved-edit-target',
+    resolver: candidate.snapResolution?.resolver ?? 'resolved-edit-target',
+  });
 }
 
 function findRenderedGhostPointForAnchor(
@@ -2860,17 +3010,35 @@ export function alignReplaceGhostToRenderedSnap(
       || left.domX - right.domX
       || left.id.localeCompare(right.id)
     ))[0] ?? null;
-  const visibleNoteheadX = target.previewLeft + target.noteheadCenterX;
   if (
     !snap
     || (
       Math.abs(snap.domX - target.domCenter.x) < 0.5
-      && Math.abs(snap.domX - visibleNoteheadX) < 0.5
+      && Math.abs(snap.domX - (target.previewLeft + target.noteheadCenterX)) < 0.5
+      && (target.resolvedTarget?.domX == null || Math.abs(snap.domX - target.resolvedTarget.domX) < 0.5)
     )
   ) return target;
 
-  const visualDx = snap.domX - visibleNoteheadX;
-  return {
+  const reboundResolvedTarget = target.resolvedTarget
+    ? {
+        ...target.resolvedTarget,
+        measureId: snap.measureId,
+        corePartId: snap.corePartId ?? target.resolvedTarget.corePartId ?? target.corePartId,
+        measureNumber: snap.measureNumber,
+        staffIndex: target.staffIndex,
+        voiceId: snap.voiceId,
+        timestampNum: snap.timestampNum,
+        timestampDen: snap.timestampDen,
+        ratio: snap.ratio,
+        domX: snap.domX,
+        diagnostics: [
+          ...target.resolvedTarget.diagnostics,
+          'rendered-snap-rebound',
+        ],
+      }
+    : undefined;
+
+  return alignGhostTargetToCanonicalSnap({
     ...target,
     measureId: snap.measureId,
     corePartId: snap.corePartId ?? target.corePartId,
@@ -2880,59 +3048,19 @@ export function alignReplaceGhostToRenderedSnap(
     timestampNum: snap.timestampNum,
     timestampDen: snap.timestampDen,
     voiceId: snap.voiceId,
-    domCenter: {
-      ...target.domCenter,
-      x: snap.domX,
-    },
-    domRect: {
-      ...target.domRect,
-      x: target.domRect.x + visualDx,
-    },
-    previewLeft: target.previewLeft + visualDx,
-    resolvedTarget: target.resolvedTarget
-      ? {
-          ...target.resolvedTarget,
-          measureId: snap.measureId,
-          corePartId: snap.corePartId ?? target.resolvedTarget.corePartId ?? target.corePartId,
-          measureNumber: snap.measureNumber,
-          staffIndex: target.staffIndex,
-          voiceId: snap.voiceId,
-          timestampNum: snap.timestampNum,
-          timestampDen: snap.timestampDen,
-          ratio: snap.ratio,
-          domX: snap.domX,
-          diagnostics: [
-            ...target.resolvedTarget.diagnostics,
-            'rendered-snap-rebound',
-          ],
-        }
-      : target.resolvedTarget,
-    snapResolution: {
-      ...(target.snapResolution ?? {
-        resolver: 'rendered-snap-rebound',
-      }),
-      effectiveSnap: traceSnapCandidate(snap, {
-        source: 'rendered-snap-rebound',
-        pointerX: target.pointerX ?? snap.domX,
-        ghostX: snap.domX,
-      }),
-      visible: {
-        ...(target.snapResolution?.visible ?? {
-          minimumVisibleX: null,
-        }),
-        domCenterX: roundTraceNumber(snap.domX),
-        previewLeft: roundTraceNumber(target.previewLeft + visualDx),
-        noteheadCenterX: roundTraceNumber(target.noteheadCenterX),
-        visibleNoteheadX: roundTraceNumber(target.previewLeft + visualDx + target.noteheadCenterX),
-      },
-      deltas: {
-        ...(target.snapResolution?.deltas ?? {}),
-        ghostToSnap: 0,
-        visibleNoteheadToSnap: 0,
-        commitToSnap: 0,
-      },
-    },
-  };
+    resolvedTarget: reboundResolvedTarget,
+  }, {
+    canonicalSnapX: snap.domX,
+    resolvedTarget: reboundResolvedTarget,
+    effectiveSnap: traceSnapCandidate(snap, {
+      source: 'rendered-snap-rebound',
+      pointerX: target.pointerX ?? snap.domX,
+      ghostX: snap.domX,
+    }),
+    pointerX: target.pointerX ?? snap.domX,
+    snapSource: 'rendered-snap-rebound',
+    resolver: target.snapResolution?.resolver ?? 'rendered-snap-rebound',
+  });
 }
 
 function normalizeSelectableRestChronology<T extends {
@@ -3107,73 +3235,49 @@ export function retargetGhostToAdvancedAnchor(input: {
     return resolvedGhost;
   }
 
-  const dx = anchorPoint.domX - resolvedGhost.domCenter.x;
-  const previewLeft = resolvedGhost.previewLeft + dx;
   const anchorIsRest = Boolean(pointerGhostAnchor.isRest || anchorPoint.isRest);
-  return {
+  return alignGhostTargetToCanonicalSnap({
     ...resolvedGhost,
     voiceId: anchorPoint.voiceId,
     timestampNum: anchorPoint.timestampNum,
     timestampDen: anchorPoint.timestampDen,
-    domCenter: {
-      ...resolvedGhost.domCenter,
-      x: anchorPoint.domX,
-    },
-    domRect: {
-      ...resolvedGhost.domRect,
-      x: resolvedGhost.domRect.x + dx,
-    },
-    previewLeft,
     noteheadCenterX: resolvedGhost.noteheadCenterX,
     ledgerLines: resolvedGhost.ledgerLines,
-    reflowHints: resolvedGhost.reflowHints?.map((hint) => ({
-      ...hint,
-      left: hint.left - dx,
-    })),
     pointerX,
     placementMode: 'replace' as const,
     placementAnchorIsRest: anchorIsRest,
     semanticAnchorIsRest: anchorIsRest,
     semanticAnchorLabel: resolvedGhost.semanticAnchorLabel ?? semanticAnchorLabel(pointerGhostAnchor),
     resolvedTarget: undefined,
-    snapResolution: {
-      ...(resolvedGhost.snapResolution ?? {
-        resolver: 'advanced-retarget',
-      }),
-      resolver: 'advanced-retarget',
-      reason: 'pointer matched advanced anchor within retarget distance',
-      rawPointerX: roundTraceNumber(pointerX),
-      effectiveSnap: traceAnchorCandidate({
-        x: anchorPoint.domX,
-        ratio: anchorPoint.ratio,
-        voiceId: anchorPoint.voiceId,
-        timestampNum: anchorPoint.timestampNum,
-        timestampDen: anchorPoint.timestampDen,
-        synthetic: anchorPoint.synthetic,
-        isRest: anchorPoint.isRest,
-      }, {
-        source: 'advanced-anchor',
-        pointerX,
-        ghostX: anchorPoint.domX,
-      }),
-      visible: {
-        ...(resolvedGhost.snapResolution?.visible ?? {
-          minimumVisibleX: null,
-        }),
-        domCenterX: roundTraceNumber(anchorPoint.domX),
-        previewLeft: roundTraceNumber(previewLeft),
-        noteheadCenterX: roundTraceNumber(resolvedGhost.noteheadCenterX),
-        visibleNoteheadX: roundTraceNumber(previewLeft + resolvedGhost.noteheadCenterX),
-      },
-      deltas: {
-        ...(resolvedGhost.snapResolution?.deltas ?? {}),
-        pointerToGhost: roundTraceNumber(Math.abs(pointerX - anchorPoint.domX)),
-        pointerToVisibleNotehead: roundTraceNumber(Math.abs(pointerX - (previewLeft + resolvedGhost.noteheadCenterX))),
-        ghostToSnap: 0,
-        visibleNoteheadToSnap: roundTraceNumber(Math.abs((previewLeft + resolvedGhost.noteheadCenterX) - anchorPoint.domX)),
-      },
-    },
-  };
+    snapResolution: resolvedGhost.snapResolution
+      ? {
+          ...resolvedGhost.snapResolution,
+          rawPointerX: roundTraceNumber(pointerX),
+        }
+      : {
+          resolver: 'advanced-retarget',
+          rawPointerX: roundTraceNumber(pointerX),
+        },
+  }, {
+    canonicalSnapX: anchorPoint.domX,
+    effectiveSnap: traceAnchorCandidate({
+      x: anchorPoint.domX,
+      ratio: anchorPoint.ratio,
+      voiceId: anchorPoint.voiceId,
+      timestampNum: anchorPoint.timestampNum,
+      timestampDen: anchorPoint.timestampDen,
+      synthetic: anchorPoint.synthetic,
+      isRest: anchorPoint.isRest,
+    }, {
+      source: 'advanced-anchor',
+      pointerX,
+      ghostX: anchorPoint.domX,
+    }),
+    pointerX,
+    snapSource: 'advanced-anchor',
+    resolver: 'advanced-retarget',
+    reason: 'pointer matched advanced anchor within retarget distance',
+  });
 }
 
 function shouldStickToAdvancedAnchor(input: {
@@ -3702,6 +3806,25 @@ function ghostVisibleNoteheadCenterX(target: GhostNoteTarget) {
   return target.previewLeft + target.noteheadCenterX;
 }
 
+function isResolvedFirstSlotRestSnapTarget(target: GhostNoteTarget | null | undefined, guardRight?: number | null) {
+  if (!target || target.timestampNum !== 0) return false;
+  if (target.placementAnchorIsRest !== true && target.semanticAnchorIsRest !== true) return false;
+  const visibleNoteheadX = ghostVisibleNoteheadCenterX(target);
+  if (guardRight != null && visibleNoteheadX < guardRight - 0.75) return false;
+  const snap = target.snapResolution?.effectiveSnap
+    ?? target.snapResolution?.gridSnap
+    ?? target.snapResolution?.preferredSnap
+    ?? target.snapResolution?.resolvedMatchingSnap
+    ?? target.snapResolution?.nearestMatchingSnap
+    ?? target.snapResolution?.quantizedFallbackSnap
+    ?? null;
+  if (!snap || snap.isRest !== true || snap.x == null || !Number.isFinite(snap.x)) return false;
+  const syntheticIsValidated = snap.synthetic === true
+    && target.resolvedTarget?.diagnostics.some((diagnostic) => diagnostic === 'rest-only-quantized-internal-slot');
+  if (snap.synthetic === true && !syntheticIsValidated) return false;
+  return Math.abs(snap.x - visibleNoteheadX) <= 1;
+}
+
 function firstSlotGhostPulledBehindPointer(target: GhostNoteTarget | null | undefined) {
   if (!target || target.pointerX == null || target.placementMode !== 'insert') return false;
   if (target.timestampNum !== 0) return false;
@@ -3727,7 +3850,18 @@ function pointerInLeadingFirstSlotBuffer(
     entries: [],
     allOverlays,
   })) return false;
-  return pointerX < leadingTimeSignatureGuardRightX(overlay);
+  const guardRight = leadingTimeSignatureGuardRightX(overlay);
+  if (isResolvedFirstSlotRestSnapTarget(target, guardRight)) {
+    const noteheadX = ghostVisibleNoteheadCenterX(target);
+    const anchorLeft = target.semanticAnchorRect
+      ? Math.min(target.semanticAnchorRect.x, noteheadX - LEADING_REST_ANCHOR_HOVER_TOLERANCE_PX)
+      : noteheadX - LEADING_REST_ANCHOR_HOVER_TOLERANCE_PX;
+    const anchorRight = target.semanticAnchorRect
+      ? Math.max(target.semanticAnchorRect.x + target.semanticAnchorRect.width, noteheadX + 1)
+      : noteheadX + 1;
+    if (pointerX >= anchorLeft - 0.75 && pointerX <= anchorRight + 0.75) return false;
+  }
+  return pointerX < guardRight;
 }
 
 function pointerInMeasureBarlineGuard(
@@ -8881,6 +9015,34 @@ function buildGhostIntentAnchorsFromGrid(
   return anchors.sort((a, b) => a.x - b.x || a.ratio - b.ratio);
 }
 
+function findLeadingRestHoverSnap<T extends {
+  domX?: number;
+  synthetic?: boolean;
+  isRest?: boolean;
+  voiceId?: number;
+  timestampNum?: number;
+  timestampDen?: number;
+}>(points: readonly T[], pointerX: number, activeVoiceId: number | null): T | null {
+  const candidates = points
+    .filter((point) => (
+      point.synthetic !== true
+      && point.isRest === true
+      && (point.timestampNum ?? 0) === 0
+      && Number.isFinite(point.domX)
+      && (activeVoiceId == null || point.voiceId === activeVoiceId)
+    ))
+    .sort((left, right) => (
+      (left.domX ?? Number.POSITIVE_INFINITY) - (right.domX ?? Number.POSITIVE_INFINITY)
+      || (left.voiceId ?? 1) - (right.voiceId ?? 1)
+    ));
+  const snap = candidates[0] ?? null;
+  if (!snap || snap.domX == null) return null;
+  return pointerX >= snap.domX - LEADING_REST_ANCHOR_HOVER_TOLERANCE_PX
+    && pointerX <= snap.domX + 1
+    ? snap
+    : null;
+}
+
 function resolveRenderedGhostSnap(
   renderedGhostGrid: RenderedGhostGrid | null | undefined,
   measureId: string,
@@ -8896,6 +9058,13 @@ function resolveRenderedGhostSnap(
     ? staffPoints.filter((point) => point.voiceId === activeVoiceId)
     : [];
   const snapCandidates = activeVoicePoints.length > 0 ? activeVoicePoints : staffPoints;
+  const leadingRestSnap = findLeadingRestHoverSnap(snapCandidates, pointerX, activeVoiceId);
+  if (leadingRestSnap) {
+    return {
+      snappedPoint: leadingRestSnap,
+      intentAnchors: buildGhostIntentAnchorsFromGrid(renderedGhostGrid, measureId, staffIndex, graceEventIds),
+    };
+  }
   const snappedPoint = snapCandidates.reduce<RenderedGhostGridPoint | null>((best, point) => {
     if (!best) return point;
     const bestScore = Math.abs(best.domX - pointerX)
@@ -10005,6 +10174,7 @@ function resolveSemanticAnchorGhostTarget(
       visibleNoteheadToSnap: effectiveSnapPoint
         ? roundTraceNumber(Math.abs(effectiveSnapPoint.domX - (previewMetrics.previewLeft + previewMetrics.noteheadCenterX)))
         : null,
+      commitToSnap: effectiveSnapPoint ? roundTraceNumber(Math.abs(effectiveSnapPoint.domX - snappedX)) : null,
     },
   };
 
@@ -10118,7 +10288,14 @@ function mapProxyContextToGhostTarget(
       protectLeadingModifiers,
       uniformNoteStartX: protectedUniformNoteStartX,
     });
-    if (domPoint.x < measureLeft - 0.75) return null;
+    const leadingRestSnap = findLeadingRestHoverSnap(
+      filterSelectableRenderedGhostSnapPoints(
+        getRenderedGhostStaffPoints(renderedGhostGrid, overlay.measureId, targetStaffIndex, { includeSynthetic: true }),
+      ),
+      domPoint.x,
+      selectedVoice,
+    );
+    if (domPoint.x < measureLeft - 0.75 && !leadingRestSnap) return null;
   }
   const hoveredStaffEntries = allInMeasure.filter((entry) => entry.semantic.staffIndex === targetStaffIndex);
   const hoveredContextMatch = selectedNoteMatchesHoveredContext(selectedNote, {
@@ -10465,6 +10642,7 @@ function mapProxyContextToGhostTarget(
       pointerToVisibleNotehead: roundTraceNumber(Math.abs(safePointer.clampedX - (previewMetrics.previewLeft + previewMetrics.noteheadCenterX))),
       ghostToSnap: effectiveSnappedPoint ? roundTraceNumber(Math.abs(effectiveSnappedPoint.domX - visibleSnappedX)) : null,
       visibleNoteheadToSnap: effectiveSnappedPoint ? roundTraceNumber(Math.abs(effectiveSnappedPoint.domX - (previewMetrics.previewLeft + previewMetrics.noteheadCenterX))) : null,
+      commitToSnap: effectiveSnappedPoint ? roundTraceNumber(Math.abs(effectiveSnappedPoint.domX - snappedX)) : null,
     },
   };
 
@@ -10790,6 +10968,7 @@ function resolveRestOnlyGhostTarget(
       pointerToVisibleNotehead: roundTraceNumber(Math.abs(domPoint.x - (previewMetrics.previewLeft + previewMetrics.noteheadCenterX))),
       ghostToSnap: 0,
       visibleNoteheadToSnap: 0,
+      commitToSnap: roundTraceNumber(Math.abs(visiblePoint.domX - commitPoint.domX)),
     },
   };
 
@@ -10968,6 +11147,7 @@ export function resolveClickedRestAnchorGhostTarget(
       pointerToVisibleNotehead: roundTraceNumber(Math.abs(domPoint.x - (previewMetrics.previewLeft + previewMetrics.noteheadCenterX))),
       ghostToSnap: 0,
       visibleNoteheadToSnap: roundTraceNumber(Math.abs(anchorPoint.domX - (previewMetrics.previewLeft + previewMetrics.noteheadCenterX))),
+      commitToSnap: 0,
     },
   };
 
@@ -11056,6 +11236,9 @@ function isGhostTargetInLeadingProtectedArea(
     ),
   );
   const visibleNoteheadCenterX = target.previewLeft + target.noteheadCenterX;
+  if (isResolvedFirstSlotRestSnapTarget(target, leadingTimeSignatureGuardRightX(overlay))) {
+    return false;
+  }
   if (
     target.resolvedTarget?.diagnostics.includes('rest-only-quantized-internal-slot')
     && target.resolvedTarget.domX != null
@@ -12007,7 +12190,12 @@ export default function ScoreEditor({
         // Mid-measure forward snaps are legitimate targets — rejecting them
         // turned every span left of a notehead into a hover dead zone on
         // staves whose first note sits deep in the measure.
-        (nextGhostResolved.timestampNum === 0 && nextGhostResolved.domCenter.x - nextGhostResolved.pointerX > 1)
+        (
+          nextGhostResolved.timestampNum === 0
+          && nextGhostResolved.placementAnchorIsRest !== true
+          && nextGhostResolved.semanticAnchorIsRest !== true
+          && nextGhostResolved.domCenter.x - nextGhostResolved.pointerX > 1
+        )
         || firstSlotGhostPulledBehindPointer(nextGhostResolved)
         || pointerInLeadingFirstSlotBuffer(nextGhostResolved, overlayAtPoint, domPoint.x, measureLayoutOverlaysRef.current)
       );
@@ -12374,11 +12562,20 @@ export default function ScoreEditor({
       dbg.score(`note-input direct candidate → part=${directNote.corePartId ?? 'partless'} entity=${directNote.coreEntityId ?? 'none'} m.${directNote.measureNumber} staff=${directNote.staffIndex} voice=${directNote.voiceId} ts=${directNote.timestampNum}/${directNote.timestampDen} pitch=${debugPitchLabel(directNote)}`);
     }
 
+    const directNoteheadHit = Boolean(
+      guitarFretTextHit
+      || directlyHitRendered
+      || semanticNoteheadHit
+      || crossVoicePathHitRendered
+      || crossVoiceGeometryHitRendered
+      || clickedNoteheadPath
+    );
     const ghostCommitAtPointer = shouldCommitPointerGhostOverDirectNote({
       ghostTarget: clickedVisibleGhostTargetAtPointer ?? ghostNoteTarget,
       directNote,
       directlyHitRendered: Boolean(directlyHitRendered),
       clickedNoteheadPath,
+      directNoteheadHit,
       clickedVisibleGhostAtPointer,
       altKey: e.altKey,
     });
@@ -12388,7 +12585,7 @@ export default function ScoreEditor({
       && !directNote.isRest
       && !ghostCommitAtPointer
       && !chordInputMode
-      && directNote.voiceId === selectedVoice
+      && (directNote.voiceId === selectedVoice || directNoteheadHit)
     ) {
       if (e.button === 0 && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
         startDirectNoteDrag(directNote);
@@ -13561,7 +13758,12 @@ export default function ScoreEditor({
     const pointerInLeadingProtectionZone2 = nextGhostResolved2?.pointerX != null
       && nextGhostResolved2.placementMode === 'insert'
       && (
-        nextGhostResolved2.domCenter.x - nextGhostResolved2.pointerX > 1
+        (
+          nextGhostResolved2.timestampNum === 0
+          && nextGhostResolved2.placementAnchorIsRest !== true
+          && nextGhostResolved2.semanticAnchorIsRest !== true
+          && nextGhostResolved2.domCenter.x - nextGhostResolved2.pointerX > 1
+        )
         || firstSlotGhostPulledBehindPointer(nextGhostResolved2)
         || pointerInLeadingFirstSlotBuffer(nextGhostResolved2, overlayAtPoint, domPoint.x, measureLayoutOverlaysRef.current)
       );

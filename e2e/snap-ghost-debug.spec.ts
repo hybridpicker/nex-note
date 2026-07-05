@@ -213,6 +213,21 @@ function buildQuarterNoteScore() {
   return buildPianoScore([body], 'Snap Four Quarters');
 }
 
+function buildLeadingRestScore() {
+  const staffOne = [
+    noteXml({ duration: 4, staff: 1, rest: true }),
+    noteXml({ duration: 4, staff: 1, step: 'C', octave: 4 }),
+    noteXml({ duration: 4, staff: 1, step: 'D', octave: 4 }),
+    noteXml({ duration: 4, staff: 1, step: 'E', octave: 4 }),
+  ].join('\n');
+  const body = [
+    staffOne,
+    '      <backup><duration>16</duration></backup>',
+    noteXml({ duration: 16, staff: 2, rest: true, wholeRest: true }),
+  ].join('\n');
+  return buildPianoScore([body], 'Snap Leading Rest');
+}
+
 function buildBlankInputScore() {
   return createNewScoreXml({
     instrumentIds: ['piano'],
@@ -696,7 +711,27 @@ async function hoverSnapAtStaffCenter(page: Page, snap: SnapPoint) {
 async function hoverNearSnap(page: Page, snap: SnapPoint, offsetX: number) {
   const center = await snapDotCenter(page, snap);
   await page.mouse.move(center.x + offsetX, center.y);
-  await expect(page.getByTestId('ghost-note-preview')).toBeVisible({ timeout: 3_000 });
+  try {
+    await expect(page.getByTestId('ghost-note-preview')).toBeVisible({ timeout: 3_000 });
+  } catch (error) {
+    const debug = await page.evaluate(() => {
+      const state = (window as typeof window & {
+        __NEX_NOTE_GHOST_SNAP_TRACE__?: unknown;
+        __NEX_NOTE_GHOST_SNAP_TRACE_HISTORY__?: unknown[];
+        __NEX_NOTE_SEMANTIC_GRID_ERRORS__?: unknown;
+      });
+      return {
+        active: state.__NEX_NOTE_GHOST_SNAP_TRACE__ ?? null,
+        historyTail: state.__NEX_NOTE_GHOST_SNAP_TRACE_HISTORY__?.slice(-3) ?? [],
+        summary: state.__NEX_NOTE_SEMANTIC_GRID_ERRORS__ ?? null,
+      };
+    });
+    throw new Error(
+      `No ghost after hovering near ${formatSnap(snap)} offsetX=${offsetX} `
+      + `point=(${Math.round((center.x + offsetX) * 100) / 100},${Math.round(center.y * 100) / 100})\n`
+      + `${JSON.stringify(debug, null, 2)}\n${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   const ghost = await readGhost(page);
   if (!ghost) throw new Error(`No ghost after hovering near ${formatSnap(snap)} offsetX=${offsetX}`);
   return { center, ghost };
@@ -816,6 +851,12 @@ async function enterQuarterNoteMode(page: Page) {
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');
   await page.keyboard.press('5');
+}
+
+async function enterEighthNoteMode(page: Page) {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await page.keyboard.press('4');
 }
 
 function assertNoDuplicateSnaps(report: SemanticGridReport, context: string) {
@@ -1238,6 +1279,63 @@ test('four quarter notes expose four ordered snap positions with ghost/commit al
     expectGhostAndCommitOnSnap(ghost, snap, center.x, `four quarters hover ${formatSnap(snap)}`);
     await expectActiveSnapDot(page, snap, `four quarters hover ${formatSnap(snap)}`);
   }
+});
+
+test('beat-one rest with eighth-note mouse entry previews and commits on the rest snap', async ({ page }) => {
+  await bootWithScore(page, buildLeadingRestScore(), 'snap-leading-rest-eighth.musicxml');
+  await enterEighthNoteMode(page);
+  const report = await waitForDebugReport(page);
+  await waitForCleanDoctor(page, 'leading rest eighth boot');
+  assertNoDuplicateSnaps(report, 'leading rest eighth');
+
+  const beatOneRestSnap = report.snaps.find((snap) => (
+    snap.measure === 1
+    && snap.part === 'part:P1'
+    && snap.staff === 1
+    && snap.voice === 1
+    && snap.isRest
+    && Math.abs(snap.ratio) < 1e-6
+  ));
+  if (!beatOneRestSnap) {
+    throw new Error(`Missing beat-one rest snap:\n${report.snaps.map(formatSnap).join('\n')}`);
+  }
+
+  const { center, ghost } = await hoverNearSnap(page, beatOneRestSnap, -6);
+  expectGhostAndCommitOnSnap(ghost, beatOneRestSnap, center.x, `leading rest eighth hover ${formatSnap(beatOneRestSnap)}`);
+  const ghostNoteheadX = ghost.box.x + ghost.noteheadCenterX;
+  const snapX = visualSnapX(beatOneRestSnap);
+  expect(Math.abs(ghostNoteheadX - center.x), 'visible ghost notehead must sit on the snap dot').toBeLessThanOrEqual(1);
+  expect(ghost.commitX, 'data-ghost-commit-x must be present').not.toBeNull();
+  expect(Math.abs((ghost.commitX ?? Number.NaN) - snapX), 'data-ghost-commit-x must equal the snap X').toBeLessThanOrEqual(1);
+
+  const trace = ghost.snapTrace as {
+    effectiveSnap?: { x?: number | null; timestamp?: string | null } | null;
+    resolvedTarget?: { domX?: number | null; timestamp?: string | null } | null;
+    deltas?: { visibleNoteheadToSnap?: number | null; commitToSnap?: number | null };
+  } | null;
+  expect(trace?.effectiveSnap?.x, `missing effectiveSnap.x\n${JSON.stringify(trace, null, 2)}`).not.toBeNull();
+  expect(Math.abs((trace?.effectiveSnap?.x ?? Number.NaN) - snapX), 'effectiveSnap.x must equal snap X').toBeLessThanOrEqual(1);
+  expect(trace?.resolvedTarget?.domX, `missing resolvedTarget.domX\n${JSON.stringify(trace, null, 2)}`).not.toBeNull();
+  expect(Math.abs((trace?.resolvedTarget?.domX ?? Number.NaN) - snapX), 'resolvedTarget.domX must equal snap X').toBeLessThanOrEqual(1);
+  expect(trace?.effectiveSnap?.timestamp, 'effective snap timestamp must match ghost timestamp').toBe(ghost.timestamp);
+  expect(trace?.resolvedTarget?.timestamp, 'resolved target timestamp must match commit timestamp').toBe(ghost.commitTimestamp);
+  expect(trace?.deltas?.visibleNoteheadToSnap ?? Number.NaN, `visible drift in trace\n${JSON.stringify(trace, null, 2)}`).toBeLessThanOrEqual(1);
+  expect(trace?.deltas?.commitToSnap ?? Number.NaN, `commit drift in trace\n${JSON.stringify(trace, null, 2)}`).toBeLessThanOrEqual(1);
+
+  await page.mouse.click(ghostNoteheadX, ghost.box.y + ghost.noteheadCenterY);
+  await expect.poll(async () => {
+    const core = await readCurrentCore(page);
+    const firstVoice = core.score.parts[0]?.staves[0]?.measures[0]?.voices.find((voice) => voice.voiceId === 1);
+    const firstEvent = firstVoice?.events.find((event) => (
+      event.timestampNum === beatOneRestSnap.ratio * event.timestampDen
+      && event.timestampNum === 0
+    ));
+    return firstEvent?.kind === 'note' ? firstEvent.durationType : null;
+  }, { timeout: 5_000 }).toBe('eighth');
+
+  const summary = await readSummary(page);
+  if (!summary) throw new Error('Missing Doctor summary after leading rest eighth click');
+  assertNoForbiddenGhostDiagnostics(summary, 'leading rest eighth');
 });
 
 test('empty score hover creates a grid-aligned ghost without forbidden Doctor diagnostics', async ({ page }) => {

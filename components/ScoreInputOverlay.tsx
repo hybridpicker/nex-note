@@ -181,7 +181,7 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
   if (
     leadingGuardRightX != null
     && target.placementMode !== 'chord'
-    && Math.min(target.previewLeft, target.previewLeft + target.noteheadCenterX) < leadingGuardRightX
+    && target.previewLeft + target.noteheadCenterX < leadingGuardRightX
   ) {
     return null;
   }

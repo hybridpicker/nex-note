@@ -684,6 +684,7 @@ interface ContentBounds {
 const SYSTEM_START_PROTECTED_MIN_INSET_PX = 48;
 const SYSTEM_START_PROTECTED_MAX_INSET_PX = 72;
 const SYSTEM_START_PROTECTED_WIDTH_RATIO = 0.3;
+const SYSTEM_START_LEADING_GUARD_PX = 14;
 const FIRST_MEASURE_DOWNBEAT_RIGHT_SHIFT_RATIO = 0.1;
 const RENDERED_REST_GLYPH_PRESERVE_THRESHOLD_PX = 6;
 const COMPRESSED_RHYTHMIC_SPAN_RATIO = 0.75;
@@ -706,10 +707,43 @@ function systemStartProtectedStartX(
 function normalizeSystemStartProtectedAnchors(
   byMeasureId: Map<string, RenderedGhostMeasureGrid>,
   options: RenderedGhostGridBuildOptions,
+  renderedNotes: RenderedNote[] = [],
 ) {
   const measureOverlays = new Map(
     (options.measureOverlays ?? []).map((overlay) => [overlay.measureId, overlay] as const),
   );
+  const semanticStartByMeasure = new Map<string, number>();
+  const semanticStartByStaff = new Map<string, number>();
+  for (const renderedNote of renderedNotes) {
+    if (renderedNote.note.isRest || !renderedNote.note.coreMeasureId) continue;
+    const overlay = measureOverlays.get(renderedNote.note.coreMeasureId) ?? null;
+    if (!overlay || (!overlay.breakBefore && overlay.measureNumber !== 1)) continue;
+    const measureRight = overlay.domRect.x + overlay.domRect.width;
+    const guardX = Math.min(
+      measureRight - 1,
+      overlay.domRect.x + Math.min(SYSTEM_START_LEADING_GUARD_PX, Math.max(overlay.domRect.width, 0)),
+    );
+    const noteheadLeftX = Math.max(
+      renderedNote.domRect.x,
+      renderedNote.domCenter.x - RENDERED_REST_GLYPH_PRESERVE_THRESHOLD_PX,
+    );
+    const semanticStartX = clamp(
+      Math.max(guardX, noteheadLeftX),
+      overlay.domRect.x,
+      measureRight - 1,
+    );
+    const measureCurrent = semanticStartByMeasure.get(renderedNote.note.coreMeasureId);
+    semanticStartByMeasure.set(
+      renderedNote.note.coreMeasureId,
+      measureCurrent == null ? semanticStartX : Math.min(measureCurrent, semanticStartX),
+    );
+    const staffKey = `${renderedNote.note.coreMeasureId}:${renderedNote.note.staffIndex}`;
+    const staffCurrent = semanticStartByStaff.get(staffKey);
+    semanticStartByStaff.set(
+      staffKey,
+      staffCurrent == null ? semanticStartX : Math.min(staffCurrent, semanticStartX),
+    );
+  }
 
   for (const [measureId, measure] of byMeasureId.entries()) {
     if (
@@ -718,10 +752,13 @@ function normalizeSystemStartProtectedAnchors(
     ) {
       continue;
     }
-    const protectedStartX = systemStartProtectedStartX(measureOverlays.get(measureId) ?? null);
-    if (protectedStartX == null) continue;
+    const fallbackProtectedStartX = systemStartProtectedStartX(measureOverlays.get(measureId) ?? null);
     for (const point of measure.points) {
       if (!point.isRest) continue;
+      const protectedStartX = semanticStartByStaff.get(`${measureId}:${point.staffIndex}`)
+        ?? semanticStartByMeasure.get(measureId)
+        ?? fallbackProtectedStartX;
+      if (protectedStartX == null) continue;
       if (point.domX < protectedStartX) {
         point.domX = protectedStartX;
       }
@@ -742,6 +779,8 @@ function normalizeFirstMeasureDownbeatSnapAnchors(
     const overlay = measureOverlays.get(measureId) ?? null;
     const bounds = resolveOverlayContentBounds(overlay);
     if (!bounds) continue;
+    const protectedStartX = systemStartProtectedStartX(overlay);
+    const hasRenderedPitchedPoints = measureHasRenderedPitchedPoints(measure);
 
     const width = Math.max(bounds.endX - bounds.startX, 0);
     const centerX = bounds.startX + (width / 2);
@@ -751,6 +790,7 @@ function normalizeFirstMeasureDownbeatSnapAnchors(
       if (!point.isRest) continue;
       const timestamp = normalizeTimestamp(point.timestampNum, point.timestampDen);
       if (timestamp.num !== 0) continue;
+      if (hasRenderedPitchedPoints && protectedStartX != null && point.domX >= protectedStartX - 0.75) continue;
 
       if (!(rightShift > 0) || point.domX >= centerX) continue;
 
@@ -891,6 +931,15 @@ function normalizeCrossStaffRhythmicSnapX(
     const staffCount = new Set(group.map((point) => point.staffIndex)).size;
     if (staffCount < 2) continue;
     const pitched = group.filter((point) => !point.isRest);
+    if (
+      pitched.length === 0
+      && group.some((point) => {
+        const measure = byMeasureId.get(point.measureId);
+        return measure ? measureHasRenderedPitchedPoints(measure) : false;
+      })
+    ) {
+      continue;
+    }
     const canonicalSources = pitched.length > 0 ? pitched : group;
     const canonicalX = average(canonicalSources.map((point) => point.domX));
     if (!Number.isFinite(canonicalX)) continue;
@@ -1440,11 +1489,11 @@ export function buildRenderedGhostGrid(
   if (buildOptions) {
     const restOnlyContentBounds = inferRestOnlyContentBounds(byMeasureId, buildOptions);
     normalizeRestAnchorPositions(byMeasureId, buildOptions, restOnlyContentBounds);
-    normalizeSystemStartProtectedAnchors(byMeasureId, buildOptions);
+    normalizeSystemStartProtectedAnchors(byMeasureId, buildOptions, renderedNotes);
     augmentWithMissingCoreNoteAnchors(byMeasureId, buildOptions);
     normalizeRestAnchorPositions(byMeasureId, buildOptions, restOnlyContentBounds);
     augmentWithInterpolatedTicks(byMeasureId, renderedNotes, buildOptions, restOnlyContentBounds);
-    normalizeSystemStartProtectedAnchors(byMeasureId, buildOptions);
+    normalizeSystemStartProtectedAnchors(byMeasureId, buildOptions, renderedNotes);
     normalizeFirstMeasureDownbeatSnapAnchors(byMeasureId, buildOptions);
     normalizeCompressedRhythmicSnapSpacing(byMeasureId, buildOptions);
     normalizeRestSnapChronology(byMeasureId, buildOptions);

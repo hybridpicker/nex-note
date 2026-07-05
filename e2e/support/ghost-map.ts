@@ -134,8 +134,23 @@ export async function clickGhostMapEntry(page: Page, entry: GhostMapEntry) {
   if (!box) throw new Error(`Missing ghost box for timestamp ${entry.timestamp}`);
   const noteheadCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
   const noteheadCenterY = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28');
+  const commitX = Number.parseFloat((await ghost.getAttribute('data-ghost-commit-x')) ?? '');
+  const snapTraceText = await ghost.getAttribute('data-ghost-snap-trace');
+  const snapTrace = (() => {
+    try {
+      return snapTraceText ? JSON.parse(snapTraceText) : null;
+    } catch {
+      return null;
+    }
+  })();
   const clickX = box.x + noteheadCenterX;
   const clickY = box.y + noteheadCenterY;
   await page.mouse.click(clickX, clickY);
-  return { x: clickX, y: clickY };
+  return {
+    x: clickX,
+    y: clickY,
+    visibleNoteheadX: clickX,
+    commitX: Number.isFinite(commitX) ? commitX : null,
+    snapTrace,
+  };
 }

@@ -2555,6 +2555,156 @@ test('clicking the visible rest glyph commits against the rest start snap', () =
   assert.match(rebound.resolvedTarget?.diagnostics.join(' ') ?? '', /validation:replace-rest-exact/);
 });
 
+test('beat-one rest eighth-note mouse ghost and commit share the rendered snap X', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const coreDocument = importMusicXmlToCore(xml);
+  const part = coreDocument.score.parts[0]!;
+  const measure = part.staves[0]!.measures[0]!;
+  const voice = measure.voices[0]!;
+  const restEvent = voice.events.find((event) => event.kind === 'rest')!;
+  const rest: SelectedNote = {
+    coreEntityId: restEvent.id,
+    coreVoiceId: voice.id,
+    coreMeasureId: measure.id,
+    corePartId: part.id,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: restEvent.timestampNum,
+    timestampDen: restEvent.timestampDen,
+    step: 'C',
+    octave: 4,
+    alter: 0,
+    isRest: true,
+    durationType: restEvent.durationType,
+    isDotted: restEvent.isDotted,
+    graphicalNote: null,
+  };
+  const renderedNotes: RenderedNote[] = [
+    {
+      id: rest.coreEntityId ?? 'beat-one-rest',
+      coreEntityId: rest.coreEntityId ?? null,
+      note: rest,
+      svgCenter: { x: 214, y: 86 },
+      domCenter: { x: 214, y: 86 },
+      domRect: { x: 207, y: 80, width: 14, height: 12 },
+      svgElement: null,
+      tintElement: null,
+    },
+    ...(['C', 'D', 'E'] as const).map((step, index) => {
+      const event = voice.events[index + 1]!;
+      const x = 274 + (index * 54);
+      return {
+        id: event.id,
+        coreEntityId: event.id,
+        note: {
+          coreEntityId: event.id,
+          coreVoiceId: voice.id,
+          coreMeasureId: measure.id,
+          corePartId: part.id,
+          measureNumber: 1,
+          staffIndex: 1,
+          voiceId: 1,
+          timestampNum: event.timestampNum,
+          timestampDen: event.timestampDen,
+          step,
+          octave: 4,
+          alter: 0,
+          isRest: false,
+          durationType: event.durationType,
+          isDotted: event.isDotted,
+          graphicalNote: null,
+        },
+        svgCenter: { x, y: 86 },
+        domCenter: { x, y: 86 },
+        domRect: { x: x - 6, y: 80, width: 12, height: 12 },
+        svgElement: null,
+        tintElement: null,
+      } satisfies RenderedNote;
+    }),
+  ];
+  const overlay = {
+    measureId: measure.id,
+    measureNumber: 1,
+    systemIndex: 0,
+    pageIndex: 0,
+    widthWeight: 1,
+    domRect: { x: 160, y: 42, width: 250, height: 88 },
+    breakBefore: false,
+    pageBreakBefore: false,
+    staffSpacing: null,
+    staffDetails: [{
+      staffIndex: 1,
+      topLineDomY: 64,
+      bottomLineDomY: 104,
+      lineDistanceDom: 10,
+      lineCount: 5,
+    }],
+  };
+  const renderedGhostGrid = buildRenderedGhostGrid(renderedNotes, {
+    coreDocument,
+    measureOverlays: [overlay],
+    selectedDuration: '8',
+  });
+  const snap = getRenderedGhostStaffPoints(renderedGhostGrid, measure.id, 1)
+    .find((point) => point.isRest && point.ratio === 0);
+  assert.ok(snap);
+  const editMap = buildInteractiveEditMap({
+    renderedGhostGrid,
+    measureOverlays: [overlay],
+    renderedNotes,
+  });
+
+  const clickedRestGhost = resolveClickedRestAnchorGhostTarget(
+    rest,
+    overlay,
+    renderedGhostGrid,
+    coreDocument,
+    { x: snap.domX - 9, y: 87 },
+    '8',
+    null,
+    1,
+  );
+  const rebound = alignReplaceGhostToRenderedSnap(
+    bindResolvedEditTargetToGhost(clickedRestGhost, editMap, coreDocument, '8', false),
+    renderedGhostGrid,
+  );
+
+  assert.ok(clickedRestGhost);
+  assert.ok(rebound?.resolvedTarget);
+  assert.equal(rebound.timestampNum, snap.timestampNum);
+  assert.equal(rebound.timestampDen, snap.timestampDen);
+  assert.equal(rebound.resolvedTarget.timestampNum, snap.timestampNum);
+  assert.equal(rebound.resolvedTarget.timestampDen, snap.timestampDen);
+  assert.equal(rebound.domCenter.x, snap.domX);
+  assert.equal(rebound.previewLeft, snap.domX - rebound.noteheadCenterX);
+  assert.equal(rebound.previewLeft + rebound.noteheadCenterX, snap.domX);
+  assert.equal(rebound.resolvedTarget.domX, snap.domX);
+  assert.equal(rebound.snapResolution?.effectiveSnap?.x, snap.domX);
+  assert.equal(rebound.snapResolution?.resolvedTarget?.domX, snap.domX);
+  assert.equal(rebound.snapResolution?.deltas?.visibleNoteheadToSnap, 0);
+  assert.equal(rebound.snapResolution?.deltas?.commitToSnap, 0);
+});
+
 test('whole-rest pointer hover locks to the rest anchor', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
   const measureId = coreDocument.score.parts[0]!.staves[0]!.measures[0]!.id;
@@ -4604,8 +4754,16 @@ test('note input can insert pitched notes, rests, and overwrite the selected slo
   hook.rerender();
   assert.match(hook.xml, /<rest\/>/);
 
+  const voiceOneD = makeSelectedNotes(hook.xml).find((note) => (
+    note.voiceId === 1
+    && note.measureNumber === 1
+    && note.timestampNum === 1
+    && note.timestampDen === 4
+  ));
+  assert.ok(voiceOneD);
   act(() => {
-    hook.current.handleNoteClick(makeSelectedNotes(hook.xml)[1]);
+    hook.current.handleNoteClick(voiceOneD);
+    hook.current.setVoice(1);
   });
   act(() => {
     hook.current.toggleEntryMode();
@@ -4615,10 +4773,14 @@ test('note input can insert pitched notes, rests, and overwrite the selected slo
   });
   hook.rerender();
 
-  const firstVoiceNotes = flattenVoiceEvents(hook.xml).filter((event): event is TimedEvent & { kind: 'note' } => (
-    event.voiceId === 1 && event.kind === 'note'
+  const overwrittenVoiceOneSlot = flattenVoiceEvents(hook.xml).find((event) => (
+    event.voiceId === 1
+    && event.measureNumber === 1
+    && event.timestampNum === 1
+    && event.timestampDen === 4
   ));
-  assert.equal(firstVoiceNotes[1].pitch.step, 'F');
+  assert.equal(overwrittenVoiceOneSlot?.kind, 'note');
+  assert.equal(overwrittenVoiceOneSlot?.kind === 'note' ? overwrittenVoiceOneSlot.pitch.step : null, 'F');
   hook.unmount();
 });
 

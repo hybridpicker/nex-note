@@ -1191,7 +1191,7 @@ test('buildRenderedGhostGrid infers visual system starts before clamping leading
   const leadingRest = getRenderedGhostStaffPoints(grid, 'm2', 1)
     .find((point) => point.id === 'r2');
   assert.ok(leadingRest);
-  assert.ok(leadingRest.domX >= 166, `expected leading rest snap outside clef area, got ${leadingRest.domX}`);
+  assert.equal(leadingRest.domX, 208);
 });
 
 test('buildRenderedGhostGrid keeps a narrow system-start whole-rest measure to one rhythmic snap', () => {

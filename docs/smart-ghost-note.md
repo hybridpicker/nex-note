@@ -40,6 +40,24 @@ Der Preview-Overlay zeigt:
 - Ledger-Lines
 - Placement-Modus (`Insert`, `Replace`, `Chord`)
 
+Horizontal gilt eine harte MuseScore-ähnliche Invariante: Preview und Commit
+verwenden denselben aufgelösten Snap. Nach der Zielauflösung ist
+`RenderedGhostGrid` / `InteractiveEditMap` / `ResolvedEditTarget.domX` die
+einzige X-Wahrheit; `pointerX` darf nur einen Slot auswählen, aber nie die
+sichtbare Notehead-Position ersetzen. Die finale Preview-Position wird immer so
+berechnet:
+
+```ts
+previewLeft = canonicalSnapX - noteheadCenterX;
+```
+
+Wenn kein gerenderter oder explizit validierter synthetischer Snap für den
+aufgelösten Slot existiert, wird kein Ghost gezeigt und es gibt keinen
+Mouse-Commit. Die Regression `beat-one rest eighth-note mouse ghost and commit
+share the rendered snap X` deckt den kritischen 4/4-Fall ab: Beat 1 ist eine
+Rest-Anchor, die gewählte Dauer ist Achtel, und Hover/Klick müssen exakt auf
+diesem Rest-Snap liegen.
+
 ### 4. Drag-to-Transpose
 
 Beim Dragging wird die vertikale Bewegung wieder auf Staff-Schritte quantisiert.

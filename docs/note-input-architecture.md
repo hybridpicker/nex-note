@@ -55,6 +55,7 @@ This document describes the deterministic note-input pipeline introduced for poi
   - pointer commit now consumes the same resolved model used for ghost preview
   - stale visible ghosts are not allowed to commit after live resolution invalidates them
   - rest-only internal slots are commit-capable only when the ghost target carries matching rendered/synthetic snap evidence and validator diagnostics
+  - final horizontal placement is snap-derived: after target resolution, `previewLeft` is recomputed as `canonicalSnapX - noteheadCenterX`, and `resolvedTarget.domX` is the commit X
 
 - [hooks/useNoteEditor.ts](../hooks/useNoteEditor.ts)
   - keyboard entry resolves through `resolveKeyboardEditTarget(...)`
@@ -74,6 +75,8 @@ This document describes the deterministic note-input pipeline introduced for poi
 - explicit active voice input
 - X (slot/onset) and Y (pitch lane) resolved independently
 - X is snap-locked: every visible ghost and every pointer commit must use the rendered snap-grid X for its timestamp. Pointer X may choose the nearest legal slot, but it must never become the notehead/commit X.
+- the resolved horizontal coordinate is single-source: `RenderedGhostGrid` feeds `InteractiveEditMap`, `InteractiveEditMap` resolves `ResolvedEditTarget.domX`, and `ScoreEditor` rebases the visual ghost to that same X
+- final visual placement is always `previewLeft = canonicalSnapX - noteheadCenterX`
 - If no rendered or explicitly synthetic snap-grid point exists for the resolved timestamp/staff/voice, pointer note input fails closed: no ghost and no commit.
 - ambiguous or non-visible targets resolve to `null` (fail-closed)
 - empty visible musical time is still editable musical time: whole-rest measures expose canonical beat slots only through measured rendered anchors or synthetic snap evidence
@@ -91,6 +94,8 @@ This document describes the deterministic note-input pipeline introduced for poi
   - `data-ghost-mode`
   - `data-ghost-voice`
   - `data-ghost-diagnostics`
+  - `data-ghost-commit-x`
+  - `data-ghost-snap-trace`, including `effectiveSnap.x`, `resolvedTarget.domX`, `deltas.visibleNoteheadToSnap`, and `deltas.commitToSnap`
   - existing ghost pitch/timestamp attributes remain available
 - validator diagnostics:
   - resolved slot, mode, rejection reasons, and existing-event metadata are available on inspected targets during tests and debug logging
@@ -104,10 +109,12 @@ This document describes the deterministic note-input pipeline introduced for poi
   - replace rejection when no valid replace target exists
   - overfill rejection in insert mode
   - preview/commit parity for the same resolved input
+  - beat-1 rest plus eighth-note mouse entry keeps visible notehead X and commit X on the same rendered rest snap
 
 - e2e:
   - mouse entry into empty measures via measured canonical ghost slots
   - ghost preview timestamp parity with committed note placement
+  - beat-1 rest/eighth-note hover and click regression in `e2e/snap-ghost-debug.spec.ts`
   - keyboard flows: replace, insert-between, chord entry
   - zoom/view-mode stability for post-layout note commit
   - cross-measure multi-click ghost sequences in blank piano measures

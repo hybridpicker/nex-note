@@ -79,14 +79,25 @@ Required invariant:
 - every visible note-input ghost has a matching rendered snap point for its measure, staff, voice, and timestamp
 - the ghost notehead X equals that snap point X within rendering tolerance
 - the commit target X equals that snap point X within rendering tolerance
+- the final visual position is computed from the same canonical X:
+  `previewLeft = canonicalSnapX - noteheadCenterX`
+- debug traces expose the invariant through `effectiveSnap.x`,
+  `resolvedTarget.domX`, `deltas.visibleNoteheadToSnap`, and
+  `deltas.commitToSnap`
 - if the matching snap point cannot be found, the editor shows no ghost and performs no pointer commit
 
 Invalid examples:
 
 - using raw pointer X as a fallback ghost position
 - using raw pointer X as a fallback commit position
+- carrying an old `previewLeft` forward after `ResolvedEditTarget.domX` changes
 - accepting a semantic anchor whose timestamp has no rendered snap point
 - allowing debug mode to pass while the yellow snap dot and visible ghost notehead are horizontally separated
+
+Regression coverage must include the common MuseScore parity case: in 4/4,
+beat 1 contains a rest and the selected duration is an eighth note. Hovering
+slightly left of that rest and clicking the visible ghost must preview and
+commit at the rest snap, not at the raw pointer X.
 
 ### 3. Layout Independence
 
