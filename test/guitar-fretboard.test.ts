@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fretForMidiOnString, resolveGuitarFretPitch, resolveGuitarTuning } from '../src/score-input/guitar-fretboard.ts';
+import { chooseGuitarFingeringForPitch, fretForMidiOnString, resolveGuitarFretPitch, resolveGuitarTuning } from '../src/score-input/guitar-fretboard.ts';
 
 test('resolveGuitarFretPitch maps standard guitar strings and frets to score pitches', () => {
   assert.deepEqual(
@@ -54,4 +54,18 @@ test('fretForMidiOnString honors alternate tunings', () => {
   // D2 (midi 38) is the open 6th string in drop D but unreachable in standard.
   assert.equal(fretForMidiOnString(38, 6, resolveGuitarTuning('drop-d')), 0);
   assert.equal(fretForMidiOnString(38, 6), null);
+});
+
+test('chooseGuitarFingeringForPitch keeps a reachable preferred string', () => {
+  assert.deepEqual(
+    chooseGuitarFingeringForPitch({ step: 'D', alter: 0, octave: 4 }, undefined, 2),
+    { string: 2, fret: 3 },
+  );
+});
+
+test('chooseGuitarFingeringForPitch falls back to a low playable fret', () => {
+  assert.deepEqual(
+    chooseGuitarFingeringForPitch({ step: 'G', alter: 0, octave: 2 }, undefined, 5),
+    { string: 6, fret: 3 },
+  );
 });

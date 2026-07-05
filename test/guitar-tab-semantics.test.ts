@@ -273,6 +273,90 @@ test('setGuitarFret keeps flat spelling when the sounding pitch is unchanged', (
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 2, fret: 11, tuning: 'standard', techniques: [] });
 });
 
+test('standard notation insertNoteAt automatically creates paired TAB fingering', () => {
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), [{
+    type: 'insertNoteAt',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'E',
+    octave: 4,
+    alter: 0,
+    durationType: 'quarter',
+    isDotted: false,
+  } as any]);
+
+  const notationBeatTwo = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .find((event) => event.timestampNum === 1);
+  const tabBeatTwo = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .find((event) => event.timestampNum === 1);
+
+  assert.equal(notationBeatTwo?.kind, 'note');
+  assert.deepEqual(notationBeatTwo?.kind === 'note' ? notationBeatTwo.pitch : null, { step: 'E', alter: 0, octave: 4 });
+  assert.equal(notationBeatTwo?.kind === 'note' ? notationBeatTwo.guitar : undefined, undefined);
+  assert.equal(tabBeatTwo?.kind, 'note');
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'E', alter: 0, octave: 4 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 1, fret: 0 });
+});
+
+test('standard notation changeNotePitch updates paired TAB pitch and fingering', () => {
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
+    type: 'changeNotePitch',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    step: 'G',
+    octave: 2,
+    alter: 0,
+  } as any]);
+
+  const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
+  const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 3, techniques: [] });
+});
+
+test('standard notation repitch preserves the paired TAB string when reachable', () => {
+  const inserted = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), [{
+    type: 'insertNoteAt',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'E',
+    octave: 4,
+    alter: 0,
+    durationType: 'quarter',
+    isDotted: false,
+  } as any]);
+  const next = applyCoreCommands(inserted, [{
+    type: 'changeNotePitch',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'F',
+    octave: 4,
+    alter: 0,
+  } as any]);
+
+  const tabBeatTwo = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .find((event) => event.timestampNum === 1);
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'F', alter: 0, octave: 4 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 1, fret: 1 });
+});
+
 test('insertNoteAt with guitar converts the paired notation rest at the same rhythmic anchor', () => {
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), [{
     type: 'insertNoteAt',

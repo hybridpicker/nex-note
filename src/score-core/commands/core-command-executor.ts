@@ -2,7 +2,7 @@ import { noteTypeToDivisions } from '@/lib/note-editor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
-import { resolveGuitarFretPitch, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
+import { chooseGuitarFingeringForPitch, pitchToMidi, resolveGuitarFretPitch, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import type { ClipboardAbsoluteEvent, ClipboardTargetOffset, ClipboardTimedDirection, ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
@@ -651,10 +651,7 @@ function findCommandEventIndex(
   return findEventIndex(voice, locator.timestampNum, locator.timestampDen);
 }
 
-function pitchMidiNumber(pitch: { step: string; alter?: number; octave: number }) {
-  const STEP_TO_SEMITONE: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  return ((pitch.octave + 1) * 12) + (STEP_TO_SEMITONE[pitch.step] ?? 0) + (pitch.alter ?? 0);
-}
+const pitchMidiNumber = pitchToMidi;
 
 function isTabStaff(part: ScoreDocumentModel['score']['parts'][number], staffIndex: number) {
   return part.staves
@@ -692,6 +689,33 @@ function findPairedTabNotationEvent(
   return null;
 }
 
+function findPairedTabNotationTimedEvent(
+  part: ScoreDocumentModel['score']['parts'][number],
+  sourceStaffIndex: number,
+  measureNumber: number,
+  voiceId: number,
+  timestampNum: number,
+  timestampDen: number,
+) {
+  const sourceIsTab = isTabStaff(part, sourceStaffIndex);
+  const pairedStaves = part.staves
+    .filter((staff) => staff.staffIndex !== sourceStaffIndex && isTabStaff(part, staff.staffIndex) !== sourceIsTab)
+    .sort((left, right) => Math.abs(left.staffIndex - sourceStaffIndex) - Math.abs(right.staffIndex - sourceStaffIndex));
+
+  for (const staff of pairedStaves) {
+    const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+    const voice = measure?.voices.find((entry) => entry.voiceId === voiceId);
+    const event = voice?.events.find((entry) => (
+      timestampsEqual(entry.timestampNum, entry.timestampDen, timestampNum, timestampDen)
+    ));
+    if (measure && voice && event) {
+      return { staff, measure, voice, event, isTab: isTabStaff(part, staff.staffIndex) };
+    }
+  }
+
+  return null;
+}
+
 function findPairedStaffVoice(
   part: ScoreDocumentModel['score']['parts'][number],
   sourceStaffIndex: number,
@@ -710,6 +734,40 @@ function findPairedStaffVoice(
   }
 
   return null;
+}
+
+type CoreGuitarMetadata = NonNullable<Extract<TimedEvent, { kind: 'note' }>['guitar']>;
+type CommandGuitarMetadata = {
+  string: 1 | 2 | 3 | 4 | 5 | 6;
+  fret: number;
+  tuning?: string;
+  techniques?: string[];
+};
+
+function resolveSyncedGuitarFingering(input: {
+  pitch: { step: string; alter?: number; octave: number };
+  requested?: CoreGuitarMetadata | CommandGuitarMetadata;
+  existing?: CoreGuitarMetadata;
+}): CoreGuitarMetadata | undefined {
+  if (input.requested) {
+    const requested: CoreGuitarMetadata = {
+      string: input.requested.string,
+      fret: input.requested.fret,
+    };
+    if (input.requested.tuning) requested.tuning = input.requested.tuning;
+    if (input.requested.techniques) requested.techniques = [...input.requested.techniques] as CoreGuitarMetadata['techniques'];
+    return requested;
+  }
+  const tuning = resolveGuitarTuning(input.existing?.tuning);
+  const generated = chooseGuitarFingeringForPitch(input.pitch, tuning, input.existing?.string);
+  if (!generated) return undefined;
+  const resolved: CoreGuitarMetadata = {
+    string: generated.string,
+    fret: generated.fret,
+  };
+  if (input.existing?.tuning) resolved.tuning = input.existing.tuning;
+  if (input.existing?.techniques) resolved.techniques = [...input.existing.techniques];
+  return resolved;
 }
 
 function findSimultaneousEventIndices(voice: VoiceNode, timestampNum: number, timestampDen: number) {
@@ -1435,11 +1493,7 @@ function mirrorGuitarInsertionToPairedStaff(input: {
   command: Extract<ValidatedScoreCommand, { type: 'insertNoteAt' | 'insertNote' }>;
   sourceInserted: TimedEvent;
 }) {
-  if (
-    !('guitar' in input.command)
-    || !input.command.guitar
-    || ('asChord' in input.command && input.command.asChord)
-  ) return;
+  if (('asChord' in input.command && input.command.asChord) || input.sourceInserted.kind !== 'note') return;
   const paired = findPairedStaffVoice(
     input.part,
     input.sourceStaffIndex,
@@ -1447,6 +1501,14 @@ function mirrorGuitarInsertionToPairedStaff(input: {
     input.command.voiceId,
   );
   if (!paired) return;
+
+  const guitar = paired.isTab
+    ? resolveSyncedGuitarFingering({
+      pitch: input.sourceInserted.pitch,
+      requested: 'guitar' in input.command ? input.command.guitar : undefined,
+    })
+    : undefined;
+  if (paired.isTab && !guitar) return;
 
   ensureStaffDivisionsForDuration(paired.staff, paired.measure.measureNumber, input.command.durationType, input.command.isDotted);
   const pairedTiming = resolveMeasureTiming(paired.staff, paired.measure);
@@ -1468,7 +1530,7 @@ function mirrorGuitarInsertionToPairedStaff(input: {
   const pairedCommand = {
     ...input.command,
     staffIndex: paired.staff.staffIndex,
-    guitar: paired.isTab ? input.command.guitar : undefined,
+    guitar,
   };
   const inserted = buildInsertedEvent(
     paired.measure,
@@ -3326,11 +3388,44 @@ export function executeCoreCommands(
         })];
         if (event) {
           event.kind = 'note';
-          (event as Extract<TimedEvent, { kind: 'note' }>).pitch = {
+          const nextPitch = {
             step: command.step,
             alter: command.alter,
             octave: command.octave,
           };
+          const noteEvent = event as Extract<TimedEvent, { kind: 'note' }>;
+          noteEvent.pitch = nextPitch;
+
+          if (found) {
+            const sourceIsTab = isTabStaff(found.part, command.staffIndex);
+            if (sourceIsTab) {
+              noteEvent.guitar = resolveSyncedGuitarFingering({
+                pitch: nextPitch,
+                existing: noteEvent.guitar,
+              });
+            }
+
+            const paired = findPairedTabNotationTimedEvent(
+              found.part,
+              command.staffIndex,
+              command.measureNumber,
+              command.voiceId,
+              command.timestampNum,
+              command.timestampDen,
+            );
+
+            if (paired?.event) {
+              paired.event.kind = 'note';
+              const pairedNote = paired.event as Extract<TimedEvent, { kind: 'note' }>;
+              pairedNote.pitch = { ...nextPitch };
+              if (paired.isTab) {
+                pairedNote.guitar = resolveSyncedGuitarFingering({
+                  pitch: nextPitch,
+                  existing: pairedNote.guitar,
+                });
+              }
+            }
+          }
         }
         break;
       }

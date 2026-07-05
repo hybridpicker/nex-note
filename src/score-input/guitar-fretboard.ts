@@ -97,6 +97,11 @@ function clampFret(fret: number) {
 
 export const MAX_GUITAR_FRET = 24;
 
+export function pitchToMidi(pitch: { step: string; alter?: number; octave: number }) {
+  const semitoneByStep: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  return ((pitch.octave + 1) * 12) + (semitoneByStep[pitch.step.toUpperCase()] ?? 0) + (pitch.alter ?? 0);
+}
+
 /**
  * Fret that produces `midi` on the given string, or null when the pitch is
  * not reachable there (below the open string or beyond the last fret).
@@ -111,6 +116,33 @@ export function fretForMidiOnString(
   if (!stringTuning || !Number.isFinite(midi)) return null;
   const fret = Math.round(midi) - stringTuning.openMidi;
   return fret >= 0 && fret <= MAX_GUITAR_FRET ? fret : null;
+}
+
+export function chooseGuitarFingeringForPitch(
+  pitch: { step: string; alter?: number; octave: number },
+  tuning: GuitarStringTuning[] | GuitarTuningPreset = STANDARD_GUITAR_TUNING,
+  preferredString?: 1 | 2 | 3 | 4 | 5 | 6,
+): { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number } | null {
+  const midi = pitchToMidi(pitch);
+  if (preferredString) {
+    const fret = fretForMidiOnString(midi, preferredString, tuning);
+    if (fret != null) return { string: preferredString, fret };
+  }
+
+  const strings = Array.isArray(tuning) ? tuning : tuning.strings;
+  const candidates = strings
+    .map((stringTuning) => ({
+      string: stringTuning.string,
+      fret: fretForMidiOnString(midi, stringTuning.string, tuning),
+    }))
+    .filter((candidate): candidate is { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number } => candidate.fret != null);
+
+  if (candidates.length === 0) return null;
+
+  return candidates.sort((left, right) => (
+    left.fret - right.fret
+    || left.string - right.string
+  ))[0] ?? null;
 }
 
 export function resolveGuitarFretPitch(
