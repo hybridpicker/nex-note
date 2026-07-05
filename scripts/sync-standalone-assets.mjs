@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, rmSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
 
 const root = process.cwd();
@@ -25,4 +26,31 @@ if (existsSync(publicSource)) {
   cpSync(publicSource, publicTarget, { recursive: true });
 }
 
+function git(args) {
+  try {
+    return execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+const buildInfo = {
+  app: 'nex-note',
+  buildTime: new Date().toISOString(),
+  gitCommit: git(['rev-parse', 'HEAD']),
+  gitBranch: git(['branch', '--show-current']),
+  originDevelCommit: git(['rev-parse', 'origin/devel']),
+  dirty: Boolean(git(['status', '--porcelain'])),
+};
+
+writeFileSync(
+  join(standaloneDir, 'nex-note-build.json'),
+  `${JSON.stringify(buildInfo, null, 2)}\n`,
+);
+
 console.log('Synced Next standalone static and public assets.');
+console.log(`Stamped standalone build ${buildInfo.gitCommit ?? 'unknown'} on ${buildInfo.gitBranch ?? 'unknown'}.`);

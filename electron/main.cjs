@@ -1,5 +1,5 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
-const { fork, spawn } = require('node:child_process');
+const { execFile, fork, spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
@@ -409,6 +409,120 @@ function getRootDir() {
   return isElectronDevRuntime() ? path.resolve(__dirname, '..') : app.getAppPath();
 }
 
+function execFileText(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, {
+      encoding: 'utf8',
+      timeout: 15000,
+      maxBuffer: 1024 * 1024,
+      ...options,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve(String(stdout).trim());
+    });
+  });
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findRepoRootForPackagedApp() {
+  if (isElectronDevRuntime()) return null;
+
+  let current = app.getAppPath();
+  for (let depth = 0; depth < 10; depth += 1) {
+    const packageJsonPath = path.join(current, 'package.json');
+    if (await fileExists(path.join(current, '.git')) && await fileExists(packageJsonPath)) {
+      try {
+        const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
+        if (packageJson?.name === 'nex-note') return current;
+      } catch {
+        return null;
+      }
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return null;
+}
+
+async function readBuildInfo() {
+  const buildInfoPath = path.join(app.getAppPath(), '.next', 'standalone', 'nex-note-build.json');
+  try {
+    return JSON.parse(await fs.readFile(buildInfoPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function verifyPackagedBuildFreshness() {
+  if (process.env.NEX_NOTE_SKIP_DEVEL_FRESHNESS_CHECK === '1' || isElectronDevRuntime()) {
+    return true;
+  }
+
+  const repoRoot = await findRepoRootForPackagedApp();
+  if (!repoRoot) return true;
+
+  const buildInfo = await readBuildInfo();
+  const buildCommit = typeof buildInfo?.gitCommit === 'string' ? buildInfo.gitCommit : null;
+  const buildDirty = Boolean(buildInfo?.dirty);
+
+  let latestDevelCommit;
+  try {
+    await execFileText('git', ['-C', repoRoot, 'fetch', 'origin', 'devel:refs/remotes/origin/devel']);
+    latestDevelCommit = await execFileText('git', ['-C', repoRoot, 'rev-parse', 'origin/devel']);
+  } catch (error) {
+    dialog.showErrorBox(
+      'Nex Note cannot verify devel',
+      [
+        'This repo-local packaged app is configured to run only after verifying origin/devel.',
+        'The latest pushed devel commit could not be fetched.',
+        '',
+        `Repo: ${repoRoot}`,
+        `Error: ${error?.message ?? String(error)}`,
+        '',
+        'Run this after network access is available:',
+        `cd "${repoRoot}" && npm run electron:latest`,
+      ].join('\n'),
+    );
+    app.quit();
+    return false;
+  }
+
+  if (!buildCommit || buildDirty || buildCommit !== latestDevelCommit) {
+    dialog.showErrorBox(
+      'Nex Note build is stale',
+      [
+        'This packaged app was stopped because it is not the latest pushed devel build.',
+        '',
+        `Built commit: ${buildCommit ?? 'missing'}`,
+        `Latest origin/devel: ${latestDevelCommit}`,
+        `Dirty build: ${buildDirty ? 'yes' : 'no'}`,
+        '',
+        'Rebuild and relaunch with:',
+        `cd "${repoRoot}" && npm run electron:latest`,
+      ].join('\n'),
+    );
+    app.quit();
+    return false;
+  }
+
+  return true;
+}
+
 function getAssetPath(...segments) {
   return path.join(getRootDir(), 'assets', ...segments);
 }
@@ -652,6 +766,7 @@ if (!singleInstanceLock) {
 
   app.whenReady().then(async () => {
     app.setName(APP_NAME);
+    if (!(await verifyPackagedBuildFreshness())) return;
     if (typeof app.setAccessibilitySupportEnabled === 'function') {
       app.setAccessibilitySupportEnabled(true);
     }

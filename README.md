@@ -184,11 +184,13 @@ Local macOS package build:
 npm run electron:build
 ```
 
-The build writes to `dist/macos`, which is ignored by Git. The app bundle is usually:
+For local testing against the latest pushed `devel`, use the guarded launcher:
 
 ```bash
-open "$PWD/dist/macos/mac-arm64/Nex Note.app"
+npm run electron:latest
 ```
+
+This fetches `origin/devel`, fast-forwards the local `devel` branch, builds the macOS package, quits any running Nex Note app, and opens the rebuilt app. Repo-local packaged apps also verify their embedded build commit against `origin/devel` on startup and refuse to run when stale.
 
 Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
 
@@ -199,7 +201,7 @@ Founder build path:
 ```bash
 git switch devel
 npm install
-npm run electron:build
+npm run electron:latest
 ```
 
 Expected local outputs are under `dist/macos`, including a `.app` bundle and packaged macOS archive/disk image when Electron Builder completes.

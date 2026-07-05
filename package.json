@@ -17,6 +17,7 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:prep": "node scripts/prepare-electron-package.mjs",
     "electron:build": "npm run build && npm run electron:prep && electron-builder --mac",
+    "electron:latest": "node scripts/launch-latest-devel-app.mjs",
     "hooks:install": "node scripts/install-git-hooks.mjs",
     "start": "next start",
     "test": "tsx --test test/**/*.test.ts",
