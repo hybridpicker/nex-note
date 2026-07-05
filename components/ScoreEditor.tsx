@@ -12459,6 +12459,10 @@ export default function ScoreEditor({
       && (entry.matches('.vf-notehead') || Boolean(entry.closest('.vf-notehead')))
     ));
     const visibleGhostElement = container.querySelector<HTMLElement>('[data-testid="ghost-note-preview"]');
+    const clickedVisibleGhostElementPath = Boolean(
+      visibleGhostElement
+      && eventPathNodes.some((entry) => entry === visibleGhostElement || visibleGhostElement.contains(entry)),
+    );
     const clickedGhostElementRect = visibleGhostElement?.getBoundingClientRect() ?? null;
     const lockedVisibleGhostTarget = visibleGhostPointerLockRef.current;
     const clickedLockedVisibleGhost = lockedVisibleGhostTarget
@@ -12502,6 +12506,12 @@ export default function ScoreEditor({
         ? previousGhostNoteTargetRef.current
         : null;
     const clickedVisibleGhostAtPointer = Boolean(clickedVisibleGhostTargetAtPointer);
+    const clickedExplicitVisibleGhostAtPointer = Boolean(
+      clickedVisibleGhostTargetAtPointer
+      && (clickedVisibleGhostElementPath || clickedLockedVisibleGhost || clickedCurrentGhost)
+      && !clickedNoteheadPath
+      && !pathHitRendered
+    );
     const semanticNoteheadHit = !directlyHitRendered && clickedNoteheadPath && layoutBridgeRef.current
       ? (() => {
           const measureElement = findMeasureElementForPoint(container, eventPathNodes, e.clientX, e.clientY);
@@ -12576,7 +12586,7 @@ export default function ScoreEditor({
       directlyHitRendered: Boolean(directlyHitRendered),
       clickedNoteheadPath,
       directNoteheadHit,
-      clickedVisibleGhostAtPointer,
+      clickedVisibleGhostAtPointer: clickedExplicitVisibleGhostAtPointer,
       altKey: e.altKey,
     });
     if (
@@ -12729,7 +12739,8 @@ export default function ScoreEditor({
         !directCrossVoiceNotehead && blockedByLeadingTimeSignatureGuard ? 'leading-time-signature-guard' : null,
       ].filter((entry): entry is string => Boolean(entry));
       const protectedResolvedGhostTarget = inputBlockers.length > 0 ? null : resolvedGhostTarget;
-      const clickedVisibleGhost = clickedVisibleGhostAtPointer;
+      const clickedVisibleGhost = clickedExplicitVisibleGhostAtPointer
+        || (e.altKey && clickedVisibleGhostAtPointer);
       const liveGhostTarget = resolveNoteInputCommitTarget(
         clickedVisibleGhost ? clickedVisibleGhostTargetAtPointer : null,
         clickedLockedVisibleGhost ? null : protectedResolvedGhostTarget,

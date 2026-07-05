@@ -676,7 +676,7 @@ test('shouldCommitPointerGhostOverDirectNote lets an insert ghost beat proximity
   }), true);
 });
 
-test('shouldCommitPointerGhostOverDirectNote lets an insert ghost beat a direct notehead hit', () => {
+test('shouldCommitPointerGhostOverDirectNote keeps insert-mode direct notehead clicks selectable', () => {
   const directNote = {
     measureId: 'm1',
     measureNumber: 1,
@@ -701,9 +701,10 @@ test('shouldCommitPointerGhostOverDirectNote lets an insert ghost beat a direct 
     directNote,
     directlyHitRendered: true,
     clickedNoteheadPath: true,
+    directNoteheadHit: true,
     clickedVisibleGhostAtPointer: false,
     altKey: false,
-  }), true);
+  }), false);
 });
 
 test('shouldCommitPointerGhostOverDirectNote keeps actual notehead clicks selectable', () => {
@@ -731,9 +732,51 @@ test('shouldCommitPointerGhostOverDirectNote keeps actual notehead clicks select
     directNote,
     directlyHitRendered: true,
     clickedNoteheadPath: true,
+    directNoteheadHit: true,
     clickedVisibleGhostAtPointer: false,
     altKey: false,
   }), false);
+});
+
+test('shouldCommitPointerGhostOverDirectNote lets explicit ghost or modifier clicks commit over direct notes', () => {
+  const directNote = {
+    measureId: 'm1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+  };
+  const ghostTarget = {
+    ...directNote,
+    step: 'B',
+    octave: 4,
+    placementMode: 'insert' as const,
+    resolvedTarget: { mode: 'insert' as const },
+  };
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget,
+    directNote,
+    directlyHitRendered: true,
+    clickedNoteheadPath: true,
+    directNoteheadHit: true,
+    clickedVisibleGhostAtPointer: true,
+    altKey: false,
+  }), true);
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget,
+    directNote,
+    directlyHitRendered: true,
+    clickedNoteheadPath: true,
+    directNoteheadHit: true,
+    clickedVisibleGhostAtPointer: false,
+    altKey: true,
+  }), true);
 });
 
 test('resolveKeyboardEditTarget resolves replace, chord, and insert modes from entry intent', () => {

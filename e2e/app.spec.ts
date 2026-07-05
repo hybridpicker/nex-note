@@ -2389,6 +2389,49 @@ test('clicking inside the visible ghost preview commits the same timestamp it sh
   }).toEqual([0, expectedStart]);
 });
 
+test('mouse note input visible ghost coverage includes Alt-click committing selected voice over existing notehead', async ({ page }) => {
+  const expectVoiceTwoInserted = async () => {
+    await expect.poll(async () => {
+      const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+      const voiceOneCount = measure.voices
+        .find((voice) => voice.voiceId === 1)
+        ?.events.filter((event) => event.kind === 'note').length ?? 0;
+      const voiceTwoCount = measure.voices
+        .find((voice) => voice.voiceId === 2)
+        ?.events.filter((event) => event.kind === 'note').length ?? 0;
+      return {
+        selectedVoice: (await readE2EState(page))?.selectedVoice,
+        voiceOneCount,
+        voiceTwoCount,
+      };
+    }).toEqual({
+      selectedVoice: 2,
+      voiceOneCount: 4,
+      voiceTwoCount: 1,
+    });
+  };
+
+  await bootWithScore(page, 'alt-click-selected-voice.musicxml', buildFourQuarterFixtureXml());
+  await waitForRenderedScore(page);
+  const altTargetNote = await noteheadCenter(page, 0);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await page.keyboard.press('5');
+  await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
+  await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(2);
+
+  await page.mouse.move(altTargetNote.x, altTargetNote.y);
+  const ghost = page.getByTestId('ghost-note-preview');
+  await expect(ghost).toBeVisible();
+  await expect(ghost).toHaveAttribute('data-ghost-voice', '2');
+  await expect(ghost).toHaveAttribute('data-ghost-commit-voice', '2');
+  await page.keyboard.down('Alt');
+  await page.mouse.click(altTargetNote.x, altTargetNote.y);
+  await page.keyboard.up('Alt');
+  await expectVoiceTwoInserted();
+});
+
 test('mouse note input only exposes the visible follow-up rest after tiny pointer moves', async ({ page }) => {
   await bootWithScore(page, 'blank-piano-followup-ghost.musicxml', buildBlankPianoFixtureXml(2));
   await waitForRenderedLayout(page);
@@ -2534,43 +2577,96 @@ test('mouse note input respects insert vs overwrite on occupied slots', async ({
   }).toBe(4);
 });
 
-test('mouse note input commits selected voice when clicking an existing notehead in another voice', async ({ page }) => {
-  await bootWithScore(page, 'voice-2-on-notehead.musicxml', buildFourQuarterFixtureXml());
+test('mouse note input activates clicked existing notehead in another voice instead of committing selected voice', async ({ page }) => {
+  await bootWithScore(page, 'voice-activation-polyphonic.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
 
-  const targetNote = await noteheadCenter(page, 0);
+  const noteheads = await page.locator('[data-testid="score-canvas"] .vf-notehead').evaluateAll((elements) => (
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2,
+      };
+    })
+  ));
+  const firstColumnX = Math.min(...noteheads.map((notehead) => notehead.x));
+  const firstOnsetNoteheads = noteheads
+    .filter((notehead) => Math.abs(notehead.x - firstColumnX) <= 24)
+    .sort((left, right) => left.y - right.y);
+  expect(firstOnsetNoteheads.length).toBeGreaterThanOrEqual(1);
+  const voiceOneNote = firstOnsetNoteheads[0]!;
+  const voiceTwoNote = {
+    x: voiceOneNote.x,
+    y: voiceOneNote.y + 27,
+  };
+  const baselineXml = await readCurrentXml(page);
+  const noteSummary = async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return measure.voices
+      .map((voice) => ({
+        voiceId: voice.voiceId,
+        notes: voice.events
+          .filter((event) => event.kind === 'note')
+          .map((event) => event.kind === 'note'
+            ? `${event.timestampNum}/${event.timestampDen}:${event.pitch.step}${event.pitch.octave}`
+            : ''),
+      }))
+      .sort((left, right) => left.voiceId - right.voiceId);
+  };
+  const baselineNoteSummary = await noteSummary();
+  const expectActivation = async (expected: {
+    voiceId: number;
+    timestampNum: number;
+    step: string;
+    octave: number;
+  }) => {
+    await expect.poll(async () => {
+      const state = await readE2EState(page);
+      const selected = state?.selectedNote;
+      const anchor = state?.noteInputAnchor;
+      return selected && anchor
+        ? {
+            noteInputMode: state?.noteInputMode,
+            selectionCount: state?.selectionCount,
+            selectedVoice: state?.selectedVoice,
+            selectedNoteVoice: selected.voiceId,
+            selectedTimestamp: selected.timestampNum,
+            selectedStep: selected.step,
+            selectedOctave: selected.octave,
+            anchorVoice: anchor.voiceId,
+            anchorTimestamp: anchor.timestampNum,
+            anchorStep: anchor.step,
+            anchorOctave: anchor.octave,
+          }
+        : null;
+    }).toEqual({
+      noteInputMode: true,
+      selectionCount: 1,
+      selectedVoice: expected.voiceId,
+      selectedNoteVoice: expected.voiceId,
+      selectedTimestamp: expected.timestampNum,
+      selectedStep: expected.step,
+      selectedOctave: expected.octave,
+      anchorVoice: expected.voiceId,
+      anchorTimestamp: expected.timestampNum,
+      anchorStep: expected.step,
+      anchorOctave: expected.octave,
+    });
+    expect(await readCurrentXml(page)).toBe(baselineXml);
+    expect(await noteSummary()).toEqual(baselineNoteSummary);
+  };
 
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');
   await page.keyboard.press('5');
-  await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
-  await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(2);
+  await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(1);
 
-  await page.mouse.move(targetNote.x, targetNote.y);
-  const ghost = page.getByTestId('ghost-note-preview');
-  await expect(ghost).toBeVisible();
-  await expect(ghost).toHaveAttribute('data-ghost-voice', '2');
-  await expect(ghost).toHaveAttribute('data-ghost-commit-voice', '2');
+  await page.mouse.click(voiceTwoNote.x, voiceTwoNote.y);
+  await expectActivation({ voiceId: 2, timestampNum: 0, step: 'G', octave: 3 });
 
-  await page.mouse.click(targetNote.x, targetNote.y);
-
-  await expect.poll(async () => {
-    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
-    const voiceOneNotes = measure.voices
-      .find((voice) => voice.voiceId === 1)
-      ?.events.filter((event) => event.kind === 'note')
-      .map((event) => `${event.timestampNum}/${event.timestampDen}:${event.pitch.step}${event.pitch.octave}`) ?? [];
-    const voiceTwoNotes = measure.voices
-      .find((voice) => voice.voiceId === 2)
-      ?.events.filter((event) => event.kind === 'note')
-      .map((event) => `${event.timestampNum}/${event.timestampDen}:${event.pitch.step}${event.pitch.octave}`) ?? [];
-    return { voiceOneNotes, voiceTwoNotes };
-  }).toEqual({
-    voiceOneNotes: ['0/4:C4', '1/4:D4', '2/4:E4', '3/4:F4'],
-    voiceTwoNotes: ['0/4:C4'],
-  });
-
-  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.voiceId ?? null).toBe(2);
+  await page.mouse.click(voiceOneNote.x, voiceOneNote.y);
+  await expectActivation({ voiceId: 1, timestampNum: 0, step: 'C', octave: 4 });
 });
 
 test('direct notehead drag can transpose the existing note without toolbar mode buttons', async ({ page }) => {

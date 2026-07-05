@@ -1105,6 +1105,14 @@ export function useNoteEditor(
     if (noteInputModeRef.current) {
       lastNoteInputRef.current = note;
       options?.onActiveNotePreview?.(note);
+      if (
+        !clickOptions?.additive
+        && !clickOptions?.range
+        && note.voiceId >= 1
+        && note.voiceId <= 4
+      ) {
+        setSelectedVoiceLive(note.voiceId as 1 | 2 | 3 | 4);
+      }
     }
     const current = selectedNotesRef.current;
     if (clickOptions?.range && lastSelectedRef.current) {
@@ -1181,7 +1189,7 @@ export function useNoteEditor(
       staffIndex: clickOptions?.visualStaffIndex ?? note.staffIndex,
     });
     lastSelectedRef.current = note;
-  }, [clearSelection, coreDocument, options, paintNote, setSelectedNoteLive, setSelectedVisualLive]);
+  }, [clearSelection, coreDocument, options, paintNote, setSelectedNoteLive, setSelectedVisualLive, setSelectedVoiceLive]);
 
   const findSelectedVisualDeleteCommand = useCallback((): VisualDeleteCommand | null => {
     if (!selectedVisual?.visualOnly || !selectedVisual.text) return null;

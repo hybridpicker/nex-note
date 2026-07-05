@@ -82,6 +82,33 @@ const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const MULTI_VOICE_CLICK_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <work><work-title>Multi Voice Click Activation</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>A</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>B</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
 const GUITAR_NOTATION_TAB_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list>
@@ -4821,6 +4848,69 @@ test('note input click activation moves the blue anchor and arrow edits the clic
   assert.equal(hook.current.noteInputAnchor?.timestampNum, 1);
   assert.equal(hook.current.noteInputAnchor?.step, 'C');
   assert.equal(hook.current.noteInputAnchor?.alter, 1);
+  hook.unmount();
+});
+
+test('note input click activation updates the clicked voice anchor without XML mutation', () => {
+  const hook = renderHook(MULTI_VOICE_CLICK_XML);
+  const notes = makeSelectedNotes(MULTI_VOICE_CLICK_XML).filter((note) => !note.isRest);
+  const voiceOneTarget = notes.find((note) => note.voiceId === 1 && note.timestampNum === 1);
+  const voiceTwoTarget = notes.find((note) => note.voiceId === 2 && note.timestampNum === 1);
+
+  assert.ok(voiceOneTarget);
+  assert.ok(voiceTwoTarget);
+
+  act(() => {
+    hook.current.handleNoteClick(voiceOneTarget ?? null);
+    hook.current.setVoice(1);
+    hook.current.handleKeyDown(makeKeyboardEvent('N'));
+  });
+  hook.rerender();
+
+  const baselineXml = hook.xml;
+  const baselineNoteCounts = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.kind === 'note')
+    .reduce<Record<number, number>>((counts, event) => {
+      counts[event.voiceId] = (counts[event.voiceId] ?? 0) + 1;
+      return counts;
+    }, {});
+
+  act(() => {
+    hook.current.handleNoteClick(voiceTwoTarget ?? null);
+  });
+  hook.rerender();
+
+  assert.equal(hook.xml, baselineXml);
+  assert.deepEqual(
+    flattenVoiceEvents(hook.xml)
+      .filter((event) => event.kind === 'note')
+      .reduce<Record<number, number>>((counts, event) => {
+        counts[event.voiceId] = (counts[event.voiceId] ?? 0) + 1;
+        return counts;
+      }, {}),
+    baselineNoteCounts,
+  );
+  assert.equal(hook.current.selectedNote?.voiceId, 2);
+  assert.equal(hook.current.selectedNote?.step, 'A');
+  assert.equal(hook.current.selectedNotes.length, 1);
+  assert.equal(hook.current.selectedNotes[0]?.voiceId, 2);
+  assert.equal(hook.current.noteInputAnchor?.voiceId, 2);
+  assert.equal(hook.current.noteInputAnchor?.step, 'A');
+  assert.equal(hook.current.selectedVoice, 2);
+
+  act(() => {
+    hook.current.handleNoteClick(voiceOneTarget ?? null);
+  });
+  hook.rerender();
+
+  assert.equal(hook.xml, baselineXml);
+  assert.equal(hook.current.selectedNote?.voiceId, 1);
+  assert.equal(hook.current.selectedNote?.step, 'D');
+  assert.equal(hook.current.selectedNotes.length, 1);
+  assert.equal(hook.current.selectedNotes[0]?.voiceId, 1);
+  assert.equal(hook.current.noteInputAnchor?.voiceId, 1);
+  assert.equal(hook.current.noteInputAnchor?.step, 'D');
+  assert.equal(hook.current.selectedVoice, 1);
   hook.unmount();
 });
 

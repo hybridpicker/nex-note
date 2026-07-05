@@ -57,6 +57,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   directNote: PointerPitchLocator | null | undefined;
   directlyHitRendered: boolean;
   clickedNoteheadPath: boolean;
+  directNoteheadHit?: boolean;
   clickedVisibleGhostAtPointer: boolean;
   altKey: boolean;
 }) {
@@ -65,12 +66,13 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   if (input.altKey || input.clickedVisibleGhostAtPointer) return true;
   if (!directNote) return false;
 
+  if (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath) return false;
+
   const mode = ghostTarget.resolvedTarget.mode ?? ghostTarget.placementMode;
   if (mode === 'insert') {
     return pointerEntryLocatorsShareOnset(ghostTarget, directNote)
       && !pointerPitchesEqual(ghostTarget, directNote);
   }
-  if (input.directlyHitRendered || input.clickedNoteheadPath) return false;
   return pointerEntryLocatorsShareOnset(ghostTarget, directNote)
     && !pointerPitchesEqual(ghostTarget, directNote);
 }
