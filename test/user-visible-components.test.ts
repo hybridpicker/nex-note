@@ -19,9 +19,11 @@ import ScoreLibrary, {
 } from '../components/ScoreLibrary.tsx';
 import RecentFiles from '../components/RecentFiles.tsx';
 import UploadZone from '../components/UploadZone.tsx';
+import WelcomeScreen from '../components/WelcomeScreen.tsx';
 import EditPalette from '../components/EditPalette.tsx';
 import { saveLibraryScore } from '../lib/score-library.ts';
 import { addRecentFile } from '../lib/recent-files.ts';
+import { DEFAULT_AI_MODEL_SETTINGS } from '../lib/ai-model-settings.ts';
 import { formatShortcutHint } from '../lib/shortcut-hints.ts';
 import { LEFT_NOTATION_SIDEBAR_STORAGE_KEY, parseLeftNotationSidebarCollapsed, readLeftNotationSidebarCollapsed, writeLeftNotationSidebarCollapsed } from '../lib/left-notation-sidebar.ts';
 import { useScoreDocument } from '../hooks/useScoreDocument.ts';
@@ -443,6 +445,43 @@ test('UploadZone advertises MIDI import support', () => {
   assert.match(input.props.accept, /\.jpe?g/);
   assert.equal(input.props.multiple, true);
   assert.ok(root.findAll((node) => node.children?.includes?.('NXN · PDF · image · MXL · XML · MSCZ · MIDI · GP · click to select')).length > 0);
+});
+
+test('WelcomeScreen surfaces AI readiness and opens setup', () => {
+  let openSettingsCount = 0;
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(WelcomeScreen, {
+      onCreateBlankScore() {},
+      onChooseTemplate() {},
+      onOpenFile() {},
+      onFileSelected() {},
+      onOpenLibraryScore() {},
+      aiModelSettings: DEFAULT_AI_MODEL_SETTINGS,
+      aiSettingsHydrated: true,
+      aiProvider: 'ollama',
+      ollamaModel: 'gemma4:31b',
+      ollamaConnectionState: 'offline',
+      onOpenAiSettings() { openSettingsCount += 1; },
+    }));
+  });
+
+  const root = renderer!.root;
+  assert.match(nodeText(root), /AI setup needed/);
+  assert.match(nodeText(root), /Setup needed/);
+  assert.match(nodeText(root), /Local helpers/);
+  assert.match(nodeText(root), /Always on/);
+
+  const settingsButton = buttonWithText(root, 'AI settings');
+  act(() => {
+    settingsButton.props.onClick();
+  });
+  assert.equal(openSettingsCount, 1);
+
+  act(() => {
+    renderer?.unmount();
+  });
 });
 
 test('CommandCenter keeps mixed enabled and disabled commands under one group heading', () => {

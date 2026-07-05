@@ -158,6 +158,8 @@ Score-changing arrangement, layout, and other risky batches stay preview-gated. 
 
 Provider setup is in **AI model settings**. Claude and Gemini need their API keys there; Ollama uses your local Ollama server and can use discovered models or a custom `model:tag`. The selected provider and model are shown in the header and included in assistant responses.
 
+The opening screen also shows AI readiness before you open a score. It reports whether local Ollama was detected, whether Claude or Gemini keys are saved, and whether local helper workflows are available. Use **AI settings** there to add keys, set an Ollama base URL, or adjust default models before starting an assistant task.
+
 When no provider is configured, a provider call fails, or the request matches a deterministic local workflow, nex-note falls back to local helpers. These can analyze the score, suggest practice versions, add chord/expression previews, handle simple arrangements, and run layout cleanup without sending the score to a cloud provider. Local fallbacks still use the same preview/apply/cancel model for score-changing batches.
 
 ## AI Providers and Benchmarks

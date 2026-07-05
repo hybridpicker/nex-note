@@ -7,6 +7,7 @@ import LanguageSettings from '../components/LanguageSettings.tsx';
 import { I18nProvider, SUPPORTED_LOCALES, TRANSLATION_KEYS, detectLocale, getManualHref, LOCALE_STORAGE_KEY, translate } from '../lib/i18n.tsx';
 import WelcomeScreen from '../components/WelcomeScreen.tsx';
 import NewScoreDialog from '../components/NewScoreDialog.tsx';
+import { DEFAULT_AI_MODEL_SETTINGS } from '../lib/ai-model-settings.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -39,6 +40,25 @@ function buttonWithText(root: ReturnType<typeof create>['root'], text: string) {
     && typeof node.props.onClick === 'function'
     && nodeText(node as ReturnType<typeof create>['root']).includes(text)
   ))[0];
+}
+
+function welcomeScreenProps(
+  overrides: Partial<React.ComponentProps<typeof WelcomeScreen>> = {},
+): React.ComponentProps<typeof WelcomeScreen> {
+  return {
+    onCreateBlankScore() {},
+    onChooseTemplate() {},
+    onOpenFile() {},
+    onFileSelected() {},
+    onOpenLibraryScore() {},
+    aiModelSettings: DEFAULT_AI_MODEL_SETTINGS,
+    aiSettingsHydrated: true,
+    aiProvider: 'ollama',
+    ollamaModel: 'gemma4:31b',
+    ollamaConnectionState: 'connected',
+    onOpenAiSettings() {},
+    ...overrides,
+  };
 }
 
 test.beforeEach(() => {
@@ -90,13 +110,7 @@ test('language setting persists, updates html lang, and changes visible labels',
       React.createElement(I18nProvider, null,
         React.createElement(React.Fragment, null,
           React.createElement(LanguageSettings),
-          React.createElement(WelcomeScreen, {
-            onCreateBlankScore() {},
-            onChooseTemplate() {},
-            onOpenFile() {},
-            onFileSelected() {},
-            onOpenLibraryScore() {},
-          }),
+          React.createElement(WelcomeScreen, welcomeScreenProps()),
         ),
       ),
     );
@@ -135,13 +149,7 @@ test('i18n provider starts in English when no saved language exists', async () =
   await act(async () => {
     renderer = create(
       React.createElement(I18nProvider, null,
-        React.createElement(WelcomeScreen, {
-          onCreateBlankScore() {},
-          onChooseTemplate() {},
-          onOpenFile() {},
-          onFileSelected() {},
-          onOpenLibraryScore() {},
-        }),
+        React.createElement(WelcomeScreen, welcomeScreenProps()),
       ),
     );
   });
@@ -174,13 +182,7 @@ test('locale query parameter overrides saved language for preview links', async 
   await act(async () => {
     renderer = create(
       React.createElement(I18nProvider, null,
-        React.createElement(WelcomeScreen, {
-          onCreateBlankScore() {},
-          onChooseTemplate() {},
-          onOpenFile() {},
-          onFileSelected() {},
-          onOpenLibraryScore() {},
-        }),
+        React.createElement(WelcomeScreen, welcomeScreenProps()),
       ),
     );
   });
@@ -201,13 +203,11 @@ test('welcome screen buttons trigger concrete start actions', async () => {
   await act(async () => {
     renderer = create(
       React.createElement(I18nProvider, null,
-        React.createElement(WelcomeScreen, {
+        React.createElement(WelcomeScreen, welcomeScreenProps({
           onCreateBlankScore() { calls.push('blank'); },
           onChooseTemplate() { calls.push('template'); },
           onOpenFile() { calls.push('open'); },
-          onFileSelected() {},
-          onOpenLibraryScore() {},
-        }),
+        })),
       ),
     );
   });

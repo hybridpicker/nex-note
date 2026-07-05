@@ -138,6 +138,8 @@ Copy `.env.local.example` to `.env.local` and fill only the providers you use.
 
 Restart the dev server after editing `.env.local`; Next.js reads env vars at startup.
 
+The app opening screen includes an AI readiness panel. It checks local Ollama model discovery, shows whether Claude or Gemini keys are saved in local AI settings, and keeps local helper workflows visible even when no provider is connected.
+
 ## Iframe Embedding
 
 nex-note can boot directly inside a host iframe and fetch score data from the same browser origin:

@@ -22,6 +22,7 @@ interface Props {
   onProviderChange: (provider: ProviderName) => void;
   onOllamaModelChange: (model: string) => void;
   liveOllamaModels: AiModelOption[];
+  openSignal?: number;
 }
 
 function maskedKeyLabel(apiKey: string) {
@@ -37,6 +38,7 @@ export default function AiModelSettingsPanel({
   onProviderChange,
   onOllamaModelChange,
   liveOllamaModels,
+  openSignal = 0,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [newModelInputs, setNewModelInputs] = useState<Record<ProviderName, string>>({
@@ -48,6 +50,10 @@ export default function AiModelSettingsPanel({
 
   const normalizedSettings = normalizeAiModelSettings(settings);
   const enabledProviderCount = AI_PROVIDER_ORDER.filter((provider) => normalizedSettings.providers[provider].enabled).length;
+
+  useEffect(() => {
+    if (openSignal > 0) setOpen(true);
+  }, [openSignal]);
 
   useEffect(() => {
     if (!open) return;

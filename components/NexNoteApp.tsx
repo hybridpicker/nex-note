@@ -18,7 +18,7 @@ import BugReportDialog from '@/components/BugReportDialog';
 import CommandCenter, { type CommandCenterAction } from '@/components/CommandCenter';
 import FileMenu, { type FileMenuItem } from '@/components/FileMenu';
 import NexNoteBrand from '@/components/NexNoteBrand';
-import WelcomeScreen from '@/components/WelcomeScreen';
+import WelcomeScreen, { type AiConnectionState } from '@/components/WelcomeScreen';
 import LanguageSettings from '@/components/LanguageSettings';
 import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/BenchmarkPanel';
 import type { ProviderName } from '@/lib/ai-provider-config';
@@ -659,6 +659,8 @@ export default function Home({ searchParams }: HomeProps) {
   const [ollamaModel, setOllamaModel] = useState('gemma4:31b');
   const [aiModelSettings, setAiModelSettings] = useState<AiModelSettings>(DEFAULT_AI_MODEL_SETTINGS);
   const [aiModelSettingsHydrated, setAiModelSettingsHydrated] = useState(false);
+  const [aiSettingsOpenSignal, setAiSettingsOpenSignal] = useState(0);
+  const [ollamaConnectionState, setOllamaConnectionState] = useState<AiConnectionState>('checking');
   const [workspaceTab, setWorkspaceTab] = useState<'assistant' | 'library' | 'inspector'>('assistant');
   const initialLeftNotationSidebarCollapsed = embedConfig.enabled
     ? embedConfig.initialLeftToolsCollapsed ?? false
@@ -872,6 +874,7 @@ export default function Home({ searchParams }: HomeProps) {
 
   useEffect(() => {
     if (!aiModelSettingsHydrated) return;
+    setOllamaConnectionState('checking');
     fetch('/api/ollama-models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -879,6 +882,11 @@ export default function Home({ searchParams }: HomeProps) {
     })
       .then((res) => res.json())
       .then((data) => {
+        setOllamaConnectionState(
+          data.source === 'live' || data.source === 'live+cloud' || data.source === 'cloud'
+            ? 'connected'
+            : 'offline',
+        );
         if (Array.isArray(data.models) && data.models.length > 0) {
           const mergedModels = mergeModelOptions(aiModelSettings.providers.ollama.models, data.models);
           const currentModelIds = aiModelSettings.providers.ollama.models.map((model) => model.id).join('\n');
@@ -892,6 +900,7 @@ export default function Home({ searchParams }: HomeProps) {
         }
       })
       .catch(() => {
+        setOllamaConnectionState('offline');
         /* keep fallback model list */
       });
   }, [aiModelSettings.providers.ollama.models, aiModelSettingsHydrated, aiProviderRequestSettings, handleOllamaModelChange, handleOllamaModelsChange, ollamaModel]);
@@ -4556,6 +4565,7 @@ export default function Home({ searchParams }: HomeProps) {
           onProviderChange={setProvider}
           onOllamaModelChange={handleOllamaModelChange}
           liveOllamaModels={ollamaModels}
+          openSignal={aiSettingsOpenSignal}
         />
         <LanguageSettings />
 
@@ -4698,6 +4708,12 @@ export default function Home({ searchParams }: HomeProps) {
             onFilesSelected={handleSelectedFiles}
             onOpenLibraryScore={handleLibraryOpen}
             importStatus={importStatus}
+            aiModelSettings={aiModelSettings}
+            aiSettingsHydrated={aiModelSettingsHydrated}
+            aiProvider={provider}
+            ollamaModel={ollamaModel}
+            ollamaConnectionState={ollamaConnectionState}
+            onOpenAiSettings={() => setAiSettingsOpenSignal((signal) => signal + 1)}
           />
         ) : (
           <div className="flex-1 flex overflow-hidden">
