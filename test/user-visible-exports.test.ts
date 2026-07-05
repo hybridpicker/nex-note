@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
+import { Midi } from '@tonejs/midi';
 
 import { musicXmlToAbc } from '../lib/abc-export.ts';
-import { cleanMuseScoreStderr, formatMuseScoreMidiExportError, sanitizeXmlForMidiExport } from '../lib/midi-export.ts';
+import {
+  buildFallbackMidiFromMusicXml,
+  cleanMuseScoreStderr,
+  formatMuseScoreMidiExportError,
+  sanitizeXmlForMidiExport,
+} from '../lib/midi-export.ts';
 import { buildPracticePack } from '../lib/practice-pack.ts';
 import { POST as exportAbcPost } from '../app/api/export-abc/route.ts';
 import { POST as exportPracticePackPost } from '../app/api/export-practice-pack/route.ts';
@@ -123,6 +129,20 @@ test('sanitizeXmlForMidiExport keeps guitar playback and removes duplicate TAB p
   assert.match(sanitized.xml, /<instrument-name>Guitar<\/instrument-name>/);
   assert.doesNotMatch(sanitized.xml, /<score-part id="P2">/);
   assert.doesNotMatch(sanitized.xml, /<part id="P2">/);
+});
+
+test('buildFallbackMidiFromMusicXml renders sanitized MusicXML into playable MIDI', () => {
+  const sanitized = sanitizeXmlForMidiExport(EXPORT_XML);
+  const fallback = buildFallbackMidiFromMusicXml(sanitized.xml);
+  const midi = new Midi(fallback.data);
+
+  assert.equal(fallback.trackCount, 1);
+  assert.equal(fallback.noteCount, 1);
+  assert.equal(midi.header.tempos[0]?.bpm, 96);
+  assert.deepEqual(midi.header.timeSignatures[0]?.timeSignature, [4, 4]);
+  assert.equal(midi.tracks[0]?.instrument.number, 71);
+  assert.equal(midi.tracks[0]?.notes[0]?.midi, 65);
+  assert.equal(midi.tracks[0]?.notes[0]?.durationTicks, 480);
 });
 
 test('MuseScore MIDI errors hide noisy Qt QML type registration warnings', () => {

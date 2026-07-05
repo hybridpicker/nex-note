@@ -4,10 +4,61 @@ import { writeFile, readFile, unlink, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { dbg } from '@/lib/debug';
-import { cleanMuseScoreStderr, formatMuseScoreMidiExportError, sanitizeXmlForMidiExport } from '@/lib/midi-export';
+import {
+  buildFallbackMidiFromMusicXml,
+  cleanMuseScoreStderr,
+  formatMuseScoreMidiExportError,
+  sanitizeXmlForMidiExport,
+} from '@/lib/midi-export';
 import { museScoreSpawnEnv, resolveMuseScoreCli } from '@/lib/musescore-cli';
 
-const MUSESCORE_EXPORT_TIMEOUT_MS = 180000;
+const MUSESCORE_EXPORT_TIMEOUT_MS = Number.parseInt(process.env.MUSESCORE_MIDI_EXPORT_TIMEOUT_MS ?? '', 10) || 30000;
+
+function midiResponse(data: Buffer, renderer: 'musescore' | 'internal-fallback') {
+  const body = new Uint8Array(data.byteLength);
+  body.set(data);
+  return new NextResponse(body.buffer, {
+    headers: {
+      'Content-Type': 'audio/midi',
+      'Content-Length': String(data.length),
+      'X-Nex-Note-Midi-Renderer': renderer,
+    },
+  });
+}
+
+function runMuseScoreMidiExport(input: {
+  musescoreCli: string;
+  inputPath: string;
+  outputMid: string;
+  tmpDir: string;
+}) {
+  return new Promise<void>((resolve, reject) => {
+    const exportStartedAt = Date.now();
+    const proc = spawn(input.musescoreCli, [input.inputPath, '-o', input.outputMid, '-f'], {
+      timeout: MUSESCORE_EXPORT_TIMEOUT_MS,
+      env: museScoreSpawnEnv(),
+      cwd: input.tmpDir,
+    });
+    let stderr = '';
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+      if (code !== 0) {
+        reject(new Error(formatMuseScoreMidiExportError({
+          code,
+          signal,
+          stderr,
+          timeoutMs: MUSESCORE_EXPORT_TIMEOUT_MS,
+        })));
+      } else {
+        dbg.midi(`MuseScore export OK exit=${code} durationMs=${Date.now() - exportStartedAt}`);
+        const cleanedStderr = cleanMuseScoreStderr(stderr);
+        if (cleanedStderr) dbg.midi(`MuseScore export stderr: ${cleanedStderr}`);
+        resolve();
+      }
+    });
+  });
+}
 
 export async function POST(req: NextRequest) {
   const { xml } = await req.json() as { xml: string };
@@ -34,44 +85,19 @@ export async function POST(req: NextRequest) {
       dbg.midi(`removed playback metadata ${JSON.stringify(metadataSummary)}`);
     }
     await writeFile(inputPath, sanitized.xml, 'utf-8');
-    const musescoreCli = resolveMuseScoreCli();
 
-    await new Promise<void>((resolve, reject) => {
-      const exportStartedAt = Date.now();
-      const proc = spawn(musescoreCli, [inputPath, '-o', outputMid, '-f'], {
-        timeout: MUSESCORE_EXPORT_TIMEOUT_MS,
-        env: museScoreSpawnEnv(),
-        cwd: tmpDir,
-      });
-      let stderr = '';
-      proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-      proc.on('error', reject);
-      proc.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
-        if (code !== 0) {
-          reject(new Error(formatMuseScoreMidiExportError({
-            code,
-            signal,
-            stderr,
-            timeoutMs: MUSESCORE_EXPORT_TIMEOUT_MS,
-          })));
-        } else {
-          dbg.midi(`MuseScore export OK exit=${code} durationMs=${Date.now() - exportStartedAt}`);
-          const cleanedStderr = cleanMuseScoreStderr(stderr);
-          if (cleanedStderr) dbg.midi(`MuseScore export stderr: ${cleanedStderr}`);
-          resolve();
-        }
-      });
-    });
-
-    const midiData = await readFile(outputMid);
-    dbg.midi(`response midiBytes=${midiData.length} totalMs=${Date.now() - startedAt}`);
-
-    return new NextResponse(midiData, {
-      headers: {
-        'Content-Type': 'audio/midi',
-        'Content-Length': String(midiData.length),
-      },
-    });
+    try {
+      const musescoreCli = resolveMuseScoreCli();
+      await runMuseScoreMidiExport({ musescoreCli, inputPath, outputMid, tmpDir });
+      const midiData = await readFile(outputMid);
+      dbg.midi(`response midiBytes=${midiData.length} renderer=musescore totalMs=${Date.now() - startedAt}`);
+      return midiResponse(midiData, 'musescore');
+    } catch (museScoreErr) {
+      dbg.warn('midi', 'MuseScore MIDI export failed; using internal fallback renderer:', museScoreErr);
+      const fallback = buildFallbackMidiFromMusicXml(sanitized.xml);
+      dbg.midi(`response midiBytes=${fallback.data.length} renderer=internal-fallback tracks=${fallback.trackCount} notes=${fallback.noteCount} totalMs=${Date.now() - startedAt}`);
+      return midiResponse(fallback.data, 'internal-fallback');
+    }
   } catch (err) {
     dbg.error('midi', `export failed after ${Date.now() - startedAt}ms`, err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

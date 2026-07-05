@@ -1,9 +1,27 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument, type Element as XmlElement } from '@xmldom/xmldom';
+import { Midi } from '@tonejs/midi';
+import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
+import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
+import type { DirectionNode, MeasureNode, PartNode, StaffNode, TimedEvent } from '@/src/score-core/model/types';
 import { cleanMuseScoreStderr } from './musescore-cli';
 
 type XmlEl = XmlElement;
 
 export { cleanMuseScoreStderr };
+
+const MIDI_PPQ = 480;
+const DEFAULT_TEMPO_BPM = 120;
+const MIDI_TICKS_PER_WHOLE = MIDI_PPQ * 4;
+
+const STEP_TO_SEMITONE: Record<string, number> = {
+  C: 0,
+  D: 2,
+  E: 4,
+  F: 5,
+  G: 7,
+  A: 9,
+  B: 11,
+};
 
 export function formatMuseScoreMidiExportError(input: {
   code: number | null;
@@ -200,6 +218,178 @@ function playbackInstrumentForName(name: string): PlaybackInstrument {
   const normalized = name.replace(/\s+\d+$/, '').trim();
   return PLAYBACK_INSTRUMENTS.find((entry) => entry.pattern.test(normalized))?.instrument
     ?? { name: 'Piano', midiProgram: 1 };
+}
+
+function clampMidiNumber(value: number) {
+  return Math.max(0, Math.min(127, Math.round(value)));
+}
+
+function pitchToMidiNumber(pitch: { step: string; alter: number; octave: number }) {
+  const step = pitch.step.trim().toUpperCase();
+  return clampMidiNumber(((pitch.octave + 1) * 12) + (STEP_TO_SEMITONE[step] ?? 0) + pitch.alter);
+}
+
+function divisionsToTicks(divisions: number, divisionsPerQuarter: number) {
+  if (!Number.isFinite(divisions) || !Number.isFinite(divisionsPerQuarter) || divisionsPerQuarter <= 0) return 0;
+  return Math.max(0, Math.round((divisions / divisionsPerQuarter) * MIDI_PPQ));
+}
+
+function fractionToTicks(numerator: number | undefined, denominator: number | undefined) {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || !denominator) return 0;
+  return Math.max(0, Math.round((numerator! / denominator!) * MIDI_TICKS_PER_WHOLE));
+}
+
+function eventOffsetTicks(event: TimedEvent) {
+  return fractionToTicks(event.timestampNum, event.timestampDen);
+}
+
+function eventDurationTicks(event: TimedEvent) {
+  return Math.max(1, fractionToTicks(event.durationDivisions, event.timestampDen));
+}
+
+function measureFallbackDurationTicks(measure: MeasureNode) {
+  const eventEnd = measure.voices.reduce((maxEnd, voice) => (
+    voice.events.reduce((voiceEnd, event) => Math.max(
+      voiceEnd,
+      eventOffsetTicks(event) + eventDurationTicks(event),
+    ), maxEnd)
+  ), 0);
+  return Math.max(eventEnd, MIDI_PPQ * 4);
+}
+
+function buildMeasureTiming(staff: StaffNode) {
+  const startTicks = new Map<string, number>();
+  let cursorTicks = 0;
+
+  for (const measure of staff.measures) {
+    const timing = getEffectiveMeasureTimingFromStaff(staff, { measureId: measure.id });
+    const duration = timing
+      ? divisionsToTicks(timing.durationDivisions, timing.divisions)
+      : measureFallbackDurationTicks(measure);
+    const safeDuration = Math.max(1, duration || measureFallbackDurationTicks(measure));
+    startTicks.set(measure.id, cursorTicks);
+    cursorTicks += safeDuration;
+  }
+
+  return { startTicks };
+}
+
+function tempoFromDirection(direction: DirectionNode) {
+  if (direction.kind !== 'metronome') return null;
+  const bpm = Number.parseFloat(direction.value ?? '');
+  return Number.isFinite(bpm) && bpm > 0 ? bpm : null;
+}
+
+function collectFallbackTempoEvents(parts: PartNode[]) {
+  const events = new Map<number, number>();
+
+  for (const part of parts) {
+    for (const staff of part.staves) {
+      const timing = buildMeasureTiming(staff);
+      for (const measure of staff.measures) {
+        const measureStart = timing.startTicks.get(measure.id) ?? 0;
+        for (const direction of measure.directions) {
+          const bpm = tempoFromDirection(direction);
+          if (!bpm) continue;
+          const ticks = measureStart + fractionToTicks(direction.timestampNum, direction.timestampDen);
+          if (!events.has(ticks)) events.set(ticks, bpm);
+        }
+      }
+    }
+  }
+
+  if (!events.has(0)) events.set(0, DEFAULT_TEMPO_BPM);
+  return [...events.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([ticks, bpm]) => ({ ticks, bpm }));
+}
+
+function collectFallbackTimeSignatureEvents(parts: PartNode[]) {
+  const events = new Map<number, number[]>();
+
+  for (const part of parts) {
+    for (const staff of part.staves) {
+      const timing = buildMeasureTiming(staff);
+      for (const measure of staff.measures) {
+        const measureStart = timing.startTicks.get(measure.id) ?? 0;
+        for (const attributes of measure.attributes) {
+          const time = attributes.time;
+          if (!time?.beats || !time.beatType) continue;
+          if (!events.has(measureStart)) events.set(measureStart, [time.beats, time.beatType]);
+        }
+      }
+    }
+  }
+
+  if (!events.has(0)) events.set(0, [4, 4]);
+  return [...events.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([ticks, timeSignature]) => ({ ticks, timeSignature }));
+}
+
+function nextMidiChannel(index: number) {
+  const channel = index % 15;
+  return channel >= 9 ? channel + 1 : channel;
+}
+
+function trackNameForStaff(part: PartNode, staff: StaffNode) {
+  return part.staves.length > 1 ? `${part.name} staff ${staff.staffIndex}` : part.name;
+}
+
+export function buildFallbackMidiFromMusicXml(xml: string) {
+  const core = importMusicXmlToCore(xml);
+  const midi = new Midi();
+  midi.name = core.metadata.title ?? 'Nex Note fallback MIDI';
+  midi.header.tempos = collectFallbackTempoEvents(core.score.parts);
+  midi.header.timeSignatures = collectFallbackTimeSignatureEvents(core.score.parts);
+  midi.header.update();
+
+  let noteCount = 0;
+  let channelIndex = 0;
+
+  for (const part of core.score.parts) {
+    const playbackInstrument = playbackInstrumentForName(part.instrumentName ?? part.name);
+    for (const staff of part.staves) {
+      const playableEvents = staff.measures.flatMap((measure) => (
+        measure.voices.flatMap((voice) => voice.events.filter((event) => event.kind === 'note' && !event.hidden))
+      ));
+      if (playableEvents.length === 0) continue;
+
+      const track = midi.addTrack();
+      track.name = trackNameForStaff(part, staff);
+      track.channel = nextMidiChannel(channelIndex++);
+      track.instrument.number = Math.max(0, Math.min(127, playbackInstrument.midiProgram - 1));
+
+      const timing = buildMeasureTiming(staff);
+      for (const measure of staff.measures) {
+        const measureStart = timing.startTicks.get(measure.id) ?? 0;
+        for (const voice of measure.voices) {
+          for (const event of voice.events) {
+            if (event.kind !== 'note' || event.hidden) continue;
+            const ticks = measureStart + eventOffsetTicks(event);
+            const durationTicks = eventDurationTicks(event);
+            track.addNote({
+              midi: pitchToMidiNumber(event.pitch),
+              ticks,
+              durationTicks,
+              velocity: 0.8,
+            });
+            noteCount++;
+          }
+        }
+      }
+    }
+  }
+
+  if (noteCount === 0) {
+    throw new Error('Internal MIDI fallback could not find playable notes in the score.');
+  }
+
+  return {
+    data: Buffer.from(midi.toArray()),
+    noteCount,
+    trackCount: midi.tracks.length,
+  };
 }
 
 function appendTextElement(doc: XmlDocument, parent: XmlEl, tagName: string, text: string) {

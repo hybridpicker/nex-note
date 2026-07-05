@@ -64,6 +64,19 @@ test('cleanMuseScoreStderr removes MuseScore AppImage library probe noise', () =
   assert.equal(cleanMuseScoreStderr(stderr), 'real conversion problem');
 });
 
+test('cleanMuseScoreStderr removes repeated macOS crash annotation warnings', () => {
+  const warning = '[77516:6294005:20260705,054906.405852:WARNING mach_o_image_annotations_reader.cc:92] unexpected crash info version 7 in /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation';
+  const stderr = [
+    `${warning} ${warning}`,
+    'libc++abi: terminating due to uncaught exception of type std::__1::system_error: mutex lock failed: Invalid argument',
+  ].join('\n');
+
+  assert.equal(
+    cleanMuseScoreStderr(stderr),
+    'libc++abi: terminating due to uncaught exception of type std::__1::system_error: mutex lock failed: Invalid argument',
+  );
+});
+
 test('formatMuseScoreConversionError gives a concise dependency hint for missing libOpenGL', () => {
   const message = formatMuseScoreConversionError({
     code: 40,
