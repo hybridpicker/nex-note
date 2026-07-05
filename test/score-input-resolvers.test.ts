@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildInteractiveEditMap } from '../src/score-input/edit-map.ts';
 import { resolvePointerEditTarget } from '../src/score-input/pointer-resolver.ts';
-import { resolveMuseScorePointerEntryMode, shouldCommitPointerGhostOverDirectNote } from '../src/score-input/pointer-entry-mode.ts';
+import { pointerEntryLocatorsShareOnset, resolveMuseScorePointerEntryMode, shouldCommitPointerGhostOverDirectNote } from '../src/score-input/pointer-entry-mode.ts';
 import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut } from '../src/score-input/keyboard-resolver.ts';
 import { inspectResolvedEditTarget } from '../src/score-input/note-entry-validator.ts';
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '../src/score-input/commit-resolver.ts';
@@ -471,6 +471,49 @@ test('resolvePointerEditTarget rejects near-miss timestamps when the pointer is 
   assert.equal(resolved, null);
 });
 
+test('pointerEntryLocatorsShareOnset tolerates render/core measure id differences for the same semantic slot', () => {
+  assert.equal(pointerEntryLocatorsShareOnset(
+    {
+      measureId: 'rendered-measure-1',
+      corePartId: 'part:P1',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+    },
+    {
+      measureId: 'measure:P1:1:1',
+      corePartId: 'part:P1',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 32,
+    },
+  ), true);
+  assert.equal(pointerEntryLocatorsShareOnset(
+    {
+      measureId: 'rendered-measure-1',
+      corePartId: 'part:P1',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+    },
+    {
+      measureId: 'measure:P2:1:1',
+      corePartId: 'part:P2',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+    },
+  ), false);
+});
+
 test('resolveMuseScorePointerEntryMode keeps same-onset mouse entry as chord after a fresh commit', () => {
   const target = {
     placementMode: 'replace' as const,
@@ -499,6 +542,7 @@ test('resolveMuseScorePointerEntryMode keeps same-onset mouse entry as chord aft
   });
 
   assert.equal(resolved?.placementMode, 'chord');
+  assert.equal(resolved?.placementModePromotedByRecentCommit, true);
 });
 
 test('resolveMuseScorePointerEntryMode treats slightly-left same-onset mouse entry as chord after a fresh commit', () => {
@@ -524,7 +568,61 @@ test('resolveMuseScorePointerEntryMode treats slightly-left same-onset mouse ent
   assert.equal(resolved?.placementMode, 'chord');
 });
 
-test('resolveMuseScorePointerEntryMode keeps a deliberately selected same-onset note replaceable', () => {
+test('resolveMuseScorePointerEntryMode lets a stale rest snap share a recent chord onset', () => {
+  const target = {
+    placementMode: 'replace' as const,
+    placementAnchorIsRest: true,
+    measureId: 'm1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+  };
+  const recentCommitTarget = {
+    measureId: 'm1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 32,
+  };
+
+  const resolved = resolveMuseScorePointerEntryMode(target, {
+    entryMode: 'insert',
+    chordInputMode: false,
+    selectedNote: null,
+    noteInputAnchor: null,
+    recentCommitTarget,
+  });
+
+  assert.equal(resolved?.placementMode, 'chord');
+  assert.equal(resolved?.placementModePromotedByRecentCommit, true);
+});
+
+test('resolveMuseScorePointerEntryMode treats rendered replace targets without an anchor flag as note anchors', () => {
+  const target = {
+    placementMode: 'replace' as const,
+    measureId: 'm1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+  };
+
+  const resolved = resolveMuseScorePointerEntryMode(target, {
+    entryMode: 'insert',
+    chordInputMode: false,
+    selectedNote: null,
+    noteInputAnchor: target,
+    recentCommitTarget: target,
+  });
+
+  assert.equal(resolved?.placementMode, 'chord');
+});
+
+test('resolveMuseScorePointerEntryMode treats selected same-onset mouse entry as chord while note input stays anchored', () => {
   const target = {
     placementMode: 'replace' as const,
     placementAnchorIsRest: false,
@@ -544,10 +642,10 @@ test('resolveMuseScorePointerEntryMode keeps a deliberately selected same-onset 
     recentCommitTarget: null,
   });
 
-  assert.equal(resolved?.placementMode, 'replace');
+  assert.equal(resolved?.placementMode, 'chord');
 });
 
-test('resolveMuseScorePointerEntryMode replaces a deliberately selected same-onset note even when the pointer is slightly left', () => {
+test('resolveMuseScorePointerEntryMode treats selected same-onset slightly-left mouse entry as chord while anchored', () => {
   const target = {
     placementMode: 'insert' as const,
     placementAnchorIsRest: false,
@@ -567,7 +665,30 @@ test('resolveMuseScorePointerEntryMode replaces a deliberately selected same-ons
     recentCommitTarget: null,
   });
 
-  assert.equal(resolved?.placementMode, 'replace');
+  assert.equal(resolved?.placementMode, 'chord');
+});
+
+test('resolveMuseScorePointerEntryMode defaults rendered note anchors to chord entry in insert mode', () => {
+  const target = {
+    placementMode: 'replace' as const,
+    placementAnchorIsRest: false,
+    measureId: 'm1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+  };
+
+  const resolved = resolveMuseScorePointerEntryMode(target, {
+    entryMode: 'insert',
+    chordInputMode: false,
+    selectedNote: target,
+    noteInputAnchor: null,
+    recentCommitTarget: null,
+  });
+
+  assert.equal(resolved?.placementMode, 'chord');
 });
 
 test('resolveMuseScorePointerEntryMode forces chord placement on note anchors while chord input is active', () => {
@@ -707,7 +828,7 @@ test('shouldCommitPointerGhostOverDirectNote keeps insert-mode direct notehead c
   }), false);
 });
 
-test('shouldCommitPointerGhostOverDirectNote keeps actual notehead clicks selectable', () => {
+test('shouldCommitPointerGhostOverDirectNote lets chord ghosts beat overlapping noteheads for a new pitch', () => {
   const directNote = {
     measureId: 'm1',
     measureNumber: 1,
@@ -723,6 +844,35 @@ test('shouldCommitPointerGhostOverDirectNote keeps actual notehead clicks select
     ...directNote,
     step: 'B',
     octave: 4,
+    placementMode: 'chord' as const,
+    resolvedTarget: { mode: 'chord' as const },
+  };
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget,
+    directNote,
+    directlyHitRendered: true,
+    clickedNoteheadPath: true,
+    directNoteheadHit: true,
+    clickedVisibleGhostAtPointer: false,
+    altKey: false,
+  }), true);
+});
+
+test('shouldCommitPointerGhostOverDirectNote keeps same-pitch notehead clicks selectable', () => {
+  const directNote = {
+    measureId: 'm1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+  };
+  const ghostTarget = {
+    ...directNote,
     placementMode: 'chord' as const,
     resolvedTarget: { mode: 'chord' as const },
   };

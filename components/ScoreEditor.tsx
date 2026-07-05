@@ -372,6 +372,7 @@ interface GhostNoteTarget {
   semanticAnchorLabel?: string;
   isGraceTarget?: boolean;
   placementAnchorIsRest?: boolean;
+  placementModePromotedByRecentCommit?: boolean;
   dragLockLine?: {
     x: number;
     top: number;
@@ -2791,43 +2792,70 @@ export function bindResolvedEditTargetToGhost(
     ? candidate.pointerX
     : candidate.domCenter.x;
   const semanticAnchorLocked = Boolean(candidate.semanticAnchorLabel || candidate.semanticAnchorRect);
+  const candidateResolvedTarget = candidate.resolvedTarget
+    ? {
+        ...candidate.resolvedTarget,
+        mode: candidate.placementMode,
+        diagnostics: candidate.resolvedTarget.mode === candidate.placementMode
+          ? candidate.resolvedTarget.diagnostics
+          : [
+              ...candidate.resolvedTarget.diagnostics,
+              `placement-mode-synced:${candidate.resolvedTarget.mode}->${candidate.placementMode}`,
+            ],
+      }
+    : null;
   if (
-    candidate.resolvedTarget
+    candidateResolvedTarget
     && (
-      candidate.resolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')
+      candidateResolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')
       || timestampsEqual(
-        candidate.resolvedTarget.timestampNum,
-        candidate.resolvedTarget.timestampDen,
+        candidateResolvedTarget.timestampNum,
+        candidateResolvedTarget.timestampDen,
         candidate.timestampNum,
         candidate.timestampDen,
       )
     )
   ) {
-    const inspected = inspectTargetWithMeasureNumberFallback(candidate.resolvedTarget);
+    const inspected = inspectTargetWithMeasureNumberFallback(candidateResolvedTarget);
     if (inspected.target) {
       resolvedTarget = inspected.target;
     } else if (
+      candidate.placementMode === 'chord'
+      && candidate.placementModePromotedByRecentCommit
+      && inspected.rejectionReason === 'chord-missing-anchor'
+    ) {
+      resolvedTarget = {
+        ...candidateResolvedTarget,
+        mode: 'chord',
+        existingEventKind: 'note',
+        existingEventStartsAtTarget: true,
+        diagnostics: [
+          ...inspected.diagnostics,
+          'validation:chord-recent-commit-anchor',
+        ],
+      };
+    } else if (
       inspected.rejectionReason === 'target-inside-rest'
-      && candidate.resolvedTarget.mode === 'insert'
-      && candidate.resolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')
+      && candidateResolvedTarget.mode === 'insert'
+      && candidateResolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')
       && !inspected.diagnostics.includes('validation:full-measure-rest-internal-slot-rejected')
       && ghostHasTraceQuantizedRestFallbackSnap({
-        timestampNum: candidate.resolvedTarget.timestampNum,
-        timestampDen: candidate.resolvedTarget.timestampDen,
-        voiceId: candidate.resolvedTarget.voiceId,
-        resolvedTarget: candidate.resolvedTarget,
+        timestampNum: candidateResolvedTarget.timestampNum,
+        timestampDen: candidateResolvedTarget.timestampDen,
+        voiceId: candidateResolvedTarget.voiceId,
+        resolvedTarget: candidateResolvedTarget,
         snapResolution: candidate.snapResolution,
       })
     ) {
       resolvedTarget = {
-        ...candidate.resolvedTarget,
+        ...candidateResolvedTarget,
         mode: 'insert',
         allowOccupiedInsert: true,
         preserveOverflow: true,
         existingEventKind: 'rest',
         existingEventStartsAtTarget: false,
         diagnostics: [
-          ...candidate.resolvedTarget.diagnostics,
+          ...candidateResolvedTarget.diagnostics,
           'rest-only-internal-slot-preserved',
         ],
       };
@@ -12137,7 +12165,6 @@ export default function ScoreEditor({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
-    visibleGhostPointerLockRef.current = null;
     const pointerPath = typeof e.nativeEvent.composedPath === 'function' ? e.nativeEvent.composedPath() : [];
     const pointerPathNodes = pointerPath.filter((entry): entry is Node => entry instanceof Node);
     const directlyHoveredRendered = findDirectRenderedNoteHit(renderedNotesRef.current, pointerPathNodes)
@@ -12261,9 +12288,9 @@ export default function ScoreEditor({
       coreDocument,
       ghostRejectedByGuards ? guardedRestFallback : (nextGhostResolved ?? guardedRestFallback),
     );
+    visibleGhostPointerLockRef.current = nextGhost;
+    lastGhostStaffIndexRef.current = nextGhost?.staffIndex ?? lastGhostStaffIndexRef.current;
     setGhostNoteTarget((current) => {
-      visibleGhostPointerLockRef.current = nextGhost;
-      lastGhostStaffIndexRef.current = nextGhost?.staffIndex ?? lastGhostStaffIndexRef.current;
       if (ghostTargetsEqual(current, nextGhost)) return current;
       return nextGhost;
     });
@@ -12607,7 +12634,7 @@ export default function ScoreEditor({
       || clickedNoteheadPath
     );
     const ghostCommitAtPointer = shouldCommitPointerGhostOverDirectNote({
-      ghostTarget: clickedVisibleGhostTargetAtPointer ?? ghostNoteTarget,
+      ghostTarget: clickedVisibleGhostTargetAtPointer ?? lockedVisibleGhostTarget ?? ghostNoteTarget,
       directNote,
       directlyHitRendered: Boolean(directlyHitRendered),
       clickedNoteheadPath,
@@ -12615,6 +12642,9 @@ export default function ScoreEditor({
       clickedVisibleGhostAtPointer: clickedExplicitVisibleGhostAtPointer,
       altKey: e.altKey,
     });
+    const forcedGhostCommitTarget = ghostCommitAtPointer
+      ? clickedVisibleGhostTargetAtPointer ?? lockedVisibleGhostTarget ?? ghostNoteTarget
+      : null;
     if (
       noteInputMode
       && directNote
@@ -12766,10 +12796,11 @@ export default function ScoreEditor({
       ].filter((entry): entry is string => Boolean(entry));
       const protectedResolvedGhostTarget = inputBlockers.length > 0 ? null : resolvedGhostTarget;
       const clickedVisibleGhost = clickedExplicitVisibleGhostAtPointer
-        || (e.altKey && clickedVisibleGhostAtPointer);
+        || (e.altKey && clickedVisibleGhostAtPointer)
+        || Boolean(forcedGhostCommitTarget);
       const liveGhostTarget = resolveNoteInputCommitTarget(
-        clickedVisibleGhost ? clickedVisibleGhostTargetAtPointer : null,
-        clickedLockedVisibleGhost ? null : protectedResolvedGhostTarget,
+        clickedVisibleGhost ? (forcedGhostCommitTarget ?? clickedVisibleGhostTargetAtPointer) : null,
+        clickedLockedVisibleGhost && !forcedGhostCommitTarget ? null : protectedResolvedGhostTarget,
       );
       const selectedText = selectedNote
         ? `${selectedNote.measureNumber}:${selectedNote.staffIndex}:${selectedNote.voiceId}@${selectedNote.timestampNum}/${selectedNote.timestampDen}`

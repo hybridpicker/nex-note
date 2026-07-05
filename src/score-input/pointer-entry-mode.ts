@@ -18,6 +18,7 @@ export interface PointerEntryModeTarget extends PointerEntryLocator {
   placementMode: PointerGhostPlacementMode;
   placementLockedByModifier?: boolean;
   placementAnchorIsRest?: boolean;
+  placementModePromotedByRecentCommit?: boolean;
 }
 
 export interface PointerPitchLocator extends PointerEntryLocator {
@@ -38,8 +39,13 @@ export function pointerEntryLocatorsShareOnset(
   if (!left || !right) return false;
   const leftMeasureId = left.measureId ?? left.coreMeasureId ?? null;
   const rightMeasureId = right.measureId ?? right.coreMeasureId ?? null;
+  const partsMatch = left.corePartId && right.corePartId ? left.corePartId === right.corePartId : true;
+  const measuresMatch = leftMeasureId && rightMeasureId
+    ? leftMeasureId === rightMeasureId || (partsMatch && left.measureNumber === right.measureNumber)
+    : left.measureNumber === right.measureNumber;
   return (
-    (leftMeasureId && rightMeasureId ? leftMeasureId === rightMeasureId : left.measureNumber === right.measureNumber)
+    partsMatch
+    && measuresMatch
     && left.staffIndex === right.staffIndex
     && left.voiceId === right.voiceId
     && timestampsEqual(left.timestampNum, left.timestampDen, right.timestampNum, right.timestampDen)
@@ -66,15 +72,15 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   if (input.altKey || input.clickedVisibleGhostAtPointer) return true;
   if (!directNote) return false;
 
-  if (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath) return false;
-
   const mode = ghostTarget.resolvedTarget.mode ?? ghostTarget.placementMode;
-  if (mode === 'insert') {
-    return pointerEntryLocatorsShareOnset(ghostTarget, directNote)
-      && !pointerPitchesEqual(ghostTarget, directNote);
-  }
-  return pointerEntryLocatorsShareOnset(ghostTarget, directNote)
+  const sameOnsetDifferentPitch = pointerEntryLocatorsShareOnset(ghostTarget, directNote)
     && !pointerPitchesEqual(ghostTarget, directNote);
+
+  if (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath) {
+    return mode === 'chord' && sameOnsetDifferentPitch;
+  }
+
+  return sameOnsetDifferentPitch;
 }
 
 export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarget>(
@@ -98,12 +104,26 @@ export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarge
       : target;
   }
 
-  const hasNoteAnchor = target.placementAnchorIsRest === false;
-  const recentCommitSameOnset = hasNoteAnchor && pointerEntryLocatorsShareOnset(target, input.recentCommitTarget);
+  const hasNoteAnchor = target.placementAnchorIsRest === false
+    || (target.placementAnchorIsRest == null && target.placementMode === 'replace');
+  const recentCommitSameOnset = pointerEntryLocatorsShareOnset(target, input.recentCommitTarget);
   const noteInputAnchorSameOnset = hasNoteAnchor && pointerEntryLocatorsShareOnset(target, input.noteInputAnchor);
   const selectedSameOnset = hasNoteAnchor && pointerEntryLocatorsShareOnset(target, input.selectedNote);
 
   if (recentCommitSameOnset) {
+    return {
+      ...target,
+      placementMode: 'chord',
+      placementModePromotedByRecentCommit: true,
+    };
+  }
+  if (noteInputAnchorSameOnset) {
+    return {
+      ...target,
+      placementMode: 'chord',
+    };
+  }
+  if (input.entryMode === 'insert' && hasNoteAnchor && target.placementMode === 'replace') {
     return {
       ...target,
       placementMode: 'chord',
@@ -117,7 +137,6 @@ export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarge
         placementMode: 'replace',
       };
     }
-    if (noteInputAnchorSameOnset && !selectedSameOnset) return target;
     return {
       ...target,
       placementMode: 'insert',
@@ -133,12 +152,6 @@ export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarge
   }
   if (target.placementMode !== 'replace') return target;
   if (!hasNoteAnchor) return target;
-  if (noteInputAnchorSameOnset && !selectedSameOnset) {
-    return {
-      ...target,
-      placementMode: 'chord',
-    };
-  }
   return {
     ...target,
     placementMode: 'insert',

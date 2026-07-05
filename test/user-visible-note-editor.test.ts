@@ -2360,6 +2360,138 @@ test('ghost binding rejects semantic targets that are missing from the visible s
   assert.equal(rebound, null);
 });
 
+test('ghost binding syncs an embedded resolved target after MuseScore chord promotion', () => {
+  const coreDocument = importMusicXmlToCore(SAMPLE_XML);
+  const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
+  const editMap = buildInteractiveEditMap({
+    renderedGhostGrid: null,
+    renderedNotes: [],
+    measureOverlays: [{
+      measureId: measure.id,
+      measureNumber: measure.measureNumber,
+      pageIndex: 0,
+      systemIndex: 0,
+    }],
+  });
+
+  const rebound = bindResolvedEditTargetToGhost({
+    measureId: measure.id,
+    corePartId: coreDocument.score.parts[0]!.id,
+    measureNumber: measure.measureNumber,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'E',
+    octave: 4,
+    alter: 0,
+    domCenter: { x: 164, y: 82 },
+    domRect: { x: 154, y: 64, width: 20, height: 36 },
+    pointerX: 164,
+    previewLeft: 154,
+    previewTop: 64,
+    previewWidth: 20,
+    previewHeight: 36,
+    accidentalOffsetX: 0,
+    noteheadCenterX: 10,
+    stemDirection: 'up' as const,
+    placementMode: 'chord' as const,
+    placementAnchorIsRest: false,
+    semanticAnchorIsRest: false,
+    ledgerLines: [],
+    resolvedTarget: {
+      source: 'pointer',
+      mode: 'replace',
+      measureId: measure.id,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: measure.measureNumber,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      ratio: 0,
+      domX: 164,
+      step: 'E',
+      octave: 4,
+      alter: 0,
+      diagnostics: [],
+    },
+  }, editMap, coreDocument, '4', false);
+
+  assert.ok(rebound?.resolvedTarget);
+  assert.equal(rebound.placementMode, 'chord');
+  assert.equal(rebound.resolvedTarget.mode, 'chord');
+  assert.equal(rebound.resolvedTarget.existingEventKind, 'note');
+  assert.match(rebound.resolvedTarget.diagnostics.join(' '), /placement-mode-synced:replace->chord/);
+  assert.match(rebound.resolvedTarget.diagnostics.join(' '), /validation:chord-exact-note/);
+});
+
+test('ghost binding can display a recent-commit chord over a stale rest-only snap', () => {
+  const coreDocument = importMusicXmlToCore(FULL_REST_XML);
+  const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
+  const editMap = buildInteractiveEditMap({
+    renderedGhostGrid: null,
+    renderedNotes: [],
+    measureOverlays: [{
+      measureId: measure.id,
+      measureNumber: measure.measureNumber,
+      pageIndex: 0,
+      systemIndex: 0,
+    }],
+  });
+
+  const rebound = bindResolvedEditTargetToGhost({
+    measureId: measure.id,
+    corePartId: coreDocument.score.parts[0]!.id,
+    measureNumber: measure.measureNumber,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    step: 'E',
+    octave: 4,
+    alter: 0,
+    domCenter: { x: 164, y: 82 },
+    domRect: { x: 154, y: 64, width: 20, height: 36 },
+    pointerX: 164,
+    previewLeft: 154,
+    previewTop: 64,
+    previewWidth: 20,
+    previewHeight: 36,
+    accidentalOffsetX: 0,
+    noteheadCenterX: 10,
+    stemDirection: 'up' as const,
+    placementMode: 'chord' as const,
+    placementAnchorIsRest: true,
+    placementModePromotedByRecentCommit: true,
+    semanticAnchorIsRest: true,
+    ledgerLines: [],
+    resolvedTarget: {
+      source: 'pointer',
+      mode: 'replace',
+      measureId: measure.id,
+      corePartId: coreDocument.score.parts[0]!.id,
+      measureNumber: measure.measureNumber,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 1,
+      ratio: 0,
+      domX: 164,
+      step: 'E',
+      octave: 4,
+      alter: 0,
+      diagnostics: ['rest-only-snap-selected'],
+    },
+  }, editMap, coreDocument, '4', false);
+
+  assert.ok(rebound?.resolvedTarget);
+  assert.equal(rebound.placementMode, 'chord');
+  assert.equal(rebound.resolvedTarget.mode, 'chord');
+  assert.equal(rebound.resolvedTarget.existingEventKind, 'note');
+  assert.match(rebound.resolvedTarget.diagnostics.join(' '), /validation:chord-recent-commit-anchor/);
+});
+
 test('advanced retarget keeps note anchors marked as notes for fresh multi-voice entry', () => {
   const point = {
     id: 'm1:1:1:0/4:note',
