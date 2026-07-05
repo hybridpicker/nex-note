@@ -152,6 +152,19 @@ function inspectSilentCoverage(input: {
   };
 }
 
+function isSingleFullMeasureEvent(
+  events: TimedEvent[],
+  event: TimedEvent,
+  divisions: number,
+  measureDurationDivisions: number,
+) {
+  const timelineEvents = events.filter((entry) => !entry.isChord);
+  return timelineEvents.length === 1
+    && timelineEvents[0]?.id === event.id
+    && eventStartOffset(event, divisions) === 0
+    && eventEndOffset(event, divisions) >= measureDurationDivisions;
+}
+
 export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput): InspectResolvedEditTargetResult {
   const diagnostics = [...input.target.diagnostics];
   const context = findMeasureContext(input.coreDocument, input.target);
@@ -187,9 +200,13 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     && eventStartOffset(event, context.divisions) <= startOffset
     && eventEndOffset(event, context.divisions) > startOffset
   )) ?? null;
+  const spanningRestIsSingleFullMeasureEvent = spanningRest
+    ? isSingleFullMeasureEvent(voiceEvents, spanningRest, context.divisions, context.measureDurationDivisions)
+    : false;
   const isPreservedInternalRestSlot = input.target.mode === 'insert'
     && input.target.allowOccupiedInsert
     && spanningRest
+    && !spanningRestIsSingleFullMeasureEvent
     && (
       input.target.diagnostics.includes('rest-only-internal-slot-preserved')
       || input.target.diagnostics.includes('rest-only-quantized-internal-slot')
@@ -319,7 +336,9 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     }
 
     if (spanningRest) {
-      diagnostics.push('validation:target-inside-rest-rejected');
+      diagnostics.push(spanningRestIsSingleFullMeasureEvent
+        ? 'validation:full-measure-rest-internal-slot-rejected'
+        : 'validation:target-inside-rest-rejected');
       return {
         target: null,
         rejectionReason: 'target-inside-rest',
@@ -353,7 +372,11 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
         diagnostics,
       };
     }
-    diagnostics.push(spanningRest ? 'validation:target-inside-rest-rejected' : 'validation:insert-target-missing');
+    diagnostics.push(spanningRest
+      ? spanningRestIsSingleFullMeasureEvent
+        ? 'validation:full-measure-rest-internal-slot-rejected'
+        : 'validation:target-inside-rest-rejected'
+      : 'validation:insert-target-missing');
     return {
       target: null,
       rejectionReason: spanningRest ? 'target-inside-rest' : 'insert-target-missing',

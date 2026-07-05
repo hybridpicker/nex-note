@@ -1711,7 +1711,7 @@ test('committed insert placement keeps the active voice over a non-rest snap voi
   assert.equal(resolved.timestampDen, 4);
 });
 
-test('rejected whole-rest preferred snap still allows a quantized synthetic snap for the same timestamp', () => {
+test('distant whole-rest hover stays on the single real snap when no later slot exists', () => {
   const wholeRestPreferredSnap = {
     domX: 178.4,
     ratio: 0,
@@ -1720,14 +1720,6 @@ test('rejected whole-rest preferred snap still allows a quantized synthetic snap
     timestampDen: 32,
     synthetic: false,
     isRest: true,
-  };
-  const quantizedSyntheticSnap = {
-    domX: 243.49,
-    ratio: 3 / 4,
-    voiceId: 1,
-    timestampNum: 3,
-    timestampDen: 4,
-    synthetic: true,
   };
   const snapOptions = {
     pointerX: 256.91,
@@ -1738,7 +1730,7 @@ test('rejected whole-rest preferred snap still allows a quantized synthetic snap
 
   const effectiveSnap = resolveEffectiveGhostSnap(
     wholeRestPreferredSnap,
-    quantizedSyntheticSnap,
+    null,
     snapOptions,
   );
   const resolved = resolveGhostCommittedPlacement({
@@ -1753,10 +1745,10 @@ test('rejected whole-rest preferred snap still allows a quantized synthetic snap
     fallbackVoiceId: 1,
   });
 
-  assert.equal(effectiveSnap, quantizedSyntheticSnap);
-  assert.equal(resolved.snappedX, quantizedSyntheticSnap.domX);
-  assert.equal(resolved.timestampNum, 3);
-  assert.equal(resolved.timestampDen, 4);
+  assert.equal(effectiveSnap, wholeRestPreferredSnap);
+  assert.equal(resolved.snappedX, wholeRestPreferredSnap.domX);
+  assert.equal(resolved.timestampNum, 0);
+  assert.equal(resolved.timestampDen, 32);
 });
 
 test('rendered onset snap does not override an exact grid snap at a different timestamp', () => {
@@ -2892,7 +2884,7 @@ test('ghost diagnostics accept quantized rest-only fallback snaps as represented
   }), false);
 });
 
-test('ghost binding preserves proven internal rest-only quantized slots', () => {
+test('whole-rest grid exposes no internal synthetic beat slots', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
   const measureId = coreDocument.score.parts[0]!.staves[0]!.measures[0]!.id;
   const renderedNotes: RenderedNote[] = [{
@@ -2943,9 +2935,11 @@ test('ghost binding preserves proven internal rest-only quantized slots', () => 
     selectedDuration: '4',
     exposeRestMeasureSlots: true,
   });
-  const hiddenQuarter = getRenderedGhostStaffPoints(renderedGhostGrid, measureId, 1, { includeSynthetic: true })
-    .find((point) => point.synthetic && point.timestampNum === 1 && point.timestampDen === 4);
-  assert.ok(hiddenQuarter);
+  const allPoints = getRenderedGhostStaffPoints(renderedGhostGrid, measureId, 1, { includeSynthetic: true });
+  assert.deepEqual(
+    allPoints.map((point) => `${point.timestampNum}/${point.timestampDen}:${point.synthetic ? 'synthetic' : 'rendered'}`),
+    ['0/4:rendered'],
+  );
   const editMap = buildInteractiveEditMap({
     renderedGhostGrid,
     measureOverlays: [overlay],
@@ -2965,10 +2959,10 @@ test('ghost binding preserves proven internal rest-only quantized slots', () => 
     step: 'D',
     octave: 4,
     alter: 0,
-    domCenter: { x: hiddenQuarter.domX, y: 82 },
-    domRect: { x: hiddenQuarter.domX - 6, y: 76, width: 12, height: 12 },
-    pointerX: hiddenQuarter.domX,
-    previewLeft: hiddenQuarter.domX - 6,
+    domCenter: { x: 220, y: 82 },
+    domRect: { x: 214, y: 76, width: 12, height: 12 },
+    pointerX: 220,
+    previewLeft: 214,
     previewTop: 76,
     previewWidth: 16,
     previewHeight: 24,
@@ -2990,7 +2984,7 @@ test('ghost binding preserves proven internal rest-only quantized slots', () => 
       timestampNum: 1,
       timestampDen: 4,
       ratio: 0.25,
-      domX: hiddenQuarter.domX,
+      domX: 220,
       step: 'D',
       octave: 4,
       alter: 0,
@@ -3006,8 +3000,8 @@ test('ghost binding preserves proven internal rest-only quantized slots', () => 
       staffIndex: 1,
       voiceId: 1,
       timestamp: '1/4',
-      rawPointerX: hiddenQuarter.domX,
-      safePointerX: hiddenQuarter.domX,
+      rawPointerX: 220,
+      safePointerX: 220,
       pointerMeasureRatio: 0.25,
       fallbackQuantizedRatio: 0.25,
       quantizedRatio: 0.25,
@@ -3022,15 +3016,15 @@ test('ghost binding preserves proven internal rest-only quantized slots', () => 
         timestamp: '1/4',
         voice: 1,
         synthetic: false,
-        x: hiddenQuarter.domX,
+        x: 220,
       },
       placementIntent: { mode: 'replace', targetVoiceId: 1, anchor: null },
-      committed: { snappedX: hiddenQuarter.domX, timestamp: '1/4', voiceId: 1 },
+      committed: { snappedX: 220, timestamp: '1/4', voiceId: 1 },
       visible: {
-        domCenterX: hiddenQuarter.domX,
-        previewLeft: hiddenQuarter.domX - 6,
+        domCenterX: 220,
+        previewLeft: 214,
         noteheadCenterX: 6,
-        visibleNoteheadX: hiddenQuarter.domX,
+        visibleNoteheadX: 220,
         minimumVisibleX: null,
       },
       resolvedTarget: null,
@@ -3038,15 +3032,7 @@ test('ghost binding preserves proven internal rest-only quantized slots', () => 
     },
   }, editMap, coreDocument, '4', false);
 
-  assert.ok(rebound?.resolvedTarget);
-  assert.equal(rebound.timestampNum, 1);
-  assert.equal(rebound.timestampDen, 4);
-  assert.equal(rebound.resolvedTarget.timestampNum, 1);
-  assert.equal(rebound.resolvedTarget.timestampDen, 4);
-  assert.equal(rebound.resolvedTarget.mode, 'insert');
-  assert.equal(rebound.resolvedTarget.existingEventKind, 'rest');
-  assert.equal(rebound.resolvedTarget.existingEventStartsAtTarget, false);
-  assert.match(rebound.resolvedTarget.diagnostics.join(' '), /rest-only-internal-slot-preserved/);
+  assert.equal(rebound, null);
 });
 
 test('whole-rest semantic rest hover stays locked to the rest anchor', () => {

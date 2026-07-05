@@ -78,11 +78,12 @@ Decision: do not rewrite the editor around a new notation library. Continue impr
 
 ## Immediate Hardening Result
 
-The visible ghost binder now rejects semantic targets that are not present in the visible snap grid unless a rendered or explicitly synthetic snap proves the same timestamp/staff/voice target. This closes the remaining fallback path where a pointer ghost could become a commit target after `resolvePointerEditTarget` failed while still allowing proven rest-only internal slots.
+The visible ghost binder now rejects semantic targets that are not present in the visible snap grid unless a rendered or explicitly synthetic snap proves the same timestamp/staff/voice target. This closes the remaining fallback path where a pointer ghost could become a commit target after `resolvePointerEditTarget` failed while still rejecting internal slots inside single full-measure events.
 
 Additional hardening completed on 2026-07-04:
 
-- Rest-only measures expose internal beat slots only through measured/synthetic snap evidence, with validator diagnostics such as `rest-only-internal-slot-preserved`.
+- Full-measure rests and full-measure notes are atomic element anchors: only beat 1 is exposed, including through synthetic/debug snap paths.
+- Rest-only measures with multiple real rest events may expose their real rest starts, but internal beat slots inside a single full-measure rest are rejected by the grid and validator.
 - Insert-mode overflow preservation is limited to explicitly validated targets; arbitrary overflow attempts still fail closed.
 - No-op clicked-note commits refresh the active note-input anchor so keyboard entry follows the clicked note.
 - Cross-measure blank-measure ghost input now covers six sequential placements from measure 1 into measure 2.

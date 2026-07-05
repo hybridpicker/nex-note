@@ -1299,6 +1299,108 @@ test('buildRenderedGhostGrid keeps a whole-rest measure to one snap when rest sl
     staffPoints.map((point) => `${point.timestampNum}/${point.timestampDen}`),
     ['0/4'],
   );
+
+  const allStaffPoints = getRenderedGhostStaffPoints(grid, 'm3', 1, { includeSynthetic: true });
+  assert.deepEqual(
+    allStaffPoints.map((point) => `${point.timestampNum}/${point.timestampDen}:${point.synthetic ? 'synthetic' : 'rendered'}`),
+    ['0/4:rendered'],
+  );
+});
+
+test('buildRenderedGhostGrid keeps full-measure events atomic across later measures', () => {
+  const coreDocument = makeCoreDoc({
+    score: {
+      id: 's',
+      parts: [{
+        id: 'p1',
+        sourcePartId: 'P1',
+        name: 'Part',
+        staves: [{
+          id: 'st1',
+          staffIndex: 1,
+          measures: [
+            {
+              id: 'm1',
+              measureNumber: 1,
+              attributes: [{ id: 'a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [] }],
+              voices: [{ id: 'v1', voiceId: 1, events: [{ id: 'n1', kind: 'note', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, durationDivisions: 4, durationType: 'whole', pitch: { step: 'C', octave: 4, alter: 0 } }] }],
+            },
+            {
+              id: 'm2',
+              measureNumber: 2,
+              attributes: [],
+              voices: [{ id: 'v2', voiceId: 1, events: [{ id: 'r2', kind: 'rest', measureNumber: 2, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, durationDivisions: 4, durationType: 'whole' }] }],
+            },
+            {
+              id: 'm3',
+              measureNumber: 3,
+              attributes: [],
+              voices: [{ id: 'v3', voiceId: 1, events: [{ id: 'n3', kind: 'note', measureNumber: 3, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, durationDivisions: 4, durationType: 'whole', pitch: { step: 'G', octave: 4, alter: 0 } }] }],
+            },
+          ],
+        }],
+      }],
+    } as any,
+  });
+
+  const grid = buildRenderedGhostGrid([
+    makeRenderedNote({
+      id: 'n1',
+      measureId: 'm1',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      domX: 130,
+      domY: 32,
+    }),
+    makeRenderedNote({
+      id: 'r2',
+      measureId: 'm2',
+      measureNumber: 2,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      domX: 260,
+      domY: 32,
+      isRest: true,
+    }),
+    makeRenderedNote({
+      id: 'n3',
+      measureId: 'm3',
+      measureNumber: 3,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      domX: 390,
+      domY: 32,
+    }),
+  ], {
+    coreDocument,
+    measureOverlays: [
+      makeOverlay('m1', 1, { x: 100, y: 0, width: 110, height: 40 }),
+      makeOverlay('m2', 2, { x: 220, y: 0, width: 110, height: 40 }),
+      makeOverlay('m3', 3, { x: 340, y: 0, width: 110, height: 40 }),
+    ],
+    selectedDuration: '4',
+    exposeRestMeasureSlots: true,
+  });
+
+  for (const measureId of ['m1', 'm2', 'm3']) {
+    const allStaffPoints = getRenderedGhostStaffPoints(grid, measureId, 1, { includeSynthetic: true });
+    assert.deepEqual(
+      allStaffPoints.map((point) => `${point.timestampNum}/${point.timestampDen}:${point.synthetic ? 'synthetic' : 'rendered'}`),
+      ['0/4:rendered'],
+    );
+    assert.equal(findNearestRenderedGhostPoint(grid, {
+      measureId,
+      staffIndex: 1,
+      pointerX: 999,
+    })?.timestampNum, 0);
+  }
 });
 
 test('buildRenderedGhostGrid maps rest-only measures from existing rhythmic rests', () => {

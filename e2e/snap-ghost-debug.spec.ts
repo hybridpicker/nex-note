@@ -1182,6 +1182,31 @@ test('full-measure rests expose one stable snap per measure and staff', async ({
   if (!farHoverSnap.isRest || farGhostRatio == null || Math.abs(farGhostRatio - farHoverSnap.ratio) <= 1e-6) {
     await expectActiveSnapDot(page, farHoverSnap, 'full-rest hover');
   }
+
+  for (const measure of [2, 3, 5]) {
+    for (const staff of [1, 2]) {
+      const snap = report.snaps.find((entry) => (
+        entry.measure === measure
+        && entry.part === 'part:P1'
+        && entry.staff === staff
+        && entry.voice === 1
+        && entry.ratio === 0
+      ));
+      if (!snap) throw new Error(`Missing full-rest snap for hover m${measure} staff ${staff}`);
+      const { center, ghost } = await hoverSnap(page, snap);
+      expectGhostAndCommitOnSnap(ghost, snap, center.x, `full-rest snap hover m${measure} staff ${staff}`);
+      const trace = ghost.snapTrace as { resolvedTarget?: { diagnostics?: string[] | null; timestamp?: string | null } | null } | null;
+      expect(
+        trace?.resolvedTarget?.diagnostics?.includes('rest-only-quantized-internal-slot') ?? false,
+        `full-rest snap hover must not preserve an internal rest-only target for m${measure} staff ${staff}`,
+      ).toBe(false);
+      expect(
+        timestampRatio(trace?.resolvedTarget?.timestamp ?? null),
+        `full-rest resolver must stay on beat one for m${measure} staff ${staff}`,
+      ).toBe(0);
+      await expectActiveSnapDot(page, snap, `full-rest snap hover m${measure} staff ${staff}`);
+    }
+  }
 });
 
 test('multi-instrument full-rest score exposes one clean snap on every staff row', async ({ page }) => {

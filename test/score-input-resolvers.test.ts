@@ -1069,7 +1069,7 @@ test('inspectResolvedEditTarget rejects canonical quarter slots inside a whole-r
 
   assert.equal(inspected.target, null);
   assert.equal(inspected.rejectionReason, 'target-inside-rest');
-  assert.match(inspected.diagnostics.join(' '), /validation:target-inside-rest-rejected/);
+  assert.match(inspected.diagnostics.join(' '), /validation:full-measure-rest-internal-slot-rejected/);
 });
 
 test('inspectResolvedEditTarget rejects replace mode when no replaceable target exists at the slot', () => {
@@ -1197,10 +1197,10 @@ test('inspectResolvedEditTarget rejects arbitrary insert mode inside a spanning 
 
   assert.equal(inspected.target, null);
   assert.equal(inspected.rejectionReason, 'target-inside-rest');
-  assert.match(inspected.diagnostics.join(' '), /validation:target-inside-rest-rejected/);
+  assert.match(inspected.diagnostics.join(' '), /validation:full-measure-rest-internal-slot-rejected/);
 });
 
-test('inspectResolvedEditTarget allows proven rest-only internal slot inserts', () => {
+test('inspectResolvedEditTarget rejects preserved internal slots inside a whole-rest measure', () => {
   const coreDocument = importMusicXmlToCore(FULL_REST_XML);
   const measure = coreDocument.score.parts[0]!.staves[0]!.measures[0]!;
 
@@ -1229,12 +1229,9 @@ test('inspectResolvedEditTarget allows proven rest-only internal slot inserts', 
     isDotted: false,
   });
 
-  assert.ok(inspected.target);
-  assert.equal(inspected.rejectionReason, null);
-  assert.equal(inspected.target?.existingEventKind, 'rest');
-  assert.equal(inspected.target?.existingEventStartsAtTarget, false);
-  assert.equal(inspected.target?.preserveOverflow, true);
-  assert.match(inspected.diagnostics.join(' '), /validation:insert-inside-rest-allowed/);
+  assert.equal(inspected.target, null);
+  assert.equal(inspected.rejectionReason, 'target-inside-rest');
+  assert.match(inspected.diagnostics.join(' '), /validation:full-measure-rest-internal-slot-rejected/);
 });
 
 test('inspectResolvedEditTarget rejects occupied note-entry insert when the measure is already full', () => {

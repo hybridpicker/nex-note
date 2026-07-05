@@ -79,7 +79,7 @@ This document describes the deterministic note-input pipeline introduced for poi
 - final visual placement is always `previewLeft = canonicalSnapX - noteheadCenterX`
 - If no rendered or explicitly synthetic snap-grid point exists for the resolved timestamp/staff/voice, pointer note input fails closed: no ghost and no commit.
 - ambiguous or non-visible targets resolve to `null` (fail-closed)
-- empty visible musical time is still editable musical time: whole-rest measures expose canonical beat slots only through measured rendered anchors or synthetic snap evidence
+- full-measure notes and full-measure rests are atomic: they expose only the element start anchor, and synthetic/internal beat slots inside them are invalid
 - replace mode is only valid when a replaceable event covers the target slot
 - insert mode is only valid when the requested duration fits the measure/voice capacity without unsafe overflow
 - insert mode may preserve overflow only for an explicitly validated target, such as a proven rest-only internal slot or trailing silent snap, where preview and commit share the same snap evidence
@@ -105,7 +105,7 @@ This document describes the deterministic note-input pipeline introduced for poi
 - unit:
   - [test/score-input-edit-map.test.ts](../test/score-input-edit-map.test.ts)
   - [test/score-input-resolvers.test.ts](../test/score-input-resolvers.test.ts)
-  - canonical quarter-slot targeting in whole-rest measures
+  - atomic beat-1 targeting in full-measure note/rest measures
   - replace rejection when no valid replace target exists
   - overfill rejection in insert mode
   - preview/commit parity for the same resolved input
@@ -127,4 +127,4 @@ This document describes the deterministic note-input pipeline introduced for poi
 - keyboard insert timing is anchor-driven and deterministic; no heuristic cross-staff fallback is performed.
 - ambiguous voice targets are intentionally rejected rather than auto-corrected.
 - arbitrary overflow placement remains unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
-- rest-only internal slots are intentionally narrow: they require snap evidence, validator approval, and matching ghost/commit diagnostics before mutation.
+- rest-only internal slots are intentionally narrow: they require real split-rest structure, validator approval, and matching ghost/commit diagnostics before mutation. A single full-measure rest never qualifies.

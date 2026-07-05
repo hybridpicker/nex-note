@@ -2808,7 +2808,9 @@ export function bindResolvedEditTargetToGhost(
       resolvedTarget = inspected.target;
     } else if (
       inspected.rejectionReason === 'target-inside-rest'
+      && candidate.resolvedTarget.mode === 'insert'
       && candidate.resolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')
+      && !inspected.diagnostics.includes('validation:full-measure-rest-internal-slot-rejected')
       && ghostHasTraceQuantizedRestFallbackSnap({
         timestampNum: candidate.resolvedTarget.timestampNum,
         timestampDen: candidate.resolvedTarget.timestampDen,

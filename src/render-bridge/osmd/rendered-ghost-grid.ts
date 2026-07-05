@@ -294,6 +294,26 @@ function eventEndTimestamp(event: { timestampNum: number; timestampDen: number; 
   );
 }
 
+function voiceHasSingleFullMeasureEvent(input: {
+  voice: { events: Array<{
+    id: string;
+    isChord?: boolean;
+    timestampNum: number;
+    timestampDen: number;
+    durationDivisions: number;
+  }> };
+  divisions: number;
+  measureDuration: Fraction;
+}) {
+  const timelineEvents = input.voice.events.filter((event) => !event.isChord);
+  if (timelineEvents.length !== 1) return false;
+  const event = timelineEvents[0]!;
+  const start = normalizeTimestamp(event.timestampNum, event.timestampDen);
+  if (Math.abs(fractionToNumber(start)) > 1e-9) return false;
+  const end = eventEndTimestamp(event, input.divisions);
+  return fractionToNumber(end) >= fractionToNumber(input.measureDuration) - 1e-9;
+}
+
 function addSilentSpanSlotAnchors(input: {
   anchors: Map<string, RhythmicAnchorTick>;
   start: Fraction;
@@ -448,14 +468,21 @@ function collectCoreSyntheticSlotAnchors(input: {
   if (!voice || voice.events.length === 0) {
     return buildRestMeasureSlotAnchors(input.measureDuration, input.slotDuration);
   }
-  const hasOnlyRests = voice.events.every((event) => event.kind === 'rest' || event.isChord);
-  if (hasOnlyRests) return buildRestMeasureSlotAnchors(input.measureDuration, input.slotDuration);
   const timing = getEffectiveMeasureTiming(input.coreDocument, {
     measureId: input.measureId,
     measureNumber: input.measureNumber,
     staffIndex: input.staffIndex,
   });
   const divisions = Math.max(1, timing?.divisions ?? 1);
+  if (voiceHasSingleFullMeasureEvent({
+    voice,
+    divisions,
+    measureDuration: input.measureDuration,
+  })) {
+    return collectVoiceEventAnchors(voice);
+  }
+  const hasOnlyRests = voice.events.every((event) => event.kind === 'rest' || event.isChord);
+  if (hasOnlyRests) return buildRestMeasureSlotAnchors(input.measureDuration, input.slotDuration);
   const measureEnd = input.measureDuration;
   const byTimestamp = new Map(
     collectVoiceEventAnchors(voice).map((anchor) => [timestampKey(anchor.timestampNum, anchor.timestampDen), anchor] as const),
