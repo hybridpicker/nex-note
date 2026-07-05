@@ -1205,6 +1205,38 @@ test('full-measure rests expose one stable snap per measure and staff', async ({
         `full-rest resolver must stay on beat one for m${measure} staff ${staff}`,
       ).toBe(0);
       await expectActiveSnapDot(page, snap, `full-rest snap hover m${measure} staff ${staff}`);
+
+      const measureSummary = report.measures.find((entry) => entry.measureIndex === measure);
+      if (!measureSummary) throw new Error(`Missing measure summary for full-rest body hover m${measure}`);
+      for (const xRatio of [0.35, 0.65, 0.9]) {
+        const x = measureSummary.measureXStart + ((measureSummary.measureXEnd - measureSummary.measureXStart) * xRatio);
+        await page.mouse.move(x, center.y);
+        await page.waitForTimeout(180);
+        const bodyGhost = await readGhost(page);
+        if (!bodyGhost) continue;
+        const bodyTrace = bodyGhost.snapTrace as { rawPointerX?: number | null; safePointerX?: number | null } | null;
+        const tracePointerX = typeof bodyTrace?.rawPointerX === 'number'
+          ? bodyTrace.rawPointerX
+          : typeof bodyTrace?.safePointerX === 'number'
+            ? bodyTrace.safePointerX
+            : null;
+        if (tracePointerX != null && Math.abs(tracePointerX - x) > 2) continue;
+        if (bodyGhost.measure !== String(measure) || bodyGhost.staff !== String(staff)) continue;
+        expect(bodyGhost.measure, `full-rest body hover must stay in measure ${measure} staff ${staff}`).toBe(String(measure));
+        expect(bodyGhost.staff, `full-rest body hover must stay on staff ${staff} measure ${measure}`).toBe(String(staff));
+        expect(
+          timestampRatio(bodyGhost.timestamp),
+          `full-rest body hover must not expose an internal visible timestamp for m${measure} staff ${staff} ratio ${xRatio}`,
+        ).toBe(0);
+        expect(
+          timestampRatio(bodyGhost.commitTimestamp),
+          `full-rest body hover must not commit an internal timestamp for m${measure} staff ${staff} ratio ${xRatio}`,
+        ).toBe(0);
+        expect(
+          Math.abs((bodyGhost.box.x + bodyGhost.noteheadCenterX) - center.x),
+          `full-rest body hover must keep the visible notehead on the single snap for m${measure} staff ${staff} ratio ${xRatio}`,
+        ).toBeLessThanOrEqual(2);
+      }
     }
   }
 });

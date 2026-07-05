@@ -10758,7 +10758,26 @@ function resolveRestOnlyGhostTarget(
         return false;
       })()
     : false;
-  const timestamp = normalizeFraction(restPoint.timestampNum, Math.max(restPoint.timestampDen, 1));
+  const restTimestamp = normalizeFraction(restPoint.timestampNum, Math.max(restPoint.timestampDen, 1));
+  const sameVoiceRestLanePoints = filterSelectableRenderedGhostSnapPoints(
+    getRenderedGhostStaffPoints(renderedGhostGrid, overlay.measureId, staff.staffIndex, { includeSynthetic: true }),
+  ).filter((point) => (
+    point.isRest
+    && (
+      point.voiceId === selectedVoice
+      || point.voiceId === restPoint.voiceId
+      || point.synthetic
+    )
+  ));
+  const restLaneHasOnlyStartAnchor = sameVoiceRestLanePoints.length === 1
+    && timestampsEqual(
+      sameVoiceRestLanePoints[0]!.timestampNum,
+      sameVoiceRestLanePoints[0]!.timestampDen,
+      restTimestamp.num,
+      restTimestamp.den,
+    );
+  const lockRestOnlyLaneToStartAnchor = isSingleWholeMeasureRest || restLaneHasOnlyStartAnchor;
+  const timestamp = restTimestamp;
   const rhythmicSegment = detectActiveRhythmicSegment(
     coreDocument,
     overlay.measureId,
@@ -10785,13 +10804,14 @@ function resolveRestOnlyGhostTarget(
     segmentStartRatio,
     maxStartRatio,
   );
-  const restTimestamp = normalizeFraction(restPoint.timestampNum, Math.max(restPoint.timestampDen, 1));
-  const nearestRestSlotPoint = findNearestRestOnlyMeasureGhostPoint(renderedGhostGrid, {
-    measureId: overlay.measureId,
-    staffIndex: staff.staffIndex,
-    voiceId: selectedVoice,
-    pointerX: domPoint.x,
-  });
+  const nearestRestSlotPoint = lockRestOnlyLaneToStartAnchor
+    ? null
+    : findNearestRestOnlyMeasureGhostPoint(renderedGhostGrid, {
+        measureId: overlay.measureId,
+        staffIndex: staff.staffIndex,
+        voiceId: selectedVoice,
+        pointerX: domPoint.x,
+      });
   const nearestRestSlotIsInternal = nearestRestSlotPoint
     ? !timestampsEqual(
         nearestRestSlotPoint.timestampNum,
@@ -10800,19 +10820,23 @@ function resolveRestOnlyGhostTarget(
         restTimestamp.den,
       )
     : false;
-  const quantizedRestPoint = nearestRestSlotIsInternal ? nearestRestSlotPoint : buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
-    measureId: overlay.measureId,
-    measureNumber: overlay.measureNumber,
-    pageIndex: overlay.pageIndex,
-    systemIndex: overlay.systemIndex,
-    corePartId: restPoint.corePartId,
-    staffIndex: staff.staffIndex,
-    voiceId: selectedVoice,
-    ratio: quantizedRatio,
-    measureDurationRatio,
-    measureLeft,
-    measureRight,
-  });
+  const quantizedRestPoint = lockRestOnlyLaneToStartAnchor
+    ? null
+    : nearestRestSlotIsInternal
+      ? nearestRestSlotPoint
+      : buildQuantizedRestMeasureGhostPoint(renderedGhostGrid, {
+          measureId: overlay.measureId,
+          measureNumber: overlay.measureNumber,
+          pageIndex: overlay.pageIndex,
+          systemIndex: overlay.systemIndex,
+          corePartId: restPoint.corePartId,
+          staffIndex: staff.staffIndex,
+          voiceId: selectedVoice,
+          ratio: quantizedRatio,
+          measureDurationRatio,
+          measureLeft,
+          measureRight,
+        });
   const quantizedTimestamp = quantizedRestPoint
     ? normalizeFraction(quantizedRestPoint.timestampNum, Math.max(quantizedRestPoint.timestampDen, 1))
     : restTimestamp;

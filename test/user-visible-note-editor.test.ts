@@ -3086,6 +3086,9 @@ test('whole-rest semantic rest hover stays locked to the rest anchor', () => {
     measureOverlays: [overlay],
     selectedDuration: '4',
   });
+  const restSnap = getRenderedGhostStaffPoints(renderedGhostGrid, measureId, 1)[0];
+  if (!restSnap) throw new Error('Missing rendered whole-rest snap');
+  const bodyHoverPoint = { x: restSnap.domX + 28, y: 82 };
   const ghostIndex = buildGhostNoteSpatialIndex(renderedNotes, coreDocument, [overlay], renderedGhostGrid);
   const systemOverlays = [{
     systemIndex: 0,
@@ -3108,8 +3111,8 @@ test('whole-rest semantic rest hover stays locked to the rest anchor', () => {
       isVirtual: false,
     },
     staff: overlay.staffDetails[0]!,
-    relX: (214.75 - overlay.domRect.x) / overlay.domRect.width,
-    relY: (82 - overlay.domRect.y) / overlay.domRect.height,
+    relX: (bodyHoverPoint.x - overlay.domRect.x) / overlay.domRect.width,
+    relY: (bodyHoverPoint.y - overlay.domRect.y) / overlay.domRect.height,
     staffStep: 4,
     musicalTime: { num: 0, den: 1 },
     snapPoint: null,
@@ -3128,7 +3131,7 @@ test('whole-rest semantic rest hover stays locked to the rest anchor', () => {
     systemOverlays,
     coreDocument,
     new Set(),
-    { x: 214.75, y: 82 },
+    bodyHoverPoint,
     null,
     null,
     '4',
@@ -3140,10 +3143,10 @@ test('whole-rest semantic rest hover stays locked to the rest anchor', () => {
     new Map([[1, overlay.staffDetails]]),
   );
 
-  // Element-anchor rule: the ghost preview may follow the pointer visually,
-  // but the committed target stays locked to the rest's start anchor.
+  // Element-anchor rule: the ghost preview and committed target both stay
+  // locked to the rest's start anchor. No pointer-quantized internals.
   assert.ok(target);
-  assert.equal(Math.round(target.domCenter.x), 215);
+  assert.equal(Math.round(target.domCenter.x), Math.round(restSnap.domX));
   assert.equal(target.timestampNum, 0);
   assert.equal(target.resolvedTarget?.timestampNum, 0);
   assert.equal(target.resolvedTarget?.existingEventKind, 'rest');
@@ -3152,6 +3155,9 @@ test('whole-rest semantic rest hover stays locked to the rest anchor', () => {
   assert.equal(target.snapResolution?.effectiveSnap?.synthetic, false);
   assert.equal(target.snapResolution?.quantizedFallbackSnap ?? null, null);
   assert.equal(target.snapResolution?.effectiveSnap?.timestamp, '0/4');
+  assert.equal(target.snapResolution?.visible.domCenterX, Number(restSnap.domX.toFixed(2)));
+  assert.ok(['0/1', '0/4'].includes(target.snapResolution?.committed.timestamp ?? ''));
+  assert.ok(Math.abs(bodyHoverPoint.x - target.domCenter.x) > 20);
   assert.equal(target.snapResolution?.resolver, 'proxy');
 });
 
