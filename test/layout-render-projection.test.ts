@@ -28,7 +28,7 @@ test('projectLayoutToDocument derives staff spacing hints for lyric-heavy and pi
   const choirSpacing = choir.layoutHints.find((hint) => hint.kind === 'staffSpacing')?.value;
   const pianoSpacing = piano.layoutHints.find((hint) => hint.kind === 'staffSpacing' && hint.staffIndex === 1)?.value;
 
-  assert.equal(choirSpacing, 112);
+  assert.equal(choirSpacing, 100);
   assert.equal(pianoSpacing, 92);
 });
 
@@ -49,5 +49,5 @@ test('render projection exports plan-derived print and staff spacing hints into 
   const projectedXml = exportCoreToMusicXml(xml, projectLayoutToDocument(document));
 
   assert.match(projectedXml, /<print new-system="yes"/);
-  assert.match(projectedXml, /<staff-distance>112<\/staff-distance>/);
+  assert.match(projectedXml, /<staff-distance>100<\/staff-distance>/);
 });

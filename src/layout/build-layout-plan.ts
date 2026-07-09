@@ -141,7 +141,7 @@ function deriveCollisionMode(collisionPressure: number): 'balanced' | 'relaxed' 
 function recommendedStaffSpacing(measure: LayoutMeasureSnapshot) {
   return (
     84
-    + measure.lyricLineCount * 6
+    + measure.lyricVerseCount * 6
     + measure.slurCount * 4
     + measure.tupletCount * 3
     + Math.max(0, measure.voiceCount - 1) * 5

@@ -190,7 +190,7 @@ MXL is the main round-trip format for MuseScore, Finale, Dorico, and Sibelius. D
 
 ## Layout and View
 
-Use zoom controls, view mode, Navigator, Find/Go to, AI layout cleanup, system/page breaks, staff spacing, and part layout presets (`Compact`, `Balanced`, `Roomy`, `Choir`) to prepare readable pages. Automatic horizontal layout reserves additional minimum width for long lyric syllables, chord symbols, and expression text, and reflows systems when those measures no longer fit safely.
+Use zoom controls, view mode, Navigator, Find/Go to, AI layout cleanup, system/page breaks, staff spacing, and part layout presets (`Compact`, `Balanced`, `Roomy`, `Choir`) to prepare readable pages. Automatic horizontal layout reserves additional minimum width for long lyric syllables, chord symbols, and expression text, and reflows systems when those measures no longer fit safely. Vertical lyric spacing follows the number of stacked verses rather than the number of syllables, so long vocal passages stay compact while multi-verse text remains separated.
 
 ## Undo, Redo, and History
 

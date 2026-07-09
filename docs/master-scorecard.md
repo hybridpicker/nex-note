@@ -112,3 +112,24 @@ All capabilities not listed below inherit the previous iteration's closing score
 - Closing: **46%**
 
 Long lyric syllables, chord/direction text, and expressions now contribute content-length demand to minimum and ideal measure widths. The renderer-agnostic plan reflows systems before text-heavy measures become unsafe. This is not glyph-level collision resolution: exact font metrics, horizontal offsets between adjacent anchors, vertical skyline placement, and user-adjustable style distances remain open.
+
+## Iteration 2026-07-09 — Verse-Aware Vertical Spacing
+
+All unlisted capabilities inherit the 46% product state above.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Layout | 54% | 56% |
+| Spacing | 50% | 54% |
+| Collision Avoidance | 38% | 42% |
+| Automatic Engraving | 41% | 44% |
+| Lyrics | 60% | 64% |
+| Testing | 80% | 81% |
+| Professional Workflow | 49% | 50% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **46%**
+- Closing: **47%**
+
+Vertical lyric demand now follows the number of concurrent verse lines, not the total number of syllable events in a measure. This prevents long single-verse passages from becoming increasingly over-spaced while still reserving one aligned line per verse across the system. Exact font line height, above-staff lyrics, and skyline interaction with dynamics and pedal marks remain open.

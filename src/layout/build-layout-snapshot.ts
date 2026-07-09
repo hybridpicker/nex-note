@@ -9,6 +9,7 @@ export interface LayoutMeasureSnapshot {
   voiceCount: number;
   eventCount: number;
   lyricLineCount: number;
+  lyricVerseCount: number;
   lyricCharacterCount: number;
   maxLyricTokenLength: number;
   directionCount: number;
@@ -85,6 +86,7 @@ export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapsho
         const directionIds = measure.directions.map((direction) => direction.id);
         const lyricLines = document.lyricLines.filter((line) => eventIds.includes(line.eventId));
         const lyricLineCount = lyricLines.length;
+        const lyricVerseCount = new Set(lyricLines.map((line) => line.verseNumber)).size;
         const lyricCharacterCount = lyricLines.reduce((sum, line) => sum + Array.from(line.text.trim()).length, 0);
         const maxLyricTokenLength = lyricLines.reduce(
           (max, line) => Math.max(max, Array.from(line.text.trim()).length),
@@ -117,6 +119,7 @@ export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapsho
           voiceCount: measure.voices.length,
           eventCount: eventIds.length,
           lyricLineCount,
+          lyricVerseCount,
           lyricCharacterCount,
           maxLyricTokenLength,
           directionCount: directionIds.length,

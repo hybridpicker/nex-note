@@ -30,6 +30,7 @@ test('buildLayoutSnapshot exposes measure hints and semantic anchors for later e
   assert.ok(snapshot.anchors.length > 0);
   assert.ok(snapshot.anchors.every((anchor) => anchor.eventId && anchor.measureId));
   assert.ok(snapshot.measures.some((measure) => measure.lyricLineCount > 0));
+  assert.ok(snapshot.measures.some((measure) => measure.lyricVerseCount === 2));
   assert.ok(snapshot.measures.some((measure) => measure.slurCount > 0));
 });
 
@@ -60,6 +61,22 @@ test('buildLayoutPlan gives lyric-heavy measures more width than sparse measures
   const sparsePlan = buildLayoutPlan(sparse, buildLayoutSnapshot(sparse));
 
   assert.ok((choirPlan.measures[0]?.idealWidth ?? 0) > (sparsePlan.measures[0]?.idealWidth ?? 0));
+});
+
+test('vertical lyric spacing follows stacked verse depth rather than syllable count', () => {
+  const twoVerses = normalizeScoreDocument(importMusicXmlToCore(loadFixture('choir-lyrics.musicxml')));
+  const oneVerse = structuredClone(twoVerses);
+  for (const line of oneVerse.lyricLines) line.verseNumber = 1;
+
+  const twoVerseSnapshot = buildLayoutSnapshot(twoVerses);
+  const oneVerseSnapshot = buildLayoutSnapshot(oneVerse);
+  const twoVersePlan = buildLayoutPlan(twoVerses, twoVerseSnapshot);
+  const oneVersePlan = buildLayoutPlan(oneVerse, oneVerseSnapshot);
+
+  assert.equal(twoVerseSnapshot.measures[0]?.lyricLineCount, oneVerseSnapshot.measures[0]?.lyricLineCount);
+  assert.equal(twoVerseSnapshot.measures[0]?.lyricVerseCount, 2);
+  assert.equal(oneVerseSnapshot.measures[0]?.lyricVerseCount, 1);
+  assert.equal(twoVersePlan.measures[0]!.staffSpacing - oneVersePlan.measures[0]!.staffSpacing, 6);
 });
 
 test('buildLayoutPlan widens measures for long lyric and direction text without changing object counts', () => {
