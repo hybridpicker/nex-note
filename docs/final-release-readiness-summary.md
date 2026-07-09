@@ -14,7 +14,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-09 (`876` tests, `0` failed)
+- `npm test`: passed on 2026-07-09 (`878` tests, `0` failed)
 - `npm run build`: passed on 2026-07-09; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
 - `npm run test:e2e:notation-tools`: passed on 2026-07-09 (`11` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
@@ -27,6 +27,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - core MusicXML export now keeps root-level metadata elements in MusicXML order and no longer appends an empty trailing `<identification/>` after `<part>`
 - note-input hardening now keeps ghost, commit, selection, and playback anchors aligned across whole-rest measures, rest-only internal slots, cross-measure pointer sequences, TAB fret entry, and clicked-note step-time activation
 - live MIDI step input now batches simultaneous note-on messages into one semantic chord transaction, follows the active key signature for sharp/flat spelling, and advances once per played onset
+- automatic horizontal layout now measures long lyric and direction text demand instead of treating every text object as equal width; text-heavy measures gain hard/ideal width and trigger earlier system reflow while existing reference-score fingerprints remain stable
 
 ## Manual Validation Highlights
 

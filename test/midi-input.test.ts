@@ -12,6 +12,7 @@ test('MIDI note-on parsing accepts pitched key presses and rejects release messa
   assert.equal(parseMidiNoteOn([0x82, 60, 64]), null);
   assert.equal(parseMidiNoteOn([0x92, 60, 0]), null);
   assert.equal(parseMidiNoteOn([0xb0, 64, 127]), null);
+  assert.equal(parseMidiNoteOn([0x90, 64, Number.NaN]), null);
 });
 
 test('MIDI pitch spelling follows the active key signature preference', () => {

@@ -43,12 +43,14 @@ const FLAT_PITCHES = [
 
 export function parseMidiNoteOn(data: ArrayLike<number>): MidiNoteOn | null {
   if (data.length < 3) return null;
-  const status = Number(data[0]) & 0xff;
-  const command = status & 0xf0;
+  const rawStatus = Number(data[0]);
   const note = Number(data[1]);
   const velocity = Number(data[2]);
+  if (![rawStatus, note, velocity].every(Number.isFinite)) return null;
+  const status = rawStatus & 0xff;
+  const command = status & 0xf0;
   if (command !== 0x90 || velocity <= 0) return null;
-  if (!Number.isFinite(note) || note < 0 || note > 127) return null;
+  if (note < 0 || note > 127) return null;
   return {
     channel: status & 0x0f,
     note: Math.trunc(note),
@@ -57,7 +59,9 @@ export function parseMidiNoteOn(data: ArrayLike<number>): MidiNoteOn | null {
 }
 
 export function midiNoteToPitch(midiNote: number, preferFlats = false): MidiPitch {
-  const midi = Math.max(0, Math.min(127, Math.trunc(midiNote)));
+  const midi = Number.isFinite(midiNote)
+    ? Math.max(0, Math.min(127, Math.trunc(midiNote)))
+    : 60;
   const pitchClass = ((midi % 12) + 12) % 12;
   const spelling = (preferFlats ? FLAT_PITCHES : SHARP_PITCHES)[pitchClass] ?? SHARP_PITCHES[0];
   return {

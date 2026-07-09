@@ -9,7 +9,11 @@ export interface LayoutMeasureSnapshot {
   voiceCount: number;
   eventCount: number;
   lyricLineCount: number;
+  lyricCharacterCount: number;
+  maxLyricTokenLength: number;
   directionCount: number;
+  directionCharacterCount: number;
+  maxDirectionTokenLength: number;
   slurCount: number;
   tupletCount: number;
   hasRepeatStart: boolean;
@@ -79,7 +83,21 @@ export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapsho
       for (const measure of staff.measures) {
         const eventIds = measure.voices.flatMap((voice) => voice.events.map((event) => event.id));
         const directionIds = measure.directions.map((direction) => direction.id);
-        const lyricLineCount = document.lyricLines.filter((line) => eventIds.includes(line.eventId)).length;
+        const lyricLines = document.lyricLines.filter((line) => eventIds.includes(line.eventId));
+        const lyricLineCount = lyricLines.length;
+        const lyricCharacterCount = lyricLines.reduce((sum, line) => sum + Array.from(line.text.trim()).length, 0);
+        const maxLyricTokenLength = lyricLines.reduce(
+          (max, line) => Math.max(max, Array.from(line.text.trim()).length),
+          0,
+        );
+        const directionTexts = measure.directions
+          .map((direction) => direction.value?.trim() ?? '')
+          .filter(Boolean);
+        const directionCharacterCount = directionTexts.reduce((sum, value) => sum + Array.from(value).length, 0);
+        const maxDirectionTokenLength = directionTexts.reduce(
+          (max, value) => Math.max(max, Array.from(value).length),
+          0,
+        );
         const slurCount = document.slurs.filter((slur) => {
           const start = slur.startEventId ? eventIds.includes(slur.startEventId) : false;
           const stop = slur.stopEventId ? eventIds.includes(slur.stopEventId) : false;
@@ -99,7 +117,11 @@ export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapsho
           voiceCount: measure.voices.length,
           eventCount: eventIds.length,
           lyricLineCount,
+          lyricCharacterCount,
+          maxLyricTokenLength,
           directionCount: directionIds.length,
+          directionCharacterCount,
+          maxDirectionTokenLength,
           slurCount,
           tupletCount,
           hasRepeatStart: measure.leftBarline === 'repeat-start',

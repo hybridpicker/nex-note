@@ -90,3 +90,25 @@ Baseline: **43%**
 Closing: **45%**
 
 The increase reflects a real new professional input path, atomic chord semantics, key-aware spelling, device-state feedback, and guarded Electron permission behavior. It does not claim real-time performance capture, MIDI mappings, sustain-pedal semantics, percussion mapping, or hardware certification.
+
+## Iteration 2026-07-09 — Text-Aware Automatic Spacing
+
+All capabilities not listed below inherit the previous iteration's closing score. Baseline is the complete 45% product state above; closing changes only the areas supported by deterministic layout and regression evidence.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Layout | 50% | 54% |
+| Spacing | 42% | 50% |
+| Collision Avoidance | 28% | 38% |
+| Automatic Engraving | 35% | 41% |
+| Code Quality | 74% | 75% |
+| Testing | 78% | 80% |
+| Maintainability | 72% | 74% |
+| Professional Workflow | 47% | 49% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **45%**
+- Closing: **46%**
+
+Long lyric syllables, chord/direction text, and expressions now contribute content-length demand to minimum and ideal measure widths. The renderer-agnostic plan reflows systems before text-heavy measures become unsafe. This is not glyph-level collision resolution: exact font metrics, horizontal offsets between adjacent anchors, vertical skyline placement, and user-adjustable style distances remain open.

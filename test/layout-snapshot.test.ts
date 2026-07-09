@@ -62,6 +62,71 @@ test('buildLayoutPlan gives lyric-heavy measures more width than sparse measures
   assert.ok((choirPlan.measures[0]?.idealWidth ?? 0) > (sparsePlan.measures[0]?.idealWidth ?? 0));
 });
 
+test('buildLayoutPlan widens measures for long lyric and direction text without changing object counts', () => {
+  const shortText = normalizeScoreDocument(importMusicXmlToCore(loadFixture('choir-lyrics.musicxml')));
+  const longText = structuredClone(shortText);
+  for (const line of shortText.lyricLines) line.text = 'la';
+  for (const line of longText.lyricLines) line.text = 'extraordinarily';
+  for (const part of shortText.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const direction of measure.directions) direction.value = 'dolce';
+      }
+    }
+  }
+  for (const part of longText.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const direction of measure.directions) direction.value = 'espressivo, ma molto cantabile';
+      }
+    }
+  }
+
+  const shortSnapshot = buildLayoutSnapshot(shortText);
+  const longSnapshot = buildLayoutSnapshot(longText);
+  const shortPlan = buildLayoutPlan(shortText, shortSnapshot);
+  const longPlan = buildLayoutPlan(longText, longSnapshot);
+  const shortMeasure = shortPlan.measures[0]!;
+  const longMeasure = longPlan.measures[0]!;
+
+  assert.equal(shortSnapshot.measures[0]?.lyricLineCount, longSnapshot.measures[0]?.lyricLineCount);
+  assert.equal(shortSnapshot.measures[0]?.directionCount, longSnapshot.measures[0]?.directionCount);
+  assert.ok(longMeasure.textSpacingDemand > shortMeasure.textSpacingDemand);
+  assert.ok(longMeasure.idealWidth > shortMeasure.idealWidth);
+  assert.ok(longMeasure.minimumWidth > shortMeasure.minimumWidth);
+  assert.ok(longMeasure.collisionPressure > shortMeasure.collisionPressure);
+});
+
+test('text-aware minimum widths reflow systems before long expressions can collide', () => {
+  const shortText = normalizeScoreDocument(importMusicXmlToCore(loadFixture('repeat-ending-sequence.musicxml')));
+  const longText = structuredClone(shortText);
+  for (const document of [shortText, longText]) {
+    for (const part of document.score.parts) {
+      for (const staff of part.staves) {
+        for (const measure of staff.measures) {
+          measure.directions.push({
+            id: `${measure.id}:expression`,
+            kind: 'words',
+            value: document === longText ? 'espressivo, ma molto cantabile' : 'dolce',
+            measureNumber: measure.measureNumber,
+            staffIndex: staff.staffIndex,
+            timestampNum: 0,
+            timestampDen: 1,
+          });
+        }
+      }
+    }
+  }
+
+  const options = { systemIdealWidth: 360 };
+  const shortPlan = buildLayoutPlan(shortText, buildLayoutSnapshot(shortText), options);
+  const longPlan = buildLayoutPlan(longText, buildLayoutSnapshot(longText), options);
+
+  assert.equal(shortPlan.systems.length, 1);
+  assert.ok(longPlan.systems.length > shortPlan.systems.length);
+  assert.ok(longPlan.measures.every((measure) => measure.minimumWidth >= 120));
+});
+
 test('buildLayoutPlan derives rule-driven system breaks when measure widths overflow the target system width', () => {
   const document = normalizeScoreDocument(importMusicXmlToCore(loadFixture('repeat-ending-sequence.musicxml')));
   const snapshot = buildLayoutSnapshot(document);

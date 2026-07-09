@@ -11,6 +11,7 @@ export interface MeasureLayoutPlan {
   minimumWidth: number;
   idealWidth: number;
   spacingUnits: number;
+  textSpacingDemand: number;
   staffSpacing: number;
 }
 
@@ -51,6 +52,8 @@ export interface LayoutPlanOptions {
   tupletUnitWidth?: number;
   repeatUnitWidth?: number;
   endingUnitWidth?: number;
+  lyricCharacterUnitWidth?: number;
+  directionCharacterUnitWidth?: number;
   minimumMeasureWidth?: number;
   systemIdealWidth?: number;
   pageIdealWidth?: number;
@@ -66,6 +69,8 @@ const DEFAULT_OPTIONS: Required<LayoutPlanOptions> = {
   tupletUnitWidth: 8,
   repeatUnitWidth: 12,
   endingUnitWidth: 10,
+  lyricCharacterUnitWidth: 2.4,
+  directionCharacterUnitWidth: 2,
   minimumMeasureWidth: 56,
   systemIdealWidth: 220,
   pageIdealWidth: 520,
@@ -99,12 +104,31 @@ function scoreMeasureComplexity(measure: LayoutMeasureSnapshot) {
 }
 
 function scoreCollisionPressure(measure: LayoutMeasureSnapshot) {
+  const lyricOverflow = Math.max(0, measure.maxLyricTokenLength - 8);
+  const directionOverflow = Math.max(0, measure.maxDirectionTokenLength - 12);
   return (
     measure.lyricLineCount * 1.5
     + measure.slurCount
     + measure.tupletCount
     + Math.max(0, measure.voiceCount - 1)
     + measure.directionCount * 0.5
+    + lyricOverflow * 0.4
+    + directionOverflow * 0.25
+  );
+}
+
+function scoreTextSpacingDemand(measure: LayoutMeasureSnapshot, options: Required<LayoutPlanOptions>) {
+  const lyricBaseline = measure.lyricLineCount * 6;
+  const directionBaseline = measure.directionCount * 10;
+  const lyricOverflowCharacters = Math.max(0, measure.lyricCharacterCount - lyricBaseline);
+  const directionOverflowCharacters = Math.max(0, measure.directionCharacterCount - directionBaseline);
+  const longestLyricOverflow = Math.max(0, measure.maxLyricTokenLength - 8);
+  const longestDirectionOverflow = Math.max(0, measure.maxDirectionTokenLength - 12);
+  return Math.round(
+    lyricOverflowCharacters * options.lyricCharacterUnitWidth
+    + directionOverflowCharacters * options.directionCharacterUnitWidth
+    + longestLyricOverflow * options.lyricCharacterUnitWidth * 1.5
+    + longestDirectionOverflow * options.directionCharacterUnitWidth * 1.25,
   );
 }
 
@@ -132,6 +156,7 @@ function buildMeasurePlan(
 ): MeasureLayoutPlan {
   const complexity = scoreMeasureComplexity(measure);
   const collisionPressure = scoreCollisionPressure(measure);
+  const textSpacingDemand = scoreTextSpacingDemand(measure, options);
   const spacingUnits = Math.max(1, complexity);
   const idealWidth = Math.max(
     options.minimumMeasureWidth,
@@ -142,9 +167,18 @@ function buildMeasurePlan(
       + measure.slurCount * options.slurUnitWidth
       + measure.tupletCount * options.tupletUnitWidth
       + ((measure.hasRepeatStart || measure.hasRepeatEnd) ? options.repeatUnitWidth : 0)
-      + (measure.hasEnding ? options.endingUnitWidth : 0),
+      + (measure.hasEnding ? options.endingUnitWidth : 0)
+      + textSpacingDemand,
   );
-  const minimumWidth = Math.max(options.minimumMeasureWidth, Math.round(idealWidth * 0.68));
+  const longestTokenDemand = (
+    Math.max(0, measure.maxLyricTokenLength - 8) * options.lyricCharacterUnitWidth * 2.5
+    + Math.max(0, measure.maxDirectionTokenLength - 12) * options.directionCharacterUnitWidth * 2
+  );
+  const minimumWidth = Math.max(
+    options.minimumMeasureWidth,
+    Math.round(idealWidth * 0.68),
+    longestTokenDemand > 0 ? Math.round(options.baseMeasureWidth + longestTokenDemand) : 0,
+  );
 
   return {
     measureId: measure.measureId,
@@ -156,6 +190,7 @@ function buildMeasurePlan(
     minimumWidth,
     idealWidth,
     spacingUnits,
+    textSpacingDemand,
     staffSpacing: resolveStaffSpacing(document, measure) ?? recommendedStaffSpacing(measure),
   };
 }
