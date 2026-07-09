@@ -8,6 +8,7 @@ import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { GUITAR_TUNINGS, resolveGuitarFretPitch, resolveGuitarTuning, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { QWERTY_PIANO_KEYS } from '@/src/score-input/repitch-mode';
+import type { MidiInputStatus } from '@/hooks/useMidiInput';
 
 const NOTE_ICONS: Record<NoteDuration, React.ReactNode> = {
   '1': <NoteDurationGlyph duration="1" />,
@@ -180,6 +181,9 @@ interface Props {
   noteInputMode: boolean;
   chordInputMode: boolean;
   stepInputKeyboardMode: boolean;
+  midiInputEnabled: boolean;
+  midiInputStatus: MidiInputStatus;
+  midiInputDevices: string[];
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -198,6 +202,7 @@ interface Props {
   onToggleEntryMode: () => void;
   onToggleChordInputMode: () => void;
   onToggleStepInputKeyboardMode: () => void;
+  onToggleMidiInput: () => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -388,10 +393,10 @@ function stripShortcutSuffix(label: string) {
 export default function NoteInputToolbar({
   placement = 'toolbar',
   coreDocument,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, midiInputEnabled, midiInputStatus, midiInputDevices, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
   selectedDuration, selectedAccidental, isDotted, selectedVoice,
   entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave,
-  onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique,
+  onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleMidiInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique,
   onDurationChange, onAccidentalChange, onToggleDotted,
   onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
@@ -455,6 +460,7 @@ export default function NoteInputToolbar({
     entryMode === 'overwrite' ? 'OVR' : 'INS',
     chordInputMode ? 'CHD' : null,
     stepInputKeyboardMode ? 'STEP' : null,
+    midiInputEnabled ? 'MIDI' : null,
     leadsheetMode ? 'LEAD' : null,
     guitarInputMode ? 'TAB' : null,
   ].filter(Boolean).join(' · ');
@@ -708,6 +714,24 @@ export default function NoteInputToolbar({
         wide
       >
         <span className="text-[10px] font-semibold tracking-wider">STEP</span>
+      </TBtn>
+      <TBtn
+        onClick={onToggleMidiInput}
+        title={[
+          midiInputEnabled ? 'Disable live MIDI input' : 'Enable live MIDI input',
+          midiInputStatus === 'requesting' ? 'Requesting MIDI access…' : null,
+          midiInputStatus === 'waiting' ? 'Waiting for a MIDI input device' : null,
+          midiInputStatus === 'denied' ? 'MIDI access was denied; click to retry' : null,
+          midiInputStatus === 'unsupported' ? 'Web MIDI is not supported in this browser' : null,
+          midiInputStatus === 'error' ? 'MIDI input could not be started; click to retry' : null,
+          midiInputDevices.length > 0 ? midiInputDevices.join(', ') : null,
+        ].filter(Boolean).join('\n')}
+        active={midiInputEnabled}
+        disabled={midiInputStatus === 'requesting' || midiInputStatus === 'unsupported'}
+        disabledReason={midiInputStatus === 'unsupported' ? 'Web MIDI is unavailable' : undefined}
+        wide
+      >
+        <span className="text-[10px] font-semibold tracking-wider">MIDI</span>
       </TBtn>
       <TBtn
         onClick={onToggleLeadsheetMode}

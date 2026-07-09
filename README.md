@@ -48,7 +48,7 @@ The core value is:
 
 - Import `.musicxml`, `.xml`, `.mxl`, `.mscz`, GuitarPro files, MIDI, and `.nxn` project files. PDF/photo import is assisted and review-based.
 - Render MusicXML in-browser with OpenSheetMusicDisplay.
-- Edit notes directly with MuseScore-style keyboard and mouse workflows.
+- Edit notes directly with MuseScore-style keyboard, mouse, QWERTY piano, and live MIDI step-input workflows.
 - Use selection ranges, transpose tools, dynamics, articulations with placement controls, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and layout hints.
 - Use an AI assistant with Ollama, Claude, Gemini, or benchmark mode.
 - Preview and confirm risky AI edits before applying them.
@@ -84,6 +84,7 @@ Founder testing is focused on this loop rather than a hosted SaaS workflow. The 
 - Optional: local Ollama or provider keys for AI editing
 - Optional: MuseScore 4 CLI for MSCZ, GuitarPro, MIDI, ABC, and practice-pack workflows
 - Optional: Audiveris for PDF/image import
+- Optional: a Web MIDI-compatible keyboard or controller for live step-time note and chord entry
 
 Maintainer defaults currently assume macOS paths:
 

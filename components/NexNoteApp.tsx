@@ -53,6 +53,7 @@ import { buildBugReportBundle, exportBugReportBundle, type BugReportChatMessage 
 import { isDebugEnabled } from '@/lib/debug';
 import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-recorder';
 import { usePlayback } from '@/hooks/usePlayback';
+import { useMidiInput } from '@/hooks/useMidiInput';
 import { useNoteEditor, type ArticulationKind, type BarlineKind, type DynamicKind, type SelectedNote } from '@/hooks/useNoteEditor';
 import { useScoreDocument, type ScoreDocumentSelectionAnchor } from '@/hooks/useScoreDocument';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
@@ -87,6 +88,7 @@ import type { DoctorDomain } from '@/src/debug/doctor/types';
 import { useI18n } from '@/lib/i18n';
 import { writeLeftNotationSidebarCollapsed } from '@/lib/left-notation-sidebar';
 import { type NativeEditCommand, shouldUseNativeMenuClipboardCommand } from '@/lib/native-clipboard-shortcuts';
+import { preferFlatsForKeySignature } from '@/src/score-input/midi-input';
 
 const ScoreEditor = dynamic(() => import('@/components/ScoreEditor'), { ssr: false });
 const ScorePreview = dynamic(() => import('@/components/ScorePreview'), { ssr: false });
@@ -985,7 +987,7 @@ export default function Home({ searchParams }: HomeProps) {
     editorError,
     toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
     toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
-    changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, toggleArticulation, clearArticulations, addDynamic, toggleTie, toggleSlur,
+    changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, clearArticulations, addDynamic, toggleTie, toggleSlur,
     transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, placeNoteAt,
   } = useNoteEditor(
     xml,
@@ -1003,6 +1005,39 @@ export default function Home({ searchParams }: HomeProps) {
   );
 
   const activePlaybackNote = noteInputAnchor ?? selectedNote;
+
+  const preferFlatsForMidiInput = useMemo(() => {
+    if (!coreDocument || !activePlaybackNote) return false;
+    const part = coreDocument.score.parts.find((entry) => entry.id === activePlaybackNote.corePartId)
+      ?? coreDocument.score.parts.find((entry) => entry.staves.some((staff) => (
+        staff.staffIndex === activePlaybackNote.staffIndex
+        && staff.measures.some((measure) => measure.measureNumber === activePlaybackNote.measureNumber)
+      )));
+    const staff = part?.staves.find((entry) => entry.staffIndex === activePlaybackNote.staffIndex);
+    let keyFifths = 0;
+    for (const measure of staff?.measures ?? []) {
+      if (measure.measureNumber > activePlaybackNote.measureNumber) break;
+      for (const attributes of measure.attributes) {
+        if (attributes.keyFifths != null) keyFifths = attributes.keyFifths;
+      }
+    }
+    return preferFlatsForKeySignature(keyFifths);
+  }, [activePlaybackNote, coreDocument]);
+
+  const {
+    enabled: midiInputEnabled,
+    status: midiInputStatus,
+    deviceNames: midiInputDevices,
+    toggle: toggleMidiInput,
+  } = useMidiInput({
+    onChord: insertMidiChord,
+    preferFlats: preferFlatsForMidiInput,
+  });
+
+  const handleToggleMidiInput = useCallback(() => {
+    if (!midiInputEnabled && !noteInputMode) toggleNoteInput();
+    void toggleMidiInput();
+  }, [midiInputEnabled, noteInputMode, toggleMidiInput, toggleNoteInput]);
 
   useLayoutEffect(() => {
     playbackSelectedNoteRef.current = activePlaybackNote;
@@ -4766,6 +4801,9 @@ export default function Home({ searchParams }: HomeProps) {
                     noteInputMode={noteInputMode}
                     chordInputMode={chordInputMode}
                     stepInputKeyboardMode={stepInputKeyboardMode}
+                    midiInputEnabled={midiInputEnabled}
+                    midiInputStatus={midiInputStatus}
+                    midiInputDevices={midiInputDevices}
                     leadsheetMode={leadsheetMode}
                     guitarInputMode={guitarInputMode}
                     selectedGuitarString={selectedGuitarString}
@@ -4785,6 +4823,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onToggleEntryMode={toggleEntryMode}
                     onToggleChordInputMode={toggleChordInputMode}
                     onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
+                    onToggleMidiInput={handleToggleMidiInput}
                     onToggleLeadsheetMode={toggleLeadsheetMode}
                     onToggleGuitarInputMode={toggleGuitarInputMode}
                     onInsertGuitarFret={insertGuitarFret}
@@ -4890,6 +4929,9 @@ export default function Home({ searchParams }: HomeProps) {
                         noteInputMode={noteInputMode}
                         chordInputMode={chordInputMode}
                         stepInputKeyboardMode={stepInputKeyboardMode}
+                        midiInputEnabled={midiInputEnabled}
+                        midiInputStatus={midiInputStatus}
+                        midiInputDevices={midiInputDevices}
                         leadsheetMode={leadsheetMode}
                         guitarInputMode={guitarInputMode}
                         selectedGuitarString={selectedGuitarString}
@@ -4908,6 +4950,7 @@ export default function Home({ searchParams }: HomeProps) {
                         onToggleEntryMode={toggleEntryMode}
                         onToggleChordInputMode={toggleChordInputMode}
                         onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
+                        onToggleMidiInput={handleToggleMidiInput}
                         onToggleLeadsheetMode={toggleLeadsheetMode}
                         onToggleGuitarInputMode={toggleGuitarInputMode}
                         onInsertGuitarFret={insertGuitarFret}

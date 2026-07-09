@@ -125,6 +125,9 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     noteInputMode: false,
     chordInputMode: false,
     stepInputKeyboardMode: false,
+    midiInputEnabled: false,
+    midiInputStatus: 'idle',
+    midiInputDevices: [],
     leadsheetMode: false,
     guitarInputMode: false,
     selectedGuitarString: 1,
@@ -143,6 +146,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleEntryMode() {},
     onToggleChordInputMode() {},
     onToggleStepInputKeyboardMode() {},
+    onToggleMidiInput() {},
     onToggleLeadsheetMode() {},
     onToggleGuitarInputMode() {},
     onInsertGuitarFret() {},
@@ -679,6 +683,35 @@ test('NotationToolbar exposes a QWERTY step-input surface when the step keyboard
   act(() => {
     renderer?.unmount();
   });
+});
+
+test('NotationToolbar exposes live MIDI device state and toggle', () => {
+  let toggled = 0;
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NotationToolbar, toolbarProps({
+      noteInputMode: true,
+      midiInputEnabled: true,
+      midiInputStatus: 'connected',
+      midiInputDevices: ['Acme Stage 88'],
+      onToggleMidiInput() {
+        toggled += 1;
+      },
+    })));
+  });
+
+  const midiButton = renderer!.root.findAll((node) => (
+    node.type === 'button'
+    && typeof node.props.title === 'string'
+    && node.props.title.includes('Acme Stage 88')
+  ))[0];
+  assert.ok(midiButton);
+  assert.match(midiButton.props.title, /Disable live MIDI input/);
+
+  act(() => midiButton.props.onClick());
+  assert.equal(toggled, 1);
+  act(() => renderer?.unmount());
 });
 
 test('NotationToolbar starts note input when a duration button is clicked', () => {

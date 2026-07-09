@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   buildChildProcessEnv,
   decidePackagedBuildFreshness,
+  isAllowedRendererPermission,
   resolveExecutable,
   uniquePathDirectories,
 } = require('../electron/launch-helpers.cjs') as typeof import('../electron/launch-helpers.cjs');
@@ -89,4 +90,13 @@ test('uniquePathDirectories removes empty and duplicate PATH entries', () => {
     uniquePathDirectories(['/bin', '', '/usr/bin', '/bin', '/usr/bin', '/custom/bin']),
     ['/bin', '/usr/bin', '/custom/bin'],
   );
+});
+
+test('Electron permissions allow MIDI only from the local renderer origin', () => {
+  const rendererUrl = 'http://127.0.0.1:43123/nex-note-app';
+  assert.equal(isAllowedRendererPermission('midi', 'http://127.0.0.1:43123/nex-note-app', rendererUrl), true);
+  assert.equal(isAllowedRendererPermission('midiSysex', 'http://127.0.0.1:43123/nex-note-app', rendererUrl), true);
+  assert.equal(isAllowedRendererPermission('midi', 'http://127.0.0.1:43124/nex-note-app', rendererUrl), false);
+  assert.equal(isAllowedRendererPermission('midi', 'https://example.com', rendererUrl), false);
+  assert.equal(isAllowedRendererPermission('geolocation', 'http://127.0.0.1:43123', rendererUrl), false);
 });

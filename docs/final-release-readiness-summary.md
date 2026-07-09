@@ -1,6 +1,6 @@
 # Release Readiness Summary
 
-Updated: 2026-07-04
+Updated: 2026-07-09
 
 This file is the short executive summary; the detailed progress log is maintained privately.
 
@@ -14,10 +14,11 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-04 (`845` tests, `0` failed, `8813.13675ms`)
-- `npm run build`: passed on 2026-07-04; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
+- `npm test`: passed on 2026-07-09 (`876` tests, `0` failed)
+- `npm run build`: passed on 2026-07-09; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
+- `npm run test:e2e:notation-tools`: passed on 2026-07-09 (`11` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
-- `npm run electron:build`: passed on 2026-07-04; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
+- `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
 - MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-04 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; artifacts were written under `.nex/musescore-roundtrip-smoke-2026-07-04T21-31-22-795Z`
 - `npm run test:coverage:check`: last passed on 2026-05-13 (`84.96%` lines, `76.57%` branches, `85.33%` functions)
 - `npm audit --audit-level=high`: last passed on 2026-05-13 (`0` vulnerabilities)
@@ -25,6 +26,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - tie placement for selected tie starts and articulation/fermata placement for selected notes now run through the semantic command path, are visible in the Inspector, and roundtrip through MusicXML
 - core MusicXML export now keeps root-level metadata elements in MusicXML order and no longer appends an empty trailing `<identification/>` after `<part>`
 - note-input hardening now keeps ghost, commit, selection, and playback anchors aligned across whole-rest measures, rest-only internal slots, cross-measure pointer sequences, TAB fret entry, and clicked-note step-time activation
+- live MIDI step input now batches simultaneous note-on messages into one semantic chord transaction, follows the active key signature for sharp/flat spelling, and advances once per played onset
 
 ## Manual Validation Highlights
 
@@ -33,6 +35,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - true multi-voice runtime targeting remains stable on `temp-multi-voice-runtime.musicxml`
 - follow-up note-input ghost calibration now stays anchored to the correct parallel part after entry
 - step-time anchor validation artifacts were captured under `artifacts/qa/step-time-anchor-validation/`, covering whole-rest insertion, rejected invalid internal hovers, and TAB fret mirroring
+- the rebuilt packaged app exposes the live MIDI control, grants its own local renderer MIDI access, and reaches the visible “Waiting for a MIDI input device” state; a physical controller was not attached for this pass
 
 ## Acceptable Remaining Limitations
 

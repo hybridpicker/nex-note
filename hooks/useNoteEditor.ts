@@ -23,6 +23,7 @@ import {
 import { buildClipboardPayloadFromSelection } from '@/src/score-core/query/clipboard';
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score-input/commit-resolver';
 import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut } from '@/src/score-input/keyboard-resolver';
+import type { MidiPitch } from '@/src/score-input/midi-input';
 import { resolveGuitarFretPitch, resolveGuitarTuning, type GuitarFretPitch, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import { resolveQwertyPianoKey } from '@/src/score-input/repitch-mode';
 import { inspectResolvedEditTarget } from '@/src/score-input/note-entry-validator';
@@ -431,6 +432,16 @@ function findAdjacentSelection(document: ScoreDocumentModel | null | undefined, 
   const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
   if (nextIndex < 0 || nextIndex >= ordered.length) return null;
   return ordered[nextIndex];
+}
+
+function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote) {
+  const ordered = getSelectionLaneOrder(document, current);
+  const currentIndex = findSelectionIndex(ordered, current);
+  if (currentIndex < 0) return null;
+  return ordered.slice(currentIndex + 1).find((entry) => (
+    entry.measureNumber !== current.measureNumber
+    || !timestampsEqual(entry.timestampNum, entry.timestampDen, current.timestampNum, current.timestampDen)
+  )) ?? null;
 }
 
 function isLocalNoteInputAdvance(current: SelectedNote, candidate: SelectedNote | null) {
@@ -1835,7 +1846,7 @@ export function useNoteEditor(
     }
 
     const rawNextSelection = noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && enteredNote
-      ? findAdjacentSelection(nextDocument, enteredNote, 'next')
+      ? findNextRhythmicSelection(nextDocument, enteredNote)
       : null;
     const nextSelection = enteredNote && isLocalNoteInputAdvance(enteredNote, rawNextSelection)
       ? rawNextSelection
@@ -2179,6 +2190,121 @@ export function useNoteEditor(
       guitar: options?.guitar,
     });
   }, [commitResolvedNoteEntry, coreDocument, resolveEventTimingFromDocument, selectedNote, setIsDottedLive, setSelectedDurationLive]);
+
+  const insertMidiChord = useCallback((inputPitches: MidiPitch[]) => {
+    if (!noteInputModeRef.current) return false;
+    const pitches = [...new Map(inputPitches.map((pitch) => [pitch.midi, pitch])).values()]
+      .sort((left, right) => left.midi - right.midi);
+    if (pitches.length === 0) return false;
+
+    const targetNote = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
+    if (!targetNote) return false;
+    const selectedTiming = resolveEventTimingFromDocument(coreDocument, {
+      coreMeasureId: targetNote.coreMeasureId ?? null,
+      corePartId: targetNote.corePartId ?? null,
+      measureNumber: targetNote.measureNumber,
+      staffIndex: targetNote.staffIndex,
+      voiceId: targetNote.voiceId,
+      timestampNum: targetNote.timestampNum,
+      timestampDen: targetNote.timestampDen,
+    });
+    const firstPitch = pitches[0]!;
+    const firstTarget = resolveKeyboardEditTarget({
+      anchor: {
+        coreMeasureId: targetNote.coreMeasureId ?? null,
+        corePartId: targetNote.corePartId ?? null,
+        measureNumber: targetNote.measureNumber,
+        staffIndex: targetNote.staffIndex,
+        voiceId: targetNote.voiceId,
+        timestampNum: targetNote.timestampNum,
+        timestampDen: targetNote.timestampDen,
+      },
+      pitch: firstPitch,
+      entryMode: entryModeRef.current,
+      noteInputMode: true,
+      chordInputMode: false,
+      selectedVoice: selectedVoiceRef.current,
+      selectedTiming: selectedTiming ? {
+        timestampNum: selectedTiming.timestampNum,
+        timestampDen: selectedTiming.timestampDen,
+        durationDivisions: selectedTiming.durationDivisions,
+      } : null,
+    });
+    if (!firstTarget) return false;
+
+    const duration = selectedDurationRef.current;
+    const dotted = isDottedRef.current;
+    const durationType = DURATION_TYPE_MAP[duration];
+    const inspected = inspectResolvedEditTarget({
+      coreDocument,
+      target: firstTarget,
+      durationType,
+      isDotted: dotted,
+    });
+    if (!inspected.target) {
+      warnRejectedEdit('insertMidiChord', {
+        rejectionReason: inspected.rejectionReason,
+        diagnostics: inspected.diagnostics,
+        target: firstTarget,
+      });
+      return false;
+    }
+
+    const validatedTarget = inspected.target;
+    const commands = buildNoteEntryCommitCommands({
+      target: validatedTarget,
+      durationType,
+      isDotted: dotted,
+      existingEventKind: validatedTarget.existingEventKind ?? null,
+      preserveOverflow: Boolean(validatedTarget.preserveOverflow),
+    });
+    for (const pitch of pitches.slice(1)) {
+      commands.push(...buildNoteEntryCommitCommands({
+        target: {
+          ...validatedTarget,
+          mode: 'chord',
+          step: pitch.step,
+          octave: pitch.octave,
+          alter: pitch.alter,
+          relativeAfterTimestampNum: undefined,
+          relativeAfterTimestampDen: undefined,
+          existingEventKind: 'note',
+          existingEventStartsAtTarget: true,
+          diagnostics: [...validatedTarget.diagnostics, 'midi-simultaneous-chord'],
+        },
+        durationType,
+        isDotted: dotted,
+        existingEventKind: 'note',
+      }));
+    }
+
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      warnNoOpEdit('insertMidiChord', commands[0]!);
+      return false;
+    }
+
+    warnPostCommitDiagnostics(
+      'insertMidiChord',
+      validateScoreDocument(coreDocument),
+      next.diagnostics,
+      validatedTarget,
+      commands,
+    );
+    commitNoteInputUpdate(
+      commands,
+      next.coreDocument,
+      toResolvedEditLocator(validatedTarget),
+      targetNote,
+      {
+        isRest: false,
+        step: firstPitch.step,
+        octave: firstPitch.octave,
+        alter: firstPitch.alter,
+      },
+    );
+    return true;
+  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, warnNoOpEdit, warnRejectedEdit, xml]);
 
   const insertGuitarFret = useCallback((string: GuitarStringNumber, fret: number, tuningId = selectedGuitarTuningRef.current) => {
     const tuning = resolveGuitarTuning(tuningId);
@@ -3475,6 +3601,7 @@ export function useNoteEditor(
     changeNoteDuration,
     changeOctave,
     insertNote,
+    insertMidiChord,
     insertGuitarFret,
     setGuitarFretAtNote,
     toggleGuitarTechnique,

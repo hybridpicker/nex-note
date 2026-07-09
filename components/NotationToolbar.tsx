@@ -6,6 +6,7 @@ import type { PlaybackState } from '@/hooks/usePlayback';
 import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, ArticulationKind, BarlineKind, DynamicKind, GuitarTechniqueKind, TupletNumber } from '@/hooks/useNoteEditor';
 import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
+import type { MidiInputStatus } from '@/hooks/useMidiInput';
 
 interface Props {
   // Playback
@@ -29,6 +30,9 @@ interface Props {
   noteInputMode: boolean;
   chordInputMode: boolean;
   stepInputKeyboardMode: boolean;
+  midiInputEnabled: boolean;
+  midiInputStatus: MidiInputStatus;
+  midiInputDevices: string[];
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -48,6 +52,7 @@ interface Props {
   onToggleEntryMode: () => void;
   onToggleChordInputMode: () => void;
   onToggleStepInputKeyboardMode: () => void;
+  onToggleMidiInput: () => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -234,9 +239,9 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, midiInputEnabled, midiInputStatus, midiInputDevices, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleMidiInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -425,6 +430,9 @@ export default function NotationToolbar({
           noteInputMode={noteInputMode}
           chordInputMode={chordInputMode}
           stepInputKeyboardMode={stepInputKeyboardMode}
+          midiInputEnabled={midiInputEnabled}
+          midiInputStatus={midiInputStatus}
+          midiInputDevices={midiInputDevices}
           leadsheetMode={leadsheetMode}
           guitarInputMode={guitarInputMode}
           selectedGuitarString={selectedGuitarString}
@@ -443,6 +451,7 @@ export default function NotationToolbar({
           onToggleEntryMode={onToggleEntryMode}
           onToggleChordInputMode={onToggleChordInputMode}
           onToggleStepInputKeyboardMode={onToggleStepInputKeyboardMode}
+          onToggleMidiInput={onToggleMidiInput}
           onToggleLeadsheetMode={onToggleLeadsheetMode}
           onToggleGuitarInputMode={onToggleGuitarInputMode}
           onInsertGuitarFret={onInsertGuitarFret}

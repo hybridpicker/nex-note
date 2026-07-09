@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   buildChildProcessEnv,
   decidePackagedBuildFreshness,
+  isAllowedRendererPermission,
   pathExists,
   resolveExecutable,
 } = require('./launch-helpers.cjs');
@@ -798,6 +799,14 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       sandbox: true,
     },
+  });
+
+  const rendererSession = mainWindow.webContents.session;
+  rendererSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => (
+    isAllowedRendererPermission(permission, details?.requestingUrl || requestingOrigin, url)
+  ));
+  rendererSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(isAllowedRendererPermission(permission, details?.requestingUrl || webContents.getURL(), url));
   });
 
   mainWindow.on('page-title-updated', (event) => {

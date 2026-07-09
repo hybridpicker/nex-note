@@ -680,6 +680,30 @@ test('keyboard shortcuts toggle note-input, duration, dotted state, and entry mo
   hook.unmount();
 });
 
+test('live MIDI step input commits simultaneous notes as one chord transaction', () => {
+  const hook = renderHook(SAMPLE_XML);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('N'));
+    hook.current.insertMidiChord([
+      { midi: 67, step: 'G', octave: 4, alter: 0 },
+      { midi: 60, step: 'C', octave: 4, alter: 0 },
+      { midi: 64, step: 'E', octave: 4, alter: 0 },
+    ]);
+  });
+  hook.rerender();
+
+  const firstOnset = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.kind === 'note' && event.measureNumber === 1 && event.timestampNum === 0)
+    .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : '')
+    .sort();
+  assert.deepEqual(firstOnset, ['C4', 'E4', 'G4']);
+  assert.equal(hook.appliedCommands.length, 1);
+  assert.equal(hook.appliedCommands[0]!.filter((command) => command.type === 'insertNoteAt').length, 2);
+  assert.equal(hook.current.selectedNote?.timestampNum, 1);
+  hook.unmount();
+});
+
 test('P toggles the QWERTY step keyboard and routes QWERTY piano keys through semantic note entry', () => {
   const hook = renderHook(SAMPLE_XML);
   const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);

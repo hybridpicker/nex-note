@@ -17,6 +17,9 @@ This directory mixes current status docs, architecture docs, validation material
   - Executive summary of public alpha and final-release readiness
   - Short version of the current recommendation and remaining release blockers
 
+- [master-scorecard.md](./master-scorecard.md)
+  - Conservative MuseScore-relative capability scores recorded before and after each product iteration
+
 - [user-visible-audible-test-plan.md](./user-visible-audible-test-plan.md)
   - Manual regression matrix for user-visible and audible behavior
 
