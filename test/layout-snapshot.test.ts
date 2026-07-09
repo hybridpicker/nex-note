@@ -156,3 +156,49 @@ test('buildLayoutPlan derives rule-driven system breaks when measure widths over
   assert.equal(plan.systems[1].explicitBreakBefore, false);
   assert.equal(plan.measures.find((measure) => measure.measureNumber === 3)?.systemIndex, 1);
 });
+
+test('staff spacing inheritance prefers the newest hint and the most specific same-measure override', () => {
+  const document = normalizeScoreDocument(importMusicXmlToCore(loadFixture('repeat-ending-sequence.musicxml')));
+  const sourcePartId = document.score.parts[0]!.sourcePartId;
+  document.layoutHints.push(
+    {
+      id: 'spacing:m1:staff',
+      scope: 'staff',
+      measureNumber: 1,
+      partId: sourcePartId,
+      staffIndex: 1,
+      kind: 'staffSpacing',
+      value: 88,
+    },
+    {
+      id: 'spacing:m2:global',
+      scope: 'staff',
+      measureNumber: 2,
+      kind: 'staffSpacing',
+      value: 96,
+    },
+    {
+      id: 'spacing:m2:staff',
+      scope: 'staff',
+      measureNumber: 2,
+      partId: sourcePartId,
+      staffIndex: 1,
+      kind: 'staffSpacing',
+      value: 120,
+    },
+    {
+      id: 'spacing:m2:staff:latest',
+      scope: 'staff',
+      measureNumber: 2,
+      partId: sourcePartId,
+      staffIndex: 1,
+      kind: 'staffSpacing',
+      value: 124,
+    },
+  );
+
+  const plan = buildLayoutPlan(document, buildLayoutSnapshot(document));
+  assert.equal(plan.measures.find((measure) => measure.measureNumber === 1)?.staffSpacing, 88);
+  assert.equal(plan.measures.find((measure) => measure.measureNumber === 2)?.staffSpacing, 124);
+  assert.equal(plan.measures.find((measure) => measure.measureNumber === 3)?.staffSpacing, 124);
+});

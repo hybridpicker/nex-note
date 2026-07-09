@@ -79,13 +79,21 @@ const DEFAULT_OPTIONS: Required<LayoutPlanOptions> = {
 
 function resolveStaffSpacing(document: ScoreDocumentModel, measure: LayoutMeasureSnapshot) {
   if (measure.explicitStaffSpacing != null) return measure.explicitStaffSpacing;
-  const hint = document.layoutHints.find((entry) => (
-    entry.kind === 'staffSpacing'
-    && typeof entry.value === 'number'
-    && entry.measureNumber <= measure.measureNumber
-    && (entry.partId == null || entry.partId === measure.sourcePartId)
-    && (entry.staffIndex == null || entry.staffIndex === measure.staffIndex)
-  ));
+  const hint = document.layoutHints
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => (
+      entry.kind === 'staffSpacing'
+      && typeof entry.value === 'number'
+      && entry.measureNumber <= measure.measureNumber
+      && (entry.partId == null || entry.partId === measure.sourcePartId)
+      && (entry.staffIndex == null || entry.staffIndex === measure.staffIndex)
+    ))
+    .sort((left, right) => (
+      right.entry.measureNumber - left.entry.measureNumber
+      || Number(right.entry.partId != null) - Number(left.entry.partId != null)
+      || Number(right.entry.staffIndex != null) - Number(left.entry.staffIndex != null)
+      || right.index - left.index
+    ))[0]?.entry;
   return typeof hint?.value === 'number' ? hint.value : null;
 }
 

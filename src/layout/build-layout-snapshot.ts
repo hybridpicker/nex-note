@@ -65,13 +65,20 @@ function hasMeasureBreakHint(hints: LayoutHint[], measureNumber: number, kind: '
 }
 
 function findStaffSpacingHintValue(hints: LayoutHint[], measureNumber: number, partId: string, staffIndex: number) {
-  const hint = hints.find((entry) => (
-    entry.measureNumber === measureNumber
-    && entry.kind === 'staffSpacing'
-    && typeof entry.value === 'number'
-    && (entry.partId == null || entry.partId === partId)
-    && (entry.staffIndex == null || entry.staffIndex === staffIndex)
-  ));
+  const hint = hints
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => (
+      entry.measureNumber === measureNumber
+      && entry.kind === 'staffSpacing'
+      && typeof entry.value === 'number'
+      && (entry.partId == null || entry.partId === partId)
+      && (entry.staffIndex == null || entry.staffIndex === staffIndex)
+    ))
+    .sort((left, right) => (
+      Number(right.entry.partId != null) - Number(left.entry.partId != null)
+      || Number(right.entry.staffIndex != null) - Number(left.entry.staffIndex != null)
+      || right.index - left.index
+    ))[0]?.entry;
   return typeof hint?.value === 'number' ? hint.value : null;
 }
 

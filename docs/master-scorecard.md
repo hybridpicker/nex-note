@@ -133,3 +133,22 @@ All unlisted capabilities inherit the 46% product state above.
 - Closing: **47%**
 
 Vertical lyric demand now follows the number of concurrent verse lines, not the total number of syllable events in a measure. This prevents long single-verse passages from becoming increasingly over-spaced while still reserving one aligned line per verse across the system. Exact font line height, above-staff lyrics, and skyline interaction with dynamics and pedal marks remain open.
+
+## Iteration 2026-07-09 — Predictable Staff-Spacing Overrides
+
+All unlisted capabilities inherit the 47% product state above.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Layout | 56% | 58% |
+| Spacing | 54% | 57% |
+| Inspector | 62% | 64% |
+| Consistency | 65% | 68% |
+| Professional Workflow | 50% | 51% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **47%**
+- Closing: **47%**
+
+Later staff-spacing changes now override earlier inherited values, staff/part-specific hints win over global hints at the same measure, and the newest equally specific edit wins. The overall score stays flat because this is a correctness repair to an existing control, not a new notation domain.
