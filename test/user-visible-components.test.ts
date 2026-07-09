@@ -1435,9 +1435,10 @@ test('ScoreInspector dispatches visible selection and measure commands', async (
     buttonWithText(root, 'Toggle staccato').props.onClick();
     buttonWithText(root, 'Insert after m.2').props.onClick();
     buttonWithText(root, 'Delete m.2').props.onClick();
+    buttonWithText(root, 'open').props.onClick();
   });
 
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
   assert.equal(calls[0]?.label, 'Transpose selected range +2');
   assert.deepEqual(calls[0]?.commands, [{
     type: 'transposeRangeChromatic',
@@ -1453,6 +1454,14 @@ test('ScoreInspector dispatches visible selection and measure commands', async (
   )), true);
   assert.deepEqual(calls[2]?.commands, [{ type: 'insertMeasureAfter', measureNumber: 2 }]);
   assert.deepEqual(calls[3]?.commands, [{ type: 'deleteMeasure', measureNumber: 2 }]);
+  assert.equal(calls[4]?.label, 'Open collision spacing');
+  assert.deepEqual(calls[4]?.commands, [{
+    type: 'setMeasureLayoutHint',
+    measureNumber: 2,
+    hint: 'collisionPolicy',
+    value: 'open',
+    staffIndex: 1,
+  }]);
 
   await act(async () => {
     renderer?.unmount();

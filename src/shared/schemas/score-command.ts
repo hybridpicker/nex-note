@@ -753,6 +753,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       ensureString(command, 'hint', issues);
       if (!['newSystem', 'newPage', 'staffSpacing', 'collisionPolicy'].includes(String(command.hint))) issues.push('hint must be one of newSystem, newPage, staffSpacing, collisionPolicy');
       if (!['boolean', 'number', 'string'].includes(typeof command.value)) issues.push('value must be a boolean, number, or string');
+      if (command.hint === 'collisionPolicy' && !['balanced', 'relaxed', 'open'].includes(String(command.value))) issues.push('collisionPolicy value must be balanced, relaxed, or open');
       if (command.staffIndex != null) ensureNumber(command, 'staffIndex', issues, { min: 1 });
       if (command.partId != null) ensureString(command, 'partId', issues);
       break;

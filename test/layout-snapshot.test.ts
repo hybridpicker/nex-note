@@ -202,3 +202,45 @@ test('staff spacing inheritance prefers the newest hint and the most specific sa
   assert.equal(plan.measures.find((measure) => measure.measureNumber === 2)?.staffSpacing, 124);
   assert.equal(plan.measures.find((measure) => measure.measureNumber === 3)?.staffSpacing, 124);
 });
+
+test('collision policies cascade by measure and specificity into system engraving controls', () => {
+  const document = normalizeScoreDocument(importMusicXmlToCore(loadFixture('repeat-ending-sequence.musicxml')));
+  const sourcePartId = document.score.parts[0]!.sourcePartId;
+  document.layoutHints.push(
+    {
+      id: 'collision:m1:global',
+      scope: 'measure',
+      measureNumber: 1,
+      kind: 'collisionPolicy',
+      value: 'open',
+    },
+    {
+      id: 'collision:m2:global',
+      scope: 'measure',
+      measureNumber: 2,
+      kind: 'collisionPolicy',
+      value: 'balanced',
+    },
+    {
+      id: 'collision:m2:staff',
+      scope: 'measure',
+      measureNumber: 2,
+      partId: sourcePartId,
+      staffIndex: 1,
+      kind: 'collisionPolicy',
+      value: 'relaxed',
+    },
+  );
+
+  const plan = buildLayoutPlan(document, buildLayoutSnapshot(document), { systemIdealWidth: 1_000 });
+  const firstMeasure = plan.measures.find((measure) => measure.measureNumber === 1)!;
+  const secondMeasure = plan.measures.find((measure) => measure.measureNumber === 2)!;
+  const thirdMeasure = plan.measures.find((measure) => measure.measureNumber === 3)!;
+
+  assert.equal(firstMeasure.collisionMode, 'open');
+  assert.ok(firstMeasure.staffSpacing >= 112);
+  assert.equal(secondMeasure.collisionMode, 'relaxed');
+  assert.ok(secondMeasure.staffSpacing >= 96);
+  assert.equal(thirdMeasure.collisionMode, 'relaxed');
+  assert.equal(plan.systems[0]?.collisionMode, 'open');
+});

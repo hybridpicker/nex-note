@@ -1,6 +1,8 @@
 import type { LayoutMeasureSnapshot, LayoutPageSnapshot, LayoutSnapshot, LayoutSystemSnapshot } from '@/src/layout/build-layout-snapshot';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 
+export type CollisionPolicy = 'balanced' | 'relaxed' | 'open';
+
 export interface MeasureLayoutPlan {
   measureId: string;
   measureNumber: number;
@@ -8,6 +10,7 @@ export interface MeasureLayoutPlan {
   pageIndex: number;
   complexity: number;
   collisionPressure: number;
+  collisionMode: CollisionPolicy;
   minimumWidth: number;
   idealWidth: number;
   spacingUnits: number;
@@ -22,7 +25,7 @@ export interface SystemLayoutPlan {
   measureIds: string[];
   explicitBreakBefore: boolean;
   collisionPressure: number;
-  collisionMode: 'balanced' | 'relaxed' | 'open';
+  collisionMode: CollisionPolicy;
   minimumWidth: number;
   idealWidth: number;
   spacingUnits: number;
@@ -97,6 +100,27 @@ function resolveStaffSpacing(document: ScoreDocumentModel, measure: LayoutMeasur
   return typeof hint?.value === 'number' ? hint.value : null;
 }
 
+function resolveCollisionPolicy(document: ScoreDocumentModel, measure: LayoutMeasureSnapshot): CollisionPolicy | null {
+  const hint = document.layoutHints
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => (
+      entry.kind === 'collisionPolicy'
+      && (entry.value === 'balanced' || entry.value === 'relaxed' || entry.value === 'open')
+      && entry.measureNumber <= measure.measureNumber
+      && (entry.partId == null || entry.partId === measure.sourcePartId)
+      && (entry.staffIndex == null || entry.staffIndex === measure.staffIndex)
+    ))
+    .sort((left, right) => (
+      right.entry.measureNumber - left.entry.measureNumber
+      || Number(right.entry.partId != null) - Number(left.entry.partId != null)
+      || Number(right.entry.staffIndex != null) - Number(left.entry.staffIndex != null)
+      || right.index - left.index
+    ))[0]?.entry;
+  return hint?.value === 'balanced' || hint?.value === 'relaxed' || hint?.value === 'open'
+    ? hint.value
+    : null;
+}
+
 function scoreMeasureComplexity(measure: LayoutMeasureSnapshot) {
   return (
     measure.eventCount
@@ -140,9 +164,21 @@ function scoreTextSpacingDemand(measure: LayoutMeasureSnapshot, options: Require
   );
 }
 
-function deriveCollisionMode(collisionPressure: number): 'balanced' | 'relaxed' | 'open' {
+function deriveCollisionMode(collisionPressure: number): CollisionPolicy {
   if (collisionPressure >= 6) return 'open';
   if (collisionPressure >= 3) return 'relaxed';
+  return 'balanced';
+}
+
+function collisionPolicyStaffSpacingFloor(policy: CollisionPolicy) {
+  if (policy === 'open') return 112;
+  if (policy === 'relaxed') return 96;
+  return 0;
+}
+
+function strongestCollisionMode(modes: CollisionPolicy[]): CollisionPolicy {
+  if (modes.includes('open')) return 'open';
+  if (modes.includes('relaxed')) return 'relaxed';
   return 'balanced';
 }
 
@@ -164,6 +200,8 @@ function buildMeasurePlan(
 ): MeasureLayoutPlan {
   const complexity = scoreMeasureComplexity(measure);
   const collisionPressure = scoreCollisionPressure(measure);
+  const explicitCollisionPolicy = resolveCollisionPolicy(document, measure);
+  const collisionMode = explicitCollisionPolicy ?? deriveCollisionMode(collisionPressure);
   const textSpacingDemand = scoreTextSpacingDemand(measure, options);
   const spacingUnits = Math.max(1, complexity);
   const idealWidth = Math.max(
@@ -188,6 +226,8 @@ function buildMeasurePlan(
     longestTokenDemand > 0 ? Math.round(options.baseMeasureWidth + longestTokenDemand) : 0,
   );
 
+  const resolvedStaffSpacing = resolveStaffSpacing(document, measure) ?? recommendedStaffSpacing(measure);
+
   return {
     measureId: measure.measureId,
     measureNumber: measure.measureNumber,
@@ -195,11 +235,15 @@ function buildMeasurePlan(
     pageIndex: 0,
     complexity,
     collisionPressure,
+    collisionMode,
     minimumWidth,
     idealWidth,
     spacingUnits,
     textSpacingDemand,
-    staffSpacing: resolveStaffSpacing(document, measure) ?? recommendedStaffSpacing(measure),
+    staffSpacing: Math.max(
+      resolvedStaffSpacing,
+      explicitCollisionPolicy ? collisionPolicyStaffSpacingFloor(explicitCollisionPolicy) : 0,
+    ),
   };
 }
 
@@ -368,7 +412,7 @@ export function buildLayoutPlan(
       measureIds: [...system.measureIds],
       explicitBreakBefore: system.explicitBreakBefore,
       collisionPressure,
-      collisionMode: deriveCollisionMode(collisionPressure),
+      collisionMode: strongestCollisionMode(measures.map((measure) => measure.collisionMode)),
       minimumWidth: measures.reduce((sum, measure) => sum + measure.minimumWidth, 0),
       idealWidth: measures.reduce((sum, measure) => sum + measure.idealWidth, 0),
       spacingUnits: measures.reduce((sum, measure) => sum + measure.spacingUnits, 0),

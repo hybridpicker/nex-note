@@ -241,6 +241,25 @@ test('normalizeScoreCommands rejects invalid command payloads', () => {
   );
 });
 
+test('normalizeScoreCommands accepts only supported collision spacing policies', () => {
+  assert.doesNotThrow(() => normalizeScoreCommands([{
+    type: 'setMeasureLayoutHint',
+    measureNumber: 1,
+    hint: 'collisionPolicy',
+    value: 'open',
+  }]));
+  assert.throws(
+    () => normalizeScoreCommands([{
+      type: 'setMeasureLayoutHint',
+      measureNumber: 1,
+      hint: 'collisionPolicy',
+      value: 'maximum',
+    }]),
+    (error: unknown) => error instanceof CommandValidationError
+      && error.issues.some((issue) => issue.includes('collisionPolicy')),
+  );
+});
+
 test('normalizeScoreCommands accepts pickup measure (measureNumber 0) for note-locator commands', () => {
   const locator = { measureNumber: 0, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 8 };
 

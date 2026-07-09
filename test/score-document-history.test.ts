@@ -178,6 +178,35 @@ test('useScoreDocument keeps core-backed history across undo/redo', () => {
   hook.unmount();
 });
 
+test('useScoreDocument keeps semantic-only layout hints in history when render XML is unchanged', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const originalXml = hook.current.xml;
+
+  let result: ReturnType<HookValue['applyCommands']>;
+  act(() => {
+    result = hook.current.applyCommands([{
+      type: 'setMeasureLayoutHint',
+      measureNumber: 1,
+      staffIndex: 1,
+      hint: 'collisionPolicy',
+      value: 'open',
+    }], { label: 'Open collision spacing' });
+  });
+
+  assert.equal(result!.applied, true);
+  assert.equal(hook.current.xml, originalXml);
+  assert.equal(hook.current.historyDepth, 1);
+  assert.equal(hook.current.historyMeta.lastTransaction?.rollbackMode, 'snapshot');
+  assert.equal(hook.current.coreDocument?.layoutHints.find((hint) => hint.kind === 'collisionPolicy')?.value, 'open');
+
+  act(() => hook.current.undo());
+  assert.equal(hook.current.coreDocument?.layoutHints.some((hint) => hint.kind === 'collisionPolicy'), false);
+
+  act(() => hook.current.redo());
+  assert.equal(hook.current.coreDocument?.layoutHints.find((hint) => hint.kind === 'collisionPolicy')?.value, 'open');
+  hook.unmount();
+});
+
 test('useScoreDocument replays command history across multiple undo/redo steps', () => {
   const hook = renderHook(SAMPLE_XML);
 

@@ -48,6 +48,7 @@ The repository has already crossed several important seams toward the target sta
 - renderer-agnostic layout snapshots now carry lyric and direction text-length metrics so minimum/ideal measure widths and system reflow respond to actual content demand rather than object counts alone.
 - lyric layout snapshots distinguish total syllable events from unique verse depth, allowing horizontal density and vertical staff spacing to use the correct independent metrics.
 - layout-hint resolution now has deterministic cascade semantics: latest measure, then part/staff specificity, then latest equal-specificity edit.
+- collision-spacing policy is no longer passive metadata: validated `balanced`, `relaxed`, and `open` hints use that cascade, feed each measure plan, raise explicit vertical spacing floors, and aggregate conservatively into the system render bridge.
 - note input now has an explicit `score-input` pipeline:
   - canonical `InteractiveEditMap` for visible slot/pitch-lane resolution
   - central `ResolvedEditTarget` model for both preview and commit

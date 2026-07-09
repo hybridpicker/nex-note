@@ -208,7 +208,7 @@ Die Bereiche sind als ein- und ausklappbare Sektionen organisiert. Die Chips dir
 | Key | Presets fuer C, G, D, A, F und Bb major. |
 | Repeats & Endings | Start repeat, End repeat, 1st ending, 2nd ending. |
 | Time & Clef | Taktarten 4/4, 3/4, 6/8, 2/2; Clefs Treble, Bass, Alto. |
-| Measure | Takt einfuegen/loeschen, System Break, Page Break, Staff Spacing. |
+| Measure | Takt einfuegen/loeschen, System Break, Page Break, Staff Spacing sowie Balanced/Relaxed/Open Collision Spacing. |
 | Text & Rehearsal | Rehearsal Marks, Staff Text vs. Expression Text sowie Above/Below-Placement fuer Text und Dynamics. |
 | Lyrics | Lyrics an selektierte Noten haengen. |
 | Parts & Instruments | Part Name, Abbreviation, Instrument Name, Transposition, Part Extraction und Layout-Presets. |
@@ -333,6 +333,7 @@ MXL ist der wichtigste Rueckweg nach MuseScore, Finale, Dorico oder Sibelius. Fu
 | Layout Cleanup | AI-gestuetzte Layout-Bereinigung mit Preview/Confirm. |
 | System/Page Breaks | Inspector setzt Breaks fuer aktuellen Takt oder Part. |
 | Staff Spacing | Inspector setzt Abstand pro Takt oder Part. |
+| Collision Spacing | Inspector setzt ab dem aktuellen Takt `Balanced`, `Relaxed` oder `Open`; spaetere Policies ersetzen fruehere und gelten fuer den ausgewaehlten Staff. |
 | Print Layout Presets | Compact, Balanced, Roomy, Choir fuer Parts. |
 
 ## Undo, Redo und Verlauf

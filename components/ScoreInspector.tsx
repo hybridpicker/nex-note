@@ -955,6 +955,28 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
             Apply spacing
           </button>
         </div>
+        <div className="mt-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Collision spacing</div>
+          <div className="grid grid-cols-3 gap-2">
+            {(['balanced', 'relaxed', 'open'] as const).map((policy) => (
+              <button
+                key={policy}
+                type="button"
+                title={`${policy[0]!.toUpperCase()}${policy.slice(1)} collision spacing from measure ${targetMeasure}`}
+                onClick={() => onApplyCommands([{
+                  type: 'setMeasureLayoutHint',
+                  measureNumber: targetMeasure,
+                  hint: 'collisionPolicy',
+                  value: policy,
+                  staffIndex: selectedNote?.staffIndex ?? 1,
+                }], `${policy[0]!.toUpperCase()}${policy.slice(1)} collision spacing`)}
+                className="rounded-xl bg-sky-50 px-2 py-2 text-xs font-medium capitalize text-sky-900 hover:bg-sky-100"
+              >
+                {policy}
+              </button>
+            ))}
+          </div>
+        </div>
       </InspectorSection>
 
       <InspectorSection

@@ -112,6 +112,10 @@ function deriveMeasureLayoutHintInverse(
   });
 
   if (!hasUniformValue(values)) return null;
+  if (
+    values[0] == null
+    && (command.hint === 'staffSpacing' || command.hint === 'collisionPolicy')
+  ) return null;
 
   return stripEnvelopeMeta({
     type: 'setMeasureLayoutHint',

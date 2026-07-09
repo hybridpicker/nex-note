@@ -78,6 +78,16 @@ export function shouldForceSnapshot(commands: ScoreCommand[], currentHistoryLeng
   return commands.some((command) => isHeavyStructuralCommand(command));
 }
 
+function coreDocumentsDifferIgnoringRevision(
+  current: ScoreDocumentModel | null,
+  next: ScoreDocumentModel | null,
+) {
+  if (current == null || next == null) return current !== next;
+  const { revision: _currentRevision, ...currentValue } = current;
+  const { revision: _nextRevision, ...nextValue } = next;
+  return JSON.stringify(currentValue) !== JSON.stringify(nextValue);
+}
+
 interface UseScoreDocumentOptions {
   buildXmlState?: (xml: string, options?: { sourceMusicXml?: string }) => DocumentState;
   buildCoreState?: (coreDocument: ScoreDocumentModel | null, options: { sourceMusicXml: string; xml?: string }) => DocumentState;
@@ -372,7 +382,10 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     if (!commands.length) return { applied: false, reason: 'empty-command-batch' as const, commandCount: 0, commandTypes: [] as string[] };
     const current = documentRef.current;
     const next = applyDocumentCommands(current, commands);
-    if (next.xml === current.xml) {
+    if (
+      next.xml === current.xml
+      && !coreDocumentsDifferIgnoringRevision(current.coreDocument, next.coreDocument)
+    ) {
       return {
         applied: false,
         reason: 'no-xml-change' as const,

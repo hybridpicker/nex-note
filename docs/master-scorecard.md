@@ -152,3 +152,23 @@ All unlisted capabilities inherit the 47% product state above.
 - Closing: **47%**
 
 Later staff-spacing changes now override earlier inherited values, staff/part-specific hints win over global hints at the same measure, and the newest equally specific edit wins. The overall score stays flat because this is a correctness repair to an existing control, not a new notation domain.
+
+## Iteration 2026-07-09 — Manual Collision-Spacing Policies
+
+All unlisted capabilities inherit the 47% product state above.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Layout | 58% | 61% |
+| Spacing | 57% | 61% |
+| Collision Avoidance | 42% | 47% |
+| Inspector | 64% | 67% |
+| Extensibility | 61% | 64% |
+| Professional Workflow | 51% | 54% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **47%**
+- Closing: **48%**
+
+The Inspector now exposes `Balanced`, `Relaxed`, and `Open` collision spacing. These are semantic, undoable layout commands rather than display-only toggles: an explicit policy cascades from its measure, honors part/staff specificity, sets a vertical spacing floor, and reaches the render bridge as the system collision mode. Automatic pressure-based engraving remains unchanged when no policy is set. This is still policy-level spacing, not glyph-level skyline collision solving or manual element offsets.

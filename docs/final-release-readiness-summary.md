@@ -14,7 +14,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-09 (`880` tests, `0` failed)
+- `npm test`: passed on 2026-07-09 (`883` tests, `0` failed)
 - `npm run build`: passed on 2026-07-09; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
 - `npm run test:e2e:notation-tools`: passed on 2026-07-09 (`11` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
@@ -30,6 +30,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - automatic horizontal layout now measures long lyric and direction text demand instead of treating every text object as equal width; text-heavy measures gain hard/ideal width and trigger earlier system reflow while existing reference-score fingerprints remain stable
 - vertical lyric spacing now follows unique verse depth rather than total syllable count, keeping long vocal passages compact while reserving aligned space for each stacked verse
 - manual staff-spacing hints now cascade predictably: the newest applicable measure wins, specific part/staff values beat global values at the same location, and repeated edits honor the latest value
+- manual collision-spacing policies are now effective end to end: `Balanced`, `Relaxed`, and `Open` Inspector actions persist as validated semantic hints, cascade by measure and specificity, and control render-bridge spacing without changing automatic layout defaults
 
 ## Manual Validation Highlights
 
