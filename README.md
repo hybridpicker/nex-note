@@ -194,6 +194,20 @@ npm run electron:latest
 
 This fetches `origin/devel`, fast-forwards the local `devel` branch, builds the macOS package, quits any running Nex Note app, and opens the rebuilt app. Repo-local packaged apps also verify their embedded build commit against `origin/devel` on startup; when stale, they start the latest-devel rebuild/relaunch flow automatically.
 
+### Packaged Launch Guardrails
+
+The Electron startup path is intentionally split between the thin entrypoint at `electron/main.cjs` and testable launch helpers in `electron/launch-helpers.cjs`.
+
+Those helpers own:
+
+- Finder-safe child process `PATH` construction for `git`, `npm`, and the Next dev server.
+- executable resolution before spawning updater commands.
+- repo-local packaged build freshness decisions.
+
+Dirty local packaged builds are treated as local developer builds and are allowed to launch. Clean packaged builds with a missing or stale embedded commit still use the guarded latest-`devel` rebuild path. This prevents a locally rebuilt app from quitting before opening just because the working tree contains the very launch fix being tested.
+
+Do not move these rules back into untested inline startup code. Update `test/electron-launch-helpers.test.ts` when changing packaged launch, updater, or macOS PATH behavior.
+
 Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
 
 Founder build available on request. The request path is intentionally manual until signing, notarization, and compatibility reporting are ready for broader distribution.
@@ -267,6 +281,8 @@ For desktop artifacts, also run:
 ```bash
 npm run electron:build
 ```
+
+`npm test` includes `node --check` for `electron/main.cjs` and `electron/launch-helpers.cjs`, plus regression coverage for packaged launch freshness decisions and Finder-style macOS `PATH` handling. For macOS app launch changes, also verify a normal `open dist/macos/mac-arm64/Nex\ Note.app` starts a visible window and a packaged Next server on `127.0.0.1`.
 
 Current validation snapshot from 2026-05-13:
 

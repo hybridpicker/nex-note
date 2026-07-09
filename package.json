@@ -20,7 +20,7 @@
     "electron:latest": "node scripts/launch-latest-devel-app.mjs",
     "hooks:install": "node scripts/install-git-hooks.mjs",
     "start": "next start",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "node --check electron/main.cjs && node --check electron/launch-helpers.cjs && tsx --test test/**/*.test.ts",
     "test:roundtrip": "tsx --test test/roundtrip-diff.test.ts",
     "test:coverage": "node --experimental-test-coverage --import tsx --test test/**/*.test.ts",
     "test:coverage:check": "node --experimental-test-coverage --test-coverage-lines=75 --test-coverage-branches=70 --test-coverage-functions=80 --import tsx --test test/**/*.test.ts",

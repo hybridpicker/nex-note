@@ -4,6 +4,12 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
+const {
+  buildChildProcessEnv,
+  decidePackagedBuildFreshness,
+  pathExists,
+  resolveExecutable,
+} = require('./launch-helpers.cjs');
 
 const APP_NAME = 'Nex Note';
 
@@ -409,13 +415,20 @@ function getRootDir() {
   return isElectronDevRuntime() ? path.resolve(__dirname, '..') : app.getAppPath();
 }
 
-function execFileText(command, args, options = {}) {
+async function execFileText(command, args, options = {}) {
+  const env = buildChildProcessEnv({}, options.env || process.env);
+  const resolvedCommand = await resolveExecutable(command, env);
+  if (!resolvedCommand) {
+    throw new Error(`Could not find executable "${command}" on PATH: ${env.PATH}`);
+  }
+
   return new Promise((resolve, reject) => {
-    execFile(command, args, {
+    execFile(resolvedCommand, args, {
       encoding: 'utf8',
       timeout: 15000,
       maxBuffer: 1024 * 1024,
       ...options,
+      env,
     }, (error, stdout, stderr) => {
       if (error) {
         error.stderr = stderr;
@@ -427,22 +440,13 @@ function execFileText(command, args, options = {}) {
   });
 }
 
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function findRepoRootForPackagedApp() {
   if (isElectronDevRuntime()) return null;
 
   let current = app.getAppPath();
   for (let depth = 0; depth < 10; depth += 1) {
     const packageJsonPath = path.join(current, 'package.json');
-    if (await fileExists(path.join(current, '.git')) && await fileExists(packageJsonPath)) {
+    if (await pathExists(path.join(current, '.git')) && await pathExists(packageJsonPath)) {
       try {
         const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
         if (packageJson?.name === 'nex-note') return current;
@@ -470,6 +474,11 @@ async function readBuildInfo() {
 
 async function startLatestDevelRebuild(repoRoot) {
   const dirty = await execFileText('git', ['-C', repoRoot, 'status', '--porcelain']);
+  const updaterEnv = buildChildProcessEnv({
+    NEX_NOTE_AUTO_LATEST_DEVEL_RELAUNCH: '1',
+  });
+  const npmCommand = await resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm', updaterEnv);
+
   if (dirty) {
     dialog.showErrorBox(
       'Nex Note cannot update from devel',
@@ -487,15 +496,55 @@ async function startLatestDevelRebuild(repoRoot) {
     return false;
   }
 
-  const updater = spawn('npm', ['run', 'electron:latest'], {
+  if (!npmCommand) {
+    dialog.showErrorBox(
+      'Nex Note cannot update from devel',
+      [
+        'This repo-local packaged app is stale, but npm could not be found from the app launch environment.',
+        '',
+        `Repo: ${repoRoot}`,
+        `PATH: ${updaterEnv.PATH}`,
+        '',
+        'Run this from Terminal after npm is available:',
+        `cd "${repoRoot}" && npm run electron:latest`,
+      ].join('\n'),
+    );
+    app.quit();
+    return false;
+  }
+
+  const updater = spawn(npmCommand, ['run', 'electron:latest'], {
     cwd: repoRoot,
     detached: true,
     stdio: 'ignore',
-    env: {
-      ...process.env,
-      NEX_NOTE_AUTO_LATEST_DEVEL_RELAUNCH: '1',
-    },
+    env: updaterEnv,
   });
+
+  const didSpawn = await new Promise((resolve) => {
+    updater.once('spawn', () => resolve(true));
+    updater.once('error', (error) => {
+      dialog.showErrorBox(
+        'Nex Note cannot update from devel',
+        [
+          'This repo-local packaged app is stale, but the updater process could not be started.',
+          '',
+          `Repo: ${repoRoot}`,
+          `Command: ${npmCommand} run electron:latest`,
+          `Error: ${error?.message ?? String(error)}`,
+          '',
+          'Run this from Terminal:',
+          `cd "${repoRoot}" && npm run electron:latest`,
+        ].join('\n'),
+      );
+      resolve(false);
+    });
+  });
+
+  if (!didSpawn) {
+    app.quit();
+    return false;
+  }
+
   updater.unref();
 
   dialog.showMessageBoxSync({
@@ -543,7 +592,21 @@ async function verifyPackagedBuildFreshness() {
     return false;
   }
 
-  if (!buildCommit || buildDirty || buildCommit !== latestDevelCommit) {
+  const freshness = decidePackagedBuildFreshness({
+    buildCommit,
+    buildDirty,
+    latestDevelCommit,
+  });
+
+  if (freshness.reason === 'dirty-local-build') {
+    console.log('[electron] Packaged app was built from a dirty local tree; skipping devel freshness update.');
+  }
+
+  if (freshness.action === 'run') {
+    return true;
+  }
+
+  if (freshness.action === 'rebuild') {
     console.log('[electron] Packaged app is stale; rebuilding from latest origin/devel.', {
       buildCommit,
       latestDevelCommit,
@@ -673,7 +736,7 @@ async function startDevServer() {
   console.log(`[electron] Starting Next dev server from ${rootDir} at ${url}`);
   nextProcess = spawn(nextCommand, ['dev', '--webpack', '--hostname', 'localhost', '--port', String(port)], {
     cwd: rootDir,
-    env: process.env,
+    env: buildChildProcessEnv(),
     stdio: 'inherit',
   });
 
