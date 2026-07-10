@@ -99,6 +99,7 @@ This document describes the deterministic note-input pipeline introduced for poi
 - failed attempts must not mutate the measure or degrade future targeting in that measure
 - an armed accidental is one-shot state, but its sounding alter carries to later matching staff positions in the measure across voices; octave changes and barlines reset that carry to their own context
 - explicit accidental glyph and sounding alter must agree; command normalization rejects mismatches and the document validator exposes `written_accidental_pitch_mismatch` to strict Doctor
+- cautionary intent and accidental enclosure are pitch-neutral note metadata; `setAccidentalDisplay` accepts only `none`, `round`, or `square`, requires an explicitly written glyph at execution, and maps to MusicXML `cautionary`, `parentheses`, and `bracket`
 - enharmonic respelling must preserve sounding MIDI and event IDs; same-MIDI paired TAB edits preserve the existing string/fret rather than recalculating fingering
 
 ## Diagnostics
@@ -148,4 +149,4 @@ This document describes the deterministic note-input pipeline introduced for poi
 - ambiguous voice targets are intentionally rejected rather than auto-corrected.
 - arbitrary overflow placement remains unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
 - rest-only internal slots are intentionally narrow: they require real split-rest structure, validator approval, and matching ghost/commit diagnostics before mutation. A single full-measure rest never qualifies.
-- courtesy/cautionary accidental presentation and view-specific `Cmd/Ctrl+J` respelling are not yet modeled.
+- automatic courtesy detection and view-specific concert/transposed `Cmd/Ctrl+J` respelling are not yet modeled; manual cautionary intent and none/round/square enclosure are complete on the semantic command path.

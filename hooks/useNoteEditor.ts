@@ -32,7 +32,7 @@ import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
-import { resolveNextEnharmonicPitch, writtenAccidentalToAlter, type WrittenAccidental } from '@/src/shared/music/accidentals';
+import { resolveNextEnharmonicPitch, writtenAccidentalToAlter, type AccidentalEnclosure, type WrittenAccidental } from '@/src/shared/music/accidentals';
 import { diatonicPitchIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
@@ -140,6 +140,8 @@ export interface SelectedNote {
   octave: number;
   alter: number;
   writtenAccidental?: WrittenAccidental;
+  accidentalCautionary?: boolean;
+  accidentalEnclosure?: Exclude<AccidentalEnclosure, 'none'>;
   isRest: boolean;
   durationType?: string;
   isDotted?: boolean;
@@ -240,6 +242,8 @@ function toSelectedNote(
     octave: entry.octave,
     alter: entry.alter,
     writtenAccidental: entry.writtenAccidental,
+    accidentalCautionary: entry.accidentalCautionary,
+    accidentalEnclosure: entry.accidentalEnclosure,
     isRest: entry.isRest,
     durationType: entry.durationType,
     isDotted: entry.isDotted,
@@ -2869,6 +2873,32 @@ export function useNoteEditor(
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
+  const setAccidentalDisplay = useCallback((cautionary: boolean, enclosure: AccidentalEnclosure) => {
+    const targets = selectedTargets(selectedNote, selectedNotes)
+      .filter((entry) => !entry.isRest && Boolean(entry.writtenAccidental));
+    if (!targets.length) return;
+    dbg.editor(`setAccidentalDisplay cautionary=${cautionary} enclosure=${enclosure} count=${targets.length}`);
+    const commands = targets.map((loc) => ({
+      type: 'setAccidentalDisplay' as const,
+      coreEntityId: loc.coreEntityId ?? undefined,
+      coreMeasureId: loc.coreMeasureId ?? undefined,
+      corePartId: loc.corePartId ?? undefined,
+      measureNumber: loc.measureNumber,
+      staffIndex: loc.staffIndex,
+      voiceId: loc.voiceId,
+      timestampNum: loc.timestampNum,
+      timestampDen: loc.timestampDen,
+      cautionary,
+      enclosure,
+    }));
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      warnNoOpEdit('setAccidentalDisplay', commands[0]!);
+      return;
+    }
+    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+
   const toggleStemDirection = useCallback(() => {
     const targets = selectedTargets(selectedNote, selectedNotes).filter((entry) => !entry.isRest);
     if (!targets.length) return;
@@ -4023,6 +4053,7 @@ export function useNoteEditor(
     navigateToScoreBoundary,
     selectAllInVoice,
     toggleArticulation,
+    setAccidentalDisplay,
     clearArticulations,
     addDynamic,
     toggleTie: activateTie,

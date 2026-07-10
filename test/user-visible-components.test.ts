@@ -195,6 +195,7 @@ function paletteProps(overrides: Partial<React.ComponentProps<typeof EditPalette
     selectedNote: null,
     selectedNotes: [],
     onToggleArticulation() {},
+    onSetAccidentalDisplay() {},
     onClearArticulations() {},
     onAddDynamic() {},
     onToggleTie() {},
@@ -1007,6 +1008,39 @@ test('EditPalette explains disabled selection and pitched-note actions', () => {
   });
 });
 
+test('EditPalette exposes accessible courtesy and enclosure controls for written accidentals', () => {
+  const [baseNote] = makeSelectedNotes(SAMPLE_XML);
+  const selectedNote: SelectedNote = {
+    ...baseNote,
+    writtenAccidental: 'sharp',
+    accidentalCautionary: true,
+    accidentalEnclosure: 'round',
+  };
+  const changes: Array<[boolean, string]> = [];
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(EditPalette, paletteProps({
+      selectedNote,
+      selectedNotes: [selectedNote],
+      onSetAccidentalDisplay(cautionary, enclosure) {
+        changes.push([cautionary, enclosure]);
+      },
+    })));
+  });
+
+  const buttons = renderer!.root.findAllByType('button');
+  const courtesy = buttons.find((button) => button.props.title === 'Courtesy / cautionary accidental');
+  const square = buttons.find((button) => button.props.title === 'Square brackets');
+  assert.equal(courtesy?.props['aria-pressed'], true);
+  assert.equal(square?.props['aria-pressed'], false);
+  act(() => courtesy!.props.onClick());
+  act(() => square!.props.onClick());
+  assert.deepEqual(changes, [[false, 'round'], [true, 'square']]);
+
+  act(() => renderer?.unmount());
+});
+
 test('EditPalette opens icon-rail sections from focus events and keyboard', () => {
   const [selectedNote] = makeSelectedNotes(SAMPLE_XML);
   let renderer: ReturnType<typeof create> | null = null;
@@ -1504,6 +1538,48 @@ test('ScoreInspector dispatches visible selection and measure commands', async (
   await act(async () => {
     renderer?.unmount();
   });
+});
+
+test('ScoreInspector batches courtesy accidental controls across the semantic selection', async () => {
+  const notes = makeSelectedNotes(INSPECTOR_XML).slice(0, 2).map((note, index) => ({
+    ...note,
+    writtenAccidental: index === 0 ? 'sharp' as const : 'natural' as const,
+  }));
+  const calls: Array<{ label?: string; commands: Array<{ type: string; cautionary?: boolean; enclosure?: string }> }> = [];
+  let renderer: ReturnType<typeof create> | null = null;
+
+  await act(async () => {
+    renderer = create(React.createElement(ScoreInspector, {
+      xml: INSPECTOR_XML,
+      coreDocument: importMusicXmlToCore(INSPECTOR_XML),
+      selection: {
+        entityIds: notes.map((note) => note.coreEntityId ?? '').filter(Boolean),
+        anchorEntityId: notes[0]!.coreEntityId ?? null,
+        anchor: notes[0]!,
+        selectionCount: notes.length,
+      },
+      selectedNote: notes[0]!,
+      selectedNotes: notes,
+      currentMeasure: 1,
+      onApplyCommands(commands, label) {
+        calls.push({ commands, label });
+      },
+      onOpenExtractedPart() {},
+    }));
+  });
+
+  const checkbox = renderer!.root.findByProps({ 'aria-label': 'Mark selected accidentals as cautionary' });
+  const enclosure = renderer!.root.findByProps({ 'aria-label': 'Accidental enclosure' });
+  await act(async () => checkbox.props.onChange({ target: { checked: true } }));
+  await act(async () => enclosure.props.onChange({ target: { value: 'square' } }));
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.commands.length, 2);
+  assert.equal(calls[0]?.commands.every((command) => command.type === 'setAccidentalDisplay' && command.cautionary === true && command.enclosure === 'none'), true);
+  assert.equal(calls[1]?.commands.length, 2);
+  assert.equal(calls[1]?.commands.every((command) => command.type === 'setAccidentalDisplay' && command.cautionary === false && command.enclosure === 'square'), true);
+
+  await act(async () => renderer?.unmount());
 });
 
 test('ScoreInspector measure buttons can mutate the live document through the app command path', async () => {

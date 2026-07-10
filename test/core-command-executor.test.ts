@@ -734,7 +734,7 @@ test('insertNoteAt does not shift quarter-rest padding through empty tail measur
 
 test('pasteContent collapses staves into one staff without collapsing voices', () => {
   const upperMeasure = buildMeasure('src:m1:st1', 1, 1, { beats: 4, beatType: 4 });
-  const upperNote: ReturnType<typeof buildNoteEvent> & { writtenAccidental?: 'sharp' } = buildNoteEvent({
+  const upperNote: ReturnType<typeof buildNoteEvent> & { writtenAccidental?: 'sharp'; accidentalCautionary?: boolean; accidentalEnclosure?: 'round' } = buildNoteEvent({
     id: 'src:upper',
     measureNumber: 1,
     staffIndex: 1,
@@ -747,6 +747,8 @@ test('pasteContent collapses staves into one staff without collapsing voices', (
   });
   upperNote.pitch.alter = 1;
   upperNote.writtenAccidental = 'sharp';
+  upperNote.accidentalCautionary = true;
+  upperNote.accidentalEnclosure = 'round';
   upperMeasure.voices.push({
     id: 'src:v1:1',
     voiceId: 1,
@@ -819,6 +821,8 @@ test('pasteContent collapses staves into one staff without collapsing voices', (
   const pastedSharp = voices[0]?.events.find((event) => event.kind === 'note');
   assert.equal(pastedSharp?.kind === 'note' ? pastedSharp.pitch.alter : null, 1);
   assert.equal(pastedSharp?.kind === 'note' ? pastedSharp.writtenAccidental : null, 'sharp');
+  assert.equal(pastedSharp?.kind === 'note' ? pastedSharp.accidentalCautionary : null, true);
+  assert.equal(pastedSharp?.kind === 'note' ? pastedSharp.accidentalEnclosure : null, 'round');
 });
 
 test('pasteContent reflows copied 3/4 material across 4/4 target measure boundaries', () => {

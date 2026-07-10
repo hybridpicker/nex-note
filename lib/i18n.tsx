@@ -426,6 +426,7 @@ const en = {
   'palette.clickNote': 'Click a note in the score to edit it.',
   'palette.selection': 'Selection',
   'palette.transpose': 'Transpose',
+  'palette.accidentals': 'Accidentals',
   'palette.articulations': 'Articulations',
   'palette.dynamics': 'Dynamics',
   'palette.ties': 'Ties / Slurs',

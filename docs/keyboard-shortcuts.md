@@ -124,6 +124,8 @@ Solange das QWERTY-Step-Keyboard aktiv ist, haben seine Pitch-Tasten Vorrang vor
 
 Ein in Note Input gesetztes Vorzeichen ist wie in MuseScore ein Einmal-Werkzeug: Der aktive Toolbar-Button erlischt nach der naechsten erfolgreichen Note. Der klingende Alter-Wert gilt danach fuer denselben Notennamen in derselben Oktave und auf demselben Staff bis zum Taktstrich, auch ueber Stimmen hinweg. Ein anderer Oktavraum oder der naechste Takt faellt auf seinen eigenen Taktkontext beziehungsweise die Tonart zurueck. `J` deutet die aktuelle semantische Auswahl enharmonisch um, erhaelt MIDI-Tonhoehe, Entity-Identitaet, Ties und TAB-Fingering und fasst eine Mehrfachauswahl in einer Undo-Transaktion zusammen. Solange das QWERTY-Step-Keyboard aktiv ist, bleibt `J` absichtlich dessen A-Sharp-Taste.
 
+Courtesy/Cautionary hat derzeit keinen Tastaturkurzbefehl. Fuer ein explizit geschriebenes Vorzeichen stehen in Edit Palette → Accidentals und im Inspector die pitch-neutralen Optionen Cautionary sowie keine/runde/eckige Klammer bereit; jede Aenderung ist eine Undo-Transaktion.
+
 ## Guitar TAB Input
 
 | Shortcut | Aktion | Kontext |

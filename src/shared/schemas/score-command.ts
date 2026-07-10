@@ -245,6 +245,7 @@ export interface ScoreDocumentSummary {
 
 const NOTE_EDIT_TYPES = new Set([
   'changeNotePitch',
+  'setAccidentalDisplay',
   'changeNoteDuration',
   'replaceWithRest',
   'deleteNote',
@@ -382,7 +383,7 @@ function getCategory(type: string): ScoreCommandCategory {
   if (['setSwing'].includes(type)) return 'layoutHints';
   if (['setInstrumentChange', 'setMultiMeasureRest'].includes(type)) return 'structure';
   if (['addGuitarBend', 'addGuitarTap'].includes(type)) return 'notation';
-  if (['removeArticulations', 'toggleArticulation', 'setArticulationPlacement', 'clearArticulations', 'clearRangeArticulations', 'addDynamic', 'toggleTie', 'setTiePlacement', 'toggleSlur', 'setSlurPlacement', 'addWords', 'addExpressionText', 'addAnalysisAnnotation', 'addTechniqueInstruction', 'addSyncPoint', 'addOrchestrationNote', 'addRehearsalMark', 'addRehearsalMarksEvery', 'removeDirection', 'setHarmonyAt', 'setNoteStyle', 'toggleStemDirection', 'setGuitarFret', 'toggleGuitarTechnique', 'fillSlashMeasure', 'setLyricLine', 'removeLyricLine', 'addTuplet', 'addGraceNote', 'removeGraceNote', 'addFingering', 'addOrnament', 'addWedge', 'addPedalSpan', 'addOttava', 'addFermata', 'removeFermata', 'addTremolo', 'addGlissando', 'addArpeggio'].includes(type)) return 'notation';
+  if (['removeArticulations', 'toggleArticulation', 'setArticulationPlacement', 'clearArticulations', 'clearRangeArticulations', 'addDynamic', 'toggleTie', 'setTiePlacement', 'toggleSlur', 'setSlurPlacement', 'addWords', 'addExpressionText', 'addAnalysisAnnotation', 'addTechniqueInstruction', 'addSyncPoint', 'addOrchestrationNote', 'addRehearsalMark', 'addRehearsalMarksEvery', 'removeDirection', 'setHarmonyAt', 'setNoteStyle', 'setAccidentalDisplay', 'toggleStemDirection', 'setGuitarFret', 'toggleGuitarTechnique', 'fillSlashMeasure', 'setLyricLine', 'removeLyricLine', 'addTuplet', 'addGraceNote', 'removeGraceNote', 'addFingering', 'addOrnament', 'addWedge', 'addPedalSpan', 'addOttava', 'addFermata', 'removeFermata', 'addTremolo', 'addGlissando', 'addArpeggio'].includes(type)) return 'notation';
   return 'content';
 }
 
@@ -555,6 +556,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
     case 'setGuitarFret':
     case 'toggleGuitarTechnique':
     case 'changeNotePitch':
+    case 'setAccidentalDisplay':
     case 'changeNoteDuration':
     case 'replaceWithRest':
     case 'deleteNote':
@@ -577,6 +579,20 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
           issues.push('writtenAccidental must be a supported standard accidental when provided');
         } else if (isWrittenAccidental(command.writtenAccidental) && command.alter !== writtenAccidentalToAlter(command.writtenAccidental)) {
           issues.push('writtenAccidental must match alter');
+        }
+        if (command.accidentalCautionary != null && typeof command.accidentalCautionary !== 'boolean') {
+          issues.push('accidentalCautionary must be a boolean when provided');
+        }
+        if (command.accidentalEnclosure != null && !['none', 'round', 'square'].includes(String(command.accidentalEnclosure))) {
+          issues.push('accidentalEnclosure must be none, round, or square when provided');
+        }
+        if (!command.writtenAccidental && (command.accidentalCautionary || (command.accidentalEnclosure != null && command.accidentalEnclosure !== 'none'))) {
+          issues.push('accidental display metadata requires writtenAccidental');
+        }
+      } else if (type === 'setAccidentalDisplay') {
+        if (typeof command.cautionary !== 'boolean') issues.push('cautionary must be a boolean');
+        if (!['none', 'round', 'square'].includes(String(command.enclosure))) {
+          issues.push('enclosure must be none, round, or square');
         }
       } else if (type === 'changeNoteDuration' || type === 'replaceWithRest') {
         ensureString(command, 'durationType', issues);

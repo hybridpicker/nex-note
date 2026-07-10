@@ -105,7 +105,7 @@ Select a note and use `A` to `G`, the active-note buttons, arrow-key transpositi
 
 In Note Input, an armed accidental is consumed only after the next successful pitched commit. Its sounding alteration then carries to the same letter and octave on that staff until the barline, including across voices; another octave and the next measure have independent context. The explicit written glyph is stored separately from sounding pitch and survives MusicXML, Copy/Paste, paired notation/TAB edits, and Undo/Redo.
 
-Press `J` repeatedly to cycle a note, chord, or range through conventional enharmonic spellings. MIDI pitch, event identity, selection, ties, and same-pitch TAB fingering remain unchanged, and a selection-wide cycle is one undo step. While the QWERTY step keyboard is active, `J` intentionally remains its A-sharp piano key. Courtesy/cautionary parentheses or square brackets and view-specific concert/transposed-pitch `Cmd/Ctrl+J` are not yet modeled.
+Press `J` repeatedly to cycle a note, chord, or range through conventional enharmonic spellings. MIDI pitch, event identity, selection, ties, and same-pitch TAB fingering remain unchanged, and a selection-wide cycle is one undo step. While the QWERTY step keyboard is active, `J` intentionally remains its A-sharp piano key. For an explicitly written accidental, use Edit Palette → Accidentals or the Inspector to mark it cautionary and choose no enclosure, round parentheses, or square brackets. These presentation edits do not change pitch and survive MusicXML, Copy/Paste, paired notation/TAB, and Undo/Redo. Automatic courtesy detection and view-specific concert/transposed-pitch `Cmd/Ctrl+J` remain open.
 
 ## Articulations, Dynamics, Ties, and Slurs
 

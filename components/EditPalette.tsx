@@ -5,6 +5,7 @@ import type { SelectedNote, ArticulationKind, DynamicKind, BarlineKind } from '@
 import { BarlineGlyph } from '@/components/NotationGlyphs';
 import { useI18n, type TranslationKey } from '@/lib/i18n';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
+import type { AccidentalEnclosure } from '@/src/shared/music/accidentals';
 
 interface Props {
   selectedNote: SelectedNote | null;
@@ -12,6 +13,7 @@ interface Props {
   noteInputMode?: boolean;
   selectedBarlineMeasureNumber?: number | null;
   onToggleArticulation: (a: ArticulationKind) => void;
+  onSetAccidentalDisplay: (cautionary: boolean, enclosure: AccidentalEnclosure) => void;
   onClearArticulations: () => void;
   onAddDynamic: (d: DynamicKind) => void;
   onToggleTie: () => void;
@@ -28,13 +30,14 @@ interface Props {
   iconMode?: boolean;
 }
 
-export type EditPaletteSectionId = 'selection' | 'transpose' | 'articulations' | 'dynamics' | 'ties' | 'barlines';
+export type EditPaletteSectionId = 'selection' | 'transpose' | 'accidentals' | 'articulations' | 'dynamics' | 'ties' | 'barlines';
 
 type SectionId = EditPaletteSectionId;
 
 const DEFAULT_OPEN: Record<SectionId, boolean> = {
   selection: true,
   transpose: true,
+  accidentals: true,
   articulations: true,
   dynamics: false,
   ties: false,
@@ -88,6 +91,11 @@ const SECTION_ICONS: { id: SectionId; titleKey: TranslationKey; icon: React.Reac
         <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
       </svg>
     ),
+  },
+  {
+    id: 'accidentals',
+    titleKey: 'palette.accidentals',
+    icon: <span className="text-sm leading-none">(♯)</span>,
   },
   {
     id: 'articulations',
@@ -144,6 +152,7 @@ export default function EditPalette({
   noteInputMode = false,
   selectedBarlineMeasureNumber = null,
   onToggleArticulation,
+  onSetAccidentalDisplay,
   onClearArticulations,
   onAddDynamic,
   onToggleTie,
@@ -372,6 +381,7 @@ export default function EditPalette({
                 section={activeSection}
                 disabled={disabled}
                 isRest={isRest}
+                selectedNote={selectedNote}
                 noteInputMode={noteInputMode}
                 clipboardCount={clipboardCount}
                 selectionCount={selectionCount}
@@ -383,6 +393,7 @@ export default function EditPalette({
                 onClearSelection={onClearSelection}
                 onTransposeSemitones={onTransposeSemitones}
                 onToggleArticulation={onToggleArticulation}
+                onSetAccidentalDisplay={onSetAccidentalDisplay}
                 onClearArticulations={onClearArticulations}
                 onAddDynamic={onAddDynamic}
                 onToggleTie={onToggleTie}
@@ -488,6 +499,13 @@ export default function EditPalette({
           </div>
         </PaletteSection>
 
+        <PaletteSection id="accidentals" title={t('palette.accidentals')} open={openSections.accidentals} onToggle={toggleSection}>
+          <AccidentalDisplayControls
+            selectedNote={selectedNote}
+            onSetAccidentalDisplay={onSetAccidentalDisplay}
+          />
+        </PaletteSection>
+
         <PaletteSection id="articulations" title={t('palette.articulations')} open={openSections.articulations} onToggle={toggleSection}>
           <div className="grid grid-cols-3 gap-1">
             {ARTICULATIONS.map(a => (
@@ -552,6 +570,7 @@ function PanelSectionContent({
   section,
   disabled,
   isRest,
+  selectedNote,
   noteInputMode,
   clipboardCount,
   onCopySelection,
@@ -562,6 +581,7 @@ function PanelSectionContent({
   onClearSelection,
   onTransposeSemitones,
   onToggleArticulation,
+  onSetAccidentalDisplay,
   onClearArticulations,
   onAddDynamic,
   onToggleTie,
@@ -572,6 +592,7 @@ function PanelSectionContent({
   section: SectionId;
   disabled: boolean;
   isRest: boolean;
+  selectedNote: SelectedNote | null;
   noteInputMode: boolean;
   clipboardCount: number;
   selectionCount: number;
@@ -583,6 +604,7 @@ function PanelSectionContent({
   onClearSelection: () => void;
   onTransposeSemitones: (n: number) => void;
   onToggleArticulation: (a: ArticulationKind) => void;
+  onSetAccidentalDisplay: (cautionary: boolean, enclosure: AccidentalEnclosure) => void;
   onClearArticulations: () => void;
   onAddDynamic: (d: DynamicKind) => void;
   onToggleTie: () => void;
@@ -646,6 +668,15 @@ function PanelSectionContent({
           <PaletteButton title="+perfect fifth" disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={() => onTransposeSemitones(7)}>+P5</PaletteButton>
         </div>
       </div>
+    );
+  }
+
+  if (section === 'accidentals') {
+    return (
+      <AccidentalDisplayControls
+        selectedNote={selectedNote}
+        onSetAccidentalDisplay={onSetAccidentalDisplay}
+      />
     );
   }
 
@@ -720,6 +751,53 @@ function PanelSectionContent({
   return null;
 }
 
+function AccidentalDisplayControls({
+  selectedNote,
+  onSetAccidentalDisplay,
+}: {
+  selectedNote: SelectedNote | null;
+  onSetAccidentalDisplay: (cautionary: boolean, enclosure: AccidentalEnclosure) => void;
+}) {
+  const hasWrittenAccidental = Boolean(selectedNote && !selectedNote.isRest && selectedNote.writtenAccidental);
+  const cautionary = Boolean(selectedNote?.accidentalCautionary);
+  const enclosure: AccidentalEnclosure = selectedNote?.accidentalEnclosure ?? 'none';
+  const disabledReason = selectedNote
+    ? 'Select a note with an explicitly written accidental'
+    : 'Select a note';
+
+  return (
+    <div data-testid="accidental-display-controls">
+      <PaletteButton
+        title="Courtesy / cautionary accidental"
+        disabled={!hasWrittenAccidental}
+        disabledReason={disabledReason}
+        pressed={cautionary}
+        onClick={() => onSetAccidentalDisplay(!cautionary, enclosure)}
+      >
+        <span>Courtesy</span>
+      </PaletteButton>
+      <div className="mt-1 grid grid-cols-3 gap-1" role="group" aria-label="Accidental enclosure">
+        {([
+          ['none', '♯', 'No enclosure'],
+          ['round', '(♯)', 'Round parentheses'],
+          ['square', '[♯]', 'Square brackets'],
+        ] as const).map(([value, label, title]) => (
+          <PaletteButton
+            key={value}
+            title={title}
+            disabled={!hasWrittenAccidental}
+            disabledReason={disabledReason}
+            pressed={enclosure === value}
+            onClick={() => onSetAccidentalDisplay(cautionary, value)}
+          >
+            <span className={enclosure === value ? 'font-bold text-nex-accent' : undefined}>{label}</span>
+          </PaletteButton>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Subcomponents ───────────────────────────────────────────────────────────
 
 function PaletteSection({
@@ -749,7 +827,7 @@ function PaletteSection({
 }
 
 function PaletteButton({
-  children, onClick, disabled, title, full, disabledReason, focusableWhenDisabled,
+  children, onClick, disabled, title, full, disabledReason, focusableWhenDisabled, pressed,
 }: {
   children: React.ReactNode;
   onClick: () => void;
@@ -758,6 +836,7 @@ function PaletteButton({
   full?: boolean;
   disabledReason?: string;
   focusableWhenDisabled?: boolean;
+  pressed?: boolean;
 }) {
   const resolvedTitle = title && disabled && disabledReason ? `${title} - ${disabledReason}` : title;
   const nativeDisabled = Boolean(disabled && !focusableWhenDisabled);
@@ -769,6 +848,7 @@ function PaletteButton({
       }}
       disabled={nativeDisabled}
       aria-disabled={disabled || undefined}
+      aria-pressed={pressed}
       title={resolvedTitle}
       aria-label={resolvedTitle}
       className={`${full ? 'w-full' : ''} h-8 flex items-center justify-center rounded-md text-xs font-medium transition-colors ${

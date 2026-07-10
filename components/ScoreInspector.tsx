@@ -7,6 +7,7 @@ import { summarizeScoreDocument, type ScoreCommand } from '@/lib/score-commands'
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { findEventReference } from '@/src/score-core/query/note-editor';
 import { useI18n } from '@/lib/i18n';
+import type { AccidentalEnclosure } from '@/src/shared/music/accidentals';
 
 interface Props {
   xml: string;
@@ -247,6 +248,28 @@ function buildPerNoteCommands(
   return sortSelection(selectedNotes).map(mapNote);
 }
 
+function buildAccidentalDisplayCommands(
+  selectedNotes: SelectedNote[],
+  cautionary: boolean,
+  enclosure: AccidentalEnclosure,
+): ScoreCommand[] {
+  return sortSelection(selectedNotes)
+    .filter((note) => !note.isRest && Boolean(note.writtenAccidental))
+    .map((note) => ({
+      type: 'setAccidentalDisplay',
+      coreEntityId: note.coreEntityId ?? undefined,
+      coreMeasureId: note.coreMeasureId ?? undefined,
+      corePartId: note.corePartId ?? undefined,
+      measureNumber: note.measureNumber,
+      staffIndex: note.staffIndex,
+      voiceId: note.voiceId,
+      timestampNum: note.timestampNum,
+      timestampDen: note.timestampDen,
+      cautionary,
+      enclosure,
+    }));
+}
+
 function uniquePartMeasureNumbers(part: ScoreDocumentModel['score']['parts'][number]) {
   return Array.from(new Set(part.staves.flatMap((staff) => staff.measures.map((measure) => measure.measureNumber))))
     .sort((a, b) => a - b);
@@ -342,6 +365,12 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
   const selectedArticulations = useMemo(() => resolveSelectedArticulations(coreDocument, selectedNote), [coreDocument, selectedNote]);
   const selectedArticulationKey = selectedArticulations.map((entry) => `${entry.kind}:${entry.placement}`).join('|');
   const range = useMemo(() => buildSelectionRange(selectedNotes), [selectedNotes]);
+  const accidentalDisplayTargets = useMemo(
+    () => sortSelection(selectedNotes.length > 0 ? selectedNotes : selectedNote ? [selectedNote] : [])
+      .filter((note) => !note.isRest && Boolean(note.writtenAccidental)),
+    [selectedNote, selectedNotes],
+  );
+  const accidentalDisplayAnchor = accidentalDisplayTargets[0] ?? null;
   const summary = useMemo(() => {
     if (coreDocument) {
       return {
@@ -707,6 +736,59 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
               ) : null}
             </div>
           )}
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3" data-testid="inspector-accidental-display">
+            <p className="text-xs font-semibold text-amber-950">Courtesy accidental</p>
+            <p className="mt-1 text-[11px] leading-5 text-amber-800">
+              Pitch-neutral cautionary intent and optional enclosure for explicitly written accidentals.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-amber-950">
+                <input
+                  type="checkbox"
+                  aria-label="Mark selected accidentals as cautionary"
+                  checked={Boolean(accidentalDisplayAnchor?.accidentalCautionary)}
+                  disabled={accidentalDisplayTargets.length === 0}
+                  onChange={(event) => onApplyCommands(
+                    buildAccidentalDisplayCommands(
+                      accidentalDisplayTargets,
+                      event.target.checked,
+                      accidentalDisplayAnchor?.accidentalEnclosure ?? 'none',
+                    ),
+                    event.target.checked ? 'Mark cautionary accidental' : 'Clear cautionary accidental',
+                  )}
+                />
+                Cautionary
+              </label>
+              <label className="sr-only" htmlFor="inspector-accidental-enclosure">Accidental enclosure</label>
+              <select
+                id="inspector-accidental-enclosure"
+                aria-label="Accidental enclosure"
+                value={accidentalDisplayAnchor?.accidentalEnclosure ?? 'none'}
+                disabled={accidentalDisplayTargets.length === 0}
+                onChange={(event) => {
+                  const enclosure = event.target.value as AccidentalEnclosure;
+                  onApplyCommands(
+                    buildAccidentalDisplayCommands(
+                      accidentalDisplayTargets,
+                      Boolean(accidentalDisplayAnchor?.accidentalCautionary),
+                      enclosure,
+                    ),
+                    `Set accidental enclosure ${enclosure}`,
+                  );
+                }}
+                className="rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs text-amber-950 disabled:opacity-50"
+              >
+                <option value="none">No enclosure</option>
+                <option value="round">Round parentheses</option>
+                <option value="square">Square brackets</option>
+              </select>
+              {accidentalDisplayTargets.length === 0 ? (
+                <span className="text-[10px] text-amber-700">Select an explicitly written accidental.</span>
+              ) : (
+                <span className="text-[10px] text-amber-700">Applies atomically to {accidentalDisplayTargets.length} selected note(s).</span>
+              )}
+            </div>
+          </div>
           {selectedNote && selectedArticulations.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-2">
               <label className="sr-only" htmlFor="inspector-articulation-kind">Articulation</label>

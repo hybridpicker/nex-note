@@ -1,6 +1,6 @@
 import { DOMParser, XMLSerializer, Document as XmlDocument } from '@xmldom/xmldom';
 import { resolveGuitarFretPitch, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
-import { musicXmlToWrittenAccidental, writtenAccidentalToMusicXml, type WrittenAccidental } from '@/src/shared/music/accidentals';
+import { musicXmlToWrittenAccidental, writtenAccidentalToMusicXml, type AccidentalEnclosure, type WrittenAccidental } from '@/src/shared/music/accidentals';
 
 export type ArticulationKind =
   | 'staccato' | 'staccatissimo' | 'accent' | 'strong-accent' | 'tenuto' | 'fermata';
@@ -32,6 +32,8 @@ export interface NoteClipboardItem {
   octave: number;
   alter: number;
   writtenAccidental?: WrittenAccidental;
+  accidentalCautionary?: boolean;
+  accidentalEnclosure?: Exclude<AccidentalEnclosure, 'none'>;
   durationType: string;
   isDotted: boolean;
   voiceId: number;
@@ -49,7 +51,8 @@ export interface NotePitchSnapshot {
 }
 
 export type NoteEditOperation =
-  | ({ type: 'changeNotePitch'; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental } & NoteLocator)
+  | ({ type: 'changeNotePitch'; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental; accidentalCautionary?: boolean; accidentalEnclosure?: AccidentalEnclosure } & NoteLocator)
+  | ({ type: 'setAccidentalDisplay'; cautionary: boolean; enclosure: AccidentalEnclosure } & NoteLocator)
   | ({ type: 'changeNoteDuration'; durationType: string; isDotted?: boolean } & NoteLocator)
   | ({ type: 'replaceWithRest'; durationType: string; isDotted?: boolean } & NoteLocator)
   | ({ type: 'deleteNote' } & NoteLocator)
@@ -297,12 +300,19 @@ export function extractNoteClipboardItem(xml: string, locator: NoteLocator): Not
   const type = note.getElementsByTagName('type')[0]?.textContent ?? 'quarter';
   const voiceId = parseInt(note.getElementsByTagName('voice')[0]?.textContent ?? String(locator.voiceId), 10) || locator.voiceId;
   const staffIndex = parseInt(note.getElementsByTagName('staff')[0]?.textContent ?? String(locator.staffIndex), 10) || locator.staffIndex;
+  const accidentalElement = note.getElementsByTagName('accidental')[0];
   return {
     isRest: note.getElementsByTagName('rest').length > 0 || !pitch,
     step,
     octave,
     alter,
-    writtenAccidental: musicXmlToWrittenAccidental(note.getElementsByTagName('accidental')[0]?.textContent),
+    writtenAccidental: musicXmlToWrittenAccidental(accidentalElement?.textContent),
+    accidentalCautionary: accidentalElement?.getAttribute('cautionary') === 'yes' || undefined,
+    accidentalEnclosure: accidentalElement?.getAttribute('bracket') === 'yes'
+      ? 'square'
+      : accidentalElement?.getAttribute('parentheses') === 'yes'
+        ? 'round'
+        : undefined,
     durationType: type,
     isDotted: note.getElementsByTagName('dot').length > 0,
     voiceId,

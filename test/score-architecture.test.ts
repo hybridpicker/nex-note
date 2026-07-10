@@ -283,6 +283,21 @@ test('normalizeScoreCommands requires written accidentals to match sounding alte
   );
 });
 
+test('normalizeScoreCommands validates pitch-neutral accidental display commands', () => {
+  const locator = { measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 };
+  assert.deepEqual(normalizeScoreCommands([{
+    type: 'setAccidentalDisplay', cautionary: true, enclosure: 'square', ...locator,
+  }])[0]?.category, 'notation');
+  assert.throws(
+    () => normalizeScoreCommands([{
+      type: 'setAccidentalDisplay', cautionary: 'yes', enclosure: 'circle', ...locator,
+    }]),
+    (error: unknown) => error instanceof CommandValidationError
+      && error.issues.some((issue) => issue.includes('cautionary must be a boolean'))
+      && error.issues.some((issue) => issue.includes('enclosure must be none, round, or square')),
+  );
+});
+
 test('normalizeScoreCommands rejects measureNumber below 0', () => {
   const locator = { measureNumber: -1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 8 };
   assert.throws(
@@ -362,6 +377,20 @@ test('validateScoreDocument rejects a written accidental whose glyph disagrees w
   const diagnostic = validateScoreDocument(core).find((entry) => entry.code === 'written_accidental_pitch_mismatch');
   assert.equal(diagnostic?.level, 'error');
   assert.match(diagnostic?.message ?? '', /written accidental flat but alter 1/);
+});
+
+test('validateScoreDocument rejects accidental display metadata without an explicit glyph', () => {
+  const core = importMusicXmlToCore(SAMPLE_XML);
+  const event = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  assert.equal(event.kind, 'note');
+  if (event.kind !== 'note') return;
+  event.accidentalCautionary = true;
+  event.accidentalEnclosure = 'round';
+
+  const diagnostic = validateScoreDocument(core)
+    .find((entry) => entry.code === 'accidental_display_without_written_accidental');
+  assert.equal(diagnostic?.level, 'error');
+  assert.match(diagnostic?.message ?? '', /without an explicitly written accidental/);
 });
 
 test('importMusicXmlToCore inherits divisions for timestamps after the attributes measure', () => {

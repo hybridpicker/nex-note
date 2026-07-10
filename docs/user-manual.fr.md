@@ -81,7 +81,7 @@ Selectionnez une note et utilisez `A` a `G`, les boutons de hauteur, les fleches
 
 En Note Input, une alteration armee n'est consommee qu'apres la prochaine saisie de hauteur reussie. L'alteration sonore reste valable pour la meme lettre et la meme octave sur cette portee jusqu'a la barre de mesure, meme entre les voix; une autre octave et la mesure suivante gardent leur propre contexte. Le signe ecrit est conserve separement dans MusicXML, Copy/Paste, notation/TAB et Undo/Redo.
 
-Appuyez plusieurs fois sur `J` pour parcourir les graphies enharmoniques d'une note, d'un accord ou d'une plage sans modifier MIDI, identite, selection, liaisons de tenue ni doigté TAB. Quand le clavier QWERTY est actif, `J` reste sa touche La diese. Les alterations de precaution entre parentheses ou crochets ne sont pas encore modelisees.
+Appuyez plusieurs fois sur `J` pour parcourir les graphies enharmoniques d'une note, d'un accord ou d'une plage sans modifier MIDI, identite, selection, liaisons de tenue ni doigté TAB. Quand le clavier QWERTY est actif, `J` reste sa touche La diese. Pour une alteration explicitement ecrite, utilisez Edit Palette → Accidentals ou l'Inspector afin de la marquer comme precaution et de choisir aucune enclosure, des parentheses rondes ou des crochets. La hauteur ne change pas et MusicXML, Copy/Paste, notation/TAB et Undo/Redo conservent cette presentation. La detection automatique reste ouverte.
 
 ## Articulations, nuances, liaisons
 

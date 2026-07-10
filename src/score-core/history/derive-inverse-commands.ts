@@ -250,7 +250,11 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
           step: previous.pitch.step,
           octave: previous.pitch.octave,
           alter: previous.pitch.alter,
-          ...(previous.writtenAccidental ? { writtenAccidental: previous.writtenAccidental } : {}),
+          ...(previous.writtenAccidental ? {
+            writtenAccidental: previous.writtenAccidental,
+            accidentalCautionary: Boolean(previous.accidentalCautionary),
+            accidentalEnclosure: previous.accidentalEnclosure ?? 'none',
+          } : {}),
         });
       }
       return stripEnvelopeMeta({
@@ -260,6 +264,23 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
         voiceId: command.voiceId,
         timestampNum: command.timestampNum,
         timestampDen: command.timestampDen,
+      });
+    }
+    case 'setAccidentalDisplay': {
+      const previous = findEvent(document, command);
+      if (previous?.kind !== 'note' || !previous.writtenAccidental) return null;
+      return stripEnvelopeMeta({
+        type: 'setAccidentalDisplay',
+        coreEntityId: previous.id,
+        coreMeasureId: command.coreMeasureId,
+        corePartId: command.corePartId,
+        measureNumber: command.measureNumber,
+        staffIndex: command.staffIndex,
+        voiceId: command.voiceId,
+        timestampNum: command.timestampNum,
+        timestampDen: command.timestampDen,
+        cautionary: Boolean(previous.accidentalCautionary),
+        enclosure: previous.accidentalEnclosure ?? 'none',
       });
     }
     case 'changeNoteDuration': {
@@ -289,7 +310,11 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
         step: previous.pitch.step,
         octave: previous.pitch.octave,
         alter: previous.pitch.alter,
-        ...(previous.writtenAccidental ? { writtenAccidental: previous.writtenAccidental } : {}),
+        ...(previous.writtenAccidental ? {
+          writtenAccidental: previous.writtenAccidental,
+          accidentalCautionary: Boolean(previous.accidentalCautionary),
+          accidentalEnclosure: previous.accidentalEnclosure ?? 'none',
+        } : {}),
       });
     }
     case 'toggleTie':

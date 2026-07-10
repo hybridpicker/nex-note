@@ -745,7 +745,14 @@ function buildVoices(
       ...(fermataPlacement ? { fermata: fermataPlacement } : {}),
     };
 
-    const writtenAccidental = musicXmlToWrittenAccidental(note.getElementsByTagName('accidental')[0]?.textContent);
+    const accidentalElement = note.getElementsByTagName('accidental')[0];
+    const writtenAccidental = musicXmlToWrittenAccidental(accidentalElement?.textContent);
+    const accidentalCautionary = accidentalElement?.getAttribute('cautionary') === 'yes' || undefined;
+    const accidentalEnclosure = accidentalElement?.getAttribute('bracket') === 'yes'
+      ? 'square' as const
+      : accidentalElement?.getAttribute('parentheses') === 'yes'
+        ? 'round' as const
+        : undefined;
     const baseEvent = {
       id: eventId,
       measureNumber,
@@ -792,6 +799,8 @@ function buildVoices(
           octave: parseIntSafe(pitch.getElementsByTagName('octave')[0]?.textContent, 4),
         },
         writtenAccidental,
+        accidentalCautionary,
+        accidentalEnclosure,
         guitar,
       }
       : {

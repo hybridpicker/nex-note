@@ -987,7 +987,7 @@ export default function Home({ searchParams }: HomeProps) {
     editorError,
     toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
     toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
-    changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, clearArticulations, addDynamic, toggleTie, toggleSlur,
+    changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, setAccidentalDisplay, clearArticulations, addDynamic, toggleTie, toggleSlur,
     transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, placeNoteAt,
   } = useNoteEditor(
     xml,
@@ -4912,6 +4912,7 @@ export default function Home({ searchParams }: HomeProps) {
                         noteInputMode={noteInputMode}
                         selectedBarlineMeasureNumber={selectedBarlineMeasureNumber}
                         onToggleArticulation={toggleArticulation}
+                        onSetAccidentalDisplay={setAccidentalDisplay}
                         onClearArticulations={clearArticulations}
                         onAddDynamic={addDynamic}
                         onToggleTie={toggleTie}

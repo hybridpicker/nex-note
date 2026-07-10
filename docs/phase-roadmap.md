@@ -242,11 +242,11 @@ Phase 9 Note Input hardening is now covered by the current repository state:
 3. standard accidentals are one-shot, carry through the measure by staff/step/octave across voices, and preserve explicit written intent independently from sounding alter
 4. `J` cycles conventional enharmonic spellings for notes, chords, ranges, and cross-measure tie chains without changing MIDI or entity identity
 5. MusicXML, Copy/Paste, Undo/Redo, rendered Playwright, strict Doctor, and paired TAB regressions cover the completed accidental and respelling workflows
-6. the remaining accidental gap is explicitly limited to courtesy/cautionary presentation metadata, parentheses/brackets, and view-specific concert/transposed respelling
+6. manual courtesy/cautionary presentation is semantic, supports none/round/square enclosure, and is covered through MusicXML, Copy/Paste, paired TAB, history, UI, rendering, and strict Doctor
 
 Highest-value remaining work:
 
 1. execute the representative manual validation pass on real scores
 2. rerun native MSCZ compatibility validation on a stable MuseScore CLI install; local MuseScore 4.7.3 currently SIGABRTs intermittently even on source-baseline conversions, so MSCZ parity remains accepted but not proven
 3. make the final release decision with an explicit accepted-limitations list instead of implicit roadmap leftovers
-4. add semantic courtesy/cautionary accidental controls and MusicXML attributes without coupling them to sounding pitch
+4. add automatic courtesy-accidental detection as an explicit reviewable policy, without changing the completed manual pitch-neutral metadata or coupling it to sounding pitch

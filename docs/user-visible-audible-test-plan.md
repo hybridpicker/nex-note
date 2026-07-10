@@ -117,8 +117,10 @@ Repeat the same flow for each accidental:
 | 3.13 | Select C-sharp and press `J` three times | Spelling cycles C-sharp → D-flat → B-double-sharp → C-sharp; notehead moves but selection/entity remains | Every spelling sounds the same MIDI pitch |
 | 3.14 | Select a chord or range and press `J`, then Undo/Redo | Every selected pitch advances independently in one history step | Playback pitches remain unchanged |
 | 3.15 | Respell a cross-measure tied note and a paired notation/TAB note | Complete tie chain shares one spelling; TAB string/fret does not move | Sustained pitch and TAB playback remain unchanged |
+| 3.16 | Select an explicitly written accidental, open Edit Palette → Accidentals, enable Courtesy, then choose no enclosure, round parentheses, and square brackets | The accidental re-engraves for each enclosure; the active controls expose `aria-pressed`; Inspector shows the same state | Silent; MIDI pitch is unchanged |
+| 3.17 | Copy/Paste the marked note, export/reimport MusicXML, then Undo/Redo each Courtesy/enclosure action | `cautionary`, `parentheses`, or `bracket` survives as appropriate; one user action is one history transaction; Doctor stays clean | Source and pasted notes retain the same sounding pitch |
 
-Courtesy/cautionary acceptance remains open: a future test must force an accidental without changing pitch, choose none/round/square enclosure, roundtrip MusicXML `cautionary` plus `parentheses`/`bracket`, and reverse the operation atomically.
+Manual courtesy/cautionary acceptance is automated. Automatic courtesy suggestions remain out of scope and must not silently alter a score.
 
 ## Suite 4: Pitch and Octave
 

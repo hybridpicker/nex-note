@@ -628,6 +628,65 @@ test('one-shot accidental entry carries within the measure and preserves atomic 
   await expectNoDoctorIssues(page, 'after one-shot accidental undo and redo');
 });
 
+test('courtesy accidental palette is pitch-neutral, rendered, accessible, and atomically undoable', async ({ page }) => {
+  const xml = buildNotationToolsFixtureXml().replace(
+    '<pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>',
+    '<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration>',
+  ).replace(
+    '<type>quarter</type><staff>1</staff></note>',
+    '<type>quarter</type><accidental>sharp</accidental><staff>1</staff></note>',
+  );
+  await bootWithScore(page, xml);
+  const initialXml = await readCurrentXml(page);
+  const initialEvent = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events[0];
+  const initialRendered = await page.locator('[data-testid="score-canvas"]').innerHTML();
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.locator('button[title="Accidentals"]:visible').click();
+  const courtesy = page.locator('button[title="Courtesy / cautionary accidental"]:visible');
+  const round = page.locator('button[title="Round parentheses"]:visible');
+  await expect(courtesy).toHaveAttribute('aria-pressed', 'false');
+  await expect(round).toHaveAttribute('aria-pressed', 'false');
+  await courtesy.click();
+  await round.click();
+  await expect(courtesy).toHaveAttribute('aria-pressed', 'true');
+  await expect(round).toHaveAttribute('aria-pressed', 'true');
+
+  const readDisplay = async () => {
+    const event = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events[0];
+    return event.kind === 'note' ? {
+      id: event.id,
+      pitch: `${event.pitch.step}:${event.pitch.alter}:${event.pitch.octave}`,
+      cautionary: Boolean(event.accidentalCautionary),
+      enclosure: event.accidentalEnclosure ?? 'none',
+    } : null;
+  };
+  await expect.poll(readDisplay).toEqual({
+    id: initialEvent.id,
+    pitch: 'C:1:4',
+    cautionary: true,
+    enclosure: 'round',
+  });
+  const editedXml = await readCurrentXml(page);
+  expect(editedXml).toMatch(/<accidental cautionary="yes" parentheses="yes">sharp<\/accidental>/);
+  await expect.poll(async () => page.locator('[data-testid="score-canvas"]').innerHTML()).not.toBe(initialRendered);
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(readDisplay).toEqual({
+    id: initialEvent.id,
+    pitch: 'C:1:4',
+    cautionary: true,
+    enclosure: 'none',
+  });
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
+  await expectNoDoctorIssues(page, 'after courtesy accidental undo and redo');
+});
+
 test('J cycles rendered enharmonic spelling with stable pitch, identity, and atomic history', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

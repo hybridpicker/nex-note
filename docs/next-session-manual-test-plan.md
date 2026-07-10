@@ -787,3 +787,12 @@ Die Session ist erst dann wirklich abgeschlossen, wenn:
 - verbleibende Risiken explizit dokumentiert wurden
 
 Wenn die Zeit knapp wird, lieber weniger Fixes sauber abschliessen als zu viele halb anzufangen.
+
+## Courtesy-Accidental Regression Addendum — 2026-07-10
+
+- Auf einer Note mit explizit geschriebenem Vorzeichen in Edit Palette → Accidentals und im Inspector `Cautionary` sowie `none`, `round` und `square` durchschalten.
+- Sichtbar pruefen, dass nur die Darstellung wechselt; klingende Tonhoehe, Selektion und Entity-Identitaet muessen stabil bleiben.
+- Eine gemischte Mehrfachauswahl anwenden und bestaetigen, dass nur Noten mit explizitem Vorzeichen in einer atomaren Aktion geaendert werden.
+- Copy/Paste, Undo/Redo und MusicXML-Reimport pruefen; erwartet werden `cautionary="yes"`, `parentheses="yes"` oder `bracket="yes"` ohne Tonhoehenabweichung.
+- Bei gepaarter Standardnotation/TAB muessen Metadaten gespiegelt werden, ohne Saite oder Bund zu veraendern.
+- Automatische Courtesy-Vorschlaege sind weiterhin nicht implementiert und duerfen im manuellen Bericht nicht als vorhanden gelten.

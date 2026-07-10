@@ -129,6 +129,42 @@ test('changeNotePitch inverse restores an explicit written accidental atomically
     octave: 4,
     alter: 1,
     writtenAccidental: 'sharp',
+    accidentalCautionary: false,
+    accidentalEnclosure: 'none',
+  }]);
+});
+
+test('setAccidentalDisplay inverse restores cautionary and enclosure metadata', () => {
+  const state = buildDocumentState(SAMPLE_XML.replace(
+    '<pitch><step>C</step><octave>4</octave></pitch>',
+    '<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><accidental cautionary="yes" bracket="yes">sharp</accidental>',
+  ));
+  const event = state.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  const result = deriveInverseCommands(state.coreDocument, [{
+    type: 'setAccidentalDisplay',
+    coreEntityId: event.id,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    cautionary: false,
+    enclosure: 'none',
+  }]);
+
+  assert.equal(result.unsupported.length, 0);
+  assert.deepEqual(result.inverseCommands, [{
+    type: 'setAccidentalDisplay',
+    coreEntityId: event.id,
+    coreMeasureId: undefined,
+    corePartId: undefined,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    cautionary: true,
+    enclosure: 'square',
   }]);
 });
 

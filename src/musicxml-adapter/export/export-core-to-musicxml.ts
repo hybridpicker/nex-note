@@ -624,7 +624,10 @@ function buildEventElement(
   if (event.durationType) setOrCreateTextElement(doc, note, 'type', event.durationType);
   if (event.isDotted) note.appendChild(doc.createElement('dot'));
   if (event.kind === 'note' && event.writtenAccidental) {
-    setOrCreateTextElement(doc, note, 'accidental', writtenAccidentalToMusicXml(event.writtenAccidental));
+    const accidental = setOrCreateTextElement(doc, note, 'accidental', writtenAccidentalToMusicXml(event.writtenAccidental));
+    if (event.accidentalCautionary) accidental.setAttribute('cautionary', 'yes');
+    if (event.accidentalEnclosure === 'round') accidental.setAttribute('parentheses', 'yes');
+    if (event.accidentalEnclosure === 'square') accidental.setAttribute('bracket', 'yes');
   }
   if (event.notehead === 'slash') setOrCreateTextElement(doc, note, 'notehead', 'slash');
   if (event.stem) setOrCreateTextElement(doc, note, 'stem', event.stem);

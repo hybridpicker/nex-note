@@ -374,6 +374,47 @@ test('standard notation changeNotePitch updates paired TAB pitch and fingering',
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 4, techniques: [] });
 });
 
+test('courtesy accidental display mirrors across paired notation and TAB without changing pitch or fingering', () => {
+  const source = importMusicXmlToCore(DUAL_STAFF_TAB_XML);
+  const notationBefore = source.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  const tabBefore = source.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0]!;
+  const next = applyCoreCommands(source, [{
+    type: 'changeNotePitch',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    step: 'C',
+    octave: 4,
+    alter: 0,
+    writtenAccidental: 'natural',
+  }, {
+    type: 'setAccidentalDisplay',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    cautionary: true,
+    enclosure: 'square',
+  }] as any);
+
+  const notationAfter = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  const tabAfter = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0]!;
+  assert.equal(notationAfter.id, notationBefore.id);
+  assert.equal(tabAfter.id, tabBefore.id);
+  assert.deepEqual(notationAfter.kind === 'note' ? notationAfter.pitch : null, notationBefore.kind === 'note' ? notationBefore.pitch : null);
+  assert.deepEqual(tabAfter.kind === 'note' ? tabAfter.pitch : null, tabBefore.kind === 'note' ? tabBefore.pitch : null);
+  assert.equal(notationAfter.kind === 'note' ? notationAfter.accidentalCautionary : null, true);
+  assert.equal(notationAfter.kind === 'note' ? notationAfter.accidentalEnclosure : null, 'square');
+  assert.equal(tabAfter.kind === 'note' ? tabAfter.accidentalCautionary : null, true);
+  assert.equal(tabAfter.kind === 'note' ? tabAfter.accidentalEnclosure : null, 'square');
+  assert.deepEqual(tabAfter.kind === 'note' ? tabAfter.guitar : null, tabBefore.kind === 'note' ? tabBefore.guitar : null);
+});
+
 test('enharmonic respelling mirrors spelling across paired notation and TAB without changing fret', () => {
   const pitch = resolveNextEnharmonicPitch({ step: 'C', alter: 0, octave: 4 });
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{

@@ -24,6 +24,7 @@ const UNSAFE_CORE_ROUNDTRIP_TAGS = [
 const CORE_SAFE_WITH_UNSAFE_ROUNDTRIP_TAGS = new Set([
   'setKey',
   'setGuitarFret',
+  'setAccidentalDisplay',
   'changeNoteDuration',
   'replaceWithRest',
   'transposeDocumentChromatic',

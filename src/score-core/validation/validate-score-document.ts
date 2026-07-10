@@ -173,6 +173,8 @@ export const DOCUMENT_DIAGNOSTIC_LEVELS = {
   voice_rhythm_sum_mismatch: 'warning',
   event_duration_notation_mismatch: 'warning',
   written_accidental_pitch_mismatch: 'error',
+  accidental_display_without_written_accidental: 'error',
+  invalid_accidental_enclosure: 'error',
   voice_timeline_gap: 'warning',
   voice_duration_mismatch: 'warning',
   multi_voice_rhythm_gap: 'warning',
@@ -317,6 +319,27 @@ export function validateScoreDocument(document: ScoreDocumentModel | null): Docu
 
           const divisions = effectiveAttributes?.divisions ?? 1;
           for (const event of voice.events) {
+            if (
+              event.kind === 'note'
+              && (event.accidentalCautionary || event.accidentalEnclosure)
+              && !event.writtenAccidental
+            ) {
+              diagnostics.push(createDiagnostic(
+                'accidental_display_without_written_accidental',
+                `Measure ${measure.measureNumber} staff ${staff.staffIndex} voice ${voice.voiceId} ${event.pitch.step}${event.pitch.octave}@${event.timestampNum}/${event.timestampDen} has accidental display metadata without an explicitly written accidental.`,
+              ));
+            }
+            if (
+              event.kind === 'note'
+              && event.accidentalEnclosure != null
+              && event.accidentalEnclosure !== 'round'
+              && event.accidentalEnclosure !== 'square'
+            ) {
+              diagnostics.push(createDiagnostic(
+                'invalid_accidental_enclosure',
+                `Measure ${measure.measureNumber} staff ${staff.staffIndex} voice ${voice.voiceId} ${event.pitch.step}${event.pitch.octave}@${event.timestampNum}/${event.timestampDen} has unsupported accidental enclosure ${String(event.accidentalEnclosure)}.`,
+              ));
+            }
             if (
               event.kind === 'note'
               && event.writtenAccidental

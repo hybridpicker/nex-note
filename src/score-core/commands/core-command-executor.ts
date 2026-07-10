@@ -27,6 +27,7 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'insertMeasureAfter',
   'deleteMeasure',
   'changeNotePitch',
+  'setAccidentalDisplay',
   'changeNoteDuration',
   'replaceWithRest',
   'deleteNote',
@@ -3176,6 +3177,8 @@ export function executeCoreCommands(
                     preferFlats,
                   );
                   event.writtenAccidental = undefined;
+                  event.accidentalCautionary = undefined;
+                  event.accidentalEnclosure = undefined;
                 });
               });
               measure.directions.forEach((direction) => {
@@ -3413,6 +3416,15 @@ export function executeCoreCommands(
           const soundingPitchUnchanged = pitchMidiNumber(noteEvent.pitch) === pitchMidiNumber(nextPitch);
           noteEvent.pitch = nextPitch;
           noteEvent.writtenAccidental = command.writtenAccidental;
+          if (!command.writtenAccidental) {
+            noteEvent.accidentalCautionary = undefined;
+            noteEvent.accidentalEnclosure = undefined;
+          } else {
+            if ('accidentalCautionary' in command) noteEvent.accidentalCautionary = command.accidentalCautionary || undefined;
+            if ('accidentalEnclosure' in command) {
+              noteEvent.accidentalEnclosure = command.accidentalEnclosure === 'none' ? undefined : command.accidentalEnclosure;
+            }
+          }
 
           if (found) {
             const sourceIsTab = isTabStaff(found.part, command.staffIndex);
@@ -3438,12 +3450,49 @@ export function executeCoreCommands(
               const pairedSoundingPitchUnchanged = pitchMidiNumber(pairedNote.pitch) === pitchMidiNumber(nextPitch);
               pairedNote.pitch = { ...nextPitch };
               pairedNote.writtenAccidental = command.writtenAccidental;
+              if (!command.writtenAccidental) {
+                pairedNote.accidentalCautionary = undefined;
+                pairedNote.accidentalEnclosure = undefined;
+              } else {
+                if ('accidentalCautionary' in command) pairedNote.accidentalCautionary = command.accidentalCautionary || undefined;
+                if ('accidentalEnclosure' in command) {
+                  pairedNote.accidentalEnclosure = command.accidentalEnclosure === 'none' ? undefined : command.accidentalEnclosure;
+                }
+              }
               if (paired.isTab && !pairedSoundingPitchUnchanged) {
                 pairedNote.guitar = resolveSyncedGuitarFingering({
                   pitch: nextPitch,
                   existing: pairedNote.guitar,
                 });
               }
+            }
+          }
+        }
+        break;
+      }
+      case 'setAccidentalDisplay': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, {
+          coreEntityId: command.coreEntityId,
+          timestampNum: command.timestampNum,
+          timestampDen: command.timestampDen,
+        })];
+        if (event?.kind === 'note' && event.writtenAccidental) {
+          event.accidentalCautionary = command.cautionary || undefined;
+          event.accidentalEnclosure = command.enclosure === 'none' ? undefined : command.enclosure;
+
+          if (found) {
+            const paired = findPairedTabNotationTimedEvent(
+              found.part,
+              command.staffIndex,
+              command.measureNumber,
+              command.voiceId,
+              command.timestampNum,
+              command.timestampDen,
+            );
+            if (paired?.event.kind === 'note' && paired.event.writtenAccidental) {
+              paired.event.accidentalCautionary = command.cautionary || undefined;
+              paired.event.accidentalEnclosure = command.enclosure === 'none' ? undefined : command.enclosure;
             }
           }
         }
@@ -3624,6 +3673,8 @@ export function executeCoreCommands(
           if (pitchMidiNumber(event.pitch) !== pitch.midi) {
             event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
             event.writtenAccidental = undefined;
+            event.accidentalCautionary = undefined;
+            event.accidentalEnclosure = undefined;
           }
           event.guitar = {
             string: command.string,
@@ -3647,6 +3698,8 @@ export function executeCoreCommands(
             if (pitchMidiNumber(paired.event.pitch) !== pitch.midi) {
               paired.event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
               paired.event.writtenAccidental = undefined;
+              paired.event.accidentalCautionary = undefined;
+              paired.event.accidentalEnclosure = undefined;
             }
             if (paired.isTab) {
               const previousPairedGuitar = paired.event.guitar;
@@ -3801,6 +3854,8 @@ export function executeCoreCommands(
         if (event?.kind === 'note') {
           event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
           event.writtenAccidental = undefined;
+          event.accidentalCautionary = undefined;
+          event.accidentalEnclosure = undefined;
         }
         break;
       }
@@ -3813,6 +3868,8 @@ export function executeCoreCommands(
           if (event?.kind === 'note') {
             event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
             event.writtenAccidental = undefined;
+            event.accidentalCautionary = undefined;
+            event.accidentalEnclosure = undefined;
           }
         });
         break;

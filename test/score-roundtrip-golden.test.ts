@@ -440,6 +440,52 @@ test('explicit standard accidentals preserve entity identity and MusicXML notati
   }]);
 });
 
+test('courtesy accidental metadata is pitch-neutral and roundtrips none, round, and square MusicXML display', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Clarinet</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+    <note><pitch><step>F</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><accidental cautionary="yes">sharp</accidental><staff>1</staff></note>
+    <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><accidental cautionary="yes" parentheses="yes">natural</accidental><staff>1</staff></note>
+    <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><accidental bracket="yes">flat</accidental><staff>1</staff></note>
+  </measure></part>
+</score-partwise>`;
+  const imported = importMusicXmlToCore(xml);
+  const events = imported.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  const ids = events.map((event) => event.id);
+  const pitches = events.map((event) => event.kind === 'note' ? event.pitch : null);
+
+  assert.deepEqual(events.map((event) => event.kind === 'note' ? {
+    cautionary: Boolean(event.accidentalCautionary),
+    enclosure: event.accidentalEnclosure ?? 'none',
+  } : null), [
+    { cautionary: true, enclosure: 'none' },
+    { cautionary: true, enclosure: 'round' },
+    { cautionary: false, enclosure: 'square' },
+  ]);
+
+  const edited = applyDocumentCommands(buildDocumentState(xml), [{
+    type: 'setAccidentalDisplay',
+    coreEntityId: ids[2],
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 2,
+    timestampDen: 4,
+    cautionary: true,
+    enclosure: 'round',
+  }]);
+  const editedEvents = edited.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  assert.deepEqual(editedEvents.map((event) => event.id), ids);
+  assert.deepEqual(editedEvents.map((event) => event.kind === 'note' ? event.pitch : null), pitches);
+  assert.match(edited.xml, /<accidental cautionary="yes">sharp<\/accidental>/);
+  assert.match(edited.xml, /<accidental cautionary="yes" parentheses="yes">natural<\/accidental>/);
+  assert.match(edited.xml, /<accidental cautionary="yes" parentheses="yes">flat<\/accidental>/);
+  assert.doesNotMatch(edited.xml, /<accidental[^>]*bracket="yes"[^>]*>flat<\/accidental>/);
+  assert.deepEqual(validateScoreDocument(edited.coreDocument).filter((entry) => entry.level === 'error'), []);
+});
+
 for (const accidental of [
   { written: 'double-flat', alter: -2, xml: 'flat-flat' },
   { written: 'flat', alter: -1, xml: 'flat' },

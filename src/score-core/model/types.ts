@@ -1,4 +1,4 @@
-import type { WrittenAccidental } from '@/src/shared/music/accidentals';
+import type { AccidentalEnclosure, WrittenAccidental } from '@/src/shared/music/accidentals';
 
 export interface ScoreDocumentModel {
   score: ScoreNode;
@@ -136,6 +136,9 @@ export interface NoteEvent extends BaseTimedEvent {
     octave: number;
   };
   writtenAccidental?: WrittenAccidental;
+  /** Pitch-neutral presentation metadata for an explicitly written accidental. */
+  accidentalCautionary?: boolean;
+  accidentalEnclosure?: Exclude<AccidentalEnclosure, 'none'>;
   guitar?: {
     string: 1 | 2 | 3 | 4 | 5 | 6;
     fret: number;

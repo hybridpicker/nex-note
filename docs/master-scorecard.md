@@ -373,3 +373,32 @@ Verification evidence:
 - `e2e/notation-tools.spec.ts` (regression project): 19 passed.
 - Bounded local MuseScore 4.7.3 roundtrip smoke: process completed with `passed-with-local-musescore-limit`; the installed MuseScore intermittently aborted on source baselines and nex-note variants, so crash-only failures were classified as inconclusive rather than isolated nex-note export defects.
 - `git diff --check`: passed before commit.
+
+## Iteration 2026-07-10 — Pitch-Neutral Courtesy Accidentals
+
+All unlisted capabilities inherit the 56% product state above. This iteration completes manual courtesy/cautionary presentation without claiming automatic courtesy detection or separate concert/transposed-view parity.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Accidentals | 95% | 98% |
+| MusicXML Roundtrip | 82% | 85% |
+| TAB Standard Notation Sync | 77% | 80% |
+| Undo | 88% | 90% |
+| Testing | 94% | 95% |
+| Consistency | 89% | 92% |
+| Professional Workflow | 79% | 82% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **56%**
+- Closing: **57%**
+
+Courtesy intent and none/round/square enclosure now live as pitch-neutral metadata on semantic note events. The dedicated `setAccidentalDisplay` command preserves event identity, mirrors paired notation/TAB without changing fingering, exports and imports MusicXML `cautionary`, `parentheses`, and `bracket`, survives range Copy/Paste, and derives exact inverse commands. Transposition and pitch changes clear stale display state whenever an explicit glyph is removed. Edit Palette and Inspector expose accessible single/range controls, while strict validation rejects display metadata without an explicit written accidental. The capability remains manual: nex-note does not yet infer or suggest where courtesy accidentals should appear.
+
+Verification evidence:
+
+- `npm test`: 936 passed, 0 failed.
+- `npm run build`: production build and TypeScript validation passed.
+- `e2e/notation-tools.spec.ts` (regression project): 20 passed.
+- Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only differences remain inconclusive. Artifacts: `.nex/musescore-roundtrip-smoke-2026-07-10T16-56-27-142Z`.
+- `git diff --check`: required before commit.

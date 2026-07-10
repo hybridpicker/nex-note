@@ -79,7 +79,7 @@ Selecciona una nota y usa `A` a `G`, los botones de altura, flechas o paleta. `F
 
 En Note Input, una alteracion armada se consume solo despues de introducir correctamente la siguiente nota. La altura alterada continua para la misma letra y octava del pentagrama hasta la barra de compas, incluso entre voces; otra octava y el compas siguiente tienen contexto independiente. El signo escrito se conserva por separado en MusicXML, Copy/Paste, notation/TAB y Undo/Redo.
 
-Pulsa `J` repetidamente para recorrer las escrituras enarmonicas de una nota, acorde o rango sin cambiar MIDI, identidad, seleccion, ligaduras ni digitacion TAB. Con el teclado QWERTY activo, `J` sigue siendo la tecla de La sostenido. Las alteraciones de cortesia con parentesis o corchetes aun no estan modeladas.
+Pulsa `J` repetidamente para recorrer las escrituras enarmonicas de una nota, acorde o rango sin cambiar MIDI, identidad, seleccion, ligaduras ni digitacion TAB. Con el teclado QWERTY activo, `J` sigue siendo la tecla de La sostenido. Para una alteracion escrita explicitamente, usa Edit Palette → Accidentals o el Inspector para marcarla como cortesia y elegir sin cierre, parentesis redondos o corchetes. La altura no cambia y MusicXML, Copy/Paste, notation/TAB y Undo/Redo conservan la presentacion. La deteccion automatica sigue pendiente.
 
 ## Articulaciones, dinamicas y ligaduras
 

@@ -18,7 +18,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
-- Recent validation on 2026-07-10: `npm test` passed with `929` tests, the production build passed, and the complete notation-tools Playwright project passed with `19` tests. The bounded MuseScore roundtrip smoke completed with the documented local MuseScore 4.7.3 crash limitation. Coverage and high-severity audit evidence remains dated 2026-05-13 and is reported separately below.
+- Recent validation on 2026-07-10: `npm test` passed with `936` tests, the production build passed, and the complete notation-tools Playwright project passed with `20` tests. The bounded MuseScore roundtrip smoke completed with `passed-with-local-musescore-limit`; MuseScore 4.7.3 remained crash-unstable across source and nex-note conversions, so crash-only differences are inconclusive. Coverage and high-severity audit evidence remains dated 2026-05-13 and is reported separately below.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
 
@@ -71,7 +71,7 @@ Founder testing is focused on this loop rather than a hosted SaaS workflow. The 
 - MSCZ, GuitarPro, MIDI, and best-effort ABC workflows depend on MuseScore CLI.
 - Some imported MusicXML still uses compatibility fallback when unsupported round-trip tags are present.
 - Some notation marks are preserved or rendered but not fully editable yet.
-- Courtesy/cautionary accidental brackets and separate concert/transposed-pitch respelling views are not yet editable; standard accidentals and `J` respelling are semantic and roundtrip through MusicXML.
+- Courtesy/cautionary accidental intent and none/round/square enclosure are editable from the left Accidentals palette and Inspector without changing pitch. They roundtrip as MusicXML `cautionary`, `parentheses`, and `bracket`, survive Copy/Paste and atomic Undo/Redo, and mirror to paired notation/TAB. Automatic courtesy detection and separate concert/transposed-pitch respelling views remain open.
 - MuseScore CLI round-trip validation now captures MusicXML, app-style MXL, and MSCZ diagnostics under `.nex/musescore-roundtrip-smoke-*`; the current local MuseScore 4.7.3 install can SIGABRT even on source fixtures, so native MSCZ parity remains an accepted alpha limit unless a clean external MuseScore run confirms it.
 - macOS desktop builds are currently ad-hoc signed; notarization and signing identity selection are still open.
 - Local debug/developer routes must be removed, gated, or explicitly documented before distributing polished binaries.
@@ -288,8 +288,8 @@ npm run electron:build
 
 Current validation snapshot:
 
-- `npm test`: 929 tests passed on 2026-07-10.
-- `npx playwright test e2e/notation-tools.spec.ts --project regression`: 19 tests passed on 2026-07-10.
+- `npm test`: 936 tests passed on 2026-07-10.
+- `npx playwright test e2e/notation-tools.spec.ts --project regression`: 20 tests passed on 2026-07-10.
 - `npm run build`: passed on 2026-07-10.
 - Bounded `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0`: completed with `passed-with-local-musescore-limit` on 2026-07-10; MuseScore 4.7.3 intermittently aborted on source and generated variants, so crash-only results remain inconclusive rather than nex-note export failures.
 - `npm run test:coverage:check`: 84.96% lines, 76.57% branches, 85.33% functions.

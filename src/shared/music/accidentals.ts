@@ -1,4 +1,10 @@
 export type WrittenAccidental = 'double-sharp' | 'sharp' | 'natural' | 'flat' | 'double-flat';
+export type AccidentalEnclosure = 'none' | 'round' | 'square';
+
+export interface AccidentalDisplay {
+  cautionary: boolean;
+  enclosure: AccidentalEnclosure;
+}
 
 export interface EnharmonicPitch {
   step: string;
