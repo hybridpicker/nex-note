@@ -14,9 +14,9 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-10 (`898` tests, `0` failed)
+- `npm test`: passed on 2026-07-10 (`899` tests, `0` failed)
 - `npm run build`: passed on 2026-07-10; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
-- `npm run test:e2e:notation-tools`: passed on 2026-07-10 (`14` tests, `0` failed)
+- `npm run test:e2e:notation-tools`: passed on 2026-07-10 (`15` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
 - `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
 - MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-04 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; artifacts were written under `.nex/musescore-roundtrip-smoke-2026-07-04T21-31-22-795Z`
@@ -34,6 +34,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - automatic horizontal collision spacing now models lyrics, chord symbols, and other text as lane-aware rhythmic anchors; crowded adjacent anchors establish a hard measure-width floor and trigger earlier reflow while safely separated text keeps its existing layout
 - MuseScore-style interval input now adds key-aware diatonic unisons through ninths with `Alt/Option+1–9`; repeated intervals remain on the same onset, toolbar controls expose all nine actions, and physical digit matching works when Option changes the typed glyph
 - A–G note-name input now chooses the octave closest to the previous entered pitch, inherits the active key signature when no accidental is armed, places Shift-added pitch names strictly above the highest same-voice chord tone, and preserves the documented explicit-cursor modifier over clipboard commands; a browser matrix covers all seven letters across a measure boundary
+- same-pitch step-time replacement now advances through pre-existing or repeated-note passages without emitting an empty history transaction; `Q/W` duration transforms remain anchored to the last entered note instead of the future cursor, and browser proof keeps the source XML byte-identical with Undo disabled across eight no-change entries
 
 ## Manual Validation Highlights
 

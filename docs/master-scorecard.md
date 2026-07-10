@@ -238,3 +238,25 @@ All unlisted capabilities inherit the 50% product state above. This iteration re
 - Closing: **51%**
 
 Pitch-name input no longer reuses the previous numeric octave blindly. A–G now chooses the chromatically nearest octave to the previous entered pitch, so C4 followed by B becomes B3 and B4 followed by C becomes C5. The resolver applies the effective key signature unless the user explicitly arms an accidental. `Shift+A–G` and persistent chord mode choose the smallest matching pitch strictly above the highest same-voice chord tone, even when the selected tone is not the chord top; `Cmd/Ctrl+Shift+A–G` now reaches its documented explicit-cursor path instead of being intercepted by clipboard commands. Unit tests cover octave boundaries, fifth-versus-fourth choices, tritone ties, repeated pitch names, key spelling, and shortcut precedence; editor tests cover semantic mutations; Playwright covers all seven pitch letters across a measure boundary and rendered chord stacking with strict diagnostics.
+
+## Iteration 2026-07-10 — No-Change Step-Time Advancement
+
+All unlisted capabilities inherit the 51% product state above. This iteration fixes a high-frequency cursor failure in repeated-note and pre-populated-score entry.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 87% | 90% |
+| Keyboard Entry | 89% | 91% |
+| Duration Editing | 75% | 79% |
+| Undo | 74% | 77% |
+| Testing | 86% | 87% |
+| Feedback | 67% | 70% |
+| Consistency | 70% | 73% |
+| Professional Workflow | 62% | 65% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **51%**
+- Closing: **52%**
+
+Entering a pitch that already matches the replaceable note at the cursor is now treated as a successful step-time action rather than an edit failure. The editor refreshes the last-input anchor and audible preview, advances to the next rhythmic slot with the same lane guards as a mutating entry, and deliberately skips `onApplyCommands`, leaving XML, revision history, Undo, and Redo untouched. Chord/unison no-ops continue to remain at their onset. `Q`, `W`, `Shift+Q`, and `Shift+W` duration transforms now prefer the last-input anchor over the visually advanced future cursor; direct duration selection continues to configure the next entry when the cursor has advanced. Editor coverage proves two identical C inputs advance before a later real edit and exercises the duration matrix; Playwright traverses an entire eight-note, two-measure passage with byte-identical XML, no Undo state, and clean strict diagnostics.

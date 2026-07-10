@@ -238,6 +238,7 @@ async function readE2EState(page: Page) {
           isRest?: boolean;
         } | null;
         playbackState: string;
+        canUndo?: boolean;
         currentMeasure?: number | null;
         currentBeat?: number;
         totalBeats?: number;
@@ -517,6 +518,38 @@ test('A-G letter entry keeps a nearest-octave passage continuous across measures
     return selected ? `${selected.step}${selected.octave}@${selected.measureNumber}:${selected.timestampNum}` : null;
   }).toBe('A4@2:3');
   await expectNoDoctorIssues(page, 'after A-G closest-octave passage');
+});
+
+test('same-pitch note input advances across the score without dirtying history', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+  await expect.poll(async () => (await readE2EState(page))?.canUndo).toBe(false);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  const passage = [
+    { key: 'C', measureNumber: 1, timestampNum: 1 },
+    { key: 'D', measureNumber: 1, timestampNum: 2 },
+    { key: 'E', measureNumber: 1, timestampNum: 3 },
+    { key: 'F', measureNumber: 2, timestampNum: 0 },
+    { key: 'G', measureNumber: 2, timestampNum: 1 },
+    { key: 'A', measureNumber: 2, timestampNum: 2 },
+    { key: 'B', measureNumber: 2, timestampNum: 3 },
+    { key: 'C', measureNumber: 2, timestampNum: 3 },
+  ];
+
+  for (const step of passage) {
+    await page.keyboard.press(step.key);
+    await expect.poll(async () => {
+      const selected = (await readE2EState(page))?.selectedNote;
+      return selected ? `${selected.measureNumber}:${selected.timestampNum}` : null;
+    }).toBe(`${step.measureNumber}:${step.timestampNum}`);
+  }
+
+  expect(await readCurrentXml(page)).toBe(initialXml);
+  await expect.poll(async () => (await readE2EState(page))?.canUndo).toBe(false);
+  await expectNoDoctorIssues(page, 'after no-change repeated-note passage');
 });
 
 test('notation palette tools update clicked notes visually, semantically, and during playback', async ({ page }, testInfo) => {

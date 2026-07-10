@@ -91,7 +91,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Shift+Q` | punktierte Dauer eine Stufe kleiner | Noteneditor |
 | `Shift+W` | punktierte Dauer eine Stufe größer | Noteneditor |
 | `Cmd/Ctrl+Alt/Option+1` ... `4` | Stimme 1 ... 4 wählen | Noteneditor |
-| `A` ... `G` | Tonhöhe ändern oder Note eingeben; bei laufender Noteneingabe wird die zum vorherigen Ton nächste Oktave und ohne explizites Vorzeichen die aktive Tonart verwendet | Noteneditor |
+| `A` ... `G` | Tonhöhe ändern oder Note eingeben; bei laufender Noteneingabe wird die zum vorherigen Ton nächste Oktave und ohne explizites Vorzeichen die aktive Tonart verwendet; ein bereits identischer Ton gilt als erfolgreiche Eingabe und bewegt den Cursor weiter | Noteneditor |
 | `Cmd/Ctrl+Shift+H` | Chord Input Mode ein-/ausschalten | Noteneingabe |
 | `P` | QWERTY-Step-Keyboard ein-/ausblenden; aktiviert bei Bedarf zugleich die Noteneingabe | Noteneditor |
 | `Shift+A` ... `Shift+G` | Akkordton oberhalb des höchsten Tons der aktiven Stimme am aktuellen Einsatz hinzufügen | Noteneingabe |

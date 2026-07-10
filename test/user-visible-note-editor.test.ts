@@ -5784,6 +5784,41 @@ test('A-G note input follows the active key signature when no accidental is arme
   hook.unmount();
 });
 
+test('same-pitch note-name replacement advances without creating a history command', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+  const initialXml = hook.xml;
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.toggleNoteInput();
+    hook.current.handleKeyDown(makeKeyboardEvent('C'));
+  });
+  assert.equal(hook.xml, initialXml);
+  assert.equal(hook.appliedCommands.length, 0);
+  assert.equal(hook.current.selectedNote?.timestampNum, 1);
+  assert.equal(hook.current.noteInputAnchor?.timestampNum, 0);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('C'));
+  });
+  assert.equal(hook.xml, initialXml);
+  assert.equal(hook.appliedCommands.length, 0);
+  assert.equal(hook.current.selectedNote?.timestampNum, 2);
+  assert.equal(hook.current.noteInputAnchor?.timestampNum, 1);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('E'));
+  });
+  hook.rerender();
+  assert.notEqual(hook.xml, initialXml);
+  assert.equal(hook.appliedCommands.length, 1);
+  assert.equal(hook.current.selectedNote?.timestampNum, 3);
+  assert.equal(hook.current.noteInputAnchor?.step, 'E');
+  hook.unmount();
+});
+
 test('Cmd/Ctrl+Shift+A-G reaches explicit cursor pitch entry instead of clipboard commands', () => {
   const hook = renderHook(SAMPLE_XML);
   const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);

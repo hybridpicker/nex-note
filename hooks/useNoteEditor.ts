@@ -1893,7 +1893,7 @@ export function useNoteEditor(
   const resolveActiveDurationTarget = useCallback(() => {
     const activeSelection = selectedNoteRef.current ?? selectedNote;
     return noteInputModeRef.current
-      ? (activeSelection ?? lastNoteInputRef.current)
+      ? (lastNoteInputRef.current ?? activeSelection)
       : activeSelection;
   }, [selectedNote]);
 
@@ -2003,28 +2003,45 @@ export function useNoteEditor(
     });
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
-      warnNoOpEdit(label, commands[0]);
-      const clickedNote = resolveRecentInputFromDocument(coreDocument, locator, {
+      const enteredNote = resolveRecentInputFromDocument(coreDocument, locator, {
         isRest: false,
         step: validatedTarget.step,
         octave: validatedTarget.octave,
         alter: validatedTarget.alter,
       });
-      if (clickedNote) {
+      const successfulNoChangeReplace = Boolean(
+        noteInputModeRef.current
+        && validatedTarget.mode === 'replace'
+        && enteredNote,
+      );
+      if (!successfulNoChangeReplace) warnNoOpEdit(label, commands[0]);
+      if (enteredNote) {
         lastNoteInputRef.current = {
-          ...clickedNote,
-          durationType: clickedNote.durationType ?? durationType,
-          isDotted: clickedNote.isDotted ?? dotted,
+          ...enteredNote,
+          durationType: enteredNote.durationType ?? durationType,
+          isDotted: enteredNote.isDotted ?? dotted,
         };
-        options?.onActiveNotePreview?.(clickedNote);
-        selectSingleNote(clickedNote, {
+        const rawNextSelection = successfulNoChangeReplace
+          ? findNextRhythmicSelection(coreDocument, enteredNote)
+          : null;
+        const nextSelection = isLocalNoteInputAdvance(enteredNote, rawNextSelection)
+          ? rawNextSelection
+          : null;
+        const soundingNotes = getSimultaneousPitchedNotes(coreDocument, enteredNote);
+        if (options?.onActiveNotesPreview) {
+          options.onActiveNotesPreview(soundingNotes);
+        } else {
+          options?.onActiveNotePreview?.(enteredNote);
+        }
+        const selectedAfterInput = nextSelection ?? enteredNote;
+        selectSingleNote(selectedAfterInput, {
           visualOnly: false,
           text: null,
-          measureNumber: clickedNote.measureNumber,
-          staffIndex: clickedNote.staffIndex,
+          measureNumber: selectedAfterInput.measureNumber,
+          staffIndex: selectedAfterInput.staffIndex,
         });
       }
-      return false;
+      return successfulNoChangeReplace;
     }
 
     warnPostCommitDiagnostics(label, validateScoreDocument(coreDocument), next.diagnostics, validatedTarget, commands);
@@ -3157,7 +3174,7 @@ export function useNoteEditor(
 
   const applyDurationTransform = useCallback((transform: (duration: NoteDuration, dotted: boolean) => { duration: NoteDuration; dotted: boolean }) => {
     const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
-    const source = noteInputModeRef.current ? (currentSelectedNote ?? lastNoteInputRef.current) : currentSelectedNote;
+    const source = noteInputModeRef.current ? (lastNoteInputRef.current ?? currentSelectedNote) : currentSelectedNote;
     const current = resolveDurationState(source, selectedDurationRef.current, isDottedRef.current);
     const next = transform(current.duration, current.dotted);
     if (noteInputModeRef.current && source) {
