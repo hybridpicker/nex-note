@@ -31,6 +31,7 @@ test('buildLayoutSnapshot exposes measure hints and semantic anchors for later e
   assert.ok(snapshot.anchors.every((anchor) => anchor.eventId && anchor.measureId));
   assert.ok(snapshot.measures.some((measure) => measure.lyricLineCount > 0));
   assert.ok(snapshot.measures.some((measure) => measure.lyricVerseCount === 2));
+  assert.ok(snapshot.measures.some((measure) => measure.textAnchors.some((anchor) => anchor.lane === 'lyric:1')));
   assert.ok(snapshot.measures.some((measure) => measure.slurCount > 0));
 });
 
@@ -142,6 +143,72 @@ test('text-aware minimum widths reflow systems before long expressions can colli
   assert.equal(shortPlan.systems.length, 1);
   assert.ok(longPlan.systems.length > shortPlan.systems.length);
   assert.ok(longPlan.measures.every((measure) => measure.minimumWidth >= 120));
+});
+
+test('anchor-aware spacing distinguishes crowded lyrics from identical text at safe rhythmic distances', () => {
+  const crowded = normalizeScoreDocument(importMusicXmlToCore(loadFixture('choir-lyrics.musicxml')));
+  const separated = structuredClone(crowded);
+  for (const document of [crowded, separated]) {
+    for (const line of document.lyricLines) line.text = 'wonder';
+  }
+
+  const crowdedEvents = crowded.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  crowdedEvents[1]!.timestampNum = 1;
+  crowdedEvents[1]!.timestampDen = 16;
+  const separatedEvents = separated.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  separatedEvents[1]!.timestampNum = 3;
+  separatedEvents[1]!.timestampDen = 4;
+
+  const crowdedPlan = buildLayoutPlan(crowded, buildLayoutSnapshot(crowded));
+  const separatedPlan = buildLayoutPlan(separated, buildLayoutSnapshot(separated));
+  const crowdedMeasure = crowdedPlan.measures[0]!;
+  const separatedMeasure = separatedPlan.measures[0]!;
+
+  assert.equal(crowdedMeasure.textSpacingDemand, separatedMeasure.textSpacingDemand);
+  assert.ok(crowdedMeasure.anchorCollisionWidth > separatedMeasure.anchorCollisionWidth);
+  assert.ok(crowdedMeasure.anchorCollisionDemand > 0);
+  assert.equal(separatedMeasure.anchorCollisionDemand, 0);
+  assert.ok(crowdedMeasure.minimumWidth > separatedMeasure.minimumWidth);
+  assert.ok(crowdedMeasure.idealWidth > separatedMeasure.idealWidth);
+});
+
+test('anchor-aware spacing reserves horizontal room for crowded chord symbols', () => {
+  const crowded = normalizeScoreDocument(importMusicXmlToCore(loadFixture('choir-lyrics.musicxml')));
+  const separated = structuredClone(crowded);
+  for (const document of [crowded, separated]) {
+    document.lyricLines = [];
+    const measure = document.score.parts[0]!.staves[0]!.measures[0]!;
+    measure.directions = [
+      {
+        id: 'harmony:1',
+        kind: 'harmony',
+        value: 'Cmaj7',
+        measureNumber: 1,
+        staffIndex: 1,
+        timestampNum: 0,
+        timestampDen: 1,
+      },
+      {
+        id: 'harmony:2',
+        kind: 'harmony',
+        value: 'Fmaj7',
+        measureNumber: 1,
+        staffIndex: 1,
+        timestampNum: document === crowded ? 1 : 3,
+        timestampDen: document === crowded ? 16 : 4,
+      },
+    ];
+  }
+
+  const crowdedSnapshot = buildLayoutSnapshot(crowded);
+  const separatedSnapshot = buildLayoutSnapshot(separated);
+  const crowdedMeasure = buildLayoutPlan(crowded, crowdedSnapshot).measures[0]!;
+  const separatedMeasure = buildLayoutPlan(separated, separatedSnapshot).measures[0]!;
+
+  assert.equal(crowdedSnapshot.measures[0]?.textAnchors.filter((anchor) => anchor.lane === 'harmony:above').length, 2);
+  assert.ok(crowdedMeasure.anchorCollisionDemand > 0);
+  assert.equal(separatedMeasure.anchorCollisionDemand, 0);
+  assert.ok(crowdedMeasure.minimumWidth > separatedMeasure.minimumWidth);
 });
 
 test('buildLayoutPlan derives rule-driven system breaks when measure widths overflow the target system width', () => {

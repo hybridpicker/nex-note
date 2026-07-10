@@ -15,6 +15,8 @@ export interface MeasureLayoutPlan {
   idealWidth: number;
   spacingUnits: number;
   textSpacingDemand: number;
+  anchorCollisionWidth: number;
+  anchorCollisionDemand: number;
   staffSpacing: number;
 }
 
@@ -57,6 +59,7 @@ export interface LayoutPlanOptions {
   endingUnitWidth?: number;
   lyricCharacterUnitWidth?: number;
   directionCharacterUnitWidth?: number;
+  textAnchorPadding?: number;
   minimumMeasureWidth?: number;
   systemIdealWidth?: number;
   pageIdealWidth?: number;
@@ -74,6 +77,7 @@ const DEFAULT_OPTIONS: Required<LayoutPlanOptions> = {
   endingUnitWidth: 10,
   lyricCharacterUnitWidth: 2.4,
   directionCharacterUnitWidth: 2,
+  textAnchorPadding: 8,
   minimumMeasureWidth: 56,
   systemIdealWidth: 220,
   pageIdealWidth: 520,
@@ -164,6 +168,41 @@ function scoreTextSpacingDemand(measure: LayoutMeasureSnapshot, options: Require
   );
 }
 
+function scoreAnchorCollisionWidth(measure: LayoutMeasureSnapshot, options: Required<LayoutPlanOptions>) {
+  const lanes = new Map<string, typeof measure.textAnchors>();
+  for (const anchor of measure.textAnchors) {
+    const lane = lanes.get(anchor.lane);
+    if (lane) lane.push(anchor);
+    else lanes.set(anchor.lane, [anchor]);
+  }
+
+  let requiredWidth = 0;
+  for (const anchors of lanes.values()) {
+    const byTimestamp = new Map<number, { position: number; width: number }>();
+    for (const anchor of anchors) {
+      const position = (anchor.timestampNum / Math.max(anchor.timestampDen, 1)) / Math.max(measure.rhythmicDuration, 0.0001);
+      const unitWidth = anchor.kind === 'lyric'
+        ? options.lyricCharacterUnitWidth
+        : options.directionCharacterUnitWidth;
+      const width = Math.max(unitWidth * 2, anchor.characterCount * unitWidth);
+      const existing = byTimestamp.get(position);
+      if (!existing || width > existing.width) byTimestamp.set(position, { position, width });
+    }
+
+    const positioned = Array.from(byTimestamp.values()).sort((left, right) => left.position - right.position);
+    for (let index = 1; index < positioned.length; index += 1) {
+      const previous = positioned[index - 1]!;
+      const current = positioned[index]!;
+      const rhythmicDistance = current.position - previous.position;
+      if (rhythmicDistance <= 0) continue;
+      const separation = previous.width / 2 + current.width / 2 + options.textAnchorPadding;
+      requiredWidth = Math.max(requiredWidth, Math.ceil(separation / rhythmicDistance));
+    }
+  }
+
+  return requiredWidth;
+}
+
 function deriveCollisionMode(collisionPressure: number): CollisionPolicy {
   if (collisionPressure >= 6) return 'open';
   if (collisionPressure >= 3) return 'relaxed';
@@ -204,7 +243,7 @@ function buildMeasurePlan(
   const collisionMode = explicitCollisionPolicy ?? deriveCollisionMode(collisionPressure);
   const textSpacingDemand = scoreTextSpacingDemand(measure, options);
   const spacingUnits = Math.max(1, complexity);
-  const idealWidth = Math.max(
+  const contentIdealWidth = Math.max(
     options.minimumMeasureWidth,
     options.baseMeasureWidth
       + measure.eventCount * options.eventUnitWidth
@@ -216,6 +255,9 @@ function buildMeasurePlan(
       + (measure.hasEnding ? options.endingUnitWidth : 0)
       + textSpacingDemand,
   );
+  const anchorCollisionWidth = scoreAnchorCollisionWidth(measure, options);
+  const idealWidth = Math.max(contentIdealWidth, anchorCollisionWidth);
+  const anchorCollisionDemand = Math.max(0, anchorCollisionWidth - contentIdealWidth);
   const longestTokenDemand = (
     Math.max(0, measure.maxLyricTokenLength - 8) * options.lyricCharacterUnitWidth * 2.5
     + Math.max(0, measure.maxDirectionTokenLength - 12) * options.directionCharacterUnitWidth * 2
@@ -224,6 +266,7 @@ function buildMeasurePlan(
     options.minimumMeasureWidth,
     Math.round(idealWidth * 0.68),
     longestTokenDemand > 0 ? Math.round(options.baseMeasureWidth + longestTokenDemand) : 0,
+    anchorCollisionWidth,
   );
 
   const resolvedStaffSpacing = resolveStaffSpacing(document, measure) ?? recommendedStaffSpacing(measure);
@@ -240,6 +283,8 @@ function buildMeasurePlan(
     idealWidth,
     spacingUnits,
     textSpacingDemand,
+    anchorCollisionWidth,
+    anchorCollisionDemand,
     staffSpacing: Math.max(
       resolvedStaffSpacing,
       explicitCollisionPolicy ? collisionPolicyStaffSpacingFloor(explicitCollisionPolicy) : 0,

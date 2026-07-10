@@ -18,6 +18,7 @@ export interface OsmdMeasureLayoutBridge {
   minimumWidth: number;
   idealWidth: number;
   spacingUnits: number;
+  anchorCollisionDemand: number;
   staffSpacing: number | null;
   breakBefore: boolean;
   pageBreakBefore: boolean;
@@ -95,6 +96,7 @@ function buildMeasureBridge(
     minimumWidth: measure.minimumWidth,
     idealWidth: measure.idealWidth,
     spacingUnits: measure.spacingUnits,
+    anchorCollisionDemand: measure.anchorCollisionDemand,
     staffSpacing: measure.staffSpacing,
     breakBefore,
     pageBreakBefore,

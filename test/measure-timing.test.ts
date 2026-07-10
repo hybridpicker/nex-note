@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import { createNewScoreXml } from '../lib/new-score.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import { applyCoreCommands } from '../src/score-core/commands/core-command-executor.ts';
-import { getEffectiveMeasureTiming } from '../src/score-core/measure-timing.ts';
+import {
+  buildEffectiveMeasureTimingsFromStaff,
+  getEffectiveMeasureTiming,
+} from '../src/score-core/measure-timing.ts';
 
 function buildBlankPianoXml(measureCount = 2) {
   return createNewScoreXml({
@@ -40,6 +43,18 @@ test('effective measure timing inherits 4/4 and divisions into later blank measu
   assert.equal(timing.divisions, 8);
   assert.equal(timing.durationDivisions, 32);
   assert.equal(timing.durationRatio, 1);
+});
+
+test('staff timing projection resolves inherited meter and divisions in one pass', () => {
+  const core = importMusicXmlToCore(buildBlankPianoXml(4));
+  const staff = core.score.parts[0]!.staves[0]!;
+  const timings = buildEffectiveMeasureTimingsFromStaff(staff);
+
+  assert.equal(timings.length, 4);
+  assert.ok(timings.every((timing) => timing.divisions === 8));
+  assert.ok(timings.every((timing) => timing.durationDivisions === 32));
+  assert.ok(timings.every((timing) => timing.durationRatio === 1));
+  assert.deepEqual(timings[3]?.timeSignature, { beats: 4, beatType: 4 });
 });
 
 test('out-of-range absolute insert is clamped and cannot balloon a later blank measure', () => {

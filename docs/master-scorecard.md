@@ -1,6 +1,6 @@
 # Professional Product Scorecard
 
-Updated: 2026-07-09
+Updated: 2026-07-10
 
 Scores measure verified professional workflow depth relative to MuseScore Studio, not the presence of a button or data field. Imported-format preservation alone does not count as full editing support. The current product remains a public alpha.
 
@@ -172,3 +172,26 @@ All unlisted capabilities inherit the 47% product state above.
 - Closing: **48%**
 
 The Inspector now exposes `Balanced`, `Relaxed`, and `Open` collision spacing. These are semantic, undoable layout commands rather than display-only toggles: an explicit policy cascades from its measure, honors part/staff specificity, sets a vertical spacing floor, and reaches the render bridge as the system collision mode. Automatic pressure-based engraving remains unchanged when no policy is set. This is still policy-level spacing, not glyph-level skyline collision solving or manual element offsets.
+
+## Iteration 2026-07-10 — Rhythmic-Anchor-Aware Horizontal Collision Spacing
+
+All unlisted capabilities inherit the 48% product state above. Baseline reflects the closing state of the manual collision-policy iteration.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Lyrics | 64% | 66% |
+| Chord Symbols | 62% | 64% |
+| Layout | 61% | 63% |
+| Spacing | 61% | 64% |
+| Collision Avoidance | 47% | 51% |
+| Automatic Engraving | 44% | 47% |
+| Testing | 81% | 82% |
+| Extensibility | 64% | 66% |
+| Professional Workflow | 54% | 55% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **48%**
+- Closing: **49%**
+
+Lyrics, chord symbols, rehearsal/tempo text, words, and dynamics now enter the renderer-agnostic layout snapshot as rhythmic text anchors grouped by collision lane. The layout planner computes the hard width required between adjacent anchors from their actual rhythmic distance, estimated content width, and minimum padding. Identical text therefore widens a measure when crowded while leaving safely separated anchors unchanged, and the demand reaches the render bridge for inspection and future renderer integrations. Existing choir, piano, lead-sheet, and repeat-ending fingerprints remain stable; dedicated tests cover crowded multi-verse lyrics and chord symbols. Exact font metrics, cross-measure text collisions, vertical skyline solving, and manual element offsets remain open.

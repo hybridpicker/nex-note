@@ -1,6 +1,6 @@
 # Release Readiness Summary
 
-Updated: 2026-07-09
+Updated: 2026-07-10
 
 This file is the short executive summary; the detailed progress log is maintained privately.
 
@@ -14,9 +14,9 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-09 (`883` tests, `0` failed)
-- `npm run build`: passed on 2026-07-09; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
-- `npm run test:e2e:notation-tools`: passed on 2026-07-09 (`11` tests, `0` failed)
+- `npm test`: passed on 2026-07-10 (`886` tests, `0` failed)
+- `npm run build`: passed on 2026-07-10; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
+- `npm run test:e2e:notation-tools`: passed on 2026-07-10 (`11` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
 - `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
 - MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-04 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; artifacts were written under `.nex/musescore-roundtrip-smoke-2026-07-04T21-31-22-795Z`
@@ -31,6 +31,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - vertical lyric spacing now follows unique verse depth rather than total syllable count, keeping long vocal passages compact while reserving aligned space for each stacked verse
 - manual staff-spacing hints now cascade predictably: the newest applicable measure wins, specific part/staff values beat global values at the same location, and repeated edits honor the latest value
 - manual collision-spacing policies are now effective end to end: `Balanced`, `Relaxed`, and `Open` Inspector actions persist as validated semantic hints, cascade by measure and specificity, and control render-bridge spacing without changing automatic layout defaults
+- automatic horizontal collision spacing now models lyrics, chord symbols, and other text as lane-aware rhythmic anchors; crowded adjacent anchors establish a hard measure-width floor and trigger earlier reflow while safely separated text keeps its existing layout
 
 ## Manual Validation Highlights
 

@@ -1,4 +1,14 @@
 import type { LayoutHint, ScoreDocumentModel } from '@/src/score-core/model/types';
+import { buildEffectiveMeasureTimingsFromStaff } from '@/src/score-core/measure-timing';
+
+export interface LayoutTextAnchorSnapshot {
+  id: string;
+  kind: 'lyric' | 'direction';
+  lane: string;
+  timestampNum: number;
+  timestampDen: number;
+  characterCount: number;
+}
 
 export interface LayoutMeasureSnapshot {
   measureId: string;
@@ -21,6 +31,8 @@ export interface LayoutMeasureSnapshot {
   hasRepeatEnd: boolean;
   hasEnding: boolean;
   explicitStaffSpacing: number | null;
+  rhythmicDuration: number;
+  textAnchors: LayoutTextAnchorSnapshot[];
   eventIds: string[];
   directionIds: string[];
   explicitSystemBreak: boolean;
@@ -82,16 +94,35 @@ function findStaffSpacingHintValue(hints: LayoutHint[], measureNumber: number, p
   return typeof hint?.value === 'number' ? hint.value : null;
 }
 
+function directionTextLane(kind: string, placement?: string) {
+  if (kind === 'harmony') return 'harmony:above';
+  if (kind === 'words' || kind === 'rehearsal' || kind === 'metronome' || kind === 'dynamics') {
+    return `direction:${placement === 'below' ? 'below' : 'above'}`;
+  }
+  return null;
+}
+
 export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapshot {
   const measures: LayoutMeasureSnapshot[] = [];
   const anchors: LayoutAnchorSnapshot[] = [];
+  const lyricLinesByEventId = new Map<string, typeof document.lyricLines>();
+  for (const line of document.lyricLines) {
+    const lines = lyricLinesByEventId.get(line.eventId);
+    if (lines) lines.push(line);
+    else lyricLinesByEventId.set(line.eventId, [line]);
+  }
 
   for (const part of document.score.parts) {
     for (const staff of part.staves) {
+      const rhythmicDurationByMeasureId = new Map(
+        buildEffectiveMeasureTimingsFromStaff(staff).map((timing) => [timing.measure.id, timing.durationRatio] as const),
+      );
       for (const measure of staff.measures) {
-        const eventIds = measure.voices.flatMap((voice) => voice.events.map((event) => event.id));
+        const events = measure.voices.flatMap((voice) => voice.events);
+        const eventIds = events.map((event) => event.id);
+        const eventsById = new Map(events.map((event) => [event.id, event] as const));
         const directionIds = measure.directions.map((direction) => direction.id);
-        const lyricLines = document.lyricLines.filter((line) => eventIds.includes(line.eventId));
+        const lyricLines = events.flatMap((event) => lyricLinesByEventId.get(event.id) ?? []);
         const lyricLineCount = lyricLines.length;
         const lyricVerseCount = new Set(lyricLines.map((line) => line.verseNumber)).size;
         const lyricCharacterCount = lyricLines.reduce((sum, line) => sum + Array.from(line.text.trim()).length, 0);
@@ -116,6 +147,32 @@ export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapsho
         const explicitSystemBreak = Boolean(measure.print?.newSystem) || hasMeasureBreakHint(document.layoutHints, measure.measureNumber, 'newSystem');
         const explicitPageBreak = Boolean(measure.print?.newPage) || hasMeasureBreakHint(document.layoutHints, measure.measureNumber, 'newPage');
         const explicitStaffSpacing = findStaffSpacingHintValue(document.layoutHints, measure.measureNumber, part.sourcePartId, staff.staffIndex);
+        const rhythmicDuration = rhythmicDurationByMeasureId.get(measure.id) ?? 1;
+        const lyricTextAnchors: LayoutTextAnchorSnapshot[] = lyricLines.flatMap((line) => {
+          const event = eventsById.get(line.eventId);
+          if (!event) return [];
+          return [{
+            id: line.id,
+            kind: 'lyric',
+            lane: `lyric:${line.verseNumber}`,
+            timestampNum: event.timestampNum,
+            timestampDen: event.timestampDen,
+            characterCount: Array.from(line.text.trim()).length + (line.syllabic === 'begin' || line.syllabic === 'middle' ? 1 : 0),
+          }];
+        });
+        const directionTextAnchors: LayoutTextAnchorSnapshot[] = measure.directions.flatMap((direction) => {
+          const lane = directionTextLane(direction.kind, direction.placement);
+          const value = direction.value?.trim() ?? '';
+          if (!lane || !value) return [];
+          return [{
+            id: direction.id,
+            kind: 'direction',
+            lane,
+            timestampNum: direction.timestampNum ?? 0,
+            timestampDen: direction.timestampDen ?? 1,
+            characterCount: Array.from(value).length,
+          }];
+        });
 
         measures.push({
           measureId: measure.id,
@@ -138,6 +195,8 @@ export function buildLayoutSnapshot(document: ScoreDocumentModel): LayoutSnapsho
           hasRepeatEnd: measure.rightBarline === 'repeat-end',
           hasEnding: Boolean(measure.leftEnding || measure.rightEnding),
           explicitStaffSpacing,
+          rhythmicDuration,
+          textAnchors: [...lyricTextAnchors, ...directionTextAnchors],
           eventIds,
           directionIds,
           explicitSystemBreak,
