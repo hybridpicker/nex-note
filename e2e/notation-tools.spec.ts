@@ -466,6 +466,59 @@ test('Alt/Option interval entry builds a chord on the selected rhythmic onset', 
   await expectNoDoctorIssues(page, 'after interval chord entry');
 });
 
+test('letter-name input chooses the closest octave and stacks Shift pitches above the chord', async ({ page }) => {
+  await bootWithScore(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  await page.keyboard.press('B');
+  await page.keyboard.press('A');
+
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && (event.timestampNum === 0 || event.timestampNum === 1))
+      .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null);
+  }).toEqual(['B3', 'A3']);
+
+  await page.keyboard.press('Shift+B');
+  await page.keyboard.press('Shift+C');
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && event.timestampNum === 2)
+      .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null);
+  }).toEqual(['E4', 'B4', 'C5']);
+  await expect.poll(async () => {
+    const selected = (await readE2EState(page))?.selectedNote;
+    return selected ? `${selected.step}${selected.octave}@${selected.timestampNum}` : null;
+  }).toBe('C5@2');
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(10);
+  await expectNoDoctorIssues(page, 'after closest-octave letter and chord entry');
+});
+
+test('A-G letter entry keeps a nearest-octave passage continuous across measures', async ({ page }) => {
+  await bootWithScore(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  for (const pitchName of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'A']) {
+    await page.keyboard.press(pitchName);
+  }
+
+  await expect.poll(async () => readMainVoiceMidi(page)).toEqual([
+    57, 59, 60, 62,
+    64, 65, 67, 69,
+  ]);
+  await expect.poll(async () => {
+    const selected = (await readE2EState(page))?.selectedNote;
+    return selected ? `${selected.step}${selected.octave}@${selected.measureNumber}:${selected.timestampNum}` : null;
+  }).toBe('A4@2:3');
+  await expectNoDoctorIssues(page, 'after A-G closest-octave passage');
+});
+
 test('notation palette tools update clicked notes visually, semantically, and during playback', async ({ page }, testInfo) => {
   testInfo.setTimeout(90_000);
   await bootWithScore(page);

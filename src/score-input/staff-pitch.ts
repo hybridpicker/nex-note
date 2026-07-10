@@ -3,6 +3,17 @@ import type { ScoreDocumentModel } from '../score-core/model/types';
 const STEP_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
 export type Step = typeof STEP_ORDER[number];
 export type DiatonicIntervalNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type PitchNamePlacement = 'closest' | 'above';
+
+const STEP_SEMITONES: Record<Step, number> = {
+  C: 0,
+  D: 2,
+  E: 4,
+  F: 5,
+  G: 7,
+  A: 9,
+  B: 11,
+};
 
 export function diatonicPitchIndex(step: string, octave: number): number {
   const idx = STEP_ORDER.indexOf(step as Step);
@@ -14,6 +25,39 @@ export function pitchFromDiatonicIndex(index: number): { step: Step; octave: num
   const octave = Math.floor(normalized / 7);
   const step = STEP_ORDER[((normalized % 7) + 7) % 7] ?? 'C';
   return { step, octave };
+}
+
+export function pitchChromaticIndex(pitch: { step: string; alter: number; octave: number }): number {
+  const normalizedStep = pitch.step.trim().toUpperCase() as Step;
+  return ((Math.trunc(pitch.octave) + 1) * 12)
+    + (STEP_SEMITONES[normalizedStep] ?? STEP_SEMITONES.C)
+    + Math.trunc(pitch.alter);
+}
+
+export function resolvePitchNameEntry(
+  step: string,
+  alter: number,
+  reference: { step: string; alter: number; octave: number },
+  placement: PitchNamePlacement,
+): { step: Step; alter: number; octave: number } {
+  const normalizedStep = step.trim().toUpperCase();
+  const targetStep = STEP_ORDER.includes(normalizedStep as Step) ? normalizedStep as Step : 'C';
+  const referenceOctave = Math.max(0, Math.min(9, Math.trunc(reference.octave)));
+  const candidates = Array.from({ length: 10 }, (_, octave) => ({ step: targetStep, alter, octave }));
+  const referenceIndex = pitchChromaticIndex(reference);
+
+  if (placement === 'above') {
+    const referenceDiatonicIndex = diatonicPitchIndex(reference.step, referenceOctave);
+    return candidates.find((candidate) => diatonicPitchIndex(candidate.step, candidate.octave) > referenceDiatonicIndex)
+      ?? candidates[candidates.length - 1]!;
+  }
+
+  return candidates.sort((left, right) => (
+    Math.abs(pitchChromaticIndex(left) - referenceIndex)
+    - Math.abs(pitchChromaticIndex(right) - referenceIndex)
+    || Number(left.octave !== referenceOctave) - Number(right.octave !== referenceOctave)
+    || left.octave - right.octave
+  ))[0]!;
 }
 
 export interface Clef {

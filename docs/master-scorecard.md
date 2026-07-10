@@ -217,3 +217,24 @@ All unlisted capabilities inherit the 49% product state above. This iteration fo
 - Closing: **50%**
 
 `Alt/Option+1–9` now adds an upward diatonic unison through ninth above the active pitch. The result is spelled from the effective key signature and committed as a simultaneous chord tone without moving the rhythmic cursor; repeated thirds therefore build C–E–G at one onset. Physical digit codes support keyboard layouts where Option changes `event.key`, while modifier guards preserve voice, tuplet, and TAB shortcuts. The same nine actions are visible in both notation-input toolbar layouts, and unit, component, editor, production-build, and Playwright evidence cover the workflow. Compound intervals above a ninth, downward intervals, and arbitrary chromatic interval naming remain outside this bounded iteration.
+
+## Iteration 2026-07-10 — MuseScore-Style Pitch-Name Octave Inference
+
+All unlisted capabilities inherit the 50% product state above. This iteration repairs the default A–G workflow used on nearly every keyboard-entered passage.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 82% | 87% |
+| Keyboard Entry | 83% | 89% |
+| Chord Entry | 77% | 82% |
+| Accidentals | 74% | 77% |
+| Testing | 84% | 86% |
+| Consistency | 68% | 70% |
+| Professional Workflow | 58% | 62% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **50%**
+- Closing: **51%**
+
+Pitch-name input no longer reuses the previous numeric octave blindly. A–G now chooses the chromatically nearest octave to the previous entered pitch, so C4 followed by B becomes B3 and B4 followed by C becomes C5. The resolver applies the effective key signature unless the user explicitly arms an accidental. `Shift+A–G` and persistent chord mode choose the smallest matching pitch strictly above the highest same-voice chord tone, even when the selected tone is not the chord top; `Cmd/Ctrl+Shift+A–G` now reaches its documented explicit-cursor path instead of being intercepted by clipboard commands. Unit tests cover octave boundaries, fifth-versus-fourth choices, tritone ties, repeated pitch names, key spelling, and shortcut precedence; editor tests cover semantic mutations; Playwright covers all seven pitch letters across a measure boundary and rendered chord stacking with strict diagnostics.

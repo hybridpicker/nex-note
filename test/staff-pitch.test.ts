@@ -5,6 +5,7 @@ import {
   diatonicPitchIndex,
   keyFifthsAlterForStep,
   pitchFromDiatonicIndex,
+  resolvePitchNameEntry,
   resolveClefAtMeasure,
   resolveDiatonicIntervalAbove,
   resolveKeyFifthsAtMeasure,
@@ -190,4 +191,42 @@ test('resolveKeyFifthsAtMeasure inherits the latest key signature for the target
 
   assert.equal(resolveKeyFifthsAtMeasure(doc, { measureNumber: 2, staffIndex: 1, partId: 'P1' }), 2);
   assert.equal(resolveKeyFifthsAtMeasure(doc, { measureNumber: 3, staffIndex: 1, partId: 'P1' }), -3);
+});
+
+test('resolvePitchNameEntry chooses the chromatically closest octave for melodic letter entry', () => {
+  assert.deepEqual(
+    resolvePitchNameEntry('C', 0, { step: 'B', alter: 0, octave: 4 }, 'closest'),
+    { step: 'C', alter: 0, octave: 5 },
+  );
+  assert.deepEqual(
+    resolvePitchNameEntry('B', 0, { step: 'C', alter: 0, octave: 4 }, 'closest'),
+    { step: 'B', alter: 0, octave: 3 },
+  );
+  assert.deepEqual(
+    resolvePitchNameEntry('G', 0, { step: 'C', alter: 0, octave: 4 }, 'closest'),
+    { step: 'G', alter: 0, octave: 3 },
+  );
+  assert.deepEqual(
+    resolvePitchNameEntry('F', 1, { step: 'C', alter: 0, octave: 4 }, 'closest'),
+    { step: 'F', alter: 1, octave: 4 },
+  );
+});
+
+test('resolvePitchNameEntry places chord pitch names strictly above the reference tone', () => {
+  assert.deepEqual(
+    resolvePitchNameEntry('C', 0, { step: 'B', alter: 0, octave: 4 }, 'above'),
+    { step: 'C', alter: 0, octave: 5 },
+  );
+  assert.deepEqual(
+    resolvePitchNameEntry('B', -1, { step: 'G', alter: 0, octave: 4 }, 'above'),
+    { step: 'B', alter: -1, octave: 4 },
+  );
+  assert.deepEqual(
+    resolvePitchNameEntry('G', 0, { step: 'G', alter: 0, octave: 4 }, 'above'),
+    { step: 'G', alter: 0, octave: 5 },
+  );
+  assert.deepEqual(
+    resolvePitchNameEntry('C', -1, { step: 'B', alter: 0, octave: 4 }, 'above'),
+    { step: 'C', alter: -1, octave: 5 },
+  );
 });

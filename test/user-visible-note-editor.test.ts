@@ -4917,8 +4917,8 @@ test('note input can insert pitched notes, rests, and overwrite the selected slo
   const octaveShiftedVoiceEvents = flattenVoiceEvents(hook.xml).filter((event) => event.voiceId === 2);
   const shiftedInput = octaveShiftedVoiceEvents.find((event) => event.kind === 'note' && event.pitch.step === 'B');
   assert.equal(hook.current.noteInputAnchor?.step, 'B');
-  assert.equal(hook.current.noteInputAnchor?.octave, 5);
-  assert.equal(shiftedInput?.kind === 'note' ? shiftedInput.pitch.octave : null, 5);
+  assert.equal(hook.current.noteInputAnchor?.octave, 4);
+  assert.equal(shiftedInput?.kind === 'note' ? shiftedInput.pitch.octave : null, 4);
 
   act(() => {
     hook.current.handleNoteClick(makeSelectedNotes(hook.xml)[0]);
@@ -5718,6 +5718,93 @@ test('interval entry spells the added tone from the active key signature', () =>
   )), ['E:0', 'F:1']);
   assert.equal(hook.current.selectedNote?.step, 'F');
   assert.equal(hook.current.selectedNote?.alter, 1);
+  hook.unmount();
+});
+
+test('A-G note input chooses the closest octave and Shift+A-G stacks above the chord', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+
+  act(() => {
+    hook.current.handleNoteClick(notes[0]);
+    hook.current.toggleNoteInput();
+  });
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('B'));
+    hook.current.handleKeyDown(makeKeyboardEvent('A'));
+  });
+  hook.rerender();
+
+  let events = flattenVoiceEvents(hook.xml).filter((event) => event.measureNumber === 1 && event.voiceId === 1);
+  const first = events.find((event) => event.timestampNum === 0);
+  const second = events.find((event) => event.timestampNum === 1);
+  assert.equal(first?.kind === 'note' ? `${first.pitch.step}${first.pitch.octave}` : null, 'B3');
+  assert.equal(second?.kind === 'note' ? `${second.pitch.step}${second.pitch.octave}` : null, 'A3');
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('B', { shiftKey: true }));
+  });
+  hook.rerender();
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('C', { shiftKey: true }));
+  });
+  hook.rerender();
+
+  events = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 2 && event.kind === 'note'
+  ));
+  assert.deepEqual(events.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
+    'D4',
+    'B4',
+    'C5',
+  ]);
+  assert.equal(hook.current.selectedNote?.step, 'C');
+  assert.equal(hook.current.selectedNote?.octave, 5);
+  assert.equal(hook.current.selectedNote?.timestampNum, 2);
+  hook.unmount();
+});
+
+test('A-G note input follows the active key signature when no accidental is armed', () => {
+  const gMajorXml = SAMPLE_XML.replace('<fifths>0</fifths>', '<fifths>1</fifths>');
+  const hook = renderHook(gMajorXml);
+  const first = makeSelectedNotes(gMajorXml).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.toggleNoteInput();
+    hook.current.handleKeyDown(makeKeyboardEvent('F'));
+  });
+  hook.rerender();
+
+  const entered = flattenVoiceEvents(hook.xml).find((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 0
+  ));
+  assert.equal(entered?.kind === 'note' ? `${entered.pitch.step}:${entered.pitch.alter}:${entered.pitch.octave}` : null, 'F:1:4');
+  hook.unmount();
+});
+
+test('Cmd/Ctrl+Shift+A-G reaches explicit cursor pitch entry instead of clipboard commands', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.toggleNoteInput();
+    hook.current.handleKeyDown(makeKeyboardEvent('C', { metaKey: true, shiftKey: true }));
+  });
+  hook.rerender();
+
+  const onsetNotes = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 0 && event.kind === 'note'
+  ));
+  assert.deepEqual(onsetNotes.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
+    'C4',
+    'C5',
+  ]);
+  assert.equal(hook.current.selectedNote?.octave, 5);
+  assert.equal(hook.appliedCommands.at(-1)?.some((command) => command.type === 'insertNoteAt'), true);
   hook.unmount();
 });
 

@@ -31,7 +31,7 @@ import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
-import { resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
+import { diatonicPitchIndex, keyFifthsAlterForStep, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
 
@@ -3184,7 +3184,7 @@ export function useNoteEditor(
     const key = e.key.toUpperCase();
     const metaKey = e.metaKey || e.ctrlKey;
 
-    if (metaKey && key === 'D') {
+    if (metaKey && key === 'D' && !(noteInputModeRef.current && e.shiftKey)) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
         duplicateSelection();
@@ -3202,7 +3202,7 @@ export function useNoteEditor(
       return;
     }
 
-    if (metaKey && key === 'C') {
+    if (metaKey && key === 'C' && !(noteInputModeRef.current && e.shiftKey)) {
       if (shouldUseNativeClipboardShortcut(target)) return;
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
@@ -3211,7 +3211,7 @@ export function useNoteEditor(
       return;
     }
 
-    if (metaKey && key === 'V') {
+    if (metaKey && key === 'V' && !(noteInputModeRef.current && e.shiftKey)) {
       if (shouldUseNativeClipboardShortcut(target)) return;
       if (selectedNote && clipboard) {
         e.preventDefault();
@@ -3220,7 +3220,7 @@ export function useNoteEditor(
       return;
     }
 
-    if (metaKey && key === 'A') {
+    if (metaKey && key === 'A' && !(noteInputModeRef.current && e.shiftKey)) {
       if (selectedNote) { e.preventDefault(); selectAllInVoice(); }
       return;
     }
@@ -3541,29 +3541,56 @@ export function useNoteEditor(
       const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
       const currentSelectedVisual = selectedVisualRef.current ?? selectedVisual;
       const measureAnchorSelection = Boolean(currentSelectedVisual?.visualOnly && !currentSelectedVisual.text);
+      const resolveTypedPitch = (reference: SelectedNote, placement: 'closest' | 'above') => {
+        const keyFifths = resolveKeyFifthsAtMeasure(coreDocument, {
+          measureNumber: reference.measureNumber,
+          staffIndex: reference.staffIndex,
+          partId: reference.corePartId,
+        });
+        const alter = selectedAccidentalRef.current
+          ? accidentalToAlter(selectedAccidentalRef.current)
+          : keyFifthsAlterForStep(keyFifths, key);
+        return resolvePitchNameEntry(key, alter, reference, placement);
+      };
       if (noteInputModeRef.current && currentSelectedNote) {
+        const addingChordTone = e.shiftKey || chordInputModeRef.current;
+        const melodicReference = lastNoteInputRef.current ?? currentSelectedNote;
+        const sameVoiceChord = addingChordTone
+          ? getSimultaneousPitchedNotes(coreDocument, currentSelectedNote)
+            .filter((note) => note.voiceId === currentSelectedNote.voiceId)
+          : [];
+        const pitchReference = sameVoiceChord.length > 0
+          ? sameVoiceChord.slice(1).reduce((highest, note) => (
+            diatonicPitchIndex(note.step, note.octave) > diatonicPitchIndex(highest.step, highest.octave)
+              ? note
+              : highest
+          ), sameVoiceChord[0]!)
+          : melodicReference;
+        const pitch = resolveTypedPitch(pitchReference, addingChordTone ? 'above' : 'closest');
         if (metaKey && e.shiftKey) {
-          insertNote(key, currentSelectedNote.octave, { insertAtCursor: true, asChord: true });
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, insertAtCursor: true, asChord: true });
         } else if (e.shiftKey) {
-          insertNote(key, currentSelectedNote.octave, { asChord: true });
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, asChord: true });
         } else if (selectedVoiceRef.current !== currentSelectedNote.voiceId) {
           const replacedSelectedVoice = replaceSelectedVoicePitchAtAnchor(
             currentSelectedNote,
             selectedVoiceRef.current,
-            key,
-            currentSelectedNote.octave,
-            selectedAccidentalRef.current ? accidentalToAlter(selectedAccidentalRef.current) : currentSelectedNote.alter,
+            pitch.step,
+            pitch.octave,
+            pitch.alter,
           );
-          if (!replacedSelectedVoice) insertNote(key, currentSelectedNote.octave, { insertAtCursor: true });
+          if (!replacedSelectedVoice) insertNote(pitch.step, pitch.octave, { alter: pitch.alter, insertAtCursor: true });
         } else {
-          insertNote(key, currentSelectedNote.octave);
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter });
         }
       } else if (measureAnchorSelection && currentSelectedNote) {
+        const pitch = resolveTypedPitch(currentSelectedNote, 'closest');
         setNoteInputModeLive(true);
-        insertNote(key, currentSelectedNote.octave);
+        insertNote(pitch.step, pitch.octave, { alter: pitch.alter });
       } else if (currentSelectedNote?.isRest) {
+        const pitch = resolveTypedPitch(currentSelectedNote, 'closest');
         setNoteInputModeLive(true);
-        insertNote(key, currentSelectedNote.octave, { insertAtCursor: true });
+        insertNote(pitch.step, pitch.octave, { alter: pitch.alter, insertAtCursor: true });
       } else if (currentSelectedNote && !currentSelectedNote.isRest) {
         changePitch(key, selectedAccidentalRef.current);
       }

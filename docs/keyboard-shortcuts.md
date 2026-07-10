@@ -91,10 +91,10 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Shift+Q` | punktierte Dauer eine Stufe kleiner | Noteneditor |
 | `Shift+W` | punktierte Dauer eine Stufe größer | Noteneditor |
 | `Cmd/Ctrl+Alt/Option+1` ... `4` | Stimme 1 ... 4 wählen | Noteneditor |
-| `A` ... `G` | Tonhöhe ändern oder Note eingeben | Noteneditor |
+| `A` ... `G` | Tonhöhe ändern oder Note eingeben; bei laufender Noteneingabe wird die zum vorherigen Ton nächste Oktave und ohne explizites Vorzeichen die aktive Tonart verwendet | Noteneditor |
 | `Cmd/Ctrl+Shift+H` | Chord Input Mode ein-/ausschalten | Noteneingabe |
 | `P` | QWERTY-Step-Keyboard ein-/ausblenden; aktiviert bei Bedarf zugleich die Noteneingabe | Noteneditor |
-| `Shift+A` ... `Shift+G` | Akkordton am aktuellen Einsatz hinzufügen | Noteneingabe |
+| `Shift+A` ... `Shift+G` | Akkordton oberhalb des höchsten Tons der aktiven Stimme am aktuellen Einsatz hinzufügen | Noteneingabe |
 | `Alt/Option+1` ... `9` | diatonisches Intervall (Prime bis None) über der aktiven Note als Akkordton hinzufügen; Tonart und physische Zifferntaste werden berücksichtigt | Noteneditor oder Noteneingabe, Tonhöhe ausgewählt |
 | `Cmd/Ctrl+Shift+A` ... `G` | Note explizit am Cursor einfügen | Noteneingabe |
 | `Z` `S` `X` `D` `C` `V` `G` `B` `H` `N` `J` `M` | QWERTY-Piano: `C4` bis `B4` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |
