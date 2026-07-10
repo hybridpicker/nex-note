@@ -6,6 +6,7 @@ import { applyCoreCommands } from '../src/score-core/commands/core-command-execu
 import { exportCoreToMusicXml } from '../src/musicxml-adapter/export/export-core-to-musicxml.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
+import { resolveNextEnharmonicPitch } from '../src/shared/music/accidentals.ts';
 
 const EMPTY_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -371,6 +372,26 @@ test('standard notation changeNotePitch updates paired TAB pitch and fingering',
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'G', alter: 1, octave: 2 });
   assert.equal(tabNote?.kind === 'note' ? tabNote.writtenAccidental : null, 'sharp');
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 4, techniques: [] });
+});
+
+test('enharmonic respelling mirrors spelling across paired notation and TAB without changing fret', () => {
+  const pitch = resolveNextEnharmonicPitch({ step: 'C', alter: 0, octave: 4 });
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
+    type: 'changeNotePitch',
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    ...pitch,
+  } as any]);
+
+  const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
+  const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'D', alter: -2, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'D', alter: -2, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 5, fret: 3, techniques: [] });
 });
 
 test('standard notation repitch preserves the paired TAB string when reachable', () => {

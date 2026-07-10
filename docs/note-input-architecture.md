@@ -50,6 +50,11 @@ This document describes the deterministic note-input pipeline introduced for poi
   - model explicit written standard accidentals separately from sounding pitch alter
   - resolve unarmed keyboard and mouse pitches from the latest same-staff, same-step, same-octave accidental earlier in the measure, then fall back to the effective key signature
   - map internal double-flat spelling to MusicXML `flat-flat` without losing semantic identity
+  - enumerate conventional double-flat through double-sharp spellings for the same MIDI pitch and cycle them by diatonic staff position
+
+- [src/score-core/query/note-editor.ts](../src/score-core/query/note-editor.ts)
+  - expands a respell target to its complete same-part/staff/voice tied pitch chain before command construction
+  - preserves the visible semantic selection while hidden tie continuations join the same atomic command batch
 
 ## Runtime Integration
 
@@ -94,6 +99,7 @@ This document describes the deterministic note-input pipeline introduced for poi
 - failed attempts must not mutate the measure or degrade future targeting in that measure
 - an armed accidental is one-shot state, but its sounding alter carries to later matching staff positions in the measure across voices; octave changes and barlines reset that carry to their own context
 - explicit accidental glyph and sounding alter must agree; command normalization rejects mismatches and the document validator exposes `written_accidental_pitch_mismatch` to strict Doctor
+- enharmonic respelling must preserve sounding MIDI and event IDs; same-MIDI paired TAB edits preserve the existing string/fret rather than recalculating fingering
 
 ## Diagnostics
 
@@ -121,6 +127,7 @@ This document describes the deterministic note-input pipeline introduced for poi
   - preview/commit parity for the same resolved input
   - standard accidental matrix (double-flat through double-sharp), one-shot arming, measure carry across voices, octave/barline reset, explicit-natural and MusicXML roundtrip fidelity
   - accidental entity identity, copy/paste preservation, paired notation/TAB mirroring, inverse-command restoration, and stale-glyph cleanup after transposition
+  - `J` cycles natural, single-, and double-accidental spellings, preserves MIDI/entity identity, expands cross-measure ties, keeps paired TAB fingering, and groups selections into one Undo/Redo transaction
   - beat-1 rest plus eighth-note mouse entry keeps visible notehead X and commit X on the same rendered rest snap
 
 - e2e:
@@ -141,4 +148,4 @@ This document describes the deterministic note-input pipeline introduced for poi
 - ambiguous voice targets are intentionally rejected rather than auto-corrected.
 - arbitrary overflow placement remains unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
 - rest-only internal slots are intentionally narrow: they require real split-rest structure, validator approval, and matching ghost/commit diagnostics before mutation. A single full-measure rest never qualifies.
-- enharmonic cycling (`J`) and courtesy/cautionary accidental presentation are not yet modeled by this standard one-shot accidental workflow.
+- courtesy/cautionary accidental presentation and view-specific `Cmd/Ctrl+J` respelling are not yet modeled.

@@ -712,7 +712,7 @@ test('P toggles the QWERTY step keyboard and routes QWERTY piano keys through se
   act(() => {
     hook.current.handleNoteClick(notes[0]);
     hook.current.handleKeyDown(makeKeyboardEvent('P'));
-    hook.current.handleKeyDown(makeKeyboardEvent('X'));
+    hook.current.handleKeyDown(makeKeyboardEvent('J'));
     hook.current.handleKeyDown(makeKeyboardEvent('N'));
   });
   hook.rerender();
@@ -723,7 +723,7 @@ test('P toggles the QWERTY step keyboard and routes QWERTY piano keys through se
 
   assert.equal(hook.current.noteInputMode, true);
   assert.equal(hook.current.stepInputKeyboardMode, true);
-  assert.deepEqual(insertedNotes, ['D4', 'A4', 'D4', 'E4']);
+  assert.deepEqual(insertedNotes, ['A#4', 'A4', 'D4', 'E4']);
 
   act(() => {
     hook.current.handleKeyDown(makeKeyboardEvent('P'));
@@ -5976,6 +5976,144 @@ test('armed accidentals are one-shot while measure carry preserves sounding pitc
       : null),
     ['natural', undefined],
   );
+  hook.unmount();
+});
+
+test('J cycles enharmonic spellings without changing pitch or entity identity', () => {
+  const cSharpXml = SAMPLE_XML.replace(
+    '<pitch><step>C</step><octave>4</octave></pitch>',
+    '<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>',
+  );
+  const hook = renderHook(cSharpXml);
+  const first = makeSelectedNotes(cSharpXml).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first?.coreEntityId);
+  const entityId = first.coreEntityId;
+
+  act(() => hook.current.handleNoteClick(first));
+  hook.rerender();
+  act(() => hook.current.handleKeyDown(makeKeyboardEvent('j')));
+  hook.rerender();
+  let selected = hook.current.selectedNote;
+  assert.deepEqual(selected ? { step: selected.step, alter: selected.alter, octave: selected.octave } : null, {
+    step: 'D', alter: -1, octave: 4,
+  });
+  assert.equal(selected?.coreEntityId, entityId);
+
+  act(() => hook.current.handleKeyDown(makeKeyboardEvent('j')));
+  hook.rerender();
+  selected = hook.current.selectedNote;
+  assert.deepEqual(selected ? { step: selected.step, alter: selected.alter, octave: selected.octave } : null, {
+    step: 'B', alter: 2, octave: 3,
+  });
+
+  act(() => hook.current.handleKeyDown(makeKeyboardEvent('j')));
+  hook.rerender();
+  selected = hook.current.selectedNote;
+  assert.deepEqual(selected ? { step: selected.step, alter: selected.alter, octave: selected.octave } : null, {
+    step: 'C', alter: 1, octave: 4,
+  });
+  assert.equal(selected?.coreEntityId, entityId);
+  assert.deepEqual(hook.appliedCommands.map((batch) => batch.length), [1, 1, 1]);
+  hook.unmount();
+});
+
+test('J respells an entire semantic selection independently in one transaction', () => {
+  const chromaticXml = SAMPLE_XML
+    .replace(
+      '<pitch><step>C</step><octave>4</octave></pitch>',
+      '<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>',
+    )
+    .replace(
+      '<pitch><step>D</step><octave>4</octave></pitch>',
+      '<pitch><step>D</step><alter>1</alter><octave>4</octave></pitch>',
+    );
+  const hook = renderHook(chromaticXml);
+  const targets = makeSelectedNotes(chromaticXml).filter((note) => (
+    note.measureNumber === 1 && (note.timestampNum === 0 || note.timestampNum === 2)
+  ));
+  assert.equal(targets.length, 2);
+
+  act(() => {
+    hook.current.handleNoteClick(targets[0]!);
+    hook.current.handleNoteClick(targets[1]!, { additive: true });
+  });
+  hook.rerender();
+  const rangeAnchorId = hook.current.selection.anchorEntityId;
+  act(() => hook.current.respellEnharmonically());
+  hook.rerender();
+
+  const notes = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note' && event.measureNumber === 1 && (event.timestampNum === 0 || event.timestampNum === 2)
+  ));
+  assert.deepEqual(notes.map((event) => event.kind === 'note'
+    ? `${event.pitch.step}:${event.pitch.alter}:${event.pitch.octave}`
+    : null), ['D:-1:4', 'E:-1:4']);
+  assert.equal(hook.appliedCommands.length, 1);
+  assert.equal(hook.appliedCommands[0]?.length, 2);
+  assert.equal(hook.current.selectedNotes.length, 2);
+  assert.equal(hook.current.selection.anchorEntityId, rangeAnchorId);
+  hook.unmount();
+});
+
+test('J respells selected chord tones together without moving their onset', () => {
+  const chordXml = CHORD_DELETE_XML.replace(
+    '<pitch><step>C</step><octave>4</octave></pitch>',
+    '<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch>',
+  );
+  const hook = renderHook(chordXml);
+  const chord = makeSelectedNotes(chordXml).filter((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.equal(chord.length, 2);
+
+  act(() => {
+    hook.current.handleNoteClick(chord[0]!);
+    hook.current.handleNoteClick(chord[1]!, { additive: true });
+  });
+  hook.rerender();
+  act(() => hook.current.respellEnharmonically());
+  hook.rerender();
+
+  const respelled = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note' && event.measureNumber === 1 && event.timestampNum === 0
+  ));
+  assert.deepEqual(respelled.map((event) => event.kind === 'note'
+    ? `${event.pitch.step}:${event.pitch.alter}:${event.pitch.octave}@${event.timestampNum}`
+    : null), ['D:-1:4@0', 'F:-1:4@0']);
+  assert.equal(hook.appliedCommands.length, 1);
+  assert.equal(hook.appliedCommands[0]?.length, 2);
+  hook.unmount();
+});
+
+test('J expands a selected tied note across the barline and preserves tie continuity atomically', () => {
+  const tiedXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><duration>4</duration><tie type="start"/><voice>1</voice><type>whole</type><notations><tied type="start"/></notations></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><duration>4</duration><tie type="stop"/><voice>1</voice><type>whole</type><notations><tied type="stop"/></notations></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const hook = renderHook(tiedXml);
+  const first = makeSelectedNotes(tiedXml).find((note) => note.measureNumber === 1);
+  assert.ok(first);
+
+  act(() => hook.current.handleNoteClick(first));
+  hook.rerender();
+  act(() => hook.current.handleKeyDown(makeKeyboardEvent('j')));
+  hook.rerender();
+
+  const notes = flattenVoiceEvents(hook.xml).filter((event) => event.kind === 'note');
+  assert.deepEqual(notes.map((event) => event.kind === 'note'
+    ? `${event.pitch.step}:${event.pitch.alter}:${event.pitch.octave}`
+    : null), ['D:-1:4', 'D:-1:4']);
+  assert.equal(notes[0]?.tieStart, true);
+  assert.equal(hook.appliedCommands.length, 1);
+  assert.equal(hook.appliedCommands[0]?.length, 2);
+  assert.ok(!buildDocumentState(hook.xml).diagnostics.some((diagnostic) => diagnostic.code === 'tie_continuity'));
   hook.unmount();
 });
 

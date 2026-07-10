@@ -628,6 +628,57 @@ test('one-shot accidental entry carries within the measure and preserves atomic 
   await expectNoDoctorIssues(page, 'after one-shot accidental undo and redo');
 });
 
+test('J cycles rendered enharmonic spelling with stable pitch, identity, and atomic history', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+  const initialEvent = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0]!.voices[0]!.events[0]!;
+  const initialNotehead = await page.locator('[data-testid="score-canvas"] .vf-notehead').first().boundingBox();
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('J');
+
+  const readFirstPitch = async () => {
+    const event = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0]!.voices[0]!.events[0]!;
+    return event.kind === 'note' ? {
+      id: event.id,
+      spelling: `${event.pitch.step}:${event.pitch.alter}:${event.pitch.octave}`,
+      midi: pitchMidi(event),
+    } : null;
+  };
+  await expect.poll(readFirstPitch).toEqual({
+    id: initialEvent.id,
+    spelling: 'D:-2:4',
+    midi: 60,
+  });
+  const editedXml = await readCurrentXml(page);
+  expect(editedXml).toMatch(/<step>D<\/step><alter>-2<\/alter><octave>4<\/octave>/);
+  const respelledNotehead = await page.locator('[data-testid="score-canvas"] .vf-notehead').first().boundingBox();
+  expect(initialNotehead).not.toBeNull();
+  expect(respelledNotehead).not.toBeNull();
+  expect(Math.abs(respelledNotehead!.y - initialNotehead!.y)).toBeGreaterThan(3);
+  await expectNoDoctorIssues(page, 'after rendered enharmonic respelling');
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
+
+  await page.keyboard.press('J');
+  await expect.poll(readFirstPitch).toEqual({
+    id: initialEvent.id,
+    spelling: 'B:1:3',
+    midi: 60,
+  });
+  await page.keyboard.press('J');
+  await expect.poll(readFirstPitch).toEqual({
+    id: initialEvent.id,
+    spelling: 'C:0:4',
+    midi: 60,
+  });
+  await expectNoDoctorIssues(page, 'after complete enharmonic cycle');
+});
+
 test('same-pitch note input advances across the score without dirtying history', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

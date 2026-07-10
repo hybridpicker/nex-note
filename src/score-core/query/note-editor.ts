@@ -149,6 +149,104 @@ export function findSemanticSelectionEntry(
   return ref ? buildSemanticSelectionEntry(ref.part, ref.measure, ref.voice, ref.event) : null;
 }
 
+function compareVoiceOnsets(left: SemanticSelectionEntry, right: SemanticSelectionEntry) {
+  return left.measureNumber - right.measureNumber
+    || (left.timestampNum / Math.max(left.timestampDen, 1)) - (right.timestampNum / Math.max(right.timestampDen, 1));
+}
+
+function samePitch(left: SemanticSelectionEntry, right: SemanticSelectionEntry) {
+  return !left.isRest
+    && !right.isRest
+    && left.step === right.step
+    && left.alter === right.alter
+    && left.octave === right.octave;
+}
+
+/** Expands selected notes to complete tied pitch chains without crossing part, staff, or voice lanes. */
+export function expandSelectionWithTiedNotes(
+  document: ScoreDocumentModel | null | undefined,
+  selected: SemanticSelectionEntry[],
+): SemanticSelectionEntry[] {
+  if (!document || selected.length === 0) return selected;
+  const allEntries = buildSemanticSelectionEntries(document);
+  const selectedById = new Map(selected.map((entry) => [entry.coreEntityId, entry]));
+
+  const tieStartIds = new Set<string>();
+  for (const part of document.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const voice of measure.voices) {
+          for (const event of voice.events) {
+            if (event.kind === 'note' && event.tieStart) tieStartIds.add(event.id);
+          }
+        }
+      }
+    }
+  }
+
+  const laneKey = (entry: SemanticSelectionEntry) => (
+    `${entry.corePartId}:${entry.staffIndex}:${entry.voiceId}`
+  );
+  const laneEntries = new Map<string, SemanticSelectionEntry[]>();
+  for (const entry of allEntries) {
+    if (entry.isRest) continue;
+    const key = laneKey(entry);
+    const lane = laneEntries.get(key) ?? [];
+    lane.push(entry);
+    laneEntries.set(key, lane);
+  }
+  const laneGroups = new Map<string, SemanticSelectionEntry[][]>();
+  const groupIndexByEventId = new Map<string, number>();
+  for (const [key, entries] of laneEntries) {
+    const groups = entries.sort(compareVoiceOnsets).reduce<SemanticSelectionEntry[][]>((result, entry) => {
+      const group = result[result.length - 1];
+      if (
+        !group
+        || group[0]!.measureNumber !== entry.measureNumber
+        || !timestampsEqual(group[0]!.timestampNum, group[0]!.timestampDen, entry.timestampNum, entry.timestampDen)
+      ) {
+        result.push([entry]);
+      } else {
+        group.push(entry);
+      }
+      return result;
+    }, []);
+    groups.forEach((group, groupIndex) => {
+      group.forEach((entry) => groupIndexByEventId.set(entry.coreEntityId, groupIndex));
+    });
+    laneGroups.set(key, groups);
+  }
+
+  for (const seed of selected) {
+    if (seed.isRest) continue;
+    const onsetGroups = laneGroups.get(laneKey(seed));
+    const seedGroupIndex = groupIndexByEventId.get(seed.coreEntityId);
+    if (!onsetGroups || seedGroupIndex == null) continue;
+
+    let current = seed;
+    for (let groupIndex = seedGroupIndex - 1; groupIndex >= 0; groupIndex -= 1) {
+      const previous = onsetGroups[groupIndex]!.find((entry) => {
+        if (!samePitch(entry, current)) return false;
+        return tieStartIds.has(entry.coreEntityId);
+      });
+      if (!previous) break;
+      selectedById.set(previous.coreEntityId, previous);
+      current = previous;
+    }
+
+    current = seed;
+    for (let groupIndex = seedGroupIndex + 1; groupIndex < onsetGroups.length; groupIndex += 1) {
+      if (!tieStartIds.has(current.coreEntityId)) break;
+      const next = onsetGroups[groupIndex]!.find((entry) => samePitch(entry, current));
+      if (!next) break;
+      selectedById.set(next.coreEntityId, next);
+      current = next;
+    }
+  }
+
+  return [...selectedById.values()].sort(compareSemanticSelectionEntries);
+}
+
 export function extractClipboardItemFromDocument(
   document: ScoreDocumentModel | null | undefined,
   locator: ScoreEventLocator,

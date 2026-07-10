@@ -332,7 +332,7 @@ All unlisted capabilities inherit the 54% product state above. This iteration re
 - Baseline: **54%**
 - Closing: **55%**
 
-Flat, natural, sharp, double-flat, and double-sharp now behave as one-shot Note Input tools. A successful pitched commit clears the visible armed state; the resulting sounding alter then carries to later notes of the same step and octave on the same staff until the barline, including across voices. Keyboard and mouse ghost resolution share that measure context. The core model stores written glyph intent separately from sounding alter, command validation and strict Doctor reject disagreements, paired notation/TAB mutations mirror the semantic pitch, transposition clears stale glyph intent, Copy/Paste retains it, and inverse commands restore it. MusicXML import/export covers the full five-value matrix, including `flat-flat`, while rendered Playwright proves active-button feedback, sounding MIDI value, byte-stable two-step Undo/Redo, and zero strict-Doctor issues. MuseScore-style `J` enharmonic cycling and courtesy/cautionary metadata remain open and are not included in the 90% accidental score.
+Flat, natural, sharp, double-flat, and double-sharp now behave as one-shot Note Input tools. A successful pitched commit clears the visible armed state; the resulting sounding alter then carries to later notes of the same step and octave on the same staff until the barline, including across voices. Keyboard and mouse ghost resolution share that measure context. The core model stores written glyph intent separately from sounding alter, command validation and strict Doctor reject disagreements, paired notation/TAB mutations mirror the semantic pitch, transposition clears stale glyph intent, Copy/Paste retains it, and inverse commands restore it. MusicXML import/export covers the full five-value matrix, including `flat-flat`, while rendered Playwright proves active-button feedback, sounding MIDI value, byte-stable two-step Undo/Redo, and zero strict-Doctor issues. This iteration intentionally excluded `J` cycling and courtesy/cautionary metadata from its 90% accidental score; the following respelling iteration closes `J` separately.
 
 Verification evidence:
 
@@ -341,4 +341,35 @@ Verification evidence:
 - `e2e/notation-tools.spec.ts` (regression project): 18 passed.
 - Accidental-focused `e2e/app.spec.ts` regressions: 2 passed.
 - Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; no nex-note-only export failure was isolated, while the installed MuseScore intermittently aborted on both source fixtures and nex-note output.
+- `git diff --check`: passed before commit.
+
+## Iteration 2026-07-10 — Identity-Preserving Enharmonic Respelling
+
+All unlisted capabilities inherit the 55% product state above. This iteration closes the standard `J` cycling workflow without claiming courtesy/cautionary or separate concert/transposed-view parity.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 97% | 98% |
+| Keyboard Entry | 98% | 99% |
+| Accidentals | 90% | 95% |
+| MusicXML Roundtrip | 80% | 82% |
+| TAB Standard Notation Sync | 73% | 77% |
+| Undo | 86% | 88% |
+| Testing | 93% | 94% |
+| Consistency | 86% | 89% |
+| Professional Workflow | 76% | 79% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **55%**
+- Closing: **56%**
+
+`J` now cycles the active semantic note selection through every conventional double-flat through double-sharp spelling at constant MIDI pitch. The editor emits one identity-preserving `changeNotePitch` batch, expands individually selected tones through their complete same-lane tied chains, and keeps the visible selection on the same event IDs. Heterogeneous ranges are deterministic: each pitch advances independently. Paired notation/TAB notes receive the same spelling, while the core executor now recognizes same-MIDI spelling edits and preserves the existing TAB string/fret instead of silently recalculating fingering. MusicXML retains the chosen step/alter/octave, inverse history restores a multi-note selection atomically, QWERTY piano mode intentionally keeps `J` as its A-sharp key, and rendered strict-Doctor coverage proves staff-position feedback, MIDI stability, entity stability, a complete three-spelling cycle, and Undo/Redo. Courtesy/cautionary brackets and view-specific `Cmd/Ctrl+J` remain open.
+
+Verification evidence:
+
+- `npm test`: 929 passed, 0 failed.
+- `npm run build`: production build and TypeScript validation passed.
+- `e2e/notation-tools.spec.ts` (regression project): 19 passed.
+- Bounded local MuseScore 4.7.3 roundtrip smoke: process completed with `passed-with-local-musescore-limit`; the installed MuseScore intermittently aborted on source baselines and nex-note variants, so crash-only failures were classified as inconclusive rather than isolated nex-note export defects.
 - `git diff --check`: passed before commit.

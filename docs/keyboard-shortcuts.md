@@ -92,6 +92,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Shift+W` | punktierte Dauer eine Stufe größer | Noteneditor |
 | `Cmd/Ctrl+Alt/Option+1` ... `4` | Stimme 1 ... 4 wählen | Noteneditor |
 | `A` ... `G` | Tonhöhe ändern oder Note eingeben; bei laufender Noteneingabe wird die zum vorherigen Ton nächste Oktave verwendet. Ohne neu gesetztes Vorzeichen gilt zuerst das letzte gleichnamige Vorzeichen derselben Staff-Position im aktuellen Takt, danach die aktive Tonart; ein bereits identischer Ton gilt als erfolgreiche Eingabe und bewegt den Cursor weiter | Noteneditor |
+| `J` | Ausgewählte Note(n) enharmonisch umdeuten; wiederholtes Drücken durchläuft alle Standard-Schreibweisen bei unveränderter klingender Tonhöhe | Noteneditor oder Noteneingabe, QWERTY-Step-Keyboard inaktiv |
 | `Cmd/Ctrl+Shift+H` | Chord Input Mode ein-/ausschalten | Noteneingabe |
 | `P` | QWERTY-Step-Keyboard ein-/ausblenden; aktiviert bei Bedarf zugleich die Noteneingabe | Noteneditor |
 | `Shift+A` ... `Shift+G` | Akkordton oberhalb des höchsten Tons der aktiven Stimme am aktuellen Einsatz hinzufügen | Noteneingabe |
@@ -121,7 +122,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 
 Solange das QWERTY-Step-Keyboard aktiv ist, haben seine Pitch-Tasten Vorrang vor den gleichnamigen Einzelbuchstaben-Shortcuts; `P` oder `Escape` verlassen diesen Modus wieder.
 
-Ein in Note Input gesetztes Vorzeichen ist wie in MuseScore ein Einmal-Werkzeug: Der aktive Toolbar-Button erlischt nach der naechsten erfolgreichen Note. Der klingende Alter-Wert gilt danach fuer denselben Notennamen in derselben Oktave und auf demselben Staff bis zum Taktstrich, auch ueber Stimmen hinweg. Ein anderer Oktavraum oder der naechste Takt faellt auf seinen eigenen Taktkontext beziehungsweise die Tonart zurueck. Der MuseScore-Shortcut `J` zum zyklischen enharmonischen Umdeuten ist noch nicht implementiert.
+Ein in Note Input gesetztes Vorzeichen ist wie in MuseScore ein Einmal-Werkzeug: Der aktive Toolbar-Button erlischt nach der naechsten erfolgreichen Note. Der klingende Alter-Wert gilt danach fuer denselben Notennamen in derselben Oktave und auf demselben Staff bis zum Taktstrich, auch ueber Stimmen hinweg. Ein anderer Oktavraum oder der naechste Takt faellt auf seinen eigenen Taktkontext beziehungsweise die Tonart zurueck. `J` deutet die aktuelle semantische Auswahl enharmonisch um, erhaelt MIDI-Tonhoehe, Entity-Identitaet, Ties und TAB-Fingering und fasst eine Mehrfachauswahl in einer Undo-Transaktion zusammen. Solange das QWERTY-Step-Keyboard aktiv ist, bleibt `J` absichtlich dessen A-Sharp-Taste.
 
 ## Guitar TAB Input
 

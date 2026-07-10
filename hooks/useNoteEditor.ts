@@ -12,6 +12,7 @@ import { validateScoreDocument } from '@/src/score-core/validation/validate-scor
 import {
   buildSemanticSelectionEntries,
   compareSemanticSelectionEntries,
+  expandSelectionWithTiedNotes,
   extractPitchSnapshotFromDocument,
   findDirectionByText,
   findEventReference,
@@ -31,7 +32,7 @@ import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
-import { writtenAccidentalToAlter, type WrittenAccidental } from '@/src/shared/music/accidentals';
+import { resolveNextEnharmonicPitch, writtenAccidentalToAlter, type WrittenAccidental } from '@/src/shared/music/accidentals';
 import { diatonicPitchIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
@@ -3034,6 +3035,61 @@ export function useNoteEditor(
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
+  const respellEnharmonically = useCallback(() => {
+    const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
+    const currentSelectedNotes = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
+    const originalRangeAnchorId = lastSelectedRef.current?.coreEntityId;
+    const originalTargets = selectedTargets(currentSelectedNote, currentSelectedNotes).filter((entry) => !entry.isRest);
+    const semanticTargets = originalTargets
+      .map((entry) => findSemanticSelectionEntry(coreDocument, entry))
+      .filter((entry): entry is SemanticSelectionEntry => Boolean(entry));
+    const targets = expandSelectionWithTiedNotes(coreDocument, semanticTargets);
+    if (!targets.length) return;
+
+    const commands: ScoreCommand[] = targets.map((target) => {
+      const pitch = resolveNextEnharmonicPitch(target);
+      return {
+        type: 'changeNotePitch',
+        coreEntityId: target.coreEntityId,
+        coreMeasureId: target.coreMeasureId,
+        corePartId: target.corePartId,
+        measureNumber: target.measureNumber,
+        staffIndex: target.staffIndex,
+        voiceId: target.voiceId,
+        timestampNum: target.timestampNum,
+        timestampDen: target.timestampDen,
+        step: pitch.step,
+        octave: pitch.octave,
+        alter: pitch.alter,
+      };
+    });
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      warnNoOpEdit('respellEnharmonically', commands[0]!);
+      return;
+    }
+
+    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(currentSelectedNote, currentSelectedNotes) });
+    const resolvedSelection = originalTargets
+      .map((target) => target.coreEntityId ? resolveSelectionByEntityId(next.coreDocument, target.coreEntityId) : null)
+      .filter((entry): entry is SelectedNote => Boolean(entry));
+    const anchorId = currentSelectedNote?.coreEntityId;
+    const resolvedAnchor = (anchorId ? resolvedSelection.find((entry) => entry.coreEntityId === anchorId) : null)
+      ?? resolvedSelection[resolvedSelection.length - 1]
+      ?? null;
+    const resolvedRangeAnchor = originalRangeAnchorId
+      ? resolvedSelection.find((entry) => entry.coreEntityId === originalRangeAnchorId) ?? null
+      : null;
+    if (resolvedAnchor) {
+      setSelectedNoteLive(resolvedAnchor);
+      selectedNotesRef.current = resolvedSelection;
+      setSelectedNotes(resolvedSelection);
+      lastSelectedRef.current = resolvedRangeAnchor ?? resolvedAnchor;
+      if (noteInputModeRef.current) lastNoteInputRef.current = resolvedAnchor;
+    }
+    setSelectedAccidentalLive(null);
+  }, [applyEditorCommands, coreDocument, onApplyCommands, resolveSelectionByEntityId, selectedNote, selectedNotes, setSelectedAccidentalLive, setSelectedNoteLive, warnNoOpEdit, xml]);
+
   const setBarline = useCallback((barline: BarlineKind, measureNumberOverride?: number | null) => {
     const measureNumber = measureNumberOverride ?? selectedVisual?.measureNumber ?? selectedNote?.measureNumber ?? null;
     if (!measureNumber) return;
@@ -3531,6 +3587,14 @@ export function useNoteEditor(
       }
     }
 
+    if (key === 'J' && !metaKey && !e.altKey && !e.shiftKey) {
+      if (selectedNote || selectedNotes.length > 0) {
+        e.preventDefault();
+        respellEnharmonically();
+      }
+      return;
+    }
+
     if (key === 'P' && !metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       toggleStepInputKeyboardMode();
@@ -3867,7 +3931,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
+  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
 
   return {
     selection: {
@@ -3964,6 +4028,7 @@ export function useNoteEditor(
     toggleTie: activateTie,
     toggleSlur,
     transposeSemitones,
+    respellEnharmonically,
     commitDraggedPitch,
     commitDraggedGuitarString,
     setBarline,

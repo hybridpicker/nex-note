@@ -362,6 +362,47 @@ test('useScoreDocument marks deterministic note edits as reversible when inverse
   hook.unmount();
 });
 
+test('multi-note enharmonic respelling is one identity-preserving undo and redo transaction', () => {
+  const hook = renderHook(EIGHT_EIGHTH_XML);
+  const beforeXml = hook.current.xml;
+  const beforeIds = hook.current.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events
+    .slice(0, 2)
+    .map((event) => event.id);
+
+  act(() => {
+    hook.current.applyCommands([
+      { type: 'changeNotePitch', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 8, step: 'D', octave: 4, alter: -2 },
+      { type: 'changeNotePitch', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, timestampDen: 8, step: 'E', octave: 4, alter: -2 },
+    ], { label: 'Respell enharmonically' });
+  });
+
+  const changedXml = hook.current.xml;
+  const changedEvents = hook.current.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.slice(0, 2) ?? [];
+  assert.deepEqual(changedEvents.map((event) => event.kind === 'note' ? event.pitch : null), [
+    { step: 'D', alter: -2, octave: 4 },
+    { step: 'E', alter: -2, octave: 4 },
+  ]);
+  assert.deepEqual(changedEvents.map((event) => event.id), beforeIds);
+  assert.equal(hook.current.historyDepth, 1);
+  assert.equal(hook.current.historyMeta.lastTransaction?.commandCount, 2);
+  assert.equal(hook.current.historyMeta.lastTransaction?.inverseCommandCount, 2);
+
+  act(() => hook.current.undo());
+  assert.equal(hook.current.xml, beforeXml);
+  assert.deepEqual(
+    hook.current.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.slice(0, 2).map((event) => event.id),
+    beforeIds,
+  );
+
+  act(() => hook.current.redo());
+  assert.equal(hook.current.xml, changedXml);
+  assert.deepEqual(
+    hook.current.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events.slice(0, 2).map((event) => event.id),
+    beforeIds,
+  );
+  hook.unmount();
+});
+
 test('useScoreDocument force-checkpoints command history at the snapshot interval', () => {
   const hook = renderHook(SAMPLE_XML);
 

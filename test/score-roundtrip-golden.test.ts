@@ -937,3 +937,25 @@ test('export keeps a grace note and its anchor note sequential instead of forcin
     /<grace slash="yes"\/>[\s\S]*?<note><chord\/><pitch><step>C<\/step><octave>5<\/octave><\/pitch>/,
   );
 });
+
+test('enharmonic respelling preserves spelling, sounding pitch, and entity identity through MusicXML', () => {
+  const core = importMusicXmlToCore(UNBEAMED_EIGHTHS_XML);
+  const originalIds = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.slice(0, 2).map((event) => event.id);
+  const respelled = applyCoreCommands(core, [
+    { type: 'changeNotePitch', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 8, step: 'D', octave: 4, alter: -2 } as any,
+    { type: 'changeNotePitch', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, timestampDen: 8, step: 'E', octave: 4, alter: -2 } as any,
+  ]);
+  const respelledEvents = respelled.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.slice(0, 2);
+  assert.deepEqual(respelledEvents.map((event) => event.id), originalIds);
+
+  const exported = exportCoreToMusicXml(UNBEAMED_EIGHTHS_XML, respelled);
+  assert.match(exported, /<step>D<\/step><alter>-2<\/alter><octave>4<\/octave>/);
+  assert.match(exported, /<step>E<\/step><alter>-2<\/alter><octave>4<\/octave>/);
+  const reimported = importMusicXmlToCore(exported);
+  const roundtripped = reimported.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.slice(0, 2);
+  assert.deepEqual(roundtripped.map((event) => event.kind === 'note' ? event.pitch : null), [
+    { step: 'D', alter: -2, octave: 4 },
+    { step: 'E', alter: -2, octave: 4 },
+  ]);
+  assert.deepEqual(roundtripped.map((event) => event.id), originalIds);
+});

@@ -3410,12 +3410,13 @@ export function executeCoreCommands(
             octave: command.octave,
           };
           const noteEvent = event as Extract<TimedEvent, { kind: 'note' }>;
+          const soundingPitchUnchanged = pitchMidiNumber(noteEvent.pitch) === pitchMidiNumber(nextPitch);
           noteEvent.pitch = nextPitch;
           noteEvent.writtenAccidental = command.writtenAccidental;
 
           if (found) {
             const sourceIsTab = isTabStaff(found.part, command.staffIndex);
-            if (sourceIsTab) {
+            if (sourceIsTab && !soundingPitchUnchanged) {
               noteEvent.guitar = resolveSyncedGuitarFingering({
                 pitch: nextPitch,
                 existing: noteEvent.guitar,
@@ -3434,9 +3435,10 @@ export function executeCoreCommands(
             if (paired?.event) {
               paired.event.kind = 'note';
               const pairedNote = paired.event as Extract<TimedEvent, { kind: 'note' }>;
+              const pairedSoundingPitchUnchanged = pitchMidiNumber(pairedNote.pitch) === pitchMidiNumber(nextPitch);
               pairedNote.pitch = { ...nextPitch };
               pairedNote.writtenAccidental = command.writtenAccidental;
-              if (paired.isTab) {
+              if (paired.isTab && !pairedSoundingPitchUnchanged) {
                 pairedNote.guitar = resolveSyncedGuitarFingering({
                   pitch: nextPitch,
                   existing: pairedNote.guitar,
