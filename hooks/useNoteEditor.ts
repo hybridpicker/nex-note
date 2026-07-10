@@ -22,7 +22,7 @@ import {
 } from '@/src/score-core/query/note-editor';
 import { buildClipboardPayloadFromSelection } from '@/src/score-core/query/clipboard';
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score-input/commit-resolver';
-import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut } from '@/src/score-input/keyboard-resolver';
+import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut } from '@/src/score-input/keyboard-resolver';
 import type { MidiPitch } from '@/src/score-input/midi-input';
 import { resolveGuitarFretPitch, resolveGuitarTuning, type GuitarFretPitch, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import { resolveQwertyPianoKey } from '@/src/score-input/repitch-mode';
@@ -31,6 +31,7 @@ import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
+import { resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
 
@@ -1829,6 +1830,9 @@ export function useNoteEditor(
       octave?: number;
       alter?: number;
     },
+    behavior?: {
+      advanceCursor?: boolean;
+    },
   ) => {
     setEditorError(null);
     if (!enteredLocator) {
@@ -1845,7 +1849,8 @@ export function useNoteEditor(
       };
     }
 
-    const rawNextSelection = noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && enteredNote
+    const rawNextSelection = behavior?.advanceCursor !== false
+      && noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && enteredNote
       ? findNextRhythmicSelection(nextDocument, enteredNote)
       : null;
     const nextSelection = enteredNote && isLocalNoteInputAdvance(enteredNote, rawNextSelection)
@@ -2029,6 +2034,8 @@ export function useNoteEditor(
       step: validatedTarget.step,
       octave: validatedTarget.octave,
       alter: validatedTarget.alter,
+    }, {
+      advanceCursor: validatedTarget.mode !== 'chord',
     });
     return true;
   }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveRecentInputFromDocument, selectSingleNote, warnNoOpEdit, warnRejectedEdit, xml]);
@@ -2190,6 +2197,24 @@ export function useNoteEditor(
       guitar: options?.guitar,
     });
   }, [commitResolvedNoteEntry, coreDocument, resolveEventTimingFromDocument, selectedNote, setIsDottedLive, setSelectedDurationLive]);
+
+  const addIntervalAbove = useCallback((interval: DiatonicIntervalNumber) => {
+    const targetNote = noteInputModeRef.current
+      ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
+      : (selectedNoteRef.current ?? selectedNote);
+    if (!targetNote || targetNote.isRest) return;
+    const keyFifths = resolveKeyFifthsAtMeasure(coreDocument, {
+      measureNumber: targetNote.measureNumber,
+      staffIndex: targetNote.staffIndex,
+      partId: targetNote.corePartId,
+    });
+    const pitch = resolveDiatonicIntervalAbove(targetNote, interval, keyFifths);
+    insertNote(pitch.step, pitch.octave, {
+      alter: pitch.alter,
+      asChord: true,
+      insertAtCursor: true,
+    });
+  }, [coreDocument, insertNote, selectedNote]);
 
   const insertMidiChord = useCallback((inputPitches: MidiPitch[]) => {
     if (!noteInputModeRef.current) return false;
@@ -3406,6 +3431,25 @@ export function useNoteEditor(
       return;
     }
 
+    const intervalShortcut = resolveKeyboardIntervalShortcut({
+      key: e.key,
+      code: e.code,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+    });
+    if (!guitarInputModeRef.current && intervalShortcut) {
+      const currentSelectedNote = noteInputModeRef.current
+        ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
+        : (selectedNoteRef.current ?? selectedNote);
+      if (currentSelectedNote && !currentSelectedNote.isRest) {
+        e.preventDefault();
+        addIntervalAbove(intervalShortcut);
+      }
+      return;
+    }
+
     const guitarFretCodeMatch = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
     const guitarFretShortcut = guitarInputModeRef.current && noteInputModeRef.current
       ? (/^[0-9]$/.test(e.key) ? e.key : guitarFretCodeMatch?.[1] ?? null)
@@ -3525,7 +3569,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, toggleTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
+  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, toggleTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
 
   return {
     selection: {
@@ -3627,6 +3671,7 @@ export function useNoteEditor(
     setBarline,
     addGraceNoteAtSelection,
     addTupletToSelection,
+    addIntervalAbove,
     setOsmd,
     DURATION_TYPE_MAP,
   };

@@ -439,6 +439,33 @@ test('step keyboard repitches existing notes and advances through the passage', 
   await expectNoDoctorIssues(page, 'after step-keyboard repitch passage');
 });
 
+test('Alt/Option interval entry builds a chord on the selected rhythmic onset', async ({ page }) => {
+  await bootWithScore(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('Alt+Digit3');
+
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && event.timestampNum === 0)
+      .map((event) => event.kind === 'note' ? event.pitch.step : null);
+  }).toEqual(['C', 'E']);
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.step).toBe('E');
+
+  await page.keyboard.press('Alt+Digit3');
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && event.timestampNum === 0)
+      .map((event) => event.kind === 'note' ? event.pitch.step : null);
+  }).toEqual(['C', 'E', 'G']);
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.step).toBe('G');
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(10);
+  await expectNoDoctorIssues(page, 'after interval chord entry');
+});
+
 test('notation palette tools update clicked notes visually, semantically, and during playback', async ({ page }, testInfo) => {
   testInfo.setTimeout(90_000);
   await bootWithScore(page);

@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-Stand: 2026-06-24. Diese Liste dokumentiert die im Code tatsächlich verdrahteten Shortcuts. `Cmd` auf macOS entspricht `Ctrl` auf Windows/Linux, sofern nicht anders angegeben.
+Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahteten Shortcuts. `Cmd` auf macOS entspricht `Ctrl` auf Windows/Linux, sofern nicht anders angegeben.
 
 ## Workspace
 
@@ -95,6 +95,7 @@ Stand: 2026-06-24. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Cmd/Ctrl+Shift+H` | Chord Input Mode ein-/ausschalten | Noteneingabe |
 | `P` | QWERTY-Step-Keyboard ein-/ausblenden; aktiviert bei Bedarf zugleich die Noteneingabe | Noteneditor |
 | `Shift+A` ... `Shift+G` | Akkordton am aktuellen Einsatz hinzufügen | Noteneingabe |
+| `Alt/Option+1` ... `9` | diatonisches Intervall (Prime bis None) über der aktiven Note als Akkordton hinzufügen; Tonart und physische Zifferntaste werden berücksichtigt | Noteneditor oder Noteneingabe, Tonhöhe ausgewählt |
 | `Cmd/Ctrl+Shift+A` ... `G` | Note explizit am Cursor einfügen | Noteneingabe |
 | `Z` `S` `X` `D` `C` `V` `G` `B` `H` `N` `J` `M` | QWERTY-Piano: `C4` bis `B4` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |
 | `Q` `2` `W` `3` `E` `R` `5` `T` `6` `Y` `7` `U` | QWERTY-Piano: `C5` bis `B5` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |

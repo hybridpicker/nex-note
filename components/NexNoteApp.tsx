@@ -988,7 +988,7 @@ export default function Home({ searchParams }: HomeProps) {
     toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
     toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
     changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, clearArticulations, addDynamic, toggleTie, toggleSlur,
-    transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, placeNoteAt,
+    transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, placeNoteAt,
   } = useNoteEditor(
     xml,
     coreDocument,
@@ -4857,6 +4857,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onToggleSlur={toggleSlur}
                     onAddGraceNote={addGraceNoteAtSelection}
                     onAddTuplet={addTupletToSelection}
+                    onAddInterval={addIntervalAbove}
                     onLayoutCleanup={handleLayoutCleanup}
                     layoutCleanupLoading={layoutCleanupLoading}
                     showNoteInputTools={false}
@@ -4983,6 +4984,7 @@ export default function Home({ searchParams }: HomeProps) {
                         onToggleSlur={toggleSlur}
                         onAddGraceNote={addGraceNoteAtSelection}
                         onAddTuplet={addTupletToSelection}
+                        onAddInterval={addIntervalAbove}
                       />
                     </LeftNotationSidebar>
                     <div className="flex-1 overflow-auto p-6 bg-nex-score-bg">

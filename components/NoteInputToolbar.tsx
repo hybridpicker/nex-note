@@ -9,6 +9,7 @@ import { GUITAR_TUNINGS, resolveGuitarFretPitch, resolveGuitarTuning, type Guita
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { QWERTY_PIANO_KEYS } from '@/src/score-input/repitch-mode';
 import type { MidiInputStatus } from '@/hooks/useMidiInput';
+import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 const NOTE_ICONS: Record<NoteDuration, React.ReactNode> = {
   '1': <NoteDurationGlyph duration="1" />,
@@ -132,6 +133,18 @@ const TUPLETS_QUICK: { actual: TupletNumber; normal: number; title: string }[] =
   { actual: 9, normal: 8, title: 'Nonuplet 9:8 from selection (Cmd/Ctrl+9)' },
 ];
 
+const INTERVALS_QUICK: Array<{ interval: DiatonicIntervalNumber; label: string }> = [
+  { interval: 1, label: 'Unison' },
+  { interval: 2, label: 'Second' },
+  { interval: 3, label: 'Third' },
+  { interval: 4, label: 'Fourth' },
+  { interval: 5, label: 'Fifth' },
+  { interval: 6, label: 'Sixth' },
+  { interval: 7, label: 'Seventh' },
+  { interval: 8, label: 'Octave' },
+  { interval: 9, label: 'Ninth' },
+];
+
 const GUITAR_TECHNIQUES: Array<{ kind: GuitarTechniqueKind; label: string; title: string }> = [
   { kind: 'hammer-on', label: 'H', title: 'Hammer-on' },
   { kind: 'pull-off', label: 'P', title: 'Pull-off' },
@@ -228,6 +241,7 @@ interface Props {
   onToggleSlur: () => void;
   onAddGraceNote: () => void;
   onAddTuplet: (tuplet: TupletNumber) => void;
+  onAddInterval: (interval: DiatonicIntervalNumber) => void;
 }
 
 function resolveSelectedHarmony(
@@ -310,6 +324,7 @@ function Group({ children }: { children: React.ReactNode }) {
 type SidebarSectionId =
   | 'notes'
   | 'entry'
+  | 'intervals'
   | 'keyboard'
   | 'expression'
   | 'dynamics'
@@ -322,6 +337,7 @@ type SidebarSectionId =
 const SIDEBAR_SECTION_DEFAULTS: Record<SidebarSectionId, boolean> = {
   notes: true,
   entry: true,
+  intervals: true,
   keyboard: true,
   expression: false,
   dynamics: false,
@@ -400,7 +416,7 @@ export default function NoteInputToolbar({
   onDurationChange, onAccidentalChange, onToggleDotted,
   onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
-  onToggleArticulation, onAddDynamic, onSetBarline, onToggleSlur, onAddGraceNote, onAddTuplet,
+  onToggleArticulation, onAddDynamic, onSetBarline, onToggleSlur, onAddGraceNote, onAddTuplet, onAddInterval,
 }: Props) {
   const { t } = useI18n();
   const [chordDraft, setChordDraft] = useState('');
@@ -590,6 +606,22 @@ export default function NoteInputToolbar({
           active={selectedAccidental === a.value}
         >
           {a.icon}
+        </TBtn>
+      ))}
+    </Group>
+  );
+
+  const intervalTools = (
+    <Group>
+      {INTERVALS_QUICK.map(({ interval, label }) => (
+        <TBtn
+          key={interval}
+          onClick={() => onAddInterval(interval)}
+          disabled={!selectedNote || isRest}
+          title={`Add ${label.toLowerCase()} above (Alt/Option+${interval})`}
+          disabledReason={pitchedSelectionDisabledReason}
+        >
+          <span className="text-[10px] font-semibold tabular-nums">+{interval}</span>
         </TBtn>
       ))}
     </Group>
@@ -1074,6 +1106,15 @@ export default function NoteInputToolbar({
         >
           {entryTools}
         </SidebarSection>
+        <SidebarSection
+          title="Intervals"
+          summary="1 · 3 · 5 · 8"
+          hoverTitle="Add interval above: Alt/Option+1–9"
+          open={sidebarSections.intervals}
+          onToggle={() => toggleSidebarSection('intervals')}
+        >
+          {intervalTools}
+        </SidebarSection>
         {stepKeyboardTools && (
           <SidebarSection
             title={t('note.section.keyboard')}
@@ -1151,6 +1192,8 @@ export default function NoteInputToolbar({
       {durationTools}
       <Divider />
       {accidentalTools}
+      <Divider />
+      {intervalTools}
       <Divider />
       {expressionTools}
       <Divider />

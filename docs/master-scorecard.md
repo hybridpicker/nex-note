@@ -195,3 +195,25 @@ All unlisted capabilities inherit the 48% product state above. Baseline reflects
 - Closing: **49%**
 
 Lyrics, chord symbols, rehearsal/tempo text, words, and dynamics now enter the renderer-agnostic layout snapshot as rhythmic text anchors grouped by collision lane. The layout planner computes the hard width required between adjacent anchors from their actual rhythmic distance, estimated content width, and minimum padding. Identical text therefore widens a measure when crowded while leaving safely separated anchors unchanged, and the demand reaches the render bridge for inspection and future renderer integrations. Existing choir, piano, lead-sheet, and repeat-ending fingerprints remain stable; dedicated tests cover crowded multi-verse lyrics and chord symbols. Exact font metrics, cross-measure text collisions, vertical skyline solving, and manual element offsets remain open.
+
+## Iteration 2026-07-10 — Professional Interval Note Entry
+
+All unlisted capabilities inherit the 49% product state above. This iteration focuses on a high-frequency MuseScore keyboard workflow and the discoverable notation-input surface that exposes it.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 78% | 82% |
+| Keyboard Entry | 78% | 83% |
+| Chord Entry | 70% | 77% |
+| Toolbars | 72% | 74% |
+| Keyboard Shortcuts | 70% | 74% |
+| Testing | 82% | 84% |
+| Learnability | 61% | 64% |
+| Professional Workflow | 55% | 58% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **49%**
+- Closing: **50%**
+
+`Alt/Option+1–9` now adds an upward diatonic unison through ninth above the active pitch. The result is spelled from the effective key signature and committed as a simultaneous chord tone without moving the rhythmic cursor; repeated thirds therefore build C–E–G at one onset. Physical digit codes support keyboard layouts where Option changes `event.key`, while modifier guards preserve voice, tuplet, and TAB shortcuts. The same nine actions are visible in both notation-input toolbar layouts, and unit, component, editor, production-build, and Playwright evidence cover the workflow. Compound intervals above a ninth, downward intervals, and arbitrary chromatic interval naming remain outside this bounded iteration.

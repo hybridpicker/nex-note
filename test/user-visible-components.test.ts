@@ -176,6 +176,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleSlur() {},
     onAddGraceNote() {},
     onAddTuplet() {},
+    onAddInterval() {},
     onLayoutCleanup() {},
     layoutCleanupLoading: false,
     ...overrides,
@@ -1096,6 +1097,34 @@ test('NotationToolbar exposes MuseScore tuplet buttons 2 through 9', () => {
   });
 
   assert.deepEqual(tuplets, [7]);
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
+test('NotationToolbar exposes interval entry buttons 1 through 9', () => {
+  const [selectedNote] = makeSelectedNotes(SAMPLE_XML);
+  const intervals: number[] = [];
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NotationToolbar, toolbarProps({
+      selectedNote,
+      onAddInterval(interval) { intervals.push(interval); },
+    })));
+  });
+
+  const root = renderer!.root;
+  const titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
+  assert.ok(titles.includes('Add unison above (Alt/Option+1)'));
+  assert.ok(titles.includes('Add third above (Alt/Option+3)'));
+  assert.ok(titles.includes('Add ninth above (Alt/Option+9)'));
+
+  act(() => {
+    root.findAllByProps({ title: 'Add fifth above (Alt/Option+5)' })[0].props.onClick();
+  });
+  assert.deepEqual(intervals, [5]);
 
   act(() => {
     renderer?.unmount();

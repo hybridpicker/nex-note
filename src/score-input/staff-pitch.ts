@@ -2,6 +2,7 @@ import type { ScoreDocumentModel } from '../score-core/model/types';
 
 const STEP_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
 export type Step = typeof STEP_ORDER[number];
+export type DiatonicIntervalNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export function diatonicPitchIndex(step: string, octave: number): number {
   const idx = STEP_ORDER.indexOf(step as Step);
@@ -93,4 +94,45 @@ export function keyFifthsAlterForStep(fifths: number | null | undefined, step: s
   return FLAT_ORDER.slice(0, Math.abs(safeFifths)).includes(normalizedStep as typeof FLAT_ORDER[number])
     ? -1
     : 0;
+}
+
+export function resolveKeyFifthsAtMeasure(
+  coreDocument: ScoreDocumentModel | null | undefined,
+  input: { measureNumber: number; staffIndex: number; partId?: string | null },
+) {
+  if (!coreDocument) return 0;
+  const matchingParts = coreDocument.score.parts.filter((part) => (
+    !input.partId || part.id === input.partId || part.sourcePartId === input.partId
+  ));
+  const parts = matchingParts.length > 0 ? matchingParts : coreDocument.score.parts;
+
+  for (const part of parts) {
+    const staff = part.staves.find((entry) => entry.staffIndex === input.staffIndex);
+    if (!staff) continue;
+    let keyFifths = 0;
+    for (const measure of [...staff.measures].sort((left, right) => left.measureNumber - right.measureNumber)) {
+      if (measure.measureNumber > input.measureNumber) break;
+      for (const attribute of measure.attributes) {
+        if (typeof attribute.keyFifths === 'number') keyFifths = attribute.keyFifths;
+      }
+    }
+    return keyFifths;
+  }
+  return 0;
+}
+
+export function resolveDiatonicIntervalAbove(
+  pitch: { step: string; alter: number; octave: number },
+  interval: DiatonicIntervalNumber,
+  keyFifths: number,
+) {
+  const diatonicSteps = Math.max(0, Math.min(8, interval - 1));
+  if (diatonicSteps === 0) return { ...pitch };
+  const maximumIndex = diatonicPitchIndex('B', 9);
+  const targetIndex = Math.min(maximumIndex, diatonicPitchIndex(pitch.step, pitch.octave) + diatonicSteps);
+  const target = pitchFromDiatonicIndex(targetIndex);
+  return {
+    ...target,
+    alter: keyFifthsAlterForStep(keyFifths, target.step),
+  };
 }

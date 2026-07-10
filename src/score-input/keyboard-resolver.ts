@@ -1,5 +1,6 @@
 import { clampVoiceId, type EditPlacementMode, type ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration } from '@/src/score-session/types';
+import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type KeyboardEntryMode = 'insert' | 'overwrite';
 export type KeyboardDeleteAction = 'delete' | 'rippleDelete' | 'clearMeasureVoice';
@@ -70,6 +71,15 @@ export interface ResolveKeyboardChordInputShortcutInput {
 export interface ResolveKeyboardDurationShortcutInput {
   key: string;
   code?: string;
+}
+
+export interface ResolveKeyboardIntervalShortcutInput {
+  key: string;
+  code?: string;
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
 }
 
 const DURATION_KEY_MAP: Record<string, ScoreDocumentSelectedDuration> = {
@@ -148,6 +158,15 @@ export function resolveKeyboardDurationShortcut(
   if (duration) return { type: 'selectDuration', key: digit, duration };
 
   return null;
+}
+
+export function resolveKeyboardIntervalShortcut(
+  input: ResolveKeyboardIntervalShortcutInput,
+): DiatonicIntervalNumber | null {
+  if (!input.altKey || input.shiftKey || input.metaKey || input.ctrlKey) return null;
+  const digit = resolveKeyboardDigit(input);
+  const interval = digit ? Number(digit) : 0;
+  return interval >= 1 && interval <= 9 ? interval as DiatonicIntervalNumber : null;
 }
 
 export function resolveKeyboardEditTarget(input: ResolveKeyboardEditTargetInput): ResolvedEditTarget | null {

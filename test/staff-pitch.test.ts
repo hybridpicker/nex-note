@@ -6,6 +6,8 @@ import {
   keyFifthsAlterForStep,
   pitchFromDiatonicIndex,
   resolveClefAtMeasure,
+  resolveDiatonicIntervalAbove,
+  resolveKeyFifthsAtMeasure,
   resolveStaffStepPitch,
   topLineDiatonicIndex,
 } from '../src/score-input/staff-pitch.ts';
@@ -140,4 +142,52 @@ test('keyFifthsAlterForStep resolves default mouse-entry accidentals from key si
   assert.equal(keyFifthsAlterForStep(-2, 'B'), -1);
   assert.equal(keyFifthsAlterForStep(-2, 'E'), -1);
   assert.equal(keyFifthsAlterForStep(-2, 'A'), 0);
+});
+
+test('resolveDiatonicIntervalAbove spells intervals from the active key signature', () => {
+  assert.deepEqual(
+    resolveDiatonicIntervalAbove({ step: 'C', alter: 0, octave: 4 }, 3, 0),
+    { step: 'E', alter: 0, octave: 4 },
+  );
+  assert.deepEqual(
+    resolveDiatonicIntervalAbove({ step: 'D', alter: 0, octave: 4 }, 3, 0),
+    { step: 'F', alter: 0, octave: 4 },
+  );
+  assert.deepEqual(
+    resolveDiatonicIntervalAbove({ step: 'E', alter: 0, octave: 4 }, 2, 1),
+    { step: 'F', alter: 1, octave: 4 },
+  );
+  assert.deepEqual(
+    resolveDiatonicIntervalAbove({ step: 'B', alter: 0, octave: 4 }, 9, -1),
+    { step: 'C', alter: 0, octave: 6 },
+  );
+});
+
+test('resolveDiatonicIntervalAbove preserves the exact pitch for a unison', () => {
+  assert.deepEqual(
+    resolveDiatonicIntervalAbove({ step: 'C', alter: 1, octave: 4 }, 1, -3),
+    { step: 'C', alter: 1, octave: 4 },
+  );
+});
+
+test('resolveKeyFifthsAtMeasure inherits the latest key signature for the target part and staff', () => {
+  const doc = buildDocWithClef('G', 2);
+  doc.score.parts[0]!.staves[0]!.measures[0]!.attributes[0]!.keyFifths = 2;
+  doc.score.parts[0]!.staves[0]!.measures.push({
+    id: 'm2',
+    measureNumber: 2,
+    voices: [],
+    directions: [],
+    attributes: [],
+  } as never);
+  doc.score.parts[0]!.staves[0]!.measures.push({
+    id: 'm3',
+    measureNumber: 3,
+    voices: [],
+    directions: [],
+    attributes: [{ id: 'a3', keyFifths: -3, clefs: [] }],
+  } as never);
+
+  assert.equal(resolveKeyFifthsAtMeasure(doc, { measureNumber: 2, staffIndex: 1, partId: 'P1' }), 2);
+  assert.equal(resolveKeyFifthsAtMeasure(doc, { measureNumber: 3, staffIndex: 1, partId: 'P1' }), -3);
 });

@@ -14,9 +14,9 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-10 (`886` tests, `0` failed)
+- `npm test`: passed on 2026-07-10 (`893` tests, `0` failed)
 - `npm run build`: passed on 2026-07-10; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
-- `npm run test:e2e:notation-tools`: passed on 2026-07-10 (`11` tests, `0` failed)
+- `npm run test:e2e:notation-tools`: passed on 2026-07-10 (`12` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
 - `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
 - MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-04 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; artifacts were written under `.nex/musescore-roundtrip-smoke-2026-07-04T21-31-22-795Z`
@@ -32,6 +32,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - manual staff-spacing hints now cascade predictably: the newest applicable measure wins, specific part/staff values beat global values at the same location, and repeated edits honor the latest value
 - manual collision-spacing policies are now effective end to end: `Balanced`, `Relaxed`, and `Open` Inspector actions persist as validated semantic hints, cascade by measure and specificity, and control render-bridge spacing without changing automatic layout defaults
 - automatic horizontal collision spacing now models lyrics, chord symbols, and other text as lane-aware rhythmic anchors; crowded adjacent anchors establish a hard measure-width floor and trigger earlier reflow while safely separated text keeps its existing layout
+- MuseScore-style interval input now adds key-aware diatonic unisons through ninths with `Alt/Option+1–9`; repeated intervals remain on the same onset, toolbar controls expose all nine actions, and physical digit matching works when Option changes the typed glyph
 
 ## Manual Validation Highlights
 
@@ -48,7 +49,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - some imported MusicXML still intentionally uses compatibility fallback when unsafe roundtrip tags remain present
 - the MuseScore harness distinguishes source-baseline crashes, app-style MXL reopen checks, and MSCZ create/reopen checks; on this machine MuseScore 4.7.3 still SIGABRTs intermittently with `std::__1::system_error: mutex lock failed: Invalid argument`, including source-baseline runs, so native MusicXML/MXL/MSCZ parity remains an accepted local-tool limitation until verified on a stable MuseScore install
 - broader direction placement is still intentionally conservative: selected articulations, fermatas, ties, and slurs have above/below controls, while other direction types need targeted UI before they should be advertised as desktop-parity editing
-- chord input mode is available through the toolbar, `Shift+A...G`, and `Cmd/Ctrl+Shift+H`, but still lacks deeper desktop-style chord-editing polish
+- chord input mode is available through the toolbar, `Shift+A...G`, `Alt/Option+1–9` interval entry, and `Cmd/Ctrl+Shift+H`, but still lacks deeper desktop-style chord-editing polish beyond the supported upward interval range
 - tuplet quick-insert is exposed in the note-input toolbar for ratios 2:3 through 9:8, matching the existing `Cmd/Ctrl+2...9` semantic command path
 - the existing Turbopack warning remains unchanged and non-blocking for release
 

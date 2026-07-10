@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { buildInteractiveEditMap } from '../src/score-input/edit-map.ts';
 import { resolvePointerEditTarget } from '../src/score-input/pointer-resolver.ts';
 import { pointerEntryLocatorsShareOnset, resolveMuseScorePointerEntryMode, shouldCommitPointerGhostOverDirectNote } from '../src/score-input/pointer-entry-mode.ts';
-import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut } from '../src/score-input/keyboard-resolver.ts';
+import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut } from '../src/score-input/keyboard-resolver.ts';
 import { inspectResolvedEditTarget } from '../src/score-input/note-entry-validator.ts';
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '../src/score-input/commit-resolver.ts';
 import { buildRenderedGhostGrid } from '../src/render-bridge/osmd/rendered-ghost-grid.ts';
@@ -1139,6 +1139,49 @@ test('resolveKeyboardDurationShortcut maps supported durations including MuseSco
     duration: 'long',
   });
   assert.equal(resolveKeyboardDurationShortcut({ key: '0' }), null);
+});
+
+test('resolveKeyboardIntervalShortcut supports physical Alt/Option digit keys without stealing modified commands', () => {
+  assert.equal(resolveKeyboardIntervalShortcut({
+    key: '£',
+    code: 'Digit3',
+    shiftKey: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: true,
+  }), 3);
+  assert.equal(resolveKeyboardIntervalShortcut({
+    key: '9',
+    code: 'Digit9',
+    shiftKey: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: true,
+  }), 9);
+  assert.equal(resolveKeyboardIntervalShortcut({
+    key: '3',
+    code: 'Digit3',
+    shiftKey: true,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: true,
+  }), null);
+  assert.equal(resolveKeyboardIntervalShortcut({
+    key: '3',
+    code: 'Digit3',
+    shiftKey: false,
+    metaKey: true,
+    ctrlKey: false,
+    altKey: true,
+  }), null);
+  assert.equal(resolveKeyboardIntervalShortcut({
+    key: '3',
+    code: 'Digit3',
+    shiftKey: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+  }), null);
 });
 
 test('buildNoteEntryCommitCommands maps resolved targets to shared semantic commands', () => {

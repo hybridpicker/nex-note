@@ -5662,6 +5662,65 @@ test('chord input inserts a simultaneous chord note without shifting the voice t
   hook.unmount();
 });
 
+test('Alt/Option interval entry builds a diatonic chord above the most recently entered note', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+
+  act(() => {
+    hook.current.handleNoteClick(notes[0]);
+    hook.current.toggleNoteInput();
+  });
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('£', { altKey: true, code: 'Digit3' }));
+  });
+  hook.rerender();
+
+  let onsetNotes = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 0 && event.kind === 'note'
+  ));
+  assert.deepEqual(onsetNotes.map((event) => event.kind === 'note' ? event.pitch.step : null), ['C', 'E']);
+  assert.equal(hook.current.selectedNote?.step, 'E');
+  assert.equal(hook.current.selectedNote?.timestampNum, 0);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('3', { altKey: true, code: 'Digit3' }));
+  });
+  hook.rerender();
+
+  onsetNotes = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 0 && event.kind === 'note'
+  ));
+  assert.deepEqual(onsetNotes.map((event) => event.kind === 'note' ? event.pitch.step : null), ['C', 'E', 'G']);
+  assert.equal(hook.current.selectedNote?.step, 'G');
+  assert.equal(hook.current.selectedNote?.timestampNum, 0);
+  hook.unmount();
+});
+
+test('interval entry spells the added tone from the active key signature', () => {
+  const gMajorXml = SAMPLE_XML.replace('<fifths>0</fifths>', '<fifths>1</fifths>');
+  const hook = renderHook(gMajorXml);
+  const e4 = makeSelectedNotes(gMajorXml).find((note) => (
+    note.measureNumber === 1 && note.timestampNum === 3 && note.step === 'E'
+  ));
+  assert.ok(e4);
+
+  act(() => {
+    hook.current.handleNoteClick(e4);
+    hook.current.handleKeyDown(makeKeyboardEvent('2', { altKey: true, code: 'Digit2' }));
+  });
+  hook.rerender();
+
+  const onsetNotes = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 3 && event.kind === 'note'
+  ));
+  assert.deepEqual(onsetNotes.map((event) => (
+    event.kind === 'note' ? `${event.pitch.step}:${event.pitch.alter}` : null
+  )), ['E:0', 'F:1']);
+  assert.equal(hook.current.selectedNote?.step, 'F');
+  assert.equal(hook.current.selectedNote?.alter, 1);
+  hook.unmount();
+});
+
 test('quick tuplet insert encodes a triplet over the selected semantic range', () => {
   const hook = renderHook(SAMPLE_XML);
   const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => note.measureNumber === 1 && !note.isRest);

@@ -7,6 +7,7 @@ import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, Artic
 import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { MidiInputStatus } from '@/hooks/useMidiInput';
+import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 interface Props {
   // Playback
@@ -82,6 +83,7 @@ interface Props {
   onToggleSlur: () => void;
   onAddGraceNote: () => void;
   onAddTuplet: (tuplet: TupletNumber) => void;
+  onAddInterval: (interval: DiatonicIntervalNumber) => void;
   onLayoutCleanup: () => void;
   layoutCleanupLoading: boolean;
   showNoteInputTools?: boolean;
@@ -245,7 +247,7 @@ export default function NotationToolbar({
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
-  onToggleArticulation, onAddDynamic, onSetBarline, onToggleSlur, onAddGraceNote, onAddTuplet,
+  onToggleArticulation, onAddDynamic, onSetBarline, onToggleSlur, onAddGraceNote, onAddTuplet, onAddInterval,
   onLayoutCleanup, layoutCleanupLoading, coreDocument, showNoteInputTools = true,
 }: Props) {
   const { t } = useI18n();
@@ -480,6 +482,7 @@ export default function NotationToolbar({
           onToggleSlur={onToggleSlur}
           onAddGraceNote={onAddGraceNote}
           onAddTuplet={onAddTuplet}
+          onAddInterval={onAddInterval}
         />
       )}
     </div>
