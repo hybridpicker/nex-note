@@ -46,6 +46,11 @@ This document describes the deterministic note-input pipeline introduced for poi
   - single command generation entrypoint for resolved targets
   - maps to semantic commands (`changeNotePitch`, `changeNoteDuration`, `insertNote`, `insertNoteAt`)
 
+- [src/shared/music/accidentals.ts](../src/shared/music/accidentals.ts) and [src/score-input/staff-pitch.ts](../src/score-input/staff-pitch.ts)
+  - model explicit written standard accidentals separately from sounding pitch alter
+  - resolve unarmed keyboard and mouse pitches from the latest same-staff, same-step, same-octave accidental earlier in the measure, then fall back to the effective key signature
+  - map internal double-flat spelling to MusicXML `flat-flat` without losing semantic identity
+
 ## Runtime Integration
 
 - [components/ScoreEditor.tsx](../components/ScoreEditor.tsx)
@@ -63,6 +68,7 @@ This document describes the deterministic note-input pipeline introduced for poi
   - commit is rejected before mutation when target validation fails
   - no-op clicked-note commits refresh the active note-input anchor so the next keyboard entry starts from the clicked note, not a stale cursor
   - tied-note input resolves the next rhythmic slot, validates chord replacement explicitly, clones the complete same-voice source chord at the active duration, toggles every tie by semantic pitch identity, and commits the whole action as one history transaction
+  - entering Note Input clears selection-derived accidental state; an explicitly armed standard accidental is consumed only after one successful pitched commit, while subsequent matching pitches use measure carry without emitting another explicit glyph
 
 - [components/ScoreInputOverlay.tsx](../components/ScoreInputOverlay.tsx)
   - ghost overlay now exposes mode/voice diagnostics via:
@@ -86,6 +92,8 @@ This document describes the deterministic note-input pipeline introduced for poi
 - insert mode is only valid when the requested duration fits the measure/voice capacity without unsafe overflow
 - insert mode may preserve overflow only for an explicitly validated target, such as a proven rest-only internal slot or trailing silent snap, where preview and commit share the same snap evidence
 - failed attempts must not mutate the measure or degrade future targeting in that measure
+- an armed accidental is one-shot state, but its sounding alter carries to later matching staff positions in the measure across voices; octave changes and barlines reset that carry to their own context
+- explicit accidental glyph and sounding alter must agree; command normalization rejects mismatches and the document validator exposes `written_accidental_pitch_mismatch` to strict Doctor
 
 ## Diagnostics
 
@@ -111,6 +119,8 @@ This document describes the deterministic note-input pipeline introduced for poi
   - replace rejection when no valid replace target exists
   - overfill rejection in insert mode
   - preview/commit parity for the same resolved input
+  - standard accidental matrix (double-flat through double-sharp), one-shot arming, measure carry across voices, octave/barline reset, explicit-natural and MusicXML roundtrip fidelity
+  - accidental entity identity, copy/paste preservation, paired notation/TAB mirroring, inverse-command restoration, and stale-glyph cleanup after transposition
   - beat-1 rest plus eighth-note mouse entry keeps visible notehead X and commit X on the same rendered rest snap
 
 - e2e:
@@ -122,6 +132,7 @@ This document describes the deterministic note-input pipeline introduced for poi
   - cross-measure multi-click ghost sequences in blank piano measures
   - step-time anchor validation for standard notation and TAB fret entry
   - existing multi-voice and mouse note-entry regressions remain in `e2e/app.spec.ts`
+  - rendered sharp-button feedback, sounding MIDI value, atomic two-step Undo/Redo, MusicXML glyph count, and clean strict Doctor in `e2e/notation-tools.spec.ts`
 
 ## Current Limitations / Follow-ups
 
@@ -130,3 +141,4 @@ This document describes the deterministic note-input pipeline introduced for poi
 - ambiguous voice targets are intentionally rejected rather than auto-corrected.
 - arbitrary overflow placement remains unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
 - rest-only internal slots are intentionally narrow: they require real split-rest structure, validator approval, and matching ghost/commit diagnostics before mutation. A single full-measure rest never qualifies.
+- enharmonic cycling (`J`) and courtesy/cautionary accidental presentation are not yet modeled by this standard one-shot accidental workflow.

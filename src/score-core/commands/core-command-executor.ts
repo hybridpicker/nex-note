@@ -1392,6 +1392,7 @@ function buildInsertedEvent(
         alter: command.alter,
         octave: command.octave,
       },
+      writtenAccidental: command.writtenAccidental,
       guitar,
     };
   }
@@ -2211,6 +2212,7 @@ function buildInsertedOverflowFragments(
           alter: command.alter,
           octave: command.octave,
         },
+        writtenAccidental: fragmentIndex === 0 ? command.writtenAccidental : undefined,
         guitar,
       }
       : {
@@ -3173,6 +3175,7 @@ export function executeCoreCommands(
                     command.semitones,
                     preferFlats,
                   );
+                  event.writtenAccidental = undefined;
                 });
               });
               measure.directions.forEach((direction) => {
@@ -3408,6 +3411,7 @@ export function executeCoreCommands(
           };
           const noteEvent = event as Extract<TimedEvent, { kind: 'note' }>;
           noteEvent.pitch = nextPitch;
+          noteEvent.writtenAccidental = command.writtenAccidental;
 
           if (found) {
             const sourceIsTab = isTabStaff(found.part, command.staffIndex);
@@ -3431,6 +3435,7 @@ export function executeCoreCommands(
               paired.event.kind = 'note';
               const pairedNote = paired.event as Extract<TimedEvent, { kind: 'note' }>;
               pairedNote.pitch = { ...nextPitch };
+              pairedNote.writtenAccidental = command.writtenAccidental;
               if (paired.isTab) {
                 pairedNote.guitar = resolveSyncedGuitarFingering({
                   pitch: nextPitch,
@@ -3616,6 +3621,7 @@ export function executeCoreCommands(
           // a string change at constant pitch must not respell Bb as A#.
           if (pitchMidiNumber(event.pitch) !== pitch.midi) {
             event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+            event.writtenAccidental = undefined;
           }
           event.guitar = {
             string: command.string,
@@ -3638,6 +3644,7 @@ export function executeCoreCommands(
           if (paired?.event) {
             if (pitchMidiNumber(paired.event.pitch) !== pitch.midi) {
               paired.event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+              paired.event.writtenAccidental = undefined;
             }
             if (paired.isTab) {
               const previousPairedGuitar = paired.event.guitar;
@@ -3791,6 +3798,7 @@ export function executeCoreCommands(
         const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
         if (event?.kind === 'note') {
           event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+          event.writtenAccidental = undefined;
         }
         break;
       }
@@ -3802,6 +3810,7 @@ export function executeCoreCommands(
           const event = voice.events[eventIndex];
           if (event?.kind === 'note') {
             event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+            event.writtenAccidental = undefined;
           }
         });
         break;

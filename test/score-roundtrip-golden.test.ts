@@ -367,6 +367,116 @@ test('export preserves trailing rests after a whole-rest measure is split by ins
   );
 });
 
+test('explicit standard accidentals preserve entity identity and MusicXML notation through export and reimport', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><divisions>1</divisions><key><fifths>1</fifths></key><time><beats>2</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+    <note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    <note><pitch><step>F</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+  </measure></part>
+</score-partwise>`;
+  const imported = importMusicXmlToCore(xml);
+  const originalIds = imported.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.map((event) => event.id);
+  const edited = applyCoreCommands(imported, [{
+    type: 'changeNotePitch',
+    schemaVersion: 1,
+    category: 'content',
+    target: { scope: 'document' },
+    payload: {},
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'B',
+    octave: 4,
+    alter: -2,
+    writtenAccidental: 'double-flat',
+  }, {
+    type: 'changeNotePitch',
+    schemaVersion: 1,
+    category: 'content',
+    target: { scope: 'document' },
+    payload: {},
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: 'F',
+    octave: 4,
+    alter: 0,
+    writtenAccidental: 'natural',
+  }]);
+  const editedEvents = edited.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+
+  assert.deepEqual(editedEvents.map((event) => event.id), originalIds);
+  assert.deepEqual(editedEvents.map((event) => event.kind === 'note'
+    ? { pitch: event.pitch, writtenAccidental: event.writtenAccidental }
+    : null), [{
+    pitch: { step: 'B', alter: -2, octave: 4 },
+    writtenAccidental: 'double-flat',
+  }, {
+    pitch: { step: 'F', alter: 0, octave: 4 },
+    writtenAccidental: 'natural',
+  }]);
+
+  const exported = exportCoreToMusicXml(xml, edited);
+  assert.match(exported, /<step>B<\/step><alter>-2<\/alter><octave>4<\/octave>[\s\S]*?<accidental>flat-flat<\/accidental>/);
+  assert.match(exported, /<step>F<\/step><octave>4<\/octave>[\s\S]*?<accidental>natural<\/accidental>/);
+
+  const reimported = importMusicXmlToCore(exported);
+  const reimportedEvents = reimported.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  assert.deepEqual(reimportedEvents.map((event) => event.kind === 'note'
+    ? { pitch: event.pitch, writtenAccidental: event.writtenAccidental }
+    : null), [{
+    pitch: { step: 'B', alter: -2, octave: 4 },
+    writtenAccidental: 'double-flat',
+  }, {
+    pitch: { step: 'F', alter: 0, octave: 4 },
+    writtenAccidental: 'natural',
+  }]);
+});
+
+for (const accidental of [
+  { written: 'double-flat', alter: -2, xml: 'flat-flat' },
+  { written: 'flat', alter: -1, xml: 'flat' },
+  { written: 'natural', alter: 0, xml: 'natural' },
+  { written: 'sharp', alter: 1, xml: 'sharp' },
+  { written: 'double-sharp', alter: 2, xml: 'double-sharp' },
+] as const) {
+  test(`MusicXML roundtrip preserves explicit ${accidental.written} note input`, () => {
+    const source = importMusicXmlToCore(FULL_REST_XML);
+    const edited = applyCoreCommands(source, [{
+      type: 'insertNoteAt',
+      schemaVersion: 1,
+      category: 'content',
+      target: { scope: 'document' },
+      payload: {},
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      step: 'F',
+      octave: 4,
+      alter: accidental.alter,
+      writtenAccidental: accidental.written,
+      durationType: 'quarter',
+      isDotted: false,
+    }]);
+    const exported = exportCoreToMusicXml(FULL_REST_XML, edited);
+    assert.match(exported, new RegExp(`<accidental>${accidental.xml}</accidental>`));
+
+    const event = importMusicXmlToCore(exported).score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+      .find((entry) => entry.kind === 'note');
+    assert.equal(event?.kind === 'note' ? event.pitch.alter : null, accidental.alter);
+    assert.equal(event?.kind === 'note' ? event.writtenAccidental : null, accidental.written);
+  });
+}
+
 test('export writes leftEnding to left barline for standard volta structure', () => {
   const xml = loadFixture('volta-two-ending.musicxml');
   const core = importMusicXmlToCore(xml);

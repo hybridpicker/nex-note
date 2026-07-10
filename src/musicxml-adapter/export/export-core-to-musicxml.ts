@@ -1,6 +1,7 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/xmldom';
 import type { MeasureNode, PartNode, ScoreDocumentModel, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
+import { writtenAccidentalToMusicXml } from '@/src/shared/music/accidentals';
 
 type XmlEl = ReturnType<XmlDocument['createElement']>;
 
@@ -622,6 +623,9 @@ function buildEventElement(
   setOrCreateTextElement(doc, note, 'voice', String(event.voiceId));
   if (event.durationType) setOrCreateTextElement(doc, note, 'type', event.durationType);
   if (event.isDotted) note.appendChild(doc.createElement('dot'));
+  if (event.kind === 'note' && event.writtenAccidental) {
+    setOrCreateTextElement(doc, note, 'accidental', writtenAccidentalToMusicXml(event.writtenAccidental));
+  }
   if (event.notehead === 'slash') setOrCreateTextElement(doc, note, 'notehead', 'slash');
   if (event.stem) setOrCreateTextElement(doc, note, 'stem', event.stem);
   appendPreservedXmlFragments(doc, note, event.preservedXml?.afterType);

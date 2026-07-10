@@ -1,5 +1,6 @@
 import type { ScoreCommand } from '@/src/shared/schemas/score-command';
 import type { ResolvedEditLocator, ResolvedEditTarget } from '@/src/score-input/types';
+import type { WrittenAccidental } from '@/src/shared/music/accidentals';
 
 type ExistingEventKind = 'note' | 'rest' | null;
 
@@ -9,6 +10,7 @@ export interface BuildNoteEntryCommitCommandsInput {
   isDotted: boolean;
   existingEventKind: ExistingEventKind;
   preserveOverflow?: boolean;
+  writtenAccidental?: WrittenAccidental;
   notehead?: 'slash';
   stem?: 'none';
   guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] };
@@ -36,6 +38,7 @@ export function buildNoteEntryCommitCommands(input: BuildNoteEntryCommitCommands
         step: target.step,
         octave: target.octave,
         alter: target.alter,
+        writtenAccidental: input.writtenAccidental,
       },
       {
         type: 'changeNoteDuration',
@@ -96,6 +99,7 @@ export function buildNoteEntryCommitCommands(input: BuildNoteEntryCommitCommands
       step: target.step,
       octave: target.octave,
       alter: target.alter,
+      writtenAccidental: input.writtenAccidental,
       durationType: input.durationType,
       isDotted: input.isDotted,
       notehead: input.notehead,
@@ -116,6 +120,7 @@ export function buildNoteEntryCommitCommands(input: BuildNoteEntryCommitCommands
     step: target.step,
     octave: target.octave,
     alter: target.alter,
+    writtenAccidental: input.writtenAccidental,
     durationType: input.durationType,
     isDotted: input.isDotted,
     asChord: target.mode === 'chord',

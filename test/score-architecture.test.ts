@@ -269,6 +269,20 @@ test('normalizeScoreCommands accepts pickup measure (measureNumber 0) for note-l
   assert.doesNotThrow(() => normalizeScoreCommands([{ type: 'replaceWithRest', durationType: 'eighth', ...locator }]));
 });
 
+test('normalizeScoreCommands requires written accidentals to match sounding alter', () => {
+  const locator = { measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 };
+  assert.doesNotThrow(() => normalizeScoreCommands([{
+    type: 'changeNotePitch', step: 'B', octave: 4, alter: -2, writtenAccidental: 'double-flat', ...locator,
+  }]));
+  assert.throws(
+    () => normalizeScoreCommands([{
+      type: 'insertNoteAt', step: 'F', octave: 4, alter: 0, writtenAccidental: 'sharp', durationType: 'quarter', ...locator,
+    }]),
+    (error: unknown) => error instanceof CommandValidationError
+      && error.issues.some((issue) => issue.includes('writtenAccidental must match alter')),
+  );
+});
+
 test('normalizeScoreCommands rejects measureNumber below 0', () => {
   const locator = { measureNumber: -1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 8 };
   assert.throws(
@@ -335,6 +349,19 @@ test('importMusicXmlToCore builds a minimal score document model', () => {
   assert.equal(core.metadata.composer, 'Test Composer');
   assert.equal(core.score.parts.length, 1);
   assert.equal(core.score.parts[0].staves[0].measures[0].voices[0].events[0].kind, 'note');
+});
+
+test('validateScoreDocument rejects a written accidental whose glyph disagrees with sounding alter', () => {
+  const core = importMusicXmlToCore(SAMPLE_XML);
+  const event = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  assert.equal(event.kind, 'note');
+  if (event.kind !== 'note') return;
+  event.writtenAccidental = 'flat';
+  event.pitch.alter = 1;
+
+  const diagnostic = validateScoreDocument(core).find((entry) => entry.code === 'written_accidental_pitch_mismatch');
+  assert.equal(diagnostic?.level, 'error');
+  assert.match(diagnostic?.message ?? '', /written accidental flat but alter 1/);
 });
 
 test('importMusicXmlToCore inherits divisions for timestamps after the attributes measure', () => {

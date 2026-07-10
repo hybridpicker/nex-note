@@ -91,7 +91,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Shift+Q` | punktierte Dauer eine Stufe kleiner | Noteneditor |
 | `Shift+W` | punktierte Dauer eine Stufe größer | Noteneditor |
 | `Cmd/Ctrl+Alt/Option+1` ... `4` | Stimme 1 ... 4 wählen | Noteneditor |
-| `A` ... `G` | Tonhöhe ändern oder Note eingeben; bei laufender Noteneingabe wird die zum vorherigen Ton nächste Oktave und ohne explizites Vorzeichen die aktive Tonart verwendet; ein bereits identischer Ton gilt als erfolgreiche Eingabe und bewegt den Cursor weiter | Noteneditor |
+| `A` ... `G` | Tonhöhe ändern oder Note eingeben; bei laufender Noteneingabe wird die zum vorherigen Ton nächste Oktave verwendet. Ohne neu gesetztes Vorzeichen gilt zuerst das letzte gleichnamige Vorzeichen derselben Staff-Position im aktuellen Takt, danach die aktive Tonart; ein bereits identischer Ton gilt als erfolgreiche Eingabe und bewegt den Cursor weiter | Noteneditor |
 | `Cmd/Ctrl+Shift+H` | Chord Input Mode ein-/ausschalten | Noteneingabe |
 | `P` | QWERTY-Step-Keyboard ein-/ausblenden; aktiviert bei Bedarf zugleich die Noteneingabe | Noteneditor |
 | `Shift+A` ... `Shift+G` | Akkordton oberhalb des höchsten Tons der aktiven Stimme am aktuellen Einsatz hinzufügen | Noteneingabe |
@@ -101,11 +101,11 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Q` `2` `W` `3` `E` `R` `5` `T` `6` `Y` `7` `U` | QWERTY-Piano: `C5` bis `B5` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |
 | `R` | Letzte Note wiederholen, wenn in Note Input bereits eine Note eingegeben wurde; sonst Rest einfügen | Noteneditor |
 | `0` | Rest einfügen | Noteneditor |
-| `-` | Vorzeichen Flat umschalten | Noteneditor |
-| `=` | Vorzeichen Natural umschalten | Noteneditor |
-| `+` | Vorzeichen Sharp umschalten | Noteneditor |
-| `Alt/Option+-` | Vorzeichen Double-flat umschalten | Noteneditor |
-| `Alt/Option+=` | Vorzeichen Double-sharp umschalten | Noteneditor |
+| `-` | Flat fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |
+| `=` | Natural fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |
+| `+` | Sharp fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |
+| `Alt/Option+-` | Double-flat fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |
+| `Alt/Option+=` | Double-sharp fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |
 | `X` | Halsrichtung der ausgewählten Note flippen | Auswahl erforderlich |
 | `Shift+X` | Slash-Notehead der ausgewählten Note toggeln | Auswahl erforderlich |
 | `T` | In der Noteneingabe den nächsten Ton bzw. kompletten Akkord mit aktiver Dauer erzeugen, alle Tonhöhen binden und einmal weiterschalten; außerhalb der Noteneingabe Tie auf der Auswahl toggeln | Noteneingabe oder Auswahl |
@@ -120,6 +120,8 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Cmd/Ctrl+K` | Inline-Akkordcursor an der ausgewählten Note öffnen und vorhandenes Symbol zum Direktbearbeiten laden | Auswahl erforderlich |
 
 Solange das QWERTY-Step-Keyboard aktiv ist, haben seine Pitch-Tasten Vorrang vor den gleichnamigen Einzelbuchstaben-Shortcuts; `P` oder `Escape` verlassen diesen Modus wieder.
+
+Ein in Note Input gesetztes Vorzeichen ist wie in MuseScore ein Einmal-Werkzeug: Der aktive Toolbar-Button erlischt nach der naechsten erfolgreichen Note. Der klingende Alter-Wert gilt danach fuer denselben Notennamen in derselben Oktave und auf demselben Staff bis zum Taktstrich, auch ueber Stimmen hinweg. Ein anderer Oktavraum oder der naechste Takt faellt auf seinen eigenen Taktkontext beziehungsweise die Tonart zurueck. Der MuseScore-Shortcut `J` zum zyklischen enharmonischen Umdeuten ist noch nicht implementiert.
 
 ## Guitar TAB Input
 

@@ -226,6 +226,7 @@ async function readE2EState(page: Page) {
           alter?: number;
           isRest?: boolean;
         } | null;
+        selectedAccidental?: 'double-sharp' | 'sharp' | 'natural' | 'flat' | 'double-flat' | null;
         noteInputAnchor: {
           measureNumber: number;
           staffIndex: number;
@@ -565,6 +566,66 @@ test('A-G letter entry keeps a nearest-octave passage continuous across measures
     return selected ? `${selected.step}${selected.octave}@${selected.measureNumber}:${selected.timestampNum}` : null;
   }).toBe('A4@2:3');
   await expectNoDoctorIssues(page, 'after A-G closest-octave passage');
+});
+
+test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  const sharpButton = page.locator('button[title="Sharp (+)"]:visible').first();
+  await sharpButton.click();
+  await expect(sharpButton).toHaveClass(/bg-nex-accent-muted/);
+  await expect.poll(async () => (await readE2EState(page))?.selectedAccidental).toBe('sharp');
+
+  await page.keyboard.press('B');
+  await expect.poll(async () => (await readE2EState(page))?.selectedAccidental).toBe(null);
+  await expect(sharpButton).not.toHaveClass(/bg-nex-accent-muted/);
+  await page.keyboard.press('B');
+
+  const readEntered = async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? []).slice(0, 2).map((event) => event.kind === 'note' ? {
+      pitch: `${event.pitch.step}:${event.pitch.alter}:${event.pitch.octave}`,
+      writtenAccidental: event.writtenAccidental ?? null,
+    } : null);
+  };
+  await expect.poll(readEntered).toEqual([{
+    pitch: 'B:1:3',
+    writtenAccidental: 'sharp',
+  }, {
+    pitch: 'B:1:3',
+    writtenAccidental: null,
+  }]);
+  const editedXml = await readCurrentXml(page);
+  expect((editedXml.match(/<accidental>sharp<\/accidental>/g) ?? []).length).toBe(1);
+  expect((await readMainVoiceMidi(page)).slice(0, 2)).toEqual([60, 60]);
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(8);
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(readEntered).toEqual([{
+    pitch: 'B:1:3',
+    writtenAccidental: 'sharp',
+  }, {
+    pitch: 'D:0:4',
+    writtenAccidental: null,
+  }]);
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+
+  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
+  await expect.poll(readEntered).toEqual([{
+    pitch: 'B:1:3',
+    writtenAccidental: 'sharp',
+  }, {
+    pitch: 'B:1:3',
+    writtenAccidental: null,
+  }]);
+  await expectNoDoctorIssues(page, 'after one-shot accidental undo and redo');
 });
 
 test('same-pitch note input advances across the score without dirtying history', async ({ page }) => {

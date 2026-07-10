@@ -31,12 +31,13 @@ import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
-import { diatonicPitchIndex, keyFifthsAlterForStep, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
+import { writtenAccidentalToAlter, type WrittenAccidental } from '@/src/shared/music/accidentals';
+import { diatonicPitchIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
 
 export type NoteDuration = ScoreDocumentSelectedDuration;
-export type AccidentalChoice = 'double-sharp' | 'sharp' | 'flat' | 'double-flat' | 'natural' | null;
+export type AccidentalChoice = WrittenAccidental | null;
 export type NoteEntryMode = 'insert' | 'overwrite';
 export type TupletNumber = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 export type TupletPreset = 'triplet' | 'quintuplet' | TupletNumber;
@@ -137,6 +138,7 @@ export interface SelectedNote {
   step: string;
   octave: number;
   alter: number;
+  writtenAccidental?: WrittenAccidental;
   isRest: boolean;
   durationType?: string;
   isDotted?: boolean;
@@ -236,6 +238,7 @@ function toSelectedNote(
     step: entry.step,
     octave: entry.octave,
     alter: entry.alter,
+    writtenAccidental: entry.writtenAccidental,
     isRest: entry.isRest,
     durationType: entry.durationType,
     isDotted: entry.isDotted,
@@ -677,14 +680,6 @@ function remapSelectionAnchor(
   };
 }
 
-function accidentalToAlter(accidental: AccidentalChoice): number {
-  if (accidental === 'double-sharp') return 2;
-  if (accidental === 'sharp') return 1;
-  if (accidental === 'flat') return -1;
-  if (accidental === 'double-flat') return -2;
-  return 0; // natural or null
-}
-
 function alterToAccidental(alter: number): AccidentalChoice {
   if (alter >= 2) return 'double-sharp';
   if (alter === 1) return 'sharp';
@@ -1037,7 +1032,7 @@ export function useNoteEditor(
     if (!noteInputMode) {
       const duration = selectedNote.durationType ? NOTE_DURATION_FROM_TYPE[selectedNote.durationType] : null;
       if (duration) setSelectedDurationLive(duration);
-      setSelectedAccidentalLive(alterToAccidental(selectedNote.alter));
+      setSelectedAccidentalLive(selectedNote.writtenAccidental ?? alterToAccidental(selectedNote.alter));
       // Arm the dot from notes only. Rests often carry an invisible dot
       // (a 3/4 whole-measure rest is stored as a dotted half), and silently
       // latching it makes the next entry dotted when no dot was ever shown.
@@ -1494,7 +1489,7 @@ export function useNoteEditor(
       timestampDen: selectedNote.timestampDen,
     });
     const baseOctave = currentPitch?.octave ?? selectedNote.octave;
-    const alter = accidentalToAlter(accidental);
+    const alter = writtenAccidentalToAlter(accidental);
     dbg.editor(`changePitch → ${step}${alter===1?'#':alter===-1?'b':''}${baseOctave} (m.${selectedNote.measureNumber})`);
     const commands: ScoreCommand[] = [{
       type: 'changeNotePitch',
@@ -1509,6 +1504,7 @@ export function useNoteEditor(
       step,
       octave: baseOctave,
       alter,
+      writtenAccidental: accidental ?? undefined,
     }];
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
@@ -1516,7 +1512,7 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-    const updated = { ...selectedNote, step, alter, octave: baseOctave };
+    const updated = { ...selectedNote, step, alter, octave: baseOctave, writtenAccidental: accidental ?? undefined };
     setSelectedNoteLive(updated);
     const updatedSelection = selectedNotesRef.current.length > 0
       ? selectedNotesRef.current.map((note) => selectedNotesEqual(note, selectedNote) ? updated : note)
@@ -1532,6 +1528,7 @@ export function useNoteEditor(
     step: string,
     octave: number,
     alter: number,
+    writtenAccidental?: WrittenAccidental,
   ) => {
     const targetEntry = buildSemanticSelectionEntries(coreDocument).find((entry) => (
       !entry.isRest
@@ -1556,6 +1553,7 @@ export function useNoteEditor(
       step,
       octave,
       alter,
+      writtenAccidental,
     };
     const next = applyEditorCommands([command]);
     if (next.xml === xml) {
@@ -1563,7 +1561,7 @@ export function useNoteEditor(
       return false;
     }
 
-    const updated = { ...targetNote, step, octave, alter };
+    const updated = { ...targetNote, step, octave, alter, writtenAccidental };
     onApplyCommands([command], { selectionAnchor: toSelectionAnchor(updated, [updated]) });
     setSelectedNoteLive(updated);
     selectedNotesRef.current = [updated];
@@ -1571,8 +1569,9 @@ export function useNoteEditor(
     lastSelectedRef.current = updated;
     lastNoteInputRef.current = updated;
     options?.onActiveNotePreview?.(updated);
+    if (writtenAccidental) setSelectedAccidentalLive(null);
     return true;
-  }, [applyEditorCommands, coreDocument, onApplyCommands, options, setSelectedNoteLive, warnNoOpEdit, xml]);
+  }, [applyEditorCommands, coreDocument, onApplyCommands, options, setSelectedAccidentalLive, setSelectedNoteLive, warnNoOpEdit, xml]);
 
   const replaceSelectedPitchAndAdvance = useCallback((step: string, octave: number, alter: number) => {
     const targetNote = selectedNoteRef.current ?? selectedNote;
@@ -1970,6 +1969,7 @@ export function useNoteEditor(
     advanceFrom: SelectedNote;
     notehead?: 'slash';
     stem?: 'none';
+    writtenAccidental?: WrittenAccidental;
     guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] };
   }) => {
     const { target, duration, dotted, label, advanceFrom } = input;
@@ -1991,12 +1991,14 @@ export function useNoteEditor(
 
     const validatedTarget = inspected.target;
     const locator = toResolvedEditLocator(validatedTarget);
+    const writtenAccidental = input.writtenAccidental;
     const commands = buildNoteEntryCommitCommands({
       target: validatedTarget,
       durationType,
       isDotted: dotted,
       existingEventKind: validatedTarget.existingEventKind ?? null,
       preserveOverflow: Boolean(validatedTarget.preserveOverflow),
+      writtenAccidental,
       notehead: input.notehead,
       stem: input.stem,
       guitar: input.guitar,
@@ -2041,6 +2043,7 @@ export function useNoteEditor(
           staffIndex: selectedAfterInput.staffIndex,
         });
       }
+      if (successfulNoChangeReplace && writtenAccidental) setSelectedAccidentalLive(null);
       return successfulNoChangeReplace;
     }
 
@@ -2054,8 +2057,9 @@ export function useNoteEditor(
     }, {
       advanceCursor: validatedTarget.mode !== 'chord',
     });
+    if (writtenAccidental) setSelectedAccidentalLive(null);
     return true;
-  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveRecentInputFromDocument, selectSingleNote, warnNoOpEdit, warnRejectedEdit, xml]);
+  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveRecentInputFromDocument, selectSingleNote, setSelectedAccidentalLive, warnNoOpEdit, warnRejectedEdit, xml]);
 
   const placeNoteAt = useCallback((target: ResolvedEditTarget | LegacyPointerPlacementTarget) => {
     const normalizedTarget = (() => {
@@ -2134,6 +2138,7 @@ export function useNoteEditor(
       dotted: isDottedRef.current,
       label: 'placeNoteAt',
       advanceFrom,
+      writtenAccidental: selectedAccidentalRef.current ?? undefined,
       notehead: leadsheetModeRef.current ? 'slash' : undefined,
       stem: leadsheetModeRef.current ? 'none' : undefined,
     });
@@ -2147,11 +2152,12 @@ export function useNoteEditor(
     dotted?: boolean;
     notehead?: 'slash';
     stem?: 'none';
+    writtenAccidental?: WrittenAccidental;
     guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] };
   }) => {
     const effectiveDuration = options?.duration ?? selectedDurationRef.current;
     const effectiveDotted = options?.dotted ?? isDottedRef.current;
-    const alter = options?.alter ?? accidentalToAlter(selectedAccidentalRef.current);
+    const alter = options?.alter ?? writtenAccidentalToAlter(selectedAccidentalRef.current);
     const forceChord = options?.asChord ?? false;
     const insertAtCursor = options?.insertAtCursor ?? false;
     const targetNote = insertAtCursor && noteInputModeRef.current
@@ -2209,6 +2215,7 @@ export function useNoteEditor(
       dotted: effectiveDotted,
       label: 'insertNote',
       advanceFrom: targetNote,
+      writtenAccidental: options?.writtenAccidental,
       notehead: options?.notehead ?? (leadsheetModeRef.current ? 'slash' : undefined),
       stem: options?.stem ?? (leadsheetModeRef.current ? 'none' : undefined),
       guitar: options?.guitar,
@@ -2826,7 +2833,10 @@ export function useNoteEditor(
 
   const toggleNoteInput = useCallback(() => {
     const next = !noteInputModeRef.current;
-    if (next) ensureNoteInputAnchor();
+    if (next) {
+      ensureNoteInputAnchor();
+      setSelectedAccidentalLive(null);
+    }
     if (!next) {
       setStepInputKeyboardModeLive(false);
       // Guitar fret entry requires note input; leaving guitar mode armed
@@ -2834,7 +2844,7 @@ export function useNoteEditor(
       setGuitarInputModeLive(false);
     }
     setNoteInputModeLive(next);
-  }, [ensureNoteInputAnchor, setGuitarInputModeLive, setNoteInputModeLive, setStepInputKeyboardModeLive]);
+  }, [ensureNoteInputAnchor, setGuitarInputModeLive, setNoteInputModeLive, setSelectedAccidentalLive, setStepInputKeyboardModeLive]);
 
   const toggleStepInputKeyboardMode = useCallback(() => {
     const next = !stepInputKeyboardModeRef.current;
@@ -3508,7 +3518,11 @@ export function useNoteEditor(
         if (currentSelectedNote) {
           e.preventDefault();
           if (noteInputModeRef.current) {
-            insertNote(qwertyPitch.step, qwertyPitch.octave, { alter: qwertyPitch.alter });
+            const writtenAccidental = selectedAccidentalRef.current ?? undefined;
+            insertNote(qwertyPitch.step, qwertyPitch.octave, {
+              alter: writtenAccidental ? writtenAccidentalToAlter(writtenAccidental) : qwertyPitch.alter,
+              writtenAccidental,
+            });
           } else {
             replaceSelectedPitchAndAdvance(qwertyPitch.step, qwertyPitch.octave, qwertyPitch.alter);
           }
@@ -3792,15 +3806,20 @@ export function useNoteEditor(
       const currentSelectedVisual = selectedVisualRef.current ?? selectedVisual;
       const measureAnchorSelection = Boolean(currentSelectedVisual?.visualOnly && !currentSelectedVisual.text);
       const resolveTypedPitch = (reference: SelectedNote, placement: 'closest' | 'above') => {
-        const keyFifths = resolveKeyFifthsAtMeasure(coreDocument, {
-          measureNumber: reference.measureNumber,
-          staffIndex: reference.staffIndex,
-          partId: reference.corePartId,
-        });
+        const diatonicPitch = resolvePitchNameEntry(key, 0, reference, placement);
+        const inputPosition = currentSelectedNote ?? reference;
         const alter = selectedAccidentalRef.current
-          ? accidentalToAlter(selectedAccidentalRef.current)
-          : keyFifthsAlterForStep(keyFifths, key);
-        return resolvePitchNameEntry(key, alter, reference, placement);
+          ? writtenAccidentalToAlter(selectedAccidentalRef.current)
+          : resolveMeasureAccidentalAlter(coreDocument, {
+            corePartId: inputPosition.corePartId,
+            measureNumber: inputPosition.measureNumber,
+            staffIndex: inputPosition.staffIndex,
+            timestampNum: inputPosition.timestampNum,
+            timestampDen: inputPosition.timestampDen,
+            step: key,
+            octave: diatonicPitch.octave,
+          });
+        return { ...diatonicPitch, alter };
       };
       if (noteInputModeRef.current && currentSelectedNote) {
         const addingChordTone = e.shiftKey || chordInputModeRef.current;
@@ -3817,10 +3836,11 @@ export function useNoteEditor(
           ), sameVoiceChord[0]!)
           : melodicReference;
         const pitch = resolveTypedPitch(pitchReference, addingChordTone ? 'above' : 'closest');
+        const writtenAccidental = selectedAccidentalRef.current ?? undefined;
         if (metaKey && e.shiftKey) {
-          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, insertAtCursor: true, asChord: true });
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true, asChord: true });
         } else if (e.shiftKey) {
-          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, asChord: true });
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, asChord: true });
         } else if (selectedVoiceRef.current !== currentSelectedNote.voiceId) {
           const replacedSelectedVoice = replaceSelectedVoicePitchAtAnchor(
             currentSelectedNote,
@@ -3828,19 +3848,20 @@ export function useNoteEditor(
             pitch.step,
             pitch.octave,
             pitch.alter,
+            writtenAccidental,
           );
-          if (!replacedSelectedVoice) insertNote(pitch.step, pitch.octave, { alter: pitch.alter, insertAtCursor: true });
+          if (!replacedSelectedVoice) insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true });
         } else {
-          insertNote(pitch.step, pitch.octave, { alter: pitch.alter });
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental });
         }
       } else if (measureAnchorSelection && currentSelectedNote) {
         const pitch = resolveTypedPitch(currentSelectedNote, 'closest');
         setNoteInputModeLive(true);
-        insertNote(pitch.step, pitch.octave, { alter: pitch.alter });
+        insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined });
       } else if (currentSelectedNote?.isRest) {
         const pitch = resolveTypedPitch(currentSelectedNote, 'closest');
         setNoteInputModeLive(true);
-        insertNote(pitch.step, pitch.octave, { alter: pitch.alter, insertAtCursor: true });
+        insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined, insertAtCursor: true });
       } else if (currentSelectedNote && !currentSelectedNote.isRest) {
         changePitch(key, selectedAccidentalRef.current);
       }

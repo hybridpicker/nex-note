@@ -1,5 +1,6 @@
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { DocumentDiagnostic } from '@/src/score-core/commands/apply-document-commands';
+import { writtenAccidentalToAlter } from '@/src/shared/music/accidentals';
 
 interface EventRef {
   event: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number]['voices'][number]['events'][number];
@@ -171,6 +172,7 @@ export const DOCUMENT_DIAGNOSTIC_LEVELS = {
   measure_balance: 'warning',
   voice_rhythm_sum_mismatch: 'warning',
   event_duration_notation_mismatch: 'warning',
+  written_accidental_pitch_mismatch: 'error',
   voice_timeline_gap: 'warning',
   voice_duration_mismatch: 'warning',
   multi_voice_rhythm_gap: 'warning',
@@ -315,6 +317,16 @@ export function validateScoreDocument(document: ScoreDocumentModel | null): Docu
 
           const divisions = effectiveAttributes?.divisions ?? 1;
           for (const event of voice.events) {
+            if (
+              event.kind === 'note'
+              && event.writtenAccidental
+              && event.pitch.alter !== writtenAccidentalToAlter(event.writtenAccidental)
+            ) {
+              diagnostics.push(createDiagnostic(
+                'written_accidental_pitch_mismatch',
+                `Measure ${measure.measureNumber} staff ${staff.staffIndex} voice ${voice.voiceId} ${event.pitch.step}${event.pitch.octave}@${event.timestampNum}/${event.timestampDen} has written accidental ${event.writtenAccidental} but alter ${event.pitch.alter}.`,
+              ));
+            }
             if (graceEventIds.has(event.id)) continue;
             const notatedDuration = durationTypeToDivisions(event.durationType, event.isDotted, divisions);
             const expectedNotatedDuration = notatedDuration == null

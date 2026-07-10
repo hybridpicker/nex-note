@@ -141,9 +141,9 @@ Direkte Bearbeitung ist ueber Toolbar, Tastatur und Palette moeglich:
 | Ganzton / Quinte | Edit Palette `+/-M2` und `+/-P5`. |
 | Dauer halbieren/verdoppeln | `Q` / `W`. |
 | Punktierte Dauer halbieren/verdoppeln | `Shift+Q` / `Shift+W`. |
-| Vorzeichen | Toolbar oder `-` Flat, `=` Natural, `+` Sharp, `Alt/Option+-` Double-flat, `Alt/Option+=` Double-sharp. |
+| Vorzeichen | Toolbar oder `-` Flat, `=` Natural, `+` Sharp, `Alt/Option+-` Double-flat, `Alt/Option+=` Double-sharp. In Note Input gilt die Wahl fuer genau die naechste erfolgreiche Note. |
 
-Double-flat und double-sharp sind in der Toolbar und per Tastatur erreichbar.
+Double-flat und double-sharp sind in der Toolbar und per Tastatur erreichbar. Nach der expliziten Note erlischt der aktive Vorzeichen-Button. Weitere Noten desselben Namens in derselben Oktave und auf demselben Staff behalten den klingenden Alter-Wert bis zum Taktstrich, auch wenn sie in einer anderen Stimme stehen; im naechsten Takt oder in einer anderen Oktave gilt wieder der dortige Kontext beziehungsweise die Tonart. Explizite Natural-, Flat-, Sharp- und Doppelvorzeichen bleiben als geschriebene MusicXML-Accidentals erhalten und werden bei Undo/Redo sowie Copy/Paste semantisch mitgefuehrt. Enharmonisches Durchschalten mit `J` und Courtesy-/Cautionary-Darstellung sind noch nicht Teil dieses Workflows.
 
 ## Artikulationen, Dynamics, Ties und Slurs
 

@@ -355,6 +355,7 @@ export const DOCUMENT_DIAGNOSTIC_RULE_BY_CODE: Record<string, string> = {
   measure_balance: 'rhythm.measure-filled',
   voice_rhythm_sum_mismatch: 'rhythm.voice-sum-matches-meter',
   event_duration_notation_mismatch: 'rhythm.notated-duration-matches-core-duration',
+  written_accidental_pitch_mismatch: 'document.attributes-valid',
   voice_timeline_gap: 'rhythm.no-uncovered-gap',
   voice_duration_mismatch: 'rhythm.voice-sum-matches-meter',
   multi_voice_rhythm_gap: 'rhythm.no-uncovered-gap',

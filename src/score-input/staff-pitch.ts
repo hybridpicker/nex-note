@@ -140,6 +140,59 @@ export function keyFifthsAlterForStep(fifths: number | null | undefined, step: s
     : 0;
 }
 
+export function resolveMeasureAccidentalAlter(
+  document: ScoreDocumentModel | null | undefined,
+  input: {
+    corePartId?: string | null;
+    measureNumber: number;
+    staffIndex: number;
+    timestampNum: number;
+    timestampDen: number;
+    step: string;
+    octave: number;
+  },
+): number {
+  const targetTime = input.timestampNum / Math.max(input.timestampDen, 1);
+  const normalizedPartId = input.corePartId?.replace(/^part:/, '') ?? null;
+  const parts = document?.score.parts.filter((part) => (
+    !normalizedPartId
+    || part.id === input.corePartId
+    || part.sourcePartId === input.corePartId
+    || part.id.replace(/^part:/, '') === normalizedPartId
+    || part.sourcePartId.replace(/^part:/, '') === normalizedPartId
+  )) ?? [];
+
+  const preceding = parts
+    .flatMap((part) => part.staves)
+    .filter((staff) => staff.staffIndex === input.staffIndex)
+    .flatMap((staff) => staff.measures)
+    .filter((measure) => measure.measureNumber === input.measureNumber)
+    .flatMap((measure) => measure.voices)
+    .flatMap((voice) => voice.events)
+    .filter((event) => (
+      event.kind === 'note'
+      && event.pitch.step === input.step
+      && event.pitch.octave === input.octave
+      && (event.timestampNum / Math.max(event.timestampDen, 1)) < targetTime
+    ))
+    .sort((left, right) => (
+      (right.timestampNum / Math.max(right.timestampDen, 1))
+      - (left.timestampNum / Math.max(left.timestampDen, 1))
+      || right.voiceId - left.voiceId
+      || right.id.localeCompare(left.id)
+    ));
+
+  if (preceding[0]?.kind === 'note') return preceding[0].pitch.alter;
+  return keyFifthsAlterForStep(
+    resolveKeyFifthsAtMeasure(document, {
+      measureNumber: input.measureNumber,
+      staffIndex: input.staffIndex,
+      partId: input.corePartId,
+    }),
+    input.step,
+  );
+}
+
 export function resolveKeyFifthsAtMeasure(
   coreDocument: ScoreDocumentModel | null | undefined,
   input: { measureNumber: number; staffIndex: number; partId?: string | null },

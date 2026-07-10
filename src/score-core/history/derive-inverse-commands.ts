@@ -250,6 +250,7 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
           step: previous.pitch.step,
           octave: previous.pitch.octave,
           alter: previous.pitch.alter,
+          ...(previous.writtenAccidental ? { writtenAccidental: previous.writtenAccidental } : {}),
         });
       }
       return stripEnvelopeMeta({
@@ -288,6 +289,7 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
         step: previous.pitch.step,
         octave: previous.pitch.octave,
         alter: previous.pitch.alter,
+        ...(previous.writtenAccidental ? { writtenAccidental: previous.writtenAccidental } : {}),
       });
     }
     case 'toggleTie':

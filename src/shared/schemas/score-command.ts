@@ -1,6 +1,7 @@
 import type { NoteEditOperation } from '@/lib/note-editor';
 import type { ScoreClipboardPayload, ClipboardTargetOffset } from '@/src/shared/schemas/clipboard';
 import { CommandValidationError } from '@/src/shared/errors/command-errors';
+import { isWrittenAccidental, writtenAccidentalToAlter, type WrittenAccidental } from '@/src/shared/music/accidentals';
 
 export type NoteLocatorLike = {
   coreEntityId?: string | null;
@@ -109,7 +110,7 @@ export type LegacyScoreOperation =
   | { type: 'applyPracticeProfile'; profile: 'rehearsal' | 'roomy' | 'compact'; startMeasureNumber?: number; endMeasureNumber?: number }
   | { type: 'transposeRangeChromatic'; semitones: number; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
   | { type: 'clearRangeArticulations'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
-  | { type: 'insertNoteAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; step: string; octave: number; alter: number; durationType: string; isDotted?: boolean; asChord?: boolean; preserveOverflow?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
+  | { type: 'insertNoteAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental; durationType: string; isDotted?: boolean; asChord?: boolean; preserveOverflow?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
   | { type: 'insertRestAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; durationType: string; isDotted?: boolean }
   | ({ type: 'setLyricLine'; verseNumber: number; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end' } & NoteLocatorLike)
   | {
@@ -572,6 +573,11 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
         ensureString(command, 'step', issues);
         ensureNumber(command, 'octave', issues, { min: 0, max: 9 });
         ensureNumber(command, 'alter', issues, { min: -2, max: 2 });
+        if (command.writtenAccidental != null && !isWrittenAccidental(command.writtenAccidental)) {
+          issues.push('writtenAccidental must be a supported standard accidental when provided');
+        } else if (isWrittenAccidental(command.writtenAccidental) && command.alter !== writtenAccidentalToAlter(command.writtenAccidental)) {
+          issues.push('writtenAccidental must match alter');
+        }
       } else if (type === 'changeNoteDuration' || type === 'replaceWithRest') {
         ensureString(command, 'durationType', issues);
         ensureBoolean(command, 'isDotted', issues);
@@ -642,6 +648,11 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       ensureString(command, 'step', issues);
       ensureNumber(command, 'octave', issues, { min: 0, max: 9 });
       ensureNumber(command, 'alter', issues, { min: -2, max: 2 });
+      if (command.writtenAccidental != null && !isWrittenAccidental(command.writtenAccidental)) {
+        issues.push('writtenAccidental must be a supported standard accidental when provided');
+      } else if (isWrittenAccidental(command.writtenAccidental) && command.alter !== writtenAccidentalToAlter(command.writtenAccidental)) {
+        issues.push('writtenAccidental must match alter');
+      }
       ensureString(command, 'durationType', issues);
       if (command.guitar != null) {
         const guitar = ensureRecord(command.guitar, 'guitar');

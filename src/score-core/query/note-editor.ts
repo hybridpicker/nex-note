@@ -10,6 +10,7 @@ import type {
 } from '@/src/score-core/model/types';
 import type { ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
+import type { WrittenAccidental } from '@/src/shared/music/accidentals';
 
 export interface ScoreEventLocator {
   coreEntityId?: string | null;
@@ -30,6 +31,7 @@ export interface SemanticSelectionEntry extends ScoreEventLocator {
   step: string;
   octave: number;
   alter: number;
+  writtenAccidental?: WrittenAccidental;
   isRest: boolean;
   durationType?: string;
   isDotted?: boolean;
@@ -79,6 +81,7 @@ function buildSemanticSelectionEntry(
     step: event.kind === 'note' ? event.pitch.step : 'C',
     octave: event.kind === 'note' ? event.pitch.octave : 4,
     alter: event.kind === 'note' ? event.pitch.alter : 0,
+    writtenAccidental: event.kind === 'note' ? event.writtenAccidental : undefined,
     isRest: event.kind === 'rest',
     durationType: event.durationType,
     isDotted: event.isDotted,
@@ -159,6 +162,7 @@ export function extractClipboardItemFromDocument(
     step: event.kind === 'note' ? event.pitch.step : 'C',
     octave: event.kind === 'note' ? event.pitch.octave : 4,
     alter: event.kind === 'note' ? event.pitch.alter : 0,
+    writtenAccidental: event.kind === 'note' ? event.writtenAccidental : undefined,
     durationType: event.durationType ?? 'quarter',
     isDotted: Boolean(event.isDotted),
     voiceId: event.voiceId,

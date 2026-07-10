@@ -2968,7 +2968,7 @@ test('browser editing covers chord input, overwrite, pitch shortcuts, accidental
       event.kind === 'note' && event.timestampNum === 1 && event.timestampDen === 4
     ));
     return target?.kind === 'note' ? `${target.pitch.step}${target.pitch.octave}` : null;
-  }).toBe('G4');
+  }).toBe('G3');
 
   await page.keyboard.press('N');
   await clickRenderedNotehead(page, 0);

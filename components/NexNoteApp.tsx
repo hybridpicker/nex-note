@@ -2326,6 +2326,7 @@ export default function Home({ searchParams }: HomeProps) {
         noteInputMode: boolean;
         chordInputMode: boolean;
         selectedDuration: string;
+        selectedAccidental: typeof selectedAccidental;
         selectedVoice: number;
         selectionCount: number;
         canUndo: boolean;
@@ -2436,6 +2437,7 @@ export default function Home({ searchParams }: HomeProps) {
       noteInputMode,
       chordInputMode,
       selectedDuration,
+      selectedAccidental,
       selectedVoice,
       selectionCount: selection.selectionCount,
       canUndo,
@@ -2499,7 +2501,7 @@ export default function Home({ searchParams }: HomeProps) {
       candidateList,
       confidenceReason,
     };
-  }, [canRedo, canUndo, chordInputMode, coreDocument, currentBeat, currentMeasure, filename, historyMeta.depth, importLifecycle, lastCommands, noteInputAnchor, noteInputMode, playbackError, playbackState, scoreStats, selectedDuration, selectedNote, selectedVoice, selection.selectionCount, totalBeats, xml]);
+  }, [canRedo, canUndo, chordInputMode, coreDocument, currentBeat, currentMeasure, filename, historyMeta.depth, importLifecycle, lastCommands, noteInputAnchor, noteInputMode, playbackError, playbackState, scoreStats, selectedAccidental, selectedDuration, selectedNote, selectedVoice, selection.selectionCount, totalBeats, xml]);
 
   useEffect(() => {
     const doctorState = getDoctorRuntimeState();

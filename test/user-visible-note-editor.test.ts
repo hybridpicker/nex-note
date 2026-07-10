@@ -31,6 +31,7 @@ import {
   alignReplaceGhostToRenderedSnap,
   captureMeasureRectForStaff,
   resolveGhostNoteTarget,
+  resolveMouseEntryAlter,
   resolvePointerCommitGhostTargets,
   buildSemanticAnchorDebugBoxes,
   buildSemanticPitchDebugBands,
@@ -732,6 +733,26 @@ test('P toggles the QWERTY step keyboard and routes QWERTY piano keys through se
   hook.unmount();
 });
 
+test('QWERTY step input consumes a toolbar-armed accidental on its next successful pitch', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => !note.isRest);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.handleKeyDown(makeKeyboardEvent('P'));
+    hook.current.setAccidental('sharp');
+    hook.current.handleKeyDown(makeKeyboardEvent('Z'));
+  });
+  hook.rerender();
+
+  const entered = flattenVoiceEvents(hook.xml).find((event) => event.measureNumber === 1 && event.timestampNum === 0);
+  assert.equal(entered?.kind === 'note' ? entered.pitch.alter : null, 1);
+  assert.equal(entered?.kind === 'note' ? entered.writtenAccidental : null, 'sharp');
+  assert.equal(hook.current.selectedAccidental, null);
+  hook.unmount();
+});
+
 test('keyboard accidental shortcuts include double-flat and double-sharp entry', () => {
   const doubleFlatHook = renderHook(SAMPLE_XML);
   const doubleSharpHook = renderHook(SAMPLE_XML);
@@ -751,8 +772,8 @@ test('keyboard accidental shortcuts include double-flat and double-sharp entry',
     doubleSharpHook.current.handleKeyDown(makeKeyboardEvent('F'));
   });
 
-  assert.equal(doubleFlatHook.current.selectedAccidental, 'double-flat');
-  assert.equal(doubleSharpHook.current.selectedAccidental, 'double-sharp');
+  assert.equal(doubleFlatHook.current.selectedAccidental, null);
+  assert.equal(doubleSharpHook.current.selectedAccidental, null);
 
   const doubleFlatFirst = flattenVoiceEvents(doubleFlatHook.xml)[0];
   const doubleSharpFirst = flattenVoiceEvents(doubleSharpHook.xml)[0];
@@ -761,11 +782,15 @@ test('keyboard accidental shortcuts include double-flat and double-sharp entry',
   if (doubleFlatFirst?.kind === 'note') {
     assert.equal(doubleFlatFirst.pitch.step, 'B');
     assert.equal(doubleFlatFirst.pitch.alter, -2);
+    assert.equal(doubleFlatFirst.writtenAccidental, 'double-flat');
   }
   if (doubleSharpFirst?.kind === 'note') {
     assert.equal(doubleSharpFirst.pitch.step, 'F');
     assert.equal(doubleSharpFirst.pitch.alter, 2);
+    assert.equal(doubleSharpFirst.writtenAccidental, 'double-sharp');
   }
+  assert.match(doubleFlatHook.xml, /<accidental>flat-flat<\/accidental>/);
+  assert.match(doubleSharpHook.xml, /<accidental>double-sharp<\/accidental>/);
 
   doubleFlatHook.unmount();
   doubleSharpHook.unmount();
@@ -4862,7 +4887,8 @@ test('MuseScore accidental shortcuts toggle flat, natural, and sharp entry state
 
   voiceEvents = flattenVoiceEvents(hook.xml).filter((event): event is TimedEvent & { kind: 'note' } => event.kind === 'note');
   assert.equal(voiceEvents[0]?.pitch.alter ?? 0, 0);
-  assert.equal(hook.current.selectedAccidental, null);
+  assert.equal(voiceEvents[0]?.writtenAccidental, 'natural');
+  assert.equal(hook.current.selectedAccidental, 'natural');
 
   act(() => {
     hook.current.handleKeyDown(makeKeyboardEvent('-'));
@@ -5864,6 +5890,92 @@ test('A-G note input follows the active key signature when no accidental is arme
     event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 0
   ));
   assert.equal(entered?.kind === 'note' ? `${entered.pitch.step}:${entered.pitch.alter}:${entered.pitch.octave}` : null, 'F:1:4');
+  hook.unmount();
+});
+
+test('armed accidentals are one-shot while measure carry preserves sounding pitch and resets at the barline', () => {
+  const gMajorXml = SAMPLE_XML.replace('<fifths>0</fifths>', '<fifths>1</fifths>');
+  const hook = renderHook(gMajorXml);
+  const first = makeSelectedNotes(gMajorXml).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.toggleNoteInput();
+    hook.current.handleKeyDown(makeKeyboardEvent('='));
+  });
+  assert.equal(hook.current.selectedAccidental, 'natural');
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('F'));
+  });
+  hook.rerender();
+  assert.equal(hook.current.selectedAccidental, null, 'the explicit natural is consumed by the successful note');
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('F'));
+  });
+  hook.rerender();
+
+  let events = flattenVoiceEvents(hook.xml).filter((event) => event.kind === 'note');
+  const firstMeasureFs = events.filter((event) => (
+    event.measureNumber === 1
+    && event.voiceId === 1
+    && event.pitch.step === 'F'
+    && event.pitch.octave === 4
+  ));
+  assert.deepEqual(firstMeasureFs.slice(0, 2).map((event) => ({
+    alter: event.pitch.alter,
+    writtenAccidental: event.writtenAccidental,
+  })), [{
+    alter: 0,
+    writtenAccidental: 'natural',
+  }, {
+    alter: 0,
+    writtenAccidental: undefined,
+  }]);
+  assert.equal((hook.xml.match(/<accidental>natural<\/accidental>/g) ?? []).length, 1);
+  assert.equal(resolveMouseEntryAlter({
+    selectedAccidental: null,
+    coreDocument: importMusicXmlToCore(hook.xml),
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    timestampNum: 2,
+    timestampDen: 4,
+    step: 'F',
+    octave: 4,
+  }), 0, 'mouse ghost spelling follows the same measure carry as keyboard entry');
+  assert.equal(resolveMouseEntryAlter({
+    selectedAccidental: 'flat',
+    coreDocument: importMusicXmlToCore(hook.xml),
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    timestampNum: 2,
+    timestampDen: 4,
+    step: 'F',
+    octave: 4,
+  }), -1, 'an armed mouse accidental overrides carried spelling for the preview and commit');
+
+  const measureTwoFirst = makeSelectedNotes(hook.xml).find((note) => note.measureNumber === 2 && note.timestampNum === 0);
+  assert.ok(measureTwoFirst);
+  act(() => {
+    hook.current.handleNoteClick(measureTwoFirst);
+    hook.current.handleKeyDown(makeKeyboardEvent('F'));
+  });
+  hook.rerender();
+
+  events = flattenVoiceEvents(hook.xml).filter((event) => event.kind === 'note');
+  const resetF = events.find((event) => event.measureNumber === 2 && event.timestampNum === 0);
+  assert.equal(resetF?.kind === 'note' ? resetF.pitch.alter : null, 1);
+  assert.equal(resetF?.kind === 'note' ? resetF.writtenAccidental : null, undefined);
+  assert.deepEqual(
+    hook.appliedCommands.slice(0, 2).map((commands) => commands[0]?.type === 'changeNotePitch'
+      ? commands[0].writtenAccidental
+      : null),
+    ['natural', undefined],
+  );
   hook.unmount();
 });
 

@@ -98,6 +98,40 @@ test('deriveInverseCommands covers deterministic note and transposition commands
   ]);
 });
 
+test('changeNotePitch inverse restores an explicit written accidental atomically', () => {
+  const state = buildDocumentState(SAMPLE_XML.replace(
+    '<pitch><step>C</step><octave>4</octave></pitch>',
+    '<pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><accidental>sharp</accidental>',
+  ));
+  const result = deriveInverseCommands(state.coreDocument, [{
+    type: 'changeNotePitch',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'D',
+    octave: 4,
+    alter: -1,
+    writtenAccidental: 'flat',
+  }]);
+
+  assert.equal(result.supportedCommandCount, 1);
+  assert.equal(result.unsupported.length, 0);
+  assert.deepEqual(result.inverseCommands, [{
+    type: 'changeNotePitch',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'C',
+    octave: 4,
+    alter: 1,
+    writtenAccidental: 'sharp',
+  }]);
+});
+
 test('deriveInverseCommands preserves chord-tone identity for tie toggles', () => {
   const state = buildDocumentState(SAMPLE_XML);
   const source = state.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events[0];

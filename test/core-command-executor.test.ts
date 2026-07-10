@@ -734,20 +734,23 @@ test('insertNoteAt does not shift quarter-rest padding through empty tail measur
 
 test('pasteContent collapses staves into one staff without collapsing voices', () => {
   const upperMeasure = buildMeasure('src:m1:st1', 1, 1, { beats: 4, beatType: 4 });
+  const upperNote: ReturnType<typeof buildNoteEvent> & { writtenAccidental?: 'sharp' } = buildNoteEvent({
+    id: 'src:upper',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    durationDivisions: 1,
+    durationType: 'quarter',
+    step: 'C',
+    octave: 5,
+  });
+  upperNote.pitch.alter = 1;
+  upperNote.writtenAccidental = 'sharp';
   upperMeasure.voices.push({
     id: 'src:v1:1',
     voiceId: 1,
-    events: [buildNoteEvent({
-      id: 'src:upper',
-      measureNumber: 1,
-      staffIndex: 1,
-      voiceId: 1,
-      timestampNum: 0,
-      durationDivisions: 1,
-      durationType: 'quarter',
-      step: 'C',
-      octave: 5,
-    })],
+    events: [upperNote],
   });
   const lowerMeasure = buildMeasure('src:m1:st2', 1, 2, { beats: 4, beatType: 4 });
   lowerMeasure.voices.push({
@@ -813,6 +816,9 @@ test('pasteContent collapses staves into one staff without collapsing voices', (
       { voiceId: 2, pitch: 'E4' },
     ],
   );
+  const pastedSharp = voices[0]?.events.find((event) => event.kind === 'note');
+  assert.equal(pastedSharp?.kind === 'note' ? pastedSharp.pitch.alter : null, 1);
+  assert.equal(pastedSharp?.kind === 'note' ? pastedSharp.writtenAccidental : null, 'sharp');
 });
 
 test('pasteContent reflows copied 3/4 material across 4/4 target measure boundaries', () => {
@@ -877,6 +883,43 @@ test('pasteContent reflows copied 3/4 material across 4/4 target measure boundar
   assert.equal(measure1Notes[0]!.tieStart, true);
   assert.equal(measure2Notes[0]!.timestampNum, 0);
   assert.equal(measure2Notes[0]!.durationDivisions, 1);
+});
+
+test('cross-measure accidental entry writes the explicit glyph only on the first tied fragment', () => {
+  const target = buildDocumentFromStaves({
+    partId: 'accidental-overflow',
+    staves: [{
+      staffIndex: 1,
+      measures: [
+        buildMeasure('accidental-overflow:m1', 1, 1, { beats: 4, beatType: 4 }),
+        buildMeasure('accidental-overflow:m2', 2, 1, { beats: 4, beatType: 4 }),
+      ],
+    }],
+  });
+
+  const next = applyCoreCommands(target, [{
+    type: 'insertNoteAt',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 3,
+    timestampDen: 4,
+    step: 'F',
+    octave: 4,
+    alter: 1,
+    writtenAccidental: 'sharp',
+    durationType: 'half',
+    isDotted: false,
+    preserveOverflow: true,
+  } as never]);
+  const notes = next.score.parts[0]!.staves[0]!.measures
+    .flatMap((measure) => measure.voices.flatMap((voice) => voice.events))
+    .filter((event) => event.kind === 'note');
+
+  assert.equal(notes.length, 2);
+  assert.equal(notes[0]?.tieStart, true);
+  assert.equal(notes[0]?.kind === 'note' ? notes[0].writtenAccidental : null, 'sharp');
+  assert.equal(notes[1]?.kind === 'note' ? notes[1].writtenAccidental : null, undefined);
 });
 
 test('pasteContent discards orphaned copied slurs instead of creating dangling references', () => {

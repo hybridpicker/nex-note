@@ -68,7 +68,7 @@ import type { ResolvedEditTarget } from '@/src/score-input/types';
 import {
   resolveClefAtMeasure,
   resolveStaffStepPitch,
-  keyFifthsAlterForStep,
+  resolveMeasureAccidentalAlter,
   topLineDiatonicIndex,
   type Clef,
 } from '@/src/score-input/staff-pitch';
@@ -1691,18 +1691,19 @@ function accidentalToAlter(accidental: Props['selectedAccidental']) {
   return 0;
 }
 
-function resolveMouseEntryAlter(input: {
+export function resolveMouseEntryAlter(input: {
   selectedAccidental: Props['selectedAccidental'];
   coreDocument: ScoreDocumentModel | null;
   measureNumber: number;
   staffIndex: number;
   step: string;
+  octave: number;
+  timestampNum: number;
+  timestampDen: number;
+  corePartId?: string | null;
 }) {
   if (input.selectedAccidental != null) return accidentalToAlter(input.selectedAccidental);
-  return keyFifthsAlterForStep(
-    getMeasureKeyFifths(input.coreDocument, input.measureNumber, input.staffIndex),
-    input.step,
-  );
+  return resolveMeasureAccidentalAlter(input.coreDocument, input);
 }
 
 function diatonicPitchIndex(step: string, octave: number) {
@@ -9872,6 +9873,10 @@ function resolveGhostNoteTargetLegacy(
     measureNumber: overlay.measureNumber,
     staffIndex: reference.semantic.staffIndex,
     step: targetPitch.step,
+    octave: targetPitch.octave,
+    timestampNum,
+    timestampDen,
+    corePartId: reference.semantic.corePartId,
   });
   const stemDirection = resolvePreviewStemDirection({
     staffStep: pitchResolution.staffStep,
@@ -10127,6 +10132,10 @@ function resolveSemanticAnchorGhostTarget(
     measureNumber: overlay.measureNumber,
     staffIndex: targetStaffIndex,
     step: targetPitch.step,
+    octave: targetPitch.octave,
+    timestampNum: effectiveTimestamp.num,
+    timestampDen: effectiveTimestamp.den,
+    corePartId: anchorPartId,
   });
   const stemDirection = resolvePreviewStemDirection({
     staffStep: pitchResolution.staffStep,
@@ -10588,6 +10597,10 @@ function mapProxyContextToGhostTarget(
     measureNumber: overlay.measureNumber,
     staffIndex: targetStaffIndex,
     step: targetPitch.step,
+    octave: targetPitch.octave,
+    timestampNum,
+    timestampDen,
+    corePartId: preferredPartId,
   });
   const stemDirection = resolvePreviewStemDirection({
     staffStep: pitchResolution.staffStep,
@@ -10907,6 +10920,10 @@ function resolveRestOnlyGhostTarget(
     measureNumber: overlay.measureNumber,
     staffIndex: staff.staffIndex,
     step: targetPitch.step,
+    octave: targetPitch.octave,
+    timestampNum: commitTimestamp.num,
+    timestampDen: commitTimestamp.den,
+    corePartId: commitPoint.corePartId,
   });
   const voiceId = selectedVoice ?? restPoint.voiceId ?? 1;
   const stemDirection = resolvePreviewStemDirection({
@@ -11119,6 +11136,10 @@ export function resolveClickedRestAnchorGhostTarget(
     measureNumber: overlay.measureNumber,
     staffIndex: anchor.staffIndex,
     step: targetPitch.step,
+    octave: targetPitch.octave,
+    timestampNum: anchorPoint.timestampNum,
+    timestampDen: anchorPoint.timestampDen,
+    corePartId: anchor.corePartId,
   });
   const voiceId = selectedVoice ?? anchorPoint.voiceId ?? anchor.voiceId ?? 1;
   const stemDirection = resolvePreviewStemDirection({

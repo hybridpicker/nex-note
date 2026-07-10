@@ -1,5 +1,6 @@
 import { DOMParser, XMLSerializer, Document as XmlDocument } from '@xmldom/xmldom';
 import { resolveGuitarFretPitch, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
+import { musicXmlToWrittenAccidental, writtenAccidentalToMusicXml, type WrittenAccidental } from '@/src/shared/music/accidentals';
 
 export type ArticulationKind =
   | 'staccato' | 'staccatissimo' | 'accent' | 'strong-accent' | 'tenuto' | 'fermata';
@@ -30,6 +31,7 @@ export interface NoteClipboardItem {
   step: string;
   octave: number;
   alter: number;
+  writtenAccidental?: WrittenAccidental;
   durationType: string;
   isDotted: boolean;
   voiceId: number;
@@ -47,15 +49,15 @@ export interface NotePitchSnapshot {
 }
 
 export type NoteEditOperation =
-  | ({ type: 'changeNotePitch'; step: string; octave: number; alter: number } & NoteLocator)
+  | ({ type: 'changeNotePitch'; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental } & NoteLocator)
   | ({ type: 'changeNoteDuration'; durationType: string; isDotted?: boolean } & NoteLocator)
   | ({ type: 'replaceWithRest'; durationType: string; isDotted?: boolean } & NoteLocator)
   | ({ type: 'deleteNote' } & NoteLocator)
   | ({ type: 'rippleDelete' } & NoteLocator)
   | { type: 'rippleDeleteRange'; range: { start: NoteLocator; end: NoteLocator } }
-  | { type: 'insertNote'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; afterTimestampNum: number; afterTimestampDen: number; step: string; octave: number; alter: number; durationType: string; isDotted?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
+  | { type: 'insertNote'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; afterTimestampNum: number; afterTimestampDen: number; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental; durationType: string; isDotted?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
   | { type: 'insertRest'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; afterTimestampNum: number; afterTimestampDen: number; durationType: string; isDotted?: boolean }
-  | { type: 'insertNoteAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; step: string; octave: number; alter: number; durationType: string; isDotted?: boolean; asChord?: boolean; preserveOverflow?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
+  | { type: 'insertNoteAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental; durationType: string; isDotted?: boolean; asChord?: boolean; preserveOverflow?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
   | { type: 'insertRestAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; durationType: string; isDotted?: boolean }
   | ({ type: 'setNoteStyle'; notehead?: 'slash'; stem?: 'none' } & NoteLocator)
   | ({ type: 'setGuitarFret'; string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } & NoteLocator)
@@ -300,6 +302,7 @@ export function extractNoteClipboardItem(xml: string, locator: NoteLocator): Not
     step,
     octave,
     alter,
+    writtenAccidental: musicXmlToWrittenAccidental(note.getElementsByTagName('accidental')[0]?.textContent),
     durationType: type,
     isDotted: note.getElementsByTagName('dot').length > 0,
     voiceId,
@@ -367,6 +370,7 @@ export function applyNoteEdit(xml: string, op: NoteEditOperation): string {
       // Remove <rest/> if present (turning rest into pitched note)
       const restEl = note.getElementsByTagName('rest')[0];
       if (restEl) note.removeChild(restEl);
+      setWrittenAccidentalElement(doc, note as El, op.writtenAccidental);
       const measure = findMeasureForLocator(doc, op);
       if (measure) editedMeasures.add(measure as El);
     } else {
@@ -593,6 +597,11 @@ function buildInsertedNote(
   typeEl.textContent = op.durationType;
   note.appendChild(typeEl);
   if (op.isDotted) note.appendChild(doc.createElement('dot'));
+  if ((op.type === 'insertNote' || op.type === 'insertNoteAt') && op.writtenAccidental) {
+    const accidentalEl = doc.createElement('accidental');
+    accidentalEl.textContent = writtenAccidentalToMusicXml(op.writtenAccidental);
+    note.appendChild(accidentalEl);
+  }
   const staffEl = doc.createElement('staff');
   staffEl.textContent = String(op.staffIndex);
   note.appendChild(staffEl);
@@ -600,6 +609,21 @@ function buildInsertedNote(
     setGuitarTechnicalElements(doc, note, op.guitar.string, op.guitar.fret, op.guitar.techniques);
   }
   return note;
+}
+
+function setWrittenAccidentalElement(doc: XmlDocument, note: El, accidental: WrittenAccidental | undefined) {
+  const directAccidentals = Array.from(note.childNodes)
+    .filter((child): child is El => child.nodeType === 1 && (child as El).tagName === 'accidental');
+  directAccidentals.forEach((element) => note.removeChild(element));
+  if (!accidental) return;
+
+  const accidentalEl = doc.createElement('accidental');
+  accidentalEl.textContent = writtenAccidentalToMusicXml(accidental);
+  const insertBefore = Array.from(note.childNodes).find((child) => (
+    child.nodeType === 1
+    && ['time-modification', 'stem', 'notehead', 'staff', 'beam', 'notations', 'lyric'].includes((child as El).tagName)
+  )) ?? null;
+  note.insertBefore(accidentalEl, insertBefore);
 }
 
 function describeDurationFragments(divisions: number, durationDivisions: number) {

@@ -309,3 +309,36 @@ All unlisted capabilities inherit the 53% product state above. This iteration se
 - Closing: **54%**
 
 In Note Input, `T` now creates the second note at the active duration and adds its tie in the same transaction. If the source is a chord, the complete same-voice pitch set is recreated and every tone is tied; the cursor advances once, paired notation/TAB is mirrored, MusicXML exports balanced tie starts/stops, and one Undo restores the original target onset. Normal-mode `T` remains a toggle, but now addresses each chord tone by entity and pitch instead of repeatedly toggling the root. The continuity validator now advances by rhythmic onset rather than mistaking a sibling chord tone for the next event, and Undo no longer asks Doctor to validate removed insertion commands against the restored document.
+
+## Iteration 2026-07-10 — One-Shot Accidentals and Measure Carry
+
+All unlisted capabilities inherit the 54% product state above. This iteration repairs the standard accidental workflow without claiming enharmonic or courtesy-accidental parity.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 96% | 97% |
+| Keyboard Entry | 96% | 98% |
+| Mouse Entry | 68% | 72% |
+| Accidentals | 77% | 90% |
+| MusicXML Roundtrip | 75% | 80% |
+| TAB Standard Notation Sync | 70% | 73% |
+| Undo | 84% | 86% |
+| Testing | 91% | 93% |
+| Consistency | 82% | 86% |
+| Professional Workflow | 72% | 76% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **54%**
+- Closing: **55%**
+
+Flat, natural, sharp, double-flat, and double-sharp now behave as one-shot Note Input tools. A successful pitched commit clears the visible armed state; the resulting sounding alter then carries to later notes of the same step and octave on the same staff until the barline, including across voices. Keyboard and mouse ghost resolution share that measure context. The core model stores written glyph intent separately from sounding alter, command validation and strict Doctor reject disagreements, paired notation/TAB mutations mirror the semantic pitch, transposition clears stale glyph intent, Copy/Paste retains it, and inverse commands restore it. MusicXML import/export covers the full five-value matrix, including `flat-flat`, while rendered Playwright proves active-button feedback, sounding MIDI value, byte-stable two-step Undo/Redo, and zero strict-Doctor issues. MuseScore-style `J` enharmonic cycling and courtesy/cautionary metadata remain open and are not included in the 90% accidental score.
+
+Verification evidence:
+
+- `npm test`: 919 passed, 0 failed.
+- `npm run build`: production build and TypeScript validation passed.
+- `e2e/notation-tools.spec.ts` (regression project): 18 passed.
+- Accidental-focused `e2e/app.spec.ts` regressions: 2 passed.
+- Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; no nex-note-only export failure was isolated, while the installed MuseScore intermittently aborted on both source fixtures and nex-note output.
+- `git diff --check`: passed before commit.

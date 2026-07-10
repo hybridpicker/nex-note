@@ -9,6 +9,7 @@ import {
   resolveClefAtMeasure,
   resolveDiatonicIntervalAbove,
   resolveKeyFifthsAtMeasure,
+  resolveMeasureAccidentalAlter,
   resolveStaffStepPitch,
   topLineDiatonicIndex,
 } from '../src/score-input/staff-pitch.ts';
@@ -143,6 +144,70 @@ test('keyFifthsAlterForStep resolves default mouse-entry accidentals from key si
   assert.equal(keyFifthsAlterForStep(-2, 'B'), -1);
   assert.equal(keyFifthsAlterForStep(-2, 'E'), -1);
   assert.equal(keyFifthsAlterForStep(-2, 'A'), 0);
+});
+
+test('resolveMeasureAccidentalAlter carries the latest staff accidental across voices and resets at the barline', () => {
+  const doc = buildDocWithClef('G', 2);
+  const firstMeasure = doc.score.parts[0]!.staves[0]!.measures[0]!;
+  firstMeasure.attributes[0]!.keyFifths = 1;
+  firstMeasure.voices = [{
+    id: 'voice:1',
+    voiceId: 1,
+    events: [{
+      id: 'event:f-natural',
+      kind: 'note',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      durationDivisions: 1,
+      durationType: 'quarter',
+      isChord: false,
+      pitch: { step: 'F', alter: 0, octave: 4 },
+      writtenAccidental: 'natural',
+    }],
+  }, {
+    id: 'voice:2',
+    voiceId: 2,
+    events: [{
+      id: 'event:f-double-sharp',
+      kind: 'note',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 2,
+      timestampNum: 2,
+      timestampDen: 4,
+      durationDivisions: 1,
+      durationType: 'quarter',
+      isChord: false,
+      pitch: { step: 'F', alter: 2, octave: 4 },
+      writtenAccidental: 'double-sharp',
+    }],
+  }];
+  doc.score.parts[0]!.staves[0]!.measures.push({
+    id: 'm2',
+    measureNumber: 2,
+    voices: [],
+    directions: [],
+    attributes: [],
+  } as never);
+
+  const resolve = (measureNumber: number, timestampNum: number, octave = 4) => resolveMeasureAccidentalAlter(doc, {
+    corePartId: 'P1',
+    measureNumber,
+    staffIndex: 1,
+    timestampNum,
+    timestampDen: 4,
+    step: 'F',
+    octave,
+  });
+
+  assert.equal(resolve(1, 0), 1, 'key signature applies before the first explicit accidental');
+  assert.equal(resolve(1, 2), 0, 'a natural carries to a later onset on the same staff');
+  assert.equal(resolve(1, 3), 2, 'the latest cross-voice accidental wins for the same pitch and octave');
+  assert.equal(resolve(1, 3, 5), 1, 'accidental carry is octave-specific');
+  assert.equal(resolve(2, 1), 1, 'the barline resets accidental carry to the key signature');
 });
 
 test('resolveDiatonicIntervalAbove spells intervals from the active key signature', () => {

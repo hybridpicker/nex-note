@@ -21,6 +21,7 @@ import type {
   TupletSpan,
   VoiceNode,
 } from '@/src/score-core/model/types';
+import { musicXmlToWrittenAccidental } from '@/src/shared/music/accidentals';
 
 type XmlElement = ReturnType<XmlDocument['createElement']>;
 
@@ -160,7 +161,7 @@ function modeledOtherTechnicalText(element: XmlElement) {
     || text.includes('vib');
 }
 
-function collectPreservedNoteXml(note: XmlElement, options?: { omitSlashNotehead?: boolean; omitStem?: string; omitGuitarTechnical?: boolean; omitGuitarSlide?: boolean; omitGuitarVibrato?: boolean }) {
+function collectPreservedNoteXml(note: XmlElement, options?: { omitSlashNotehead?: boolean; omitStem?: string; omitAccidental?: boolean; omitGuitarTechnical?: boolean; omitGuitarSlide?: boolean; omitGuitarVibrato?: boolean }) {
   const beforePitch: string[] = [];
   const afterType: string[] = [];
   const notationChildren: string[] = [];
@@ -177,6 +178,10 @@ function collectPreservedNoteXml(note: XmlElement, options?: { omitSlashNotehead
       continue;
     }
     if (element.tagName === 'stem' && options?.omitStem && (element.textContent ?? '').trim() === options.omitStem) {
+      continue;
+    }
+    if (element.tagName === 'accidental') {
+      if (!options?.omitAccidental) afterType.push(serializeElement(element));
       continue;
     }
     if (element.tagName === 'notehead' || element.tagName === 'stem') {
@@ -740,6 +745,7 @@ function buildVoices(
       ...(fermataPlacement ? { fermata: fermataPlacement } : {}),
     };
 
+    const writtenAccidental = musicXmlToWrittenAccidental(note.getElementsByTagName('accidental')[0]?.textContent);
     const baseEvent = {
       id: eventId,
       measureNumber,
@@ -768,6 +774,7 @@ function buildVoices(
       preservedXml: collectPreservedNoteXml(note, {
         omitSlashNotehead: noteheadText === 'slash',
         omitStem: modeledStem,
+        omitAccidental: Boolean(writtenAccidental),
         omitGuitarTechnical: Boolean(guitar),
         omitGuitarSlide: Boolean(guitar?.techniques?.includes('slide')),
         omitGuitarVibrato: Boolean(guitar?.techniques?.includes('vibrato')),
@@ -784,6 +791,7 @@ function buildVoices(
           alter: parseIntSafe(pitch.getElementsByTagName('alter')[0]?.textContent, 0),
           octave: parseIntSafe(pitch.getElementsByTagName('octave')[0]?.textContent, 4),
         },
+        writtenAccidental,
         guitar,
       }
       : {

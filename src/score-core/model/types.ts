@@ -1,3 +1,5 @@
+import type { WrittenAccidental } from '@/src/shared/music/accidentals';
+
 export interface ScoreDocumentModel {
   score: ScoreNode;
   metadata: ScoreMetadata;
@@ -133,6 +135,7 @@ export interface NoteEvent extends BaseTimedEvent {
     alter: number;
     octave: number;
   };
+  writtenAccidental?: WrittenAccidental;
   guitar?: {
     string: 1 | 2 | 3 | 4 | 5 | 6;
     fret: number;
