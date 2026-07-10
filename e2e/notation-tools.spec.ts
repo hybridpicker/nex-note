@@ -467,6 +467,53 @@ test('Alt/Option interval entry builds a chord on the selected rhythmic onset', 
   await expectNoDoctorIssues(page, 'after interval chord entry');
 });
 
+test('T creates a complete tied chord, advances once, and undoes atomically', async ({ page }) => {
+  await bootWithScore(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  await page.keyboard.press('Shift+E');
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(9);
+
+  await page.keyboard.press('T');
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    const source = (measure.voices[0]?.events ?? []).filter((event) => event.kind === 'note' && event.timestampNum === 0);
+    const target = (measure.voices[0]?.events ?? []).filter((event) => event.kind === 'note' && event.timestampNum === 1);
+    return {
+      sourcePitches: source.map((event) => event.kind === 'note' ? event.pitch.step : null),
+      sourceTies: source.map((event) => Boolean(event.tieStart)),
+      targetPitches: target.map((event) => event.kind === 'note' ? event.pitch.step : null),
+    };
+  }).toEqual({
+    sourcePitches: ['C', 'E'],
+    sourceTies: [true, true],
+    targetPitches: ['C', 'E'],
+  });
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.timestampNum).toBe(2);
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(10);
+  await expectNoDoctorIssues(page, 'after tied chord entry');
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    const source = (measure.voices[0]?.events ?? []).filter((event) => event.kind === 'note' && event.timestampNum === 0);
+    const target = (measure.voices[0]?.events ?? []).filter((event) => event.kind === 'note' && event.timestampNum === 1);
+    return {
+      sourcePitches: source.map((event) => event.kind === 'note' ? event.pitch.step : null),
+      sourceTies: source.map((event) => Boolean(event.tieStart)),
+      targetPitches: target.map((event) => event.kind === 'note' ? event.pitch.step : null),
+    };
+  }).toEqual({
+    sourcePitches: ['C', 'E'],
+    sourceTies: [false, false],
+    targetPitches: ['D'],
+  });
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(9);
+  await expectNoDoctorIssues(page, 'after undoing tied chord entry');
+});
+
 test('letter-name input chooses the closest octave and stacks Shift pitches above the chord', async ({ page }) => {
   await bootWithScore(page);
 

@@ -185,6 +185,53 @@ test('setGuitarFret keeps paired standard notation pitch aligned with the TAB no
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 3, tuning: 'standard', techniques: [] });
 });
 
+test('tie toggles mirror matching pitches across paired notation and TAB staves', () => {
+  const document = importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML);
+  const source = document.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  assert.equal(source.kind, 'note');
+  if (source.kind !== 'note') return;
+
+  const next = applyCoreCommands(document, [
+    {
+      type: 'insertNoteAt',
+      corePartId: document.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      step: source.pitch.step,
+      octave: source.pitch.octave,
+      alter: source.pitch.alter,
+      durationType: 'quarter',
+      isDotted: false,
+    },
+    {
+      type: 'toggleTie',
+      coreEntityId: source.id,
+      corePartId: document.score.parts[0]!.id,
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: source.timestampNum,
+      timestampDen: source.timestampDen,
+      step: source.pitch.step,
+      octave: source.pitch.octave,
+      alter: source.pitch.alter,
+    },
+  ] as any);
+
+  const notationSource = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .find((event) => event.kind === 'note' && event.timestampNum === 0);
+  const tabSource = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .find((event) => event.kind === 'note' && event.timestampNum === 0);
+  assert.equal(notationSource?.tieStart, true);
+  assert.equal(tabSource?.tieStart, true);
+
+  const roundtripXml = exportCoreToMusicXml(DUAL_STAFF_TAB_REST_ANCHORS_XML, next);
+  assert.equal((roundtripXml.match(/<tie type="start"\/>/g) ?? []).length, 2);
+});
+
 test('setGuitarFret keeps Guitar Pro style staff-details TAB imports paired with standard notation', () => {
   const result = applyDocumentCommands({ xml: DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS, coreDocument: null }, [{
     type: 'setGuitarFret',

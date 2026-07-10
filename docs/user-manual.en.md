@@ -72,6 +72,7 @@ Turn note input on with the toolbar button or `N`.
 | Voices | Toolbar or `Cmd/Ctrl+Alt/Option+1...4`. |
 | Insert/overwrite | `I` switches entry behavior. |
 | Chords | Chord input mode or `Shift+A...G` adds chord tones. |
+| Tied notes and chords | In Note Input, choose the second duration and press `T`; nex-note creates the next same-pitch note or complete chord, ties every tone, and advances once. Outside Note Input, `T` toggles ties on the selection. |
 | Cursor insert | `Cmd/Ctrl+Shift+A...G` inserts explicitly at the cursor. |
 | Octaves | `Shift+ArrowUp/Down` or `Cmd/Ctrl+ArrowUp/Down`. |
 | Step keyboard | `P` toggles a compact QWERTY step keyboard and enables Note Input if needed. |
@@ -106,7 +107,7 @@ Select a note and use `A` to `G`, the active-note buttons, arrow-key transpositi
 | --- | --- |
 | Articulations | Staccato, staccatissimo, accent, marcato, tenuto, fermata. |
 | Dynamics | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
-| Tie | Links to the next same-pitch note. Shortcut: `T`. |
+| Tie | In normal mode, links selected pitches to the next matching onset. In Note Input, creates the next note or chord and its ties atomically. Shortcut: `T`. |
 | Slur | Spans the selection or the next note. Shortcut: `S`. |
 | Grace note | Adds a grace note at the selection. Shortcut: `/`. |
 | Tuplets | Triplet and quintuplet via toolbar/palette or `Cmd/Ctrl+3` and `Cmd/Ctrl+5`. |

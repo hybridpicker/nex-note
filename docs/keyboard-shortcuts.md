@@ -108,7 +108,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Alt/Option+=` | Vorzeichen Double-sharp umschalten | Noteneditor |
 | `X` | Halsrichtung der ausgewählten Note flippen | Auswahl erforderlich |
 | `Shift+X` | Slash-Notehead der ausgewählten Note toggeln | Auswahl erforderlich |
-| `T` | Haltebogen/Tie toggeln | Auswahl erforderlich |
+| `T` | In der Noteneingabe den nächsten Ton bzw. kompletten Akkord mit aktiver Dauer erzeugen, alle Tonhöhen binden und einmal weiterschalten; außerhalb der Noteneingabe Tie auf der Auswahl toggeln | Noteneingabe oder Auswahl |
 | `S` | Slur toggeln | Auswahl erforderlich |
 | `Shift+S` | Staccato toggeln | Auswahl erforderlich |
 | `Shift+.` | Accent toggeln | Auswahl erforderlich |

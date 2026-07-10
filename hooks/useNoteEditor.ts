@@ -2348,6 +2348,152 @@ export function useNoteEditor(
     return true;
   }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, warnNoOpEdit, warnRejectedEdit, xml]);
 
+  const insertTiedNote = useCallback(() => {
+    if (!noteInputModeRef.current) return false;
+    const visibleSelection = selectedNoteRef.current ?? selectedNote;
+    const sourceAnchor = lastNoteInputRef.current ?? visibleSelection;
+    if (!sourceAnchor || sourceAnchor.isRest) return false;
+
+    const sourceChord = getSimultaneousPitchedNotes(coreDocument, sourceAnchor)
+      .filter((note) => note.voiceId === sourceAnchor.voiceId)
+      .sort((left, right) => (
+        diatonicPitchIndex(left.step, left.octave) - diatonicPitchIndex(right.step, right.octave)
+        || left.alter - right.alter
+      ));
+    if (sourceChord.length === 0) return false;
+
+    const selectedIsNextSlot = Boolean(
+      visibleSelection
+      && isLocalNoteInputAdvance(sourceAnchor, visibleSelection),
+    );
+    const targetAnchor = selectedIsNextSlot
+      ? visibleSelection
+      : findNextRhythmicSelection(coreDocument, sourceAnchor);
+    if (!targetAnchor || !isLocalNoteInputAdvance(sourceAnchor, targetAnchor)) {
+      warnRejectedEdit('insertTiedNote', {
+        rejectionReason: 'next-rhythmic-slot-missing',
+        source: sourceAnchor,
+      });
+      return false;
+    }
+
+    const durationType = DURATION_TYPE_MAP[selectedDurationRef.current];
+    const dotted = isDottedRef.current;
+    const firstPitch = sourceChord[0]!;
+    const target: ResolvedEditTarget = {
+      source: 'keyboard',
+      mode: 'replace',
+      measureId: targetAnchor.coreMeasureId ?? null,
+      corePartId: targetAnchor.corePartId ?? null,
+      measureNumber: targetAnchor.measureNumber,
+      staffIndex: targetAnchor.staffIndex,
+      voiceId: sourceAnchor.voiceId,
+      timestampNum: targetAnchor.timestampNum,
+      timestampDen: targetAnchor.timestampDen,
+      ratio: targetAnchor.timestampNum / Math.max(targetAnchor.timestampDen, 1),
+      domX: null,
+      step: firstPitch.step,
+      octave: firstPitch.octave,
+      alter: firstPitch.alter,
+      diagnostics: ['tied-note-input', 'tied-chord-replace'],
+    };
+    const inspected = inspectResolvedEditTarget({
+      coreDocument,
+      target,
+      durationType,
+      isDotted: dotted,
+    });
+    if (!inspected.target) {
+      warnRejectedEdit('insertTiedNote', {
+        rejectionReason: inspected.rejectionReason,
+        diagnostics: inspected.diagnostics,
+        target,
+      });
+      return false;
+    }
+
+    const validatedTarget = inspected.target;
+    const targetLocator = toResolvedEditLocator(validatedTarget);
+    const commands: ScoreCommand[] = [{
+      type: 'replaceWithRest',
+      coreEntityId: targetAnchor.coreEntityId ?? null,
+      coreMeasureId: targetAnchor.coreMeasureId ?? null,
+      corePartId: targetAnchor.corePartId ?? null,
+      measureNumber: validatedTarget.measureNumber,
+      staffIndex: validatedTarget.staffIndex,
+      voiceId: validatedTarget.voiceId,
+      timestampNum: validatedTarget.timestampNum,
+      timestampDen: validatedTarget.timestampDen,
+      durationType,
+      isDotted: dotted,
+    }];
+    sourceChord.forEach((pitch, index) => {
+      commands.push({
+        type: 'insertNoteAt',
+        coreMeasureId: validatedTarget.measureId,
+        corePartId: validatedTarget.corePartId,
+        measureNumber: validatedTarget.measureNumber,
+        staffIndex: validatedTarget.staffIndex,
+        voiceId: validatedTarget.voiceId,
+        timestampNum: validatedTarget.timestampNum,
+        timestampDen: validatedTarget.timestampDen,
+        step: pitch.step,
+        octave: pitch.octave,
+        alter: pitch.alter,
+        durationType,
+        isDotted: dotted,
+        asChord: index > 0,
+        preserveOverflow: false,
+        guitar: pitch.guitar,
+      });
+    });
+    sourceChord.forEach((pitch) => {
+      const sourceEvent = findEventReference(coreDocument, pitch)?.event;
+      if (sourceEvent?.kind === 'note' && !sourceEvent.tieStart) {
+        commands.push({
+          type: 'toggleTie',
+          coreEntityId: pitch.coreEntityId ?? null,
+          coreMeasureId: pitch.coreMeasureId ?? null,
+          corePartId: pitch.corePartId ?? null,
+          step: pitch.step,
+          octave: pitch.octave,
+          alter: pitch.alter,
+          measureNumber: pitch.measureNumber,
+          staffIndex: pitch.staffIndex,
+          voiceId: pitch.voiceId,
+          timestampNum: pitch.timestampNum,
+          timestampDen: pitch.timestampDen,
+        });
+      }
+    });
+
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      warnNoOpEdit('insertTiedNote', commands[0]!);
+      return false;
+    }
+    warnPostCommitDiagnostics(
+      'insertTiedNote',
+      validateScoreDocument(coreDocument),
+      next.diagnostics,
+      validatedTarget,
+      commands,
+    );
+    commitNoteInputUpdate(
+      commands,
+      next.coreDocument,
+      targetLocator,
+      targetAnchor,
+      {
+        isRest: false,
+        step: firstPitch.step,
+        octave: firstPitch.octave,
+        alter: firstPitch.alter,
+      },
+    );
+    return true;
+  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, selectedNote, warnNoOpEdit, warnRejectedEdit, xml]);
+
   const insertGuitarFret = useCallback((string: GuitarStringNumber, fret: number, tuningId = selectedGuitarTuningRef.current) => {
     const tuning = resolveGuitarTuning(tuningId);
     const pitch: GuitarFretPitch = resolveGuitarFretPitch(string, fret, tuning);
@@ -2787,10 +2933,23 @@ export function useNoteEditor(
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
   const toggleTie = useCallback(() => {
-    const targets = selectedTargets(selectedNote, selectedNotes);
+    const targets = selectedTargets(selectedNote, selectedNotes).filter((target) => !target.isRest);
     if (!targets.length) return;
     dbg.editor(`toggleTie count=${targets.length}`);
-    const commands = targets.map((loc) => ({ type: 'toggleTie' as const, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
+    const commands = targets.map((loc) => ({
+      type: 'toggleTie' as const,
+      coreEntityId: loc.coreEntityId ?? null,
+      coreMeasureId: loc.coreMeasureId ?? null,
+      corePartId: loc.corePartId ?? null,
+      step: loc.step,
+      octave: loc.octave,
+      alter: loc.alter,
+      measureNumber: loc.measureNumber,
+      staffIndex: loc.staffIndex,
+      voiceId: loc.voiceId,
+      timestampNum: loc.timestampNum,
+      timestampDen: loc.timestampDen,
+    }));
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('toggleTie', commands[0]!);
@@ -2798,6 +2957,12 @@ export function useNoteEditor(
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+
+  const activateTie = useCallback(() => {
+    if (noteInputModeRef.current) return insertTiedNote();
+    toggleTie();
+    return true;
+  }, [insertTiedNote, toggleTie]);
 
   const toggleSlur = useCallback(() => {
     const targets = selectedTargets(selectedNote, selectedNotes).filter((entry) => !entry.isRest);
@@ -3465,7 +3630,10 @@ export function useNoteEditor(
     }
 
     if (key === 'T') {
-      if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); toggleTie(); }
+      if (noteInputModeRef.current || selectedNote || selectedNotes.length > 0) {
+        e.preventDefault();
+        activateTie();
+      }
       return;
     }
 
@@ -3678,7 +3846,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, toggleTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
+  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
 
   return {
     selection: {
@@ -3772,7 +3940,7 @@ export function useNoteEditor(
     toggleArticulation,
     clearArticulations,
     addDynamic,
-    toggleTie,
+    toggleTie: activateTie,
     toggleSlur,
     transposeSemitones,
     commitDraggedPitch,

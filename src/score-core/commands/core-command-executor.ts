@@ -2413,7 +2413,19 @@ function sameTiePitch(left: TimedEvent | null | undefined, right: TimedEvent | n
 function tieContinuesAtNextCoreOnset(refs: TieContinuityEventRef[], current: TieContinuityEventRef) {
   if (current.event.kind !== 'note') return false;
   const laterNotes = refs
-    .filter((ref) => ref.event.kind === 'note' && compareTieContinuityRefs(ref, current) > 0)
+    .filter((ref) => (
+      ref.event.kind === 'note'
+      && compareTieContinuityRefs(ref, current) > 0
+      && (
+        ref.measureNumber !== current.measureNumber
+        || !timestampsEqual(
+          ref.event.timestampNum,
+          ref.event.timestampDen,
+          current.event.timestampNum,
+          current.event.timestampDen,
+        )
+      )
+    ))
     .sort(compareTieContinuityRefs);
   const next = laterNotes[0];
   if (!next) return false;
@@ -3853,11 +3865,32 @@ export function executeCoreCommands(
         break;
       }
       case 'toggleTie': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
-        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (event) {
-          event.tieStart = !event.tieStart;
-          if (!event.tieStart) event.tiePlacement = undefined;
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
+        if (found && event?.kind === 'note') {
+          const nextTieStart = !event.tieStart;
+          event.tieStart = nextTieStart;
+          if (!nextTieStart) event.tiePlacement = undefined;
+
+          const paired = findPairedTabNotationEvent(
+            found.part,
+            command.staffIndex,
+            command.measureNumber,
+            command.voiceId,
+            command.timestampNum,
+            command.timestampDen,
+          );
+          const pairedEvent = paired?.voice.events.find((candidate) => (
+            candidate.kind === 'note'
+            && timestampsEqual(candidate.timestampNum, candidate.timestampDen, event.timestampNum, event.timestampDen)
+            && candidate.pitch.step === event.pitch.step
+            && candidate.pitch.alter === event.pitch.alter
+            && candidate.pitch.octave === event.pitch.octave
+          ));
+          if (pairedEvent?.kind === 'note') {
+            pairedEvent.tieStart = nextTieStart;
+            if (!nextTieStart) pairedEvent.tiePlacement = undefined;
+          }
         }
         break;
       }

@@ -4907,6 +4907,7 @@ export default function Home({ searchParams }: HomeProps) {
                       <EditPalette
                         selectedNote={selectedNote}
                         selectedNotes={selectedNotes}
+                        noteInputMode={noteInputMode}
                         selectedBarlineMeasureNumber={selectedBarlineMeasureNumber}
                         onToggleArticulation={toggleArticulation}
                         onClearArticulations={clearArticulations}

@@ -2005,6 +2005,82 @@ test('tie placement edits stay semantic and roundtrip through MusicXML', () => {
   assert.equal(untiedEvent?.tiePlacement, undefined);
 });
 
+test('toggleTie addresses every chord tone by semantic identity and roundtrips complete chord ties', () => {
+  const chordState = applyDocumentCommands(buildDocumentState(SAMPLE_XML), [
+    {
+      type: 'insertNoteAt',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 4,
+      step: 'E',
+      octave: 4,
+      alter: 0,
+      durationType: 'quarter',
+      asChord: true,
+    },
+    {
+      type: 'insertNoteAt',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      step: 'C',
+      octave: 4,
+      alter: 0,
+      durationType: 'quarter',
+    },
+    {
+      type: 'insertNoteAt',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 1,
+      timestampDen: 4,
+      step: 'E',
+      octave: 4,
+      alter: 0,
+      durationType: 'quarter',
+      asChord: true,
+    },
+  ]);
+  const sourceChord = chordState.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events
+    .filter((event) => event.kind === 'note' && event.timestampNum === 0) ?? [];
+  assert.equal(sourceChord.length, 2);
+
+  const result = applyDocumentCommands(chordState, sourceChord.map((event) => ({
+    type: 'toggleTie' as const,
+    coreEntityId: event.id,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: event.timestampNum,
+    timestampDen: event.timestampDen,
+    step: event.kind === 'note' ? event.pitch.step : undefined,
+    octave: event.kind === 'note' ? event.pitch.octave : undefined,
+    alter: event.kind === 'note' ? event.pitch.alter : undefined,
+  })));
+
+  const tiedSource = result.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events
+    .filter((event) => event.kind === 'note' && event.timestampNum === 0) ?? [];
+  assert.equal(tiedSource.length, 2);
+  assert.equal(
+    tiedSource.every((event) => event.tieStart),
+    true,
+    JSON.stringify(result.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events),
+  );
+  assert.equal((result.xml.match(/<tie type="start"\/>/g) ?? []).length, 2);
+  assert.equal((result.xml.match(/<tied type="start"\/>/g) ?? []).length, 2);
+  assert.equal((result.xml.match(/<tied type="stop"\/>/g) ?? []).length, 2);
+
+  const roundtripped = importMusicXmlToCore(result.xml);
+  const roundtrippedSource = roundtripped.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .filter((event) => event.kind === 'note' && event.timestampNum === 0);
+  assert.equal(roundtrippedSource.every((event) => event.tieStart), true);
+});
+
 test('deleteNote and pitch changes repair tie continuity on the preceding note', () => {
   const tieReadyXml = SAMPLE_XML.replace(
     '</measure>',

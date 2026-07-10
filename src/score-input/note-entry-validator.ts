@@ -255,7 +255,9 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
   }
 
   if (input.target.mode === 'replace') {
-    if (exactNotes.length > 1) {
+    const allowsTiedChordReplace = exactNotes.length > 1
+      && input.target.diagnostics.includes('tied-chord-replace');
+    if (exactNotes.length > 1 && !allowsTiedChordReplace) {
       diagnostics.push('validation:replace-ambiguous-chord');
       return {
         target: null,
@@ -264,7 +266,7 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
       };
     }
 
-    if (exactNotes.length === 1) {
+    if (exactNotes.length >= 1) {
       const coverage = inspectSilentCoverage({
         events: voiceEvents,
         divisions: context.divisions,
@@ -281,7 +283,9 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
         };
       }
 
-      diagnostics.push('validation:replace-note');
+      diagnostics.push(allowsTiedChordReplace
+        ? 'validation:replace-tied-chord'
+        : 'validation:replace-note');
       return {
         target: {
           ...input.target,

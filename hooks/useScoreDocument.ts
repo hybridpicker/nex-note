@@ -508,7 +508,10 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
       coreDocument: replayed.coreDocument,
       diagnostics: replayed.diagnostics,
       previousDiagnostics: removed.rollbackDocument?.diagnostics,
-      commands: removed.commands,
+      // The removed transaction is intentionally absent from the replayed
+      // document. Passing it here makes command-realization checks report the
+      // expected undo as a failed insertion.
+      commands: [],
       previousRevision: removed.transaction.afterRevision ?? null,
       revision: replayed.revision,
     });

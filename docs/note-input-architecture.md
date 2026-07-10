@@ -62,6 +62,7 @@ This document describes the deterministic note-input pipeline introduced for poi
   - pointer and keyboard both commit through `buildNoteEntryCommitCommands(...)`
   - commit is rejected before mutation when target validation fails
   - no-op clicked-note commits refresh the active note-input anchor so the next keyboard entry starts from the clicked note, not a stale cursor
+  - tied-note input resolves the next rhythmic slot, validates chord replacement explicitly, clones the complete same-voice source chord at the active duration, toggles every tie by semantic pitch identity, and commits the whole action as one history transaction
 
 - [components/ScoreInputOverlay.tsx](../components/ScoreInputOverlay.tsx)
   - ghost overlay now exposes mode/voice diagnostics via:
@@ -73,6 +74,7 @@ This document describes the deterministic note-input pipeline introduced for poi
 
 - explicit placement modes: `replace`, `insert`, `chord`
 - explicit active voice input
+- `T` in note-input mode is a create-and-advance action, not the normal-mode tie toggle; a source chord produces a complete tied target chord
 - X (slot/onset) and Y (pitch lane) resolved independently
 - X is snap-locked: every visible ghost and every pointer commit must use the rendered snap-grid X for its timestamp. Pointer X may choose the nearest legal slot, but it must never become the notehead/commit X.
 - the resolved horizontal coordinate is single-source: `RenderedGhostGrid` feeds `InteractiveEditMap`, `InteractiveEditMap` resolves `ResolvedEditTarget.domX`, and `ScoreEditor` rebases the visual ghost to that same X

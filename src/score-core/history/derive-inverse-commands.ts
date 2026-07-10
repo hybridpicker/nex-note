@@ -291,14 +291,7 @@ function deriveInverseCommand(document: ScoreDocumentModel, command: ScoreComman
       });
     }
     case 'toggleTie':
-      return stripEnvelopeMeta({
-        type: 'toggleTie',
-        measureNumber: command.measureNumber,
-        staffIndex: command.staffIndex,
-        voiceId: command.voiceId,
-        timestampNum: command.timestampNum,
-        timestampDen: command.timestampDen,
-      });
+      return stripEnvelopeMeta(command);
     case 'setTiePlacement': {
       const previous = findEvent(document, command);
       if (!previous?.tieStart) return null;

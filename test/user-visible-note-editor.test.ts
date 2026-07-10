@@ -5696,6 +5696,89 @@ test('Alt/Option interval entry builds a diatonic chord above the most recently 
   hook.unmount();
 });
 
+test('T in note input creates and advances a complete tied chord as one transaction', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => (
+    note.measureNumber === 1 && note.timestampNum === 0 && !note.isRest
+  ));
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.toggleNoteInput();
+    hook.current.handleKeyDown(makeKeyboardEvent('E', { shiftKey: true }));
+  });
+  hook.rerender();
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('4'));
+    hook.current.toggleTie();
+  });
+  hook.rerender();
+
+  const measure = importMusicXmlToCore(hook.xml).score.parts[0]!.staves[0]!.measures[0]!;
+  const sourceChord = measure.voices[0]!.events.filter((event) => event.kind === 'note' && event.timestampNum === 0);
+  const tiedChord = measure.voices[0]!.events.filter((event) => (
+    event.kind === 'note' && event.timestampNum / event.timestampDen === 1 / 4
+  ));
+  assert.deepEqual(sourceChord.map((event) => event.kind === 'note' ? event.pitch.step : null), ['C', 'E']);
+  assert.equal(sourceChord.every((event) => event.tieStart), true);
+  assert.deepEqual(tiedChord.map((event) => event.kind === 'note' ? event.pitch.step : null), ['C', 'E']);
+  assert.equal(tiedChord.every((event) => event.durationType === 'eighth'), true);
+  assert.equal((hook.xml.match(/<tied type="start"\/>/g) ?? []).length, 2);
+  assert.equal((hook.xml.match(/<tied type="stop"\/>/g) ?? []).length, 2);
+  assert.equal(
+    (hook.current.selectedNote?.timestampNum ?? 0) / (hook.current.selectedNote?.timestampDen ?? 1),
+    3 / 8,
+  );
+  assert.equal(hook.current.noteInputAnchor?.step, 'C');
+
+  const tiedEntryCommands = hook.appliedCommands.at(-1) ?? [];
+  assert.equal(tiedEntryCommands.filter((command) => command.type === 'replaceWithRest').length, 1);
+  assert.equal(tiedEntryCommands.filter((command) => command.type === 'insertNoteAt').length, 2);
+  assert.equal(tiedEntryCommands.filter((command) => command.type === 'toggleTie').length, 2);
+  hook.unmount();
+});
+
+test('T in note input creates a tied continuation across a measure boundary', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const finalMeasureOneNote = makeSelectedNotes(SAMPLE_XML).find((note) => (
+    !note.isRest
+    && note.measureNumber === 1
+    && note.timestampNum / note.timestampDen === 3 / 4
+  ));
+  assert.ok(finalMeasureOneNote);
+
+  act(() => {
+    hook.current.handleNoteClick(finalMeasureOneNote);
+  });
+  hook.rerender();
+  act(() => {
+    hook.current.toggleNoteInput();
+  });
+  hook.rerender();
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('T'));
+  });
+  hook.rerender();
+
+  const core = importMusicXmlToCore(hook.xml);
+  const source = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .find((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 3 / 4);
+  const target = core.score.parts[0]!.staves[0]!.measures[1]!.voices[0]!.events
+    .find((event) => event.kind === 'note' && event.timestampNum === 0);
+  assert.equal(source?.kind === 'note' ? source.pitch.step : null, 'E');
+  assert.equal(source?.tieStart, true);
+  assert.equal(target?.kind === 'note' ? target.pitch.step : null, 'E');
+  assert.match(hook.xml, /<tie type="start"\/>/);
+  assert.match(hook.xml, /<tied type="stop"\/>/);
+  assert.equal(hook.current.selectedNote?.measureNumber, 2);
+  assert.equal(
+    (hook.current.selectedNote?.timestampNum ?? 0) / (hook.current.selectedNote?.timestampDen ?? 1),
+    1 / 4,
+  );
+  hook.unmount();
+});
+
 test('interval entry spells the added tone from the active key signature', () => {
   const gMajorXml = SAMPLE_XML.replace('<fifths>0</fifths>', '<fifths>1</fifths>');
   const hook = renderHook(gMajorXml);

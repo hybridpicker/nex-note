@@ -9,6 +9,7 @@ import { formatShortcutHint } from '@/lib/shortcut-hints';
 interface Props {
   selectedNote: SelectedNote | null;
   selectedNotes: SelectedNote[];
+  noteInputMode?: boolean;
   selectedBarlineMeasureNumber?: number | null;
   onToggleArticulation: (a: ArticulationKind) => void;
   onClearArticulations: () => void;
@@ -140,6 +141,7 @@ function withShortcut(label: string, shortcut: string) {
 export default function EditPalette({
   selectedNote,
   selectedNotes,
+  noteInputMode = false,
   selectedBarlineMeasureNumber = null,
   onToggleArticulation,
   onClearArticulations,
@@ -370,6 +372,7 @@ export default function EditPalette({
                 section={activeSection}
                 disabled={disabled}
                 isRest={isRest}
+                noteInputMode={noteInputMode}
                 clipboardCount={clipboardCount}
                 selectionCount={selectionCount}
                 onCopySelection={onCopySelection}
@@ -516,7 +519,7 @@ export default function EditPalette({
 
         <PaletteSection id="ties" title={t('palette.ties')} open={openSections.ties} onToggle={toggleSection}>
           <div className="grid grid-cols-2 gap-1">
-            <PaletteButton title={withShortcut('Toggle tie start', PALETTE_SHORTCUTS.tie)} disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={onToggleTie}>
+            <PaletteButton title={withShortcut(noteInputMode ? 'Add tied note or chord' : 'Toggle tie start', PALETTE_SHORTCUTS.tie)} disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={onToggleTie}>
               <span className="tracking-tight">⌣ {t('palette.tie')}</span>
             </PaletteButton>
             <PaletteButton title={withShortcut('Toggle slur', PALETTE_SHORTCUTS.slur)} disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={onToggleSlur}>
@@ -549,6 +552,7 @@ function PanelSectionContent({
   section,
   disabled,
   isRest,
+  noteInputMode,
   clipboardCount,
   onCopySelection,
   onCutSelection,
@@ -568,6 +572,7 @@ function PanelSectionContent({
   section: SectionId;
   disabled: boolean;
   isRest: boolean;
+  noteInputMode: boolean;
   clipboardCount: number;
   selectionCount: number;
   onCopySelection: () => void;
@@ -683,7 +688,7 @@ function PanelSectionContent({
     return (
       <div>
         <div className="grid grid-cols-2 gap-1">
-          <PaletteButton title={withShortcut(t('command.tie.title'), PALETTE_SHORTCUTS.tie)} disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={onToggleTie}>
+          <PaletteButton title={withShortcut(noteInputMode ? 'Add tied note or chord' : t('command.tie.title'), PALETTE_SHORTCUTS.tie)} disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={onToggleTie}>
             <span className="tracking-tight">⌣ {t('palette.tie')}</span>
           </PaletteButton>
           <PaletteButton title={withShortcut(t('command.slur.title'), PALETTE_SHORTCUTS.slur)} disabled={disabled || isRest} disabledReason={pitchedActionDisabledReason} onClick={onToggleSlur}>

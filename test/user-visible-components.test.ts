@@ -1045,6 +1045,7 @@ test('EditPalette opens icon-rail sections from focus events and keyboard', () =
   act(() => {
     renderer = create(React.createElement(EditPalette, paletteProps({
       iconMode: true,
+      noteInputMode: true,
       selectedNote,
       selectedNotes: [selectedNote],
     })));
@@ -1056,6 +1057,14 @@ test('EditPalette opens icon-rail sections from focus events and keyboard', () =
     focusListener!(new CustomEvent('nex-note:focus-edit-palette-section', { detail: { section: 'transpose' } }));
   });
   assert.ok(renderer!.root.findAllByProps({ role: 'dialog', 'aria-label': 'Transpose' })[0]);
+
+  act(() => {
+    focusListener!(new CustomEvent('nex-note:focus-edit-palette-section', { detail: { section: 'ties' } }));
+  });
+  assert.ok(renderer!.root.findAllByProps({ role: 'dialog', 'aria-label': 'Ties / Slurs' })[0]);
+  assert.ok(renderer!.root.findAllByType('button').some((button) => (
+    button.props.title === 'Add tied note or chord (T)'
+  )));
 
   const rail = renderer!.root.findAll((node: ReactTestInstance) => node.type === 'div' && typeof node.props.onKeyDown === 'function')[0];
   act(() => {

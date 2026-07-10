@@ -98,6 +98,32 @@ test('deriveInverseCommands covers deterministic note and transposition commands
   ]);
 });
 
+test('deriveInverseCommands preserves chord-tone identity for tie toggles', () => {
+  const state = buildDocumentState(SAMPLE_XML);
+  const source = state.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events[0];
+  assert.equal(source?.kind, 'note');
+  if (source?.kind !== 'note') return;
+  const command = {
+    type: 'toggleTie' as const,
+    coreEntityId: source.id,
+    coreMeasureId: state.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.id ?? null,
+    corePartId: state.coreDocument?.score.parts[0]?.id ?? null,
+    step: source.pitch.step,
+    octave: source.pitch.octave,
+    alter: source.pitch.alter,
+    measureNumber: source.measureNumber,
+    staffIndex: source.staffIndex,
+    voiceId: source.voiceId,
+    timestampNum: source.timestampNum,
+    timestampDen: source.timestampDen,
+  };
+
+  const result = deriveInverseCommands(state.coreDocument, [command]);
+
+  assert.equal(result.unsupported.length, 0);
+  assert.deepEqual(result.inverseCommands, [command]);
+});
+
 test('deriveInverseCommands restores previous articulation placement', () => {
   const state = buildDocumentState(`<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">

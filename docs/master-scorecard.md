@@ -284,3 +284,28 @@ All unlisted capabilities inherit the 52% product state above. This iteration re
 - Closing: **53%**
 
 `0`/rest entry now honors the active duration when overwriting a rhythmic slot and replaces an entire same-onset chord with one rest instead of deleting only one tone. The semantic command preserves the rhythmic entity, removes note-only attachments, retains valid tuplet membership, mirrors paired notation/TAB lanes, and applies the same duration timing rules as pitched replacement. An already matching rest is recognized before command execution, so the cursor advances while XML and Undo history remain untouched. Core, hook, and rendered Playwright regressions cover chord collapse, duration selection, consecutive rest entry, single-step undo, and strict Doctor diagnostics.
+
+## Iteration 2026-07-10 — MuseScore-Style Tied Note Input
+
+All unlisted capabilities inherit the 53% product state above. This iteration separates note-input tie creation from normal-mode tie toggling and implements the complete chord workflow documented by MuseScore Studio.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 93% | 96% |
+| Keyboard Entry | 93% | 96% |
+| Duration Editing | 82% | 85% |
+| Chord Entry | 80% | 87% |
+| Ties | 68% | 82% |
+| TAB Standard Notation Sync | 66% | 70% |
+| Undo | 80% | 84% |
+| Testing | 89% | 91% |
+| Code Quality | 80% | 82% |
+| Consistency | 77% | 82% |
+| Professional Workflow | 68% | 72% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **53%**
+- Closing: **54%**
+
+In Note Input, `T` now creates the second note at the active duration and adds its tie in the same transaction. If the source is a chord, the complete same-voice pitch set is recreated and every tone is tied; the cursor advances once, paired notation/TAB is mirrored, MusicXML exports balanced tie starts/stops, and one Undo restores the original target onset. Normal-mode `T` remains a toggle, but now addresses each chord tone by entity and pitch instead of repeatedly toggling the root. The continuity validator now advances by rhythmic onset rather than mistaking a sibling chord tone for the next event, and Undo no longer asks Doctor to validate removed insertion commands against the restored document.
