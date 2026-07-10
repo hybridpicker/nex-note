@@ -687,6 +687,52 @@ test('courtesy accidental palette is pitch-neutral, rendered, accessible, and at
   await expectNoDoctorIssues(page, 'after courtesy accidental undo and redo');
 });
 
+test('grace entry at a barline inserts a rendered zero-time entity and preserves the anchor atomically', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+  const initialCore = await readCurrentCore(page);
+  const anchor = initialCore.score.parts[0].staves[0].measures[1].voices[0].events[0];
+
+  await clickRenderedNotehead(page, 4);
+  await expectSingleNoteSelection(page, 4);
+  await page.keyboard.press('/');
+
+  const readBoundary = async () => {
+    const core = await readCurrentCore(page);
+    const events = core.score.parts[0].staves[0].measures[1].voices[0].events;
+    const graceIds = new Set(core.graceNotes.map((entry) => entry.eventId));
+    return {
+      anchorPreserved: events.some((event) => (
+        !graceIds.has(event.id)
+        && event.kind === 'note'
+        && event.pitch.step === anchor.pitch.step
+        && event.pitch.alter === anchor.pitch.alter
+        && event.pitch.octave === anchor.pitch.octave
+        && event.durationDivisions === anchor.durationDivisions
+        && event.timestampNum === 0
+      )),
+      grace: events.filter((event) => graceIds.has(event.id)).map((event) => ({
+        duration: event.durationDivisions,
+        timestamp: `${event.timestampNum}/${event.timestampDen}`,
+      })),
+    };
+  };
+  await expect.poll(readBoundary).toEqual({
+    anchorPreserved: true,
+    grace: [{ duration: 0, timestamp: '0/4' }],
+  });
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(9);
+  const editedXml = await readCurrentXml(page);
+  expect(editedXml).toMatch(/<grace\/>[\s\S]*?<step>G<\/step>[\s\S]*?<note>[\s\S]*?<step>G<\/step>/);
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(8);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
+  await expectNoDoctorIssues(page, 'after grace insertion undo and redo at a barline');
+});
+
 test('J cycles rendered enharmonic spelling with stable pitch, identity, and atomic history', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

@@ -91,7 +91,7 @@ Appuyez plusieurs fois sur `J` pour parcourir les graphies enharmoniques d'une n
 | Nuances | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
 | Tie | Lie a la prochaine note de meme hauteur. Raccourci: `T`. |
 | Slur | Liaison d'expression sur la selection ou la note suivante. Raccourci: `S`. |
-| Grace note | Ajoute une appoggiature. Raccourci: `/`. |
+| Grace note | `/` insere une appoggiature distincte sans duree avant l'ancrage, sans modifier la note principale; les debuts de mesure et notation/TAB appairee sont pris en charge. |
 | Tuplets | Triolet et quintolet via barre/palette ou `Cmd/Ctrl+3` et `Cmd/Ctrl+5`. |
 
 Certains signes peuvent etre seulement visuels selon le moteur de lecture.

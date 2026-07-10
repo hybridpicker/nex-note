@@ -415,6 +415,49 @@ test('courtesy accidental display mirrors across paired notation and TAB without
   assert.deepEqual(tabAfter.kind === 'note' ? tabAfter.guitar : null, tabBefore.kind === 'note' ? tabBefore.guitar : null);
 });
 
+test('grace insertion mirrors a zero-time entity across paired notation and TAB while preserving anchors', () => {
+  const source = importMusicXmlToCore(DUAL_STAFF_TAB_XML);
+  const notationAnchor = source.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  const tabAnchor = source.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0]!;
+  const next = applyCoreCommands(source, [{
+    type: 'addGraceNote',
+    coreEntityId: notationAnchor.id,
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+    slash: true,
+  }] as any);
+  const notationEvents = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  const tabEvents = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events;
+  const graceIds = new Set(next.graceNotes.map((entry) => entry.eventId));
+
+  assert.equal(notationEvents.some((event) => event.id === notationAnchor.id), true);
+  assert.equal(tabEvents.some((event) => event.id === tabAnchor.id), true);
+  assert.equal(notationEvents.filter((event) => graceIds.has(event.id) && event.durationDivisions === 0).length, 1);
+  assert.equal(tabEvents.filter((event) => graceIds.has(event.id) && event.durationDivisions === 0).length, 1);
+  assert.deepEqual(tabEvents.find((event) => event.id === tabAnchor.id)?.kind === 'note'
+    ? tabEvents.find((event) => event.id === tabAnchor.id)!.guitar
+    : null, tabAnchor.kind === 'note' ? tabAnchor.guitar : null);
+
+  const notationGrace = notationEvents.find((event) => graceIds.has(event.id))!;
+  const removed = applyCoreCommands(next, [{
+    type: 'removeGraceNote',
+    coreEntityId: notationGrace.id,
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 1,
+  }] as any);
+  assert.equal(removed.graceNotes.length, 0);
+  assert.equal(removed.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.some((event) => event.id === notationAnchor.id), true);
+  assert.equal(removed.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events.some((event) => event.id === tabAnchor.id), true);
+});
+
 test('enharmonic respelling mirrors spelling across paired notation and TAB without changing fret', () => {
   const pitch = resolveNextEnharmonicPitch({ step: 'C', alter: 0, octave: 4 });
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{

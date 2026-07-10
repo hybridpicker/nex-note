@@ -936,7 +936,7 @@ test('addTuplet command creates a tuplet span for events in the given timestamp 
   assert.ok(result.diagnostics.some((d) => d.code === 'core_execution'));
 });
 
-test('addGraceNote marks an event as a grace note and removeGraceNote un-marks it', () => {
+test('addGraceNote inserts a removable zero-time grace entity without replacing its anchor', () => {
   // Use the simple single-voice volta fixture to avoid <forward>/<backup> tags
   // that would trigger the hybrid executor's safe-roundtrip guard.
   const xml = loadFixture('volta-two-ending.musicxml');
@@ -955,12 +955,20 @@ test('addGraceNote marks an event as a grace note and removeGraceNote un-marks i
       slash: true,
     },
   ]);
-  assert.ok(after.coreDocument!.graceNotes.some((g) => g.eventId === firstEvent.id && g.slash === true));
+  const afterEvents = after.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  const graceLink = after.coreDocument!.graceNotes.find((entry) => entry.slash === true);
+  const graceEvent = afterEvents.find((event) => event.id === graceLink?.eventId);
+  assert.ok(graceLink);
+  assert.notEqual(graceLink.eventId, firstEvent.id);
+  assert.equal(graceEvent?.durationDivisions, 0);
+  assert.equal(graceEvent?.durationType, 'eighth');
+  assert.ok(afterEvents.some((event) => event.id === firstEvent.id && event.durationDivisions === firstEvent.durationDivisions));
   assert.match(after.xml, /<grace slash="yes"/);
 
   const removed = applyDocumentCommands(after, [
     {
       type: 'removeGraceNote',
+      coreEntityId: graceLink.eventId,
       measureNumber: firstEvent.measureNumber,
       staffIndex: firstEvent.staffIndex,
       voiceId: firstEvent.voiceId,
@@ -968,7 +976,58 @@ test('addGraceNote marks an event as a grace note and removeGraceNote un-marks i
       timestampDen: firstEvent.timestampDen,
     },
   ]);
-  assert.ok(!removed.coreDocument!.graceNotes.some((g) => g.eventId === firstEvent.id));
+  assert.ok(!removed.coreDocument!.graceNotes.some((g) => g.eventId === graceLink.eventId));
+  assert.ok(removed.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.some((event) => event.id === firstEvent.id));
+});
+
+test('grace insertion at an irregular-meter barline preserves both measures through roundtrip', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1"><attributes><divisions>4</divisions><time><beats>5</beats><beat-type>8</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>A</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const state = buildDocumentState(xml);
+  const anchor = state.coreDocument!.score.parts[0]!.staves[0]!.measures[1]!.voices[0]!.events[0]!;
+  const after = applyDocumentCommands(state, [{
+    type: 'addGraceNote',
+    coreEntityId: anchor.id,
+    measureNumber: 2,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 8,
+    slash: true,
+  }]);
+  const reimported = importMusicXmlToCore(after.xml);
+  const measureTwoEvents = reimported.score.parts[0]!.staves[0]!.measures[1]!.voices[0]!.events;
+
+  assert.equal(after.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.length, 3);
+  assert.equal(after.coreDocument!.score.parts[0]!.staves[0]!.measures[1]!.voices[0]!.events.some((event) => event.id === anchor.id), true);
+  assert.equal(reimported.graceNotes.length, 1);
+  assert.equal(after.coreDocument!.score.parts[0]!.staves[0]!.measures[1]!.voices[0]!.events.filter((event) => event.kind === 'note').length, 4);
+  assert.deepEqual(measureTwoEvents.filter((event) => event.kind === 'note').map((event) => ({
+    pitch: event.kind === 'note' ? event.pitch.step : null,
+    grace: reimported.graceNotes.some((entry) => entry.eventId === event.id),
+    timestamp: `${event.timestampNum}/${event.timestampDen}`,
+  })), [
+    { pitch: 'F', grace: true, timestamp: '0/16' },
+    { pitch: 'F', grace: false, timestamp: '0/16' },
+    { pitch: 'G', grace: false, timestamp: '4/16' },
+    { pitch: 'A', grace: false, timestamp: '8/16' },
+  ]);
+  assert.deepEqual(validateScoreDocument(after.coreDocument).filter((entry) => entry.level === 'error'), []);
+  assert.match(after.xml, /<grace slash="yes"\/>[\s\S]*?<step>F<\/step>[\s\S]*?<note>[\s\S]*?<step>F<\/step>/);
 });
 
 test('export keeps a grace note and its anchor note sequential instead of forcing a chord', () => {

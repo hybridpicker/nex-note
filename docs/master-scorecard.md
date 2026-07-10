@@ -402,3 +402,33 @@ Verification evidence:
 - `e2e/notation-tools.spec.ts` (regression project): 20 passed.
 - Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only differences remain inconclusive. Artifacts: `.nex/musescore-roundtrip-smoke-2026-07-10T16-56-27-142Z`.
 - `git diff --check`: required before commit.
+
+## Iteration 2026-07-10 — Zero-Time Grace Entry
+
+All unlisted capabilities inherit the 57% product state above. This iteration repairs grace insertion and MusicXML timing without claiming complete multi-grace editing, after-grace support, or playback-style parity.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 98% | 99% |
+| Grace Notes | 45% | 70% |
+| MusicXML Roundtrip | 85% | 87% |
+| TAB Standard Notation Sync | 80% | 82% |
+| Undo | 90% | 91% |
+| Testing | 95% | 96% |
+| Consistency | 92% | 94% |
+| Professional Workflow | 82% | 84% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **57%**
+- Closing: **58%**
+
+`/` and the grace toolbar action now insert a new zero-duration semantic note before the selected rhythmic anchor instead of converting that anchor into a grace note. The anchor keeps its identity, duration, pitch, and measure position. Removal targets the grace entity precisely and clears its semantic links, while paired notation/TAB receives a corresponding grace entity without losing TAB fingering. MusicXML export advances the voice cursor from the first non-grace rhythmic event at an onset, preventing a grace note at a barline from shifting or dropping later notes. A 5/8 two-measure roundtrip proves measure balance and event order, and rendered strict-Doctor coverage proves the extra notehead, zero-time core state, preserved anchor, and atomic Undo/Redo. Multi-grace sequencing, grace-pitch editing polish, after-grace notation, and detailed playback-steal semantics remain open.
+
+Verification evidence:
+
+- `npm test`: 938 passed, 0 failed.
+- `npm run build`: production build and TypeScript validation passed.
+- `e2e/notation-tools.spec.ts` (regression project): 21 passed.
+- Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only differences remain inconclusive. Artifacts: `.nex/musescore-roundtrip-smoke-2026-07-10T17-15-13-592Z`.
+- `git diff --check`: passed before commit.

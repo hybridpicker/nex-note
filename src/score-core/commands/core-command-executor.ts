@@ -4504,26 +4504,119 @@ export function executeCoreCommands(
         break;
       }
       case 'addGraceNote': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
-        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (!event) break;
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        if (!found) break;
+        const eventIndex = findCommandEventIndex(found.voice, command);
+        const event = found.voice.events[eventIndex];
+        if (event?.kind !== 'note') break;
         const existing = nextDocument.graceNotes.find((entry) => entry.eventId === event.id);
         if (existing) {
           existing.slash = command.slash;
         } else {
+          const usedEventIds = new Set<string>();
+          nextDocument.score.parts.forEach((part) => part.staves.forEach((staff) => (
+            staff.measures.forEach((measure) => measure.voices.forEach((voice) => (
+              voice.events.forEach((entry) => usedEventIds.add(entry.id))
+            )))
+          )));
+          const buildGraceEvent = (source: Extract<TimedEvent, { kind: 'note' }>, staffIndex: number) => {
+            const idPrefix = `${source.id}:grace:`;
+            let idOrdinal = 1;
+            while (usedEventIds.has(`${idPrefix}${idOrdinal}`)) idOrdinal += 1;
+            const id = `${idPrefix}${idOrdinal}`;
+            usedEventIds.add(id);
+            return ({
+              ...structuredClone(source),
+              id,
+              staffIndex,
+              durationDivisions: 0,
+              durationType: 'eighth' as const,
+              isDotted: false,
+              isChord: false,
+              tieStart: false,
+              tiePlacement: undefined,
+              lyrics: [],
+              articulations: [],
+              articulationPlacements: undefined,
+              preservedXml: undefined,
+            });
+          };
+          const graceEvent = buildGraceEvent(event, found.staff.staffIndex);
+          found.voice.events.splice(eventIndex, 0, graceEvent);
           nextDocument.graceNotes.push({
-            id: `grace:${event.id}`,
-            eventId: event.id,
+            id: `grace:${graceEvent.id}`,
+            eventId: graceEvent.id,
             slash: command.slash,
           });
+
+          const paired = findPairedStaffVoice(
+            found.part,
+            command.staffIndex,
+            command.measureNumber,
+            command.voiceId,
+          );
+          const pairedIndex = paired?.voice.events.findIndex((entry) => (
+            entry.kind === 'note'
+            && !nextDocument.graceNotes.some((grace) => grace.eventId === entry.id)
+            && timestampsEqual(entry.timestampNum, entry.timestampDen, command.timestampNum, command.timestampDen)
+            && pitchMidiNumber(entry.pitch) === pitchMidiNumber(event.pitch)
+          )) ?? -1;
+          const pairedEvent = pairedIndex >= 0 ? paired?.voice.events[pairedIndex] : undefined;
+          if (pairedEvent?.kind === 'note' && paired) {
+            const pairedGrace = buildGraceEvent(pairedEvent, paired.staff.staffIndex);
+            paired.voice.events.splice(Math.max(0, pairedIndex), 0, pairedGrace);
+            nextDocument.graceNotes.push({
+              id: `grace:${pairedGrace.id}`,
+              eventId: pairedGrace.id,
+              slash: command.slash,
+            });
+          }
         }
         break;
       }
       case 'removeGraceNote': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
-        const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (!event) break;
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        if (!found) break;
+        const eventIndex = findCommandEventIndex(found.voice, command);
+        const event = found.voice.events[eventIndex];
+        if (!event || !nextDocument.graceNotes.some((entry) => entry.eventId === event.id)) break;
+        const samePitchGraceOrdinal = event.kind === 'note'
+          ? found.voice.events.slice(0, eventIndex).filter((entry) => (
+            entry.kind === 'note'
+            && nextDocument.graceNotes.some((grace) => grace.eventId === entry.id)
+            && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
+            && pitchMidiNumber(entry.pitch) === pitchMidiNumber(event.pitch)
+          )).length
+          : 0;
+        const deletedEventIds = new Set([event.id]);
+        found.voice.events.splice(eventIndex, 1);
         nextDocument.graceNotes = nextDocument.graceNotes.filter((entry) => entry.eventId !== event.id);
+        if (event.kind === 'note') {
+          const paired = findPairedStaffVoice(
+            found.part,
+            command.staffIndex,
+            command.measureNumber,
+            command.voiceId,
+          );
+          const pairedGraceIndexes = paired?.voice.events.reduce<number[]>((indexes, entry, index) => {
+            if (
+              entry.kind === 'note'
+              && nextDocument.graceNotes.some((grace) => grace.eventId === entry.id)
+              && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
+              && pitchMidiNumber(entry.pitch) === pitchMidiNumber(event.pitch)
+            ) indexes.push(index);
+            return indexes;
+          }, []) ?? [];
+          const pairedIndex = pairedGraceIndexes[samePitchGraceOrdinal] ?? -1;
+          if (paired && pairedIndex >= 0) {
+            const [pairedEvent] = paired.voice.events.splice(pairedIndex, 1);
+            if (pairedEvent) {
+              deletedEventIds.add(pairedEvent.id);
+              nextDocument.graceNotes = nextDocument.graceNotes.filter((entry) => entry.eventId !== pairedEvent.id);
+            }
+          }
+        }
+        removeDeletedEventReferences(nextDocument, deletedEventIds);
         break;
       }
       case 'addFingering': {

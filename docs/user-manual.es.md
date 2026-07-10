@@ -89,7 +89,7 @@ Pulsa `J` repetidamente para recorrer las escrituras enarmonicas de una nota, ac
 | Dinamicas | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
 | Tie | Une con la siguiente nota de la misma altura. Atajo: `T`. |
 | Slur | Liga expresiva sobre seleccion o siguiente nota. Atajo: `S`. |
-| Grace note | Agrega una nota de adorno. Atajo: `/`. |
+| Grace note | `/` inserta una nota de adorno separada y sin tiempo antes del ancla, sin cambiar la nota principal; admite inicios de compas y notation/TAB emparejados. |
 | Tuplets | Tresillo y quintillo por barra/paleta o `Cmd/Ctrl+3` y `Cmd/Ctrl+5`. |
 
 Algunos signos pueden ser solo visuales segun el motor de reproduccion.

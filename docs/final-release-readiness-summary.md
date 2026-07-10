@@ -14,12 +14,12 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-10 (`936` tests, `0` failed)
+- `npm test`: passed on 2026-07-10 (`938` tests, `0` failed)
 - `npm run build`: passed on 2026-07-10; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
-- notation-tools Playwright regression project: passed on 2026-07-10 (`20` tests, `0` failed)
+- notation-tools Playwright regression project: passed on 2026-07-10 (`21` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
 - `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
-- MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-10 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; artifacts are under `.nex/musescore-roundtrip-smoke-2026-07-10T16-56-27-142Z`. Source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only step differences remain inconclusive.
+- MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-10 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; latest artifacts are under `.nex/musescore-roundtrip-smoke-2026-07-10T17-15-13-592Z`. Source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only step differences remain inconclusive.
 - `npm run test:coverage:check`: last passed on 2026-05-13 (`84.96%` lines, `76.57%` branches, `85.33%` functions)
 - `npm audit --audit-level=high`: last passed on 2026-05-13 (`0` vulnerabilities)
 - release validation remained on the core-first command path; no parallel direct-XML edit route was introduced to work around the runtime issues
@@ -38,6 +38,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - standard flat, natural, sharp, double-flat, and double-sharp entry is now one-shot: the armed toolbar state clears only after a successful pitched commit, sounding alter carries by staff/step/octave through the measure across voices, and explicit glyph intent survives MusicXML, Copy/Paste, paired TAB, and Undo/Redo
 - `J` now cycles single notes, chords, heterogeneous ranges, and complete tied chains through conventional enharmonic spellings without changing MIDI or event IDs; selection remains stable, the change is atomic, and same-MIDI paired TAB string/fret data is preserved
 - manual courtesy/cautionary accidentals now have pitch-neutral semantic metadata and accessible Palette/Inspector controls for none, round, and square enclosure; MusicXML attributes, Copy/Paste, paired TAB, atomic history, rendered output, and strict Doctor are covered
+- grace entry now preserves the selected main note and inserts a separate zero-time entity; irregular-meter barline starts, paired notation/TAB, MusicXML sequencing, rendered feedback, and atomic history are covered
 
 ## Manual Validation Highlights
 

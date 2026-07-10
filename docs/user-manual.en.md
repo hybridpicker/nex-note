@@ -115,7 +115,7 @@ Press `J` repeatedly to cycle a note, chord, or range through conventional enhar
 | Dynamics | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
 | Tie | In normal mode, links selected pitches to the next matching onset. In Note Input, creates the next note or chord and its ties atomically. Shortcut: `T`. |
 | Slur | Spans the selection or the next note. Shortcut: `S`. |
-| Grace note | Adds a grace note at the selection. Shortcut: `/`. |
+| Grace note | `/` inserts a separate zero-time grace note before the selected anchor without changing the main note's duration; barline starts and paired notation/TAB are supported. |
 | Tuplets | Triplet and quintuplet via toolbar/palette or `Cmd/Ctrl+3` and `Cmd/Ctrl+5`. |
 
 Some notation marks may be visual-only depending on playback support.

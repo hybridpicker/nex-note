@@ -1231,7 +1231,10 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
                 shouldWriteChordMarker(renderableEvents, index, coreDocument),
               ));
             });
-            cursor += renderableEvents[0]?.durationDivisions ?? 0;
+            const rhythmicEvent = renderableEvents.find((event) => (
+              !event.isChord && !isGraceEvent(coreDocument, event.id)
+            ));
+            cursor += rhythmicEvent?.durationDivisions ?? 0;
           }
 
           firstSequence = false;

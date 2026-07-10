@@ -243,6 +243,7 @@ Phase 9 Note Input hardening is now covered by the current repository state:
 4. `J` cycles conventional enharmonic spellings for notes, chords, ranges, and cross-measure tie chains without changing MIDI or entity identity
 5. MusicXML, Copy/Paste, Undo/Redo, rendered Playwright, strict Doctor, and paired TAB regressions cover the completed accidental and respelling workflows
 6. manual courtesy/cautionary presentation is semantic, supports none/round/square enclosure, and is covered through MusicXML, Copy/Paste, paired TAB, history, UI, rendering, and strict Doctor
+7. grace entry inserts a distinct zero-time entity before its anchor, including irregular-meter barline starts, instead of converting the rhythmic note
 
 Highest-value remaining work:
 

@@ -3142,6 +3142,9 @@ export function useNoteEditor(
     dbg.editor(`addGraceNote m.${selectedNote.measureNumber} ts=${selectedNote.timestampNum}/${selectedNote.timestampDen}`);
     const commands: ScoreCommand[] = [{
       type: 'addGraceNote',
+      coreEntityId: selectedNote.coreEntityId ?? undefined,
+      coreMeasureId: selectedNote.coreMeasureId ?? undefined,
+      corePartId: selectedNote.corePartId ?? undefined,
       measureNumber: selectedNote.measureNumber,
       staffIndex: selectedNote.staffIndex,
       voiceId: selectedNote.voiceId,

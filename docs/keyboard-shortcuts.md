@@ -116,7 +116,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Shift+6` | Marcato/Strong Accent toggeln | Auswahl erforderlich |
 | `Shift+-` | Tenuto toggeln | Auswahl erforderlich |
 | `Cmd/Ctrl+2` ... `9` | Tuplet 2:3, 3:2, 4:3, 5:4, 6:4, 7:4, 8:6 oder 9:8 auf Auswahl anwenden; dieselben Aktionen sind als Toolbar-Buttons verfuegbar | Auswahl erforderlich |
-| `/` | Grace Note an Auswahl hinzufügen | Auswahl erforderlich |
+| `/` | Eigene zeitlose Grace Note vor dem ausgewaehlten Anker einfuegen | Auswahl erforderlich; Hauptnote bleibt unveraendert |
 | `Cmd/Ctrl+/` | aktuellen Takt mit rhythmischen Slashes füllen | Auswahl erforderlich |
 | `Cmd/Ctrl+K` | Inline-Akkordcursor an der ausgewählten Note öffnen und vorhandenes Symbol zum Direktbearbeiten laden | Auswahl erforderlich |
 

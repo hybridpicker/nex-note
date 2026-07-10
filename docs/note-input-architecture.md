@@ -129,6 +129,7 @@ This document describes the deterministic note-input pipeline introduced for poi
   - standard accidental matrix (double-flat through double-sharp), one-shot arming, measure carry across voices, octave/barline reset, explicit-natural and MusicXML roundtrip fidelity
   - accidental entity identity, copy/paste preservation, paired notation/TAB mirroring, inverse-command restoration, and stale-glyph cleanup after transposition
   - `J` cycles natural, single-, and double-accidental spellings, preserves MIDI/entity identity, expands cross-measure ties, keeps paired TAB fingering, and groups selections into one Undo/Redo transaction
+  - grace entry creates a distinct zero-duration semantic event before the selected anchor; the rhythmic anchor retains its identity and duration, paired notation/TAB receives a matching grace entity, and MusicXML cursor advancement uses the main event rather than the grace event
   - beat-1 rest plus eighth-note mouse entry keeps visible notehead X and commit X on the same rendered rest snap
 
 - e2e:
