@@ -18,7 +18,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
-- Recent validation on 2026-06-24: `npm test`, `npm run build`, and `npm run smoke:musescore-roundtrip` passed with a local MuseScore 4.7.3 crash limitation. Coverage and high-severity audit last passed on 2026-05-13.
+- Recent validation on 2026-07-10: `npm test` passed with `929` tests, the production build passed, and the complete notation-tools Playwright project passed with `19` tests. The bounded MuseScore roundtrip smoke completed with the documented local MuseScore 4.7.3 crash limitation. Coverage and high-severity audit evidence remains dated 2026-05-13 and is reported separately below.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
 
@@ -48,7 +48,7 @@ The core value is:
 
 - Import `.musicxml`, `.xml`, `.mxl`, `.mscz`, GuitarPro files, MIDI, and `.nxn` project files. PDF/photo import is assisted and review-based.
 - Render MusicXML in-browser with OpenSheetMusicDisplay.
-- Edit notes directly with MuseScore-style keyboard, mouse, QWERTY piano, and live MIDI step-input workflows.
+- Edit notes directly with MuseScore-style keyboard, mouse, QWERTY piano, and live MIDI step-input workflows, including nearest-octave A-G entry, one-shot standard accidentals with measure carry, selection-wide `J` enharmonic respelling, chords, tied-note/chord creation, voices, rests, and atomic undo/redo.
 - Use selection ranges, transpose tools, dynamics, articulations with placement controls, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and cascading staff/collision layout controls.
 - Use an AI assistant with Ollama, Claude, Gemini, or benchmark mode.
 - Preview and confirm risky AI edits before applying them.
@@ -71,6 +71,7 @@ Founder testing is focused on this loop rather than a hosted SaaS workflow. The 
 - MSCZ, GuitarPro, MIDI, and best-effort ABC workflows depend on MuseScore CLI.
 - Some imported MusicXML still uses compatibility fallback when unsupported round-trip tags are present.
 - Some notation marks are preserved or rendered but not fully editable yet.
+- Courtesy/cautionary accidental brackets and separate concert/transposed-pitch respelling views are not yet editable; standard accidentals and `J` respelling are semantic and roundtrip through MusicXML.
 - MuseScore CLI round-trip validation now captures MusicXML, app-style MXL, and MSCZ diagnostics under `.nex/musescore-roundtrip-smoke-*`; the current local MuseScore 4.7.3 install can SIGABRT even on source fixtures, so native MSCZ parity remains an accepted alpha limit unless a clean external MuseScore run confirms it.
 - macOS desktop builds are currently ad-hoc signed; notarization and signing identity selection are still open.
 - Local debug/developer routes must be removed, gated, or explicitly documented before distributing polished binaries.
@@ -285,12 +286,14 @@ npm run electron:build
 
 `npm test` includes `node --check` for `electron/main.cjs` and `electron/launch-helpers.cjs`, plus regression coverage for packaged launch freshness decisions and Finder-style macOS `PATH` handling. For macOS app launch changes, also verify a normal `open dist/macos/mac-arm64/Nex\ Note.app` starts a visible window and a packaged Next server on `127.0.0.1`.
 
-Current validation snapshot from 2026-05-13:
+Current validation snapshot:
 
-- `npm test`: 645 tests passed.
+- `npm test`: 929 tests passed on 2026-07-10.
+- `npx playwright test e2e/notation-tools.spec.ts --project regression`: 19 tests passed on 2026-07-10.
+- `npm run build`: passed on 2026-07-10.
+- Bounded `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0`: completed with `passed-with-local-musescore-limit` on 2026-07-10; MuseScore 4.7.3 intermittently aborted on source and generated variants, so crash-only results remain inconclusive rather than nex-note export failures.
 - `npm run test:coverage:check`: 84.96% lines, 76.57% branches, 85.33% functions.
-- `npm run build`: passed.
-- `npm audit --audit-level=high`: 0 vulnerabilities.
+- `npm audit --audit-level=high`: last passed with 0 vulnerabilities on 2026-05-13; rerun before release because this evidence is historical.
 
 ## Release Readiness
 

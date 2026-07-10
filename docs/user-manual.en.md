@@ -73,6 +73,8 @@ Turn note input on with the toolbar button or `N`.
 | Insert/overwrite | `I` switches entry behavior. |
 | Chords | Chord input mode or `Shift+A...G` adds chord tones. |
 | Tied notes and chords | In Note Input, choose the second duration and press `T`; nex-note creates the next same-pitch note or complete chord, ties every tone, and advances once. Outside Note Input, `T` toggles ties on the selection. |
+| Accidentals | Flat, natural, sharp, double-flat, and double-sharp are one-shot tools for the next successful pitched entry; normal measure carry applies afterward. |
+| Enharmonic spelling | `J` cycles selected notes through equivalent standard spellings without changing playback pitch. |
 | Cursor insert | `Cmd/Ctrl+Shift+A...G` inserts explicitly at the cursor. |
 | Octaves | `Shift+ArrowUp/Down` or `Cmd/Ctrl+ArrowUp/Down`. |
 | Step keyboard | `P` toggles a compact QWERTY step keyboard and enables Note Input if needed. |
@@ -100,6 +102,10 @@ String, fret, tuning, and guitar techniques are stored as semantic note data. Mu
 ## Pitch, Accidentals, and Duration
 
 Select a note and use `A` to `G`, the active-note buttons, arrow-key transposition, or the Edit Palette. `ArrowUp/Down` transposes chromatically. `Q/W` halve or double duration; `Shift+Q/W` do the dotted-aware versions. Accidentals can be selected in the toolbar, with `-` for flat, `=` for natural, `+` for sharp, `Alt/Option+-` for double-flat, and `Alt/Option+=` for double-sharp.
+
+In Note Input, an armed accidental is consumed only after the next successful pitched commit. Its sounding alteration then carries to the same letter and octave on that staff until the barline, including across voices; another octave and the next measure have independent context. The explicit written glyph is stored separately from sounding pitch and survives MusicXML, Copy/Paste, paired notation/TAB edits, and Undo/Redo.
+
+Press `J` repeatedly to cycle a note, chord, or range through conventional enharmonic spellings. MIDI pitch, event identity, selection, ties, and same-pitch TAB fingering remain unchanged, and a selection-wide cycle is one undo step. While the QWERTY step keyboard is active, `J` intentionally remains its A-sharp piano key. Courtesy/cautionary parentheses or square brackets and view-specific concert/transposed-pitch `Cmd/Ctrl+J` are not yet modeled.
 
 ## Articulations, Dynamics, Ties, and Slurs
 

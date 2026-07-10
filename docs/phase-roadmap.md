@@ -235,8 +235,18 @@ Phase 8 closeout is now covered by the current repository state:
 5. `npm run smoke:musescore-roundtrip` now captures source MusicXML, app-style MXL, and MSCZ create/reopen steps with retries, artifacts, and local-MuseScore crash classification
 6. core MusicXML export no longer appends empty root metadata such as trailing `<identification/>` after `<part>`
 
+Phase 9 Note Input hardening is now covered by the current repository state:
+
+1. A-G entry uses nearest-octave inference, effective key spelling, deterministic no-change advancement, and strictly-above chord stacking
+2. rest and tied-note/chord entry use active duration, semantic entity identity, paired notation/TAB updates, and atomic history
+3. standard accidentals are one-shot, carry through the measure by staff/step/octave across voices, and preserve explicit written intent independently from sounding alter
+4. `J` cycles conventional enharmonic spellings for notes, chords, ranges, and cross-measure tie chains without changing MIDI or entity identity
+5. MusicXML, Copy/Paste, Undo/Redo, rendered Playwright, strict Doctor, and paired TAB regressions cover the completed accidental and respelling workflows
+6. the remaining accidental gap is explicitly limited to courtesy/cautionary presentation metadata, parentheses/brackets, and view-specific concert/transposed respelling
+
 Highest-value remaining work:
 
 1. execute the representative manual validation pass on real scores
 2. rerun native MSCZ compatibility validation on a stable MuseScore CLI install; local MuseScore 4.7.3 currently SIGABRTs intermittently even on source-baseline conversions, so MSCZ parity remains accepted but not proven
 3. make the final release decision with an explicit accepted-limitations list instead of implicit roadmap leftovers
+4. add semantic courtesy/cautionary accidental controls and MusicXML attributes without coupling them to sounding pitch

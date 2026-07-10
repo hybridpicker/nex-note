@@ -20,6 +20,9 @@ This directory mixes current status docs, architecture docs, validation material
 - [master-scorecard.md](./master-scorecard.md)
   - Conservative MuseScore-relative capability scores recorded before and after each product iteration
 
+- [note-input-parity-matrix.md](./note-input-parity-matrix.md)
+  - Row-by-row MuseScore/Finale-style Note Input status with implementation, evidence, acceptance criteria, and explicit remaining gaps
+
 - [user-visible-audible-test-plan.md](./user-visible-audible-test-plan.md)
   - Manual regression matrix for user-visible and audible behavior
 
@@ -56,6 +59,7 @@ This directory mixes current status docs, architecture docs, validation material
 
 - [note-input-architecture.md](./note-input-architecture.md)
   - Canonical interactive edit-map architecture for deterministic mouse/keyboard note entry
+  - Also defines accidental carry, written-glyph separation, enharmonic respelling, tie expansion, paired TAB policy, and strict diagnostic invariants
 
 ## Historical Or Roadmap Context
 
@@ -71,3 +75,4 @@ This directory mixes current status docs, architecture docs, validation material
 
 - If you want to know what the repo is trying to become, read the architecture blueprint.
 - If you want to know whether a workflow is supposed to be release-ready, read the release summary and manual test plan.
+- If you want the exact current Note Input claim, read the parity-matrix row and its acceptance evidence before relying on a scorecard percentage.

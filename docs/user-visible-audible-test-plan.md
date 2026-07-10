@@ -111,6 +111,14 @@ Repeat the same flow for each accidental:
 | 3.7 | Double-flat | `Ebb4` | Piano `D` |
 | 3.8 | Double-sharp | `Ex4` | Piano `F#` |
 | 3.9 | Click the same accidental again | Button deselects and note remains unchanged | Silent |
+| 3.10 | Enable Note Input, arm Sharp, enter `B` | Sharp is written once; toolbar highlight clears after the successful note | Piano pitch matches B-sharp |
+| 3.11 | Enter `B` again in the same measure and octave | Second B keeps the sounding sharp without a second explicit glyph | Same pitch as step 3.10 |
+| 3.12 | Enter the same letter in another octave, then in the next measure | Accidental carry resets independently by octave and barline | Pitch follows that octave/measure context and key signature |
+| 3.13 | Select C-sharp and press `J` three times | Spelling cycles C-sharp → D-flat → B-double-sharp → C-sharp; notehead moves but selection/entity remains | Every spelling sounds the same MIDI pitch |
+| 3.14 | Select a chord or range and press `J`, then Undo/Redo | Every selected pitch advances independently in one history step | Playback pitches remain unchanged |
+| 3.15 | Respell a cross-measure tied note and a paired notation/TAB note | Complete tie chain shares one spelling; TAB string/fret does not move | Sustained pitch and TAB playback remain unchanged |
+
+Courtesy/cautionary acceptance remains open: a future test must force an accidental without changing pitch, choose none/round/square enclosure, roundtrip MusicXML `cautionary` plus `parentheses`/`bracket`, and reverse the operation atomically.
 
 ## Suite 4: Pitch and Octave
 

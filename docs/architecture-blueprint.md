@@ -53,6 +53,11 @@ The repository has already crossed several important seams toward the target sta
   - canonical `InteractiveEditMap` for visible slot/pitch-lane resolution
   - central `ResolvedEditTarget` model for both preview and commit
   - shared commit mapping for pointer and keyboard input
+  - shared measure-accidental resolution for keyboard and mouse entry
+  - semantic written-accidental intent separated from sounding pitch alter
+  - identity-preserving enharmonic cycling with indexed tied-chain expansion and paired notation/TAB synchronization
+
+The current accidental boundary is deliberate: standard accidentals and `J` respelling are core-model operations, while courtesy/cautionary presentation still needs first-class bracket/parenthesis metadata and UI. That remaining work must not be implemented as renderer-only decoration because MusicXML fidelity, selection, Copy/Paste, validation, and Undo/Redo all depend on the same semantic state.
 
 The migration plan below should therefore be read as an active path from today's mixed architecture, not as a greenfield proposal.
 

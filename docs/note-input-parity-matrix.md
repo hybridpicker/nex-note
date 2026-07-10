@@ -2,14 +2,14 @@
 
 Updated: 2026-07-10
 
-This matrix tracks MuseScore/Finale-style note-input behavior against the current NextNote semantic pipeline. It is not a marketing checklist: a row is `PASS` only when the workflow is present, goes through the semantic command path, has automated coverage, and has an explicit acceptance criterion.
+This matrix tracks MuseScore/Finale-style note-input behavior against the current nex-note semantic pipeline. It is not a marketing checklist: a row is `PASS` only when the workflow is present, goes through the semantic command path, has automated coverage, and has an explicit acceptance criterion.
 
 ## Library Investigation
 
 Current local dependency usage:
 
 - `opensheetmusicdisplay` is installed and used by `components/ScoreEditor.tsx` and `components/ScorePreview.tsx` as the score renderer.
-- `VexFlow` is present transitively through OSMD (`package-lock.json` pins `vexflow@1.2.93`). NextNote reads OSMD/VexFlow-derived geometry, but commit identity is kept in the core model.
+- `VexFlow` is present transitively through OSMD (`package-lock.json` pins `vexflow@1.2.93`). nex-note reads OSMD/VexFlow-derived geometry, but commit identity is kept in the core model.
 - `@coderline/alphatab` is installed and used by `lib/alphatab-guitar-pro-import.ts` as a Guitar Pro fallback/import source.
 - MuseScore CLI is integrated through `lib/musescore-cli.ts`, `lib/musescore-roundtrip-smoke.ts`, import conversion routes, MIDI export, ABC export, and release smoke tests.
 - ABC export exists through `lib/abc-export.ts` and `/api/export-abc`; `abcjs` is not installed.
@@ -18,10 +18,10 @@ Current local dependency usage:
 External fit check:
 
 - OSMD remains the best current renderer because it renders MusicXML in browser and is already the live render bridge. It should continue to provide geometry and visible snap evidence, not own mutation semantics. Source: https://github.com/opensheetmusicdisplay/opensheetmusicdisplay
-- VexFlow is a rendering API for SVG/canvas notation and TAB. Because NextNote already consumes it through OSMD, direct VexFlow use should be limited to future renderer-specific geometry probes where OSMD cannot expose enough data. Source: https://www.vexflow.com/
+- VexFlow is a rendering API for SVG/canvas notation and TAB. Because nex-note already consumes it through OSMD, direct VexFlow use should be limited to future renderer-specific geometry probes where OSMD cannot expose enough data. Source: https://www.vexflow.com/
 - alphaTab is a strong Guitar Pro/TAB renderer/importer with a rich score model and MIDI generation. It is useful for Guitar Pro/TAB validation and fallback import, but it should not replace the semantic commit path. Source: https://alphatab.net/docs/introduction
 - Verovio is useful as an independent engraving/conversion oracle, especially for MEI/MusicXML comparison. Its MEI-first model is not a drop-in note-entry editor replacement. Source: https://www.verovio.org/
-- MuseScore CLI and source behavior remain the best external validation reference for MusicXML/MXL/MSCZ roundtrip and desktop notation expectations. Local MuseScore crashes must remain classified separately from NextNote export bugs. Source: https://github.com/musescore/MuseScore
+- MuseScore CLI and source behavior remain the best external validation reference for MusicXML/MXL/MSCZ roundtrip and desktop notation expectations. Local MuseScore crashes must remain classified separately from nex-note export bugs. Source: https://github.com/musescore/MuseScore
 - LilyPond is useful as an engraving/export comparison target, not as an interactive desktop note-entry engine for this app. Source: https://lilypond.org/
 - abcjs is useful for ABC rendering/playback validation only if ABC import/export becomes a larger workflow. Source: https://www.abcjs.net/
 - music21 is useful for offline symbolic analysis and MusicXML sanity checks, but adding Python runtime dependency for core note entry would increase product complexity. Source: https://music21.org/
@@ -47,7 +47,7 @@ Current MuseScore behavior reference: the MuseScore Studio handbook documents `-
 
 ## Matrix
 
-| Workflow | MuseScore/Finale expectation | Current NextNote behavior | Relevant files | Missing behavior | Existing test coverage | Required change | Acceptance criterion | Status |
+| Workflow | MuseScore/Finale expectation | Current nex-note behavior | Relevant files | Missing behavior | Existing test coverage | Required change | Acceptance criterion | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | N toggles note input | `N` enters/leaves note input without text-field conflicts. | `N` toggles note input and Escape exits. | `hooks/useNoteEditor.ts`, `components/NoteInputToolbar.tsx` | Need Electron app smoke proof. | `test/user-visible-note-editor.test.ts`, `e2e/app.spec.ts` | Add Electron manual artifact. | Built app toggles toolbar state and accepts next note. | PARTIAL |
 | duration keys 1-9 | Number keys select 64th through longa. | Implemented for keyboard and toolbar. | `keyboard-resolver.ts`, `useNoteEditor.ts`, `NoteInputToolbar.tsx` | None known. | `test/user-visible-note-editor.test.ts`, `test/user-visible-components.test.ts`, `e2e/app.spec.ts` | Keep regression coverage. | All keys update visible duration and subsequent commit duration. | PASS |

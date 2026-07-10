@@ -66,6 +66,8 @@ Activa Note Input con `N` o el boton de la barra.
 | Voces | Barra o `Cmd/Ctrl+Alt/Option+1...4`. |
 | Insert/overwrite | `I` cambia el comportamiento de entrada. |
 | Acordes | Chord Input o `Shift+A...G` agrega notas al acorde. |
+| Alteraciones | Bemol, natural, sostenido, doble bemol y doble sostenido se aplican una sola vez a la siguiente entrada de altura valida. |
+| Enarmonia | `J` recorre escrituras enarmonicas equivalentes sin cambiar el sonido. |
 | Insertar en cursor | `Cmd/Ctrl+Shift+A...G`. |
 | Octavas | `Shift+Flecha arriba/abajo` o `Cmd/Ctrl+Flecha arriba/abajo`. |
 
@@ -73,7 +75,11 @@ La nota fantasma muestra donde caera la siguiente nota. `Shift` prefiere inserta
 
 ## Altura, alteraciones y duracion
 
-Selecciona una nota y usa `A` a `G`, los botones de altura, flechas o paleta. `Flecha arriba/abajo` transpone por semitonos. `Q/W` reducen o duplican la duracion; `Shift+Q/W` lo hacen respetando valores con puntillo. Las alteraciones estan en la barra; `-` bemol, `=` natural, `+` sostenido. Doble bemol y doble sostenido estan disponibles en la barra.
+Selecciona una nota y usa `A` a `G`, los botones de altura, flechas o paleta. `Flecha arriba/abajo` transpone por semitonos. `Q/W` reducen o duplican la duracion; `Shift+Q/W` lo hacen respetando valores con puntillo. Las alteraciones estan en la barra; `-` bemol, `=` natural, `+` sostenido, `Alt/Option+-` doble bemol y `Alt/Option+=` doble sostenido.
+
+En Note Input, una alteracion armada se consume solo despues de introducir correctamente la siguiente nota. La altura alterada continua para la misma letra y octava del pentagrama hasta la barra de compas, incluso entre voces; otra octava y el compas siguiente tienen contexto independiente. El signo escrito se conserva por separado en MusicXML, Copy/Paste, notation/TAB y Undo/Redo.
+
+Pulsa `J` repetidamente para recorrer las escrituras enarmonicas de una nota, acorde o rango sin cambiar MIDI, identidad, seleccion, ligaduras ni digitacion TAB. Con el teclado QWERTY activo, `J` sigue siendo la tecla de La sostenido. Las alteraciones de cortesia con parentesis o corchetes aun no estan modeladas.
 
 ## Articulaciones, dinamicas y ligaduras
 

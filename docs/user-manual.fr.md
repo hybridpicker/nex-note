@@ -68,6 +68,8 @@ Activez la saisie avec `N` ou le bouton Note Input.
 | Voix | Barre d'outils ou `Cmd/Ctrl+Alt/Option+1...4`. |
 | Insert/overwrite | `I` change le comportement de saisie. |
 | Accords | Mode Chord Input ou `Shift+A...G`. |
+| Alterations | Bemol, becarre, diese, double bemol et double diese ne s'appliquent qu'a la prochaine hauteur saisie avec succes. |
+| Enharmonie | `J` parcourt les graphies enharmoniques equivalentes sans changer le son. |
 | Insertion au curseur | `Cmd/Ctrl+Shift+A...G`. |
 | Octaves | `Shift+Fleche haut/bas` ou `Cmd/Ctrl+Fleche haut/bas`. |
 
@@ -75,7 +77,11 @@ La note fantome montre la position de la prochaine saisie. `Shift` favorise l'in
 
 ## Hauteur, alterations et duree
 
-Selectionnez une note et utilisez `A` a `G`, les boutons de hauteur, les fleches ou la palette. `Fleche haut/bas` transpose par demi-ton. `Q/W` divisent ou doublent la duree; `Shift+Q/W` le font avec les valeurs pointees. Les alterations sont dans la barre; `-` = bemol, `=` = becarre, `+` = diese. Double bemol et double diese sont disponibles dans la barre.
+Selectionnez une note et utilisez `A` a `G`, les boutons de hauteur, les fleches ou la palette. `Fleche haut/bas` transpose par demi-ton. `Q/W` divisent ou doublent la duree; `Shift+Q/W` le font avec les valeurs pointees. Les alterations sont dans la barre; `-` = bemol, `=` = becarre, `+` = diese, `Alt/Option+-` = double bemol et `Alt/Option+=` = double diese.
+
+En Note Input, une alteration armee n'est consommee qu'apres la prochaine saisie de hauteur reussie. L'alteration sonore reste valable pour la meme lettre et la meme octave sur cette portee jusqu'a la barre de mesure, meme entre les voix; une autre octave et la mesure suivante gardent leur propre contexte. Le signe ecrit est conserve separement dans MusicXML, Copy/Paste, notation/TAB et Undo/Redo.
+
+Appuyez plusieurs fois sur `J` pour parcourir les graphies enharmoniques d'une note, d'un accord ou d'une plage sans modifier MIDI, identite, selection, liaisons de tenue ni doigté TAB. Quand le clavier QWERTY est actif, `J` reste sa touche La diese. Les alterations de precaution entre parentheses ou crochets ne sont pas encore modelisees.
 
 ## Articulations, nuances, liaisons
 
