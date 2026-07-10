@@ -912,28 +912,110 @@ test('addOttava command inserts octave-shift start and stop directions through c
   assert.ok(result.diagnostics.some((d) => d.code === 'core_execution'));
 });
 
-test('addTuplet command creates a tuplet span for events in the given timestamp range', () => {
-  const xml = loadFixture('piano-semantics.musicxml');
-  const result = applyDocumentCommands(buildDocumentState(xml), [
-    {
-      type: 'addTuplet',
-      measureNumber: 1,
-      staffIndex: 1,
-      voiceId: 1,
-      startTimestampNum: 0,
-      startTimestampDen: 4,
-      stopTimestampNum: 2,
-      stopTimestampDen: 4,
-      actualNotes: 3,
-      normalNotes: 2,
-      bracket: true,
-    },
-  ]);
-  assert.ok(result.coreDocument!.tuplets.length > 0, 'addTuplet must create at least one TupletSpan');
-  const span = result.coreDocument!.tuplets[result.coreDocument!.tuplets.length - 1];
+test('addTuplet divides one barline anchor in 5/8 without changing its identity or measure balance', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>4</divisions><time><beats>5</beats><beat-type>8</beat-type></time></attributes>
+<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type></note></measure>
+<measure number="2"><note><pitch><step>F</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>A</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>eighth</type></note></measure>
+</part></score-partwise>`;
+  const state = buildDocumentState(xml);
+  const anchor = state.coreDocument!.score.parts[0]!.staves[0]!.measures[1]!.voices[0]!.events[0]!;
+  const result = applyDocumentCommands(state, [{
+    type: 'addTuplet',
+    coreEntityId: anchor.id,
+    coreMeasureId: state.coreDocument!.score.parts[0]!.staves[0]!.measures[1]!.id,
+    corePartId: state.coreDocument!.score.parts[0]!.id,
+    measureNumber: 2,
+    staffIndex: 1,
+    voiceId: 1,
+    startTimestampNum: 0,
+    startTimestampDen: 16,
+    stopTimestampNum: 0,
+    stopTimestampDen: 16,
+    actualNotes: 3,
+    normalNotes: 2,
+    bracket: true,
+  }]);
+  const measureTwo = result.coreDocument!.score.parts[0]!.staves[0]!.measures[1]!;
+  const span = result.coreDocument!.tuplets[0]!;
+
+  assert.equal(measureTwo.voices[0]!.events.some((event) => event.id === anchor.id), true);
   assert.equal(span.actualNotes, 3);
   assert.equal(span.normalNotes, 2);
-  assert.ok(result.diagnostics.some((d) => d.code === 'core_execution'));
+  assert.equal(span.eventIds.length, 3);
+  assert.deepEqual(measureTwo.voices[0]!.events.slice(0, 3).map((event) => ({
+    kind: event.kind,
+    duration: event.durationDivisions,
+    type: event.durationType,
+    timestamp: `${event.timestampNum}/${event.timestampDen}`,
+  })), [
+    { kind: 'note', duration: 4, type: 'eighth', timestamp: '0/48' },
+    { kind: 'rest', duration: 4, type: 'eighth', timestamp: '4/48' },
+    { kind: 'rest', duration: 4, type: 'eighth', timestamp: '8/48' },
+  ]);
+  assert.deepEqual(result.diagnostics.filter((entry) => entry.level !== 'info'), []);
+  assert.match(result.xml, /<divisions>12<\/divisions>[\s\S]*?<actual-notes>3<\/actual-notes>[\s\S]*?<normal-notes>2<\/normal-notes>/);
+  assert.deepEqual(validateScoreDocument(importMusicXmlToCore(result.xml)).filter((entry) => entry.level !== 'info'), []);
+});
+
+test('addTuplet preserves a chord onset identity and places all chord tones inside the new span', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+<note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>
+<note><rest/><duration>12</duration><voice>1</voice><type>half</type><dot/></note></measure>
+</part></score-partwise>`;
+  const state = buildDocumentState(xml);
+  const onset = state.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.slice(0, 2);
+  const result = applyDocumentCommands(state, [{
+    type: 'addTuplet',
+    coreEntityId: onset[1]!.id,
+    coreMeasureId: state.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.id,
+    corePartId: state.coreDocument!.score.parts[0]!.id,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    startTimestampNum: 0,
+    startTimestampDen: 16,
+    stopTimestampNum: 0,
+    stopTimestampDen: 16,
+    actualNotes: 3,
+    normalNotes: 2,
+  }]);
+  const events = result.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  const tuplet = result.coreDocument!.tuplets[0]!;
+
+  assert.deepEqual(onset.map((event) => events.some((entry) => entry.id === event.id)), [true, true]);
+  assert.equal(tuplet.eventIds.includes(onset[0]!.id), true);
+  assert.equal(tuplet.eventIds.includes(onset[1]!.id), true);
+  assert.equal(tuplet.eventIds.filter((eventId) => events.some((event) => event.id === eventId && !event.isChord)).length, 3);
+  assert.deepEqual(validateScoreDocument(result.coreDocument).filter((entry) => entry.level !== 'info'), []);
+});
+
+test('addTuplet rejects range conversion explicitly instead of creating an invalid span', () => {
+  const state = buildDocumentState(loadFixture('volta-two-ending.musicxml'));
+  const result = applyDocumentCommands(state, [{
+    type: 'addTuplet',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    startTimestampNum: 0,
+    startTimestampDen: 4,
+    stopTimestampNum: 2,
+    stopTimestampDen: 4,
+    actualNotes: 3,
+    normalNotes: 2,
+  }]);
+
+  assert.equal(result.xml, state.xml);
+  assert.equal(result.coreDocument!.tuplets.length, state.coreDocument!.tuplets.length);
+  assert.ok(result.diagnostics.some((entry) => entry.code === 'tuplet_command_rejected'));
 });
 
 test('addGraceNote inserts a removable zero-time grace entity without replacing its anchor', () => {

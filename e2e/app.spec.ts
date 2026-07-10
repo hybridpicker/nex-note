@@ -3116,32 +3116,36 @@ test('browser inspector and palette flows cover measure insertion, deletion, tie
   await expect.poll(async () => (await readCurrentXml(page)).includes('<repeat direction="backward"')).toBeTruthy();
 });
 
-test('browser tuplet tools cover triplet ranges on quarter notes and quintuplet ranges on eighth notes', async ({ page }) => {
+test('browser tuplet tools divide one quarter or eighth anchor into editable tuplet units', async ({ page }) => {
   await bootWithScore(page, 'polyphonic.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
 
   await clickRenderedNotehead(page, 0);
-  await page.keyboard.press('Shift+ArrowRight');
-  await page.keyboard.press('Shift+ArrowRight');
   await openNotationSection(page, /Expression/);
   await expect(page.getByTitle('Septuplet 7:4 from selection (Cmd/Ctrl+7)')).toBeVisible();
   await page.getByTitle('Triplet from selection (Cmd/Ctrl+3)').click();
   await expect.poll(async () => {
-    const xml = await readCurrentXml(page);
-    return xml.includes('<actual-notes>3</actual-notes>') && xml.includes('<normal-notes>2</normal-notes>');
-  }).toBeTruthy();
+    const core = await readCurrentCore(page);
+    return {
+      rhythmicCount: core.tuplets[0]?.eventIds.filter((eventId) => (
+        core.score.parts[0].staves[0].measures[0].voices[0].events.some((event) => event.id === eventId && !event.isChord)
+      )).length,
+      ratio: `${core.tuplets[0]?.actualNotes}:${core.tuplets[0]?.normalNotes}`,
+    };
+  }).toEqual({ rhythmicCount: 3, ratio: '3:2' });
 
   await bootWithScore(page, 'quintuplet.musicxml', buildQuintupletFixtureXml());
   await waitForRenderedScore(page);
   await clickRenderedNotehead(page, 0);
-  await page.keyboard.press('Shift+ArrowRight');
-  await page.keyboard.press('Shift+ArrowRight');
-  await page.keyboard.press('Shift+ArrowRight');
-  await page.keyboard.press('Shift+ArrowRight');
   await openNotationSection(page, /Expression/);
   await page.getByTitle('Quintuplet from selection (Cmd/Ctrl+5)').click();
   await expect.poll(async () => {
-    const xml = await readCurrentXml(page);
-    return xml.includes('<actual-notes>5</actual-notes>') && xml.includes('<normal-notes>4</normal-notes>');
-  }).toBeTruthy();
+    const core = await readCurrentCore(page);
+    return {
+      rhythmicCount: core.tuplets[0]?.eventIds.filter((eventId) => (
+        core.score.parts[0].staves[0].measures[0].voices[0].events.some((event) => event.id === eventId && !event.isChord)
+      )).length,
+      ratio: `${core.tuplets[0]?.actualNotes}:${core.tuplets[0]?.normalNotes}`,
+    };
+  }).toEqual({ rhythmicCount: 5, ratio: '5:4' });
 });

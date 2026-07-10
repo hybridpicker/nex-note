@@ -189,6 +189,7 @@ export type SelectionRemap = Record<string, string>;
 export interface CoreCommandExecutionResult {
   coreDocument: ScoreDocumentModel;
   selectionRemap: SelectionRemap;
+  diagnostics: Array<{ level: 'info' | 'warning' | 'error'; code: string; message: string }>;
 }
 
 function applyToMatchingMeasures(
@@ -498,6 +499,40 @@ function requiredDivisionsForDuration(durationType: string, isDotted: boolean | 
   return lcm(currentDivisions, divisor);
 }
 
+function dividedTupletUnitDuration(
+  durationType: string | undefined,
+  isDotted: boolean | undefined,
+  normalNotes: number,
+) {
+  const quarterFractions: Record<string, { num: number; den: number }> = {
+    maxima: { num: 32, den: 1 },
+    long: { num: 16, den: 1 },
+    breve: { num: 8, den: 1 },
+    whole: { num: 4, den: 1 },
+    half: { num: 2, den: 1 },
+    quarter: { num: 1, den: 1 },
+    eighth: { num: 1, den: 2 },
+    '16th': { num: 1, den: 4 },
+    '32nd': { num: 1, den: 8 },
+    '64th': { num: 1, den: 16 },
+  };
+  const group = durationType ? quarterFractions[durationType] : undefined;
+  if (!group || !Number.isInteger(normalNotes) || normalNotes < 1) return null;
+  const groupNum = group.num * (isDotted ? 3 : 1);
+  const groupDen = group.den * (isDotted ? 2 : 1) * normalNotes;
+
+  for (const [type, fraction] of Object.entries(quarterFractions)) {
+    for (const dotted of [false, true]) {
+      const candidateNum = fraction.num * (dotted ? 3 : 1);
+      const candidateDen = fraction.den * (dotted ? 2 : 1);
+      if (candidateNum * groupDen === groupNum * candidateDen) {
+        return { type, dotted };
+      }
+    }
+  }
+  return null;
+}
+
 function scaleMeasureTiming(
   measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
   factor: number,
@@ -522,17 +557,13 @@ function measureHasExplicitDivisions(
   return measure.attributes.some((attribute) => typeof attribute.divisions === 'number' && attribute.divisions > 0);
 }
 
-function ensureStaffDivisionsForDuration(
+function setStaffDivisionsAtMeasure(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   measureNumber: number,
-  durationType: string,
-  isDotted: boolean | undefined,
+  nextDivisions: number,
 ) {
   const timing = getEffectiveMeasureTimingFromStaff(staff, { measureNumber });
-  if (!timing) return;
-  const nextDivisions = requiredDivisionsForDuration(durationType, isDotted, timing.divisions);
-  if (nextDivisions <= timing.divisions) return;
-
+  if (!timing || nextDivisions <= timing.divisions) return;
   const factor = nextDivisions / timing.divisions;
   if (!Number.isInteger(factor) || factor <= 1) return;
 
@@ -548,6 +579,20 @@ function ensureStaffDivisionsForDuration(
     if (index > timing.measureIndex && measureHasExplicitDivisions(measure)) break;
     scaleMeasureTiming(measure, factor);
   }
+}
+
+function ensureStaffDivisionsForDuration(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  measureNumber: number,
+  durationType: string,
+  isDotted: boolean | undefined,
+) {
+  const timing = getEffectiveMeasureTimingFromStaff(staff, { measureNumber });
+  if (!timing) return;
+  const nextDivisions = requiredDivisionsForDuration(durationType, isDotted, timing.divisions);
+  if (nextDivisions <= timing.divisions) return;
+
+  setStaffDivisionsAtMeasure(staff, measureNumber, nextDivisions);
 }
 
 function clampInsertionOffsetToMeasure(
@@ -3113,6 +3158,7 @@ export function executeCoreCommands(
 ): CoreCommandExecutionResult {
   const nextDocument = cloneDocument(currentDocument);
   let selectionRemap: SelectionRemap = {};
+  const diagnostics: CoreCommandExecutionResult['diagnostics'] = [];
   const batchTargetKeyFifths = [...commands]
     .reverse()
     .find((command) => command.type === 'setKey')?.fifths;
@@ -4472,34 +4518,164 @@ export function executeCoreCommands(
         break;
       }
       case 'addTuplet': {
-        // Collect all non-chord events within the given timestamp range for this voice.
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
-        if (!found) break;
-        const startRatio = command.startTimestampNum / command.startTimestampDen;
-        const stopRatio = command.stopTimestampNum / command.stopTimestampDen;
-        const spanEvents = found.voice.events
-          .filter((event) => !event.isChord)
-          .filter((event) => {
-            const ratio = event.timestampNum / Math.max(event.timestampDen, 1);
-            return ratio >= startRatio && ratio <= stopRatio;
-          })
-          .sort((a, b) => a.timestampNum - b.timestampNum);
-        if (spanEvents.length < 2) break;
-        // Remove any existing tuplet that overlaps this span.
-        const spanEventIds = new Set(spanEvents.map((event) => event.id));
-        nextDocument.tuplets = nextDocument.tuplets.filter(
-          (tuplet) => !tuplet.eventIds.some((id) => spanEventIds.has(id)),
+        const rejectTuplet = (message: string) => diagnostics.push({
+          level: 'warning',
+          code: 'tuplet_command_rejected',
+          message,
+        });
+        if (!timestampsEqual(
+          command.startTimestampNum,
+          command.startTimestampDen,
+          command.stopTimestampNum,
+          command.stopTimestampDen,
+        )) {
+          rejectTuplet('Tuplet creation divides one selected rhythmic slot; range conversion is not safe.');
+          break;
+        }
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        if (!found) {
+          rejectTuplet('The selected tuplet voice could not be resolved.');
+          break;
+        }
+        const selectedIndex = findCommandEventIndex(found.voice, {
+          coreEntityId: command.coreEntityId,
+          timestampNum: command.startTimestampNum,
+          timestampDen: command.startTimestampDen,
+        });
+        const selectedEvent = found.voice.events[selectedIndex];
+        if (!selectedEvent) {
+          rejectTuplet('The selected tuplet anchor no longer exists.');
+          break;
+        }
+        const graceEventIds = new Set(nextDocument.graceNotes.map((entry) => entry.eventId));
+        const resolveLane = (voice: VoiceNode) => {
+          const onsetEvents = voice.events.filter((event) => (
+            !graceEventIds.has(event.id)
+            && timestampsEqual(
+              event.timestampNum,
+              event.timestampDen,
+              selectedEvent.timestampNum,
+              selectedEvent.timestampDen,
+            )
+          ));
+          const root = onsetEvents.find((event) => !event.isChord);
+          return root ? { voice, root, onsetEvents } : null;
+        };
+        const sourceLane = resolveLane(found.voice);
+        if (!sourceLane) {
+          rejectTuplet('Tuplet creation requires a rhythmic note, chord, or rest anchor.');
+          break;
+        }
+        const unitNotation = dividedTupletUnitDuration(
+          sourceLane.root.durationType,
+          sourceLane.root.isDotted,
+          command.normalNotes,
         );
+        if (!unitNotation) {
+          rejectTuplet(`The selected ${sourceLane.root.isDotted ? 'dotted ' : ''}${sourceLane.root.durationType ?? 'unknown'} duration cannot represent a ${command.actualNotes}:${command.normalNotes} tuplet exactly.`);
+          break;
+        }
+        const pairedVoice = findPairedStaffVoice(
+          found.part,
+          command.staffIndex,
+          command.measureNumber,
+          command.voiceId,
+        );
+        const pairedLane = pairedVoice ? resolveLane(pairedVoice.voice) : null;
+        const lanes = [sourceLane, pairedLane].filter((lane): lane is NonNullable<typeof lane> => Boolean(lane));
+        if (lanes.some((lane) => lane.onsetEvents.some((event) => event.tieStart))) {
+          rejectTuplet('Tuplet creation on a tied source is unsafe; remove or complete the tie first.');
+          break;
+        }
+        if (lanes.some((lane) => lane.onsetEvents.some((event) => (
+          nextDocument.tuplets.some((tuplet) => tuplet.eventIds.includes(event.id))
+        )))) {
+          rejectTuplet('The selected rhythmic slot is already inside a tuplet; nested tuplets are not yet editable safely.');
+          break;
+        }
+        if (pairedLane && (
+          pairedLane.root.durationType !== sourceLane.root.durationType
+          || Boolean(pairedLane.root.isDotted) !== Boolean(sourceLane.root.isDotted)
+        )) {
+          rejectTuplet('Paired notation and TAB durations disagree at the selected tuplet anchor.');
+          break;
+        }
+
+        const timing = resolveMeasureTiming(found.staff, found.measure);
+        const durationFactor = command.actualNotes / gcd(sourceLane.root.durationDivisions, command.actualNotes);
+        const notationDivisions = requiredDivisionsForDuration(unitNotation.type, unitNotation.dotted, timing.divisions);
+        const targetDivisions = lcm(timing.divisions * durationFactor, notationDivisions);
+        const scaleFactor = targetDivisions / timing.divisions;
+        if (!Number.isInteger(scaleFactor) || scaleFactor < 1) {
+          rejectTuplet('Tuplet creation could not establish an exact integer division grid.');
+          break;
+        }
+        found.part.staves.forEach((staff) => {
+          const staffTiming = getEffectiveMeasureTimingFromStaff(staff, { measureNumber: command.measureNumber });
+          if (staffTiming) setStaffDivisionsAtMeasure(staff, command.measureNumber, staffTiming.divisions * scaleFactor);
+        });
+
+        if (sourceLane.root.durationDivisions % command.actualNotes !== 0) {
+          rejectTuplet('Tuplet creation remained fractional after division-grid normalization.');
+          break;
+        }
         const existingNumbers = nextDocument.tuplets.map((tuplet) => tuplet.number).filter(Number.isFinite);
         const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
-        nextDocument.tuplets.push({
-          id: `tuplet:${command.measureNumber}:${command.staffIndex}:${command.voiceId}:${command.startTimestampNum}:${Date.now()}`,
-          number: nextNumber,
-          eventIds: spanEvents.map((event) => event.id),
-          actualNotes: command.actualNotes,
-          normalNotes: command.normalNotes,
-          bracket: command.bracket,
-          showNumber: command.showNumber,
+        const usedEventIds = new Set<string>();
+        nextDocument.score.parts.forEach((part) => part.staves.forEach((staff) => (
+          staff.measures.forEach((measure) => measure.voices.forEach((voice) => (
+            voice.events.forEach((event) => usedEventIds.add(event.id))
+          )))
+        )));
+        lanes.forEach((lane) => {
+          const unitDuration = lane.root.durationDivisions / command.actualNotes;
+          lane.onsetEvents.forEach((event) => {
+            event.durationDivisions = unitDuration;
+            event.durationType = unitNotation.type;
+            event.isDotted = unitNotation.dotted || undefined;
+          });
+          const measure = found.part.staves
+            .find((staff) => staff.staffIndex === lane.root.staffIndex)
+            ?.measures.find((entry) => entry.measureNumber === command.measureNumber);
+          if (!measure) return;
+          const insertionIndex = Math.max(...lane.onsetEvents.map((event) => lane.voice.events.indexOf(event))) + 1;
+          const restEvents: TimedEvent[] = [];
+          for (let unitIndex = 1; unitIndex < command.actualNotes; unitIndex += 1) {
+            const idPrefix = `${lane.root.id}:tuplet-rest:${nextNumber}:${unitIndex}`;
+            let id = idPrefix;
+            let collision = 1;
+            while (usedEventIds.has(id)) {
+              id = `${idPrefix}:${collision}`;
+              collision += 1;
+            }
+            usedEventIds.add(id);
+            restEvents.push({
+              id,
+              kind: 'rest',
+              measureNumber: command.measureNumber,
+              staffIndex: lane.root.staffIndex,
+              voiceId: command.voiceId,
+              timestampNum: lane.root.timestampNum + unitDuration * unitIndex,
+              timestampDen: lane.root.timestampDen,
+              durationDivisions: unitDuration,
+              durationType: unitNotation.type,
+              isDotted: unitNotation.dotted || undefined,
+              isChord: false,
+              articulations: [],
+              tieStart: false,
+              lyrics: [],
+            });
+          }
+          lane.voice.events.splice(insertionIndex, 0, ...restEvents);
+          nextDocument.tuplets.push({
+            id: `tuplet:${measure.id}:${lane.root.staffIndex}:${command.voiceId}:${lane.root.id}:${nextNumber}`,
+            number: nextNumber,
+            eventIds: [...lane.onsetEvents.map((event) => event.id), ...restEvents.map((event) => event.id)],
+            actualNotes: command.actualNotes,
+            normalNotes: command.normalNotes,
+            bracket: command.bracket,
+            showNumber: command.showNumber,
+          });
         });
         break;
       }
@@ -5352,6 +5528,7 @@ export function executeCoreCommands(
   return {
     coreDocument: nextDocument,
     selectionRemap,
+    diagnostics,
   };
 }
 

@@ -18,7 +18,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
-- Recent validation on 2026-07-10: `npm test` passed with `938` tests, the production build passed, and the complete notation-tools Playwright project passed with `21` tests. The bounded MuseScore roundtrip smoke completed with `passed-with-local-musescore-limit`; MuseScore 4.7.3 remained crash-unstable across source and nex-note conversions, so crash-only differences are inconclusive. Coverage and high-severity audit evidence remains dated 2026-05-13 and is reported separately below.
+- Recent validation on 2026-07-10: `npm test` passed with `941` tests, the production build passed, and the complete notation-tools Playwright project passed with `22` tests. The bounded MuseScore roundtrip smoke completed with `passed-with-local-musescore-limit`; MuseScore 4.7.3 remained crash-unstable across source and nex-note conversions, so crash-only differences are inconclusive. Coverage and high-severity audit evidence remains dated 2026-05-13 and is reported separately below.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
 
@@ -50,6 +50,7 @@ The core value is:
 - Render MusicXML in-browser with OpenSheetMusicDisplay.
 - Edit notes directly with MuseScore-style keyboard, mouse, QWERTY piano, and live MIDI step-input workflows, including nearest-octave A-G entry, one-shot standard accidentals with measure carry, selection-wide `J` enharmonic respelling, chords, tied-note/chord creation, voices, rests, and atomic undo/redo.
 - Insert zero-time grace-note entities before selected anchors—including at irregular-meter barlines—without converting or displacing the main note; paired notation/TAB and MusicXML roundtrip stay synchronized.
+- Divide one selected note, chord, or rest into an exact 2:3 through 9:8 tuplet with editable rest units, identity-preserving anchors, automatic integer-division rescaling, paired notation/TAB, and explicit rejection of unsafe ranges or tied/nested sources.
 - Use selection ranges, transpose tools, dynamics, articulations with placement controls, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and cascading staff/collision layout controls.
 - Use an AI assistant with Ollama, Claude, Gemini, or benchmark mode.
 - Preview and confirm risky AI edits before applying them.
@@ -289,8 +290,8 @@ npm run electron:build
 
 Current validation snapshot:
 
-- `npm test`: 938 tests passed on 2026-07-10.
-- `npx playwright test e2e/notation-tools.spec.ts --project regression`: 21 tests passed on 2026-07-10.
+- `npm test`: 941 tests passed on 2026-07-10.
+- `npx playwright test e2e/notation-tools.spec.ts --project regression`: 22 tests passed on 2026-07-10.
 - `npm run build`: passed on 2026-07-10.
 - Bounded `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0`: completed with `passed-with-local-musescore-limit` on 2026-07-10; MuseScore 4.7.3 intermittently aborted on source and generated variants, so crash-only results remain inconclusive rather than nex-note export failures.
 - `npm run test:coverage:check`: 84.96% lines, 76.57% branches, 85.33% functions.

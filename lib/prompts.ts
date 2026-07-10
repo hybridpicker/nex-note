@@ -91,7 +91,7 @@ Commands:
 - {"type":"setLyricLine","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4,"verseNumber":2,"text":"Ky","syllabic":"begin"}
 - {"type":"removeLyricLine","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4,"verseNumber":2}
 - {"type":"removeDirection","measureNumber":2,"text":"dolce","kind":"words"}
-- {"type":"addTuplet","measureNumber":1,"staffIndex":1,"voiceId":1,"startTimestampNum":0,"startTimestampDen":4,"stopTimestampNum":2,"stopTimestampDen":4,"actualNotes":3,"normalNotes":2}
+- {"type":"addTuplet","measureNumber":1,"staffIndex":1,"voiceId":1,"startTimestampNum":0,"startTimestampDen":4,"stopTimestampNum":0,"stopTimestampDen":4,"actualNotes":3,"normalNotes":2} // divides one rhythmic slot; start and stop must match
 - {"type":"addGraceNote","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4,"slash":true}
 - {"type":"removeGraceNote","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4}
 - {"type":"addFingering","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4,"fingering":"2"}

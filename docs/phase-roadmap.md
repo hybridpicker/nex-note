@@ -244,6 +244,7 @@ Phase 9 Note Input hardening is now covered by the current repository state:
 5. MusicXML, Copy/Paste, Undo/Redo, rendered Playwright, strict Doctor, and paired TAB regressions cover the completed accidental and respelling workflows
 6. manual courtesy/cautionary presentation is semantic, supports none/round/square enclosure, and is covered through MusicXML, Copy/Paste, paired TAB, history, UI, rendering, and strict Doctor
 7. grace entry inserts a distinct zero-time entity before its anchor, including irregular-meter barline starts, instead of converting the rhythmic note
+8. tuplet shortcuts divide one selected semantic duration into exact units, preserve anchor/chord identity, rescale divisions, mirror TAB, and reject unsafe range, tie, or nested requests explicitly
 
 Highest-value remaining work:
 

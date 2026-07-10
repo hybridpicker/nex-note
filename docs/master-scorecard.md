@@ -432,3 +432,35 @@ Verification evidence:
 - `e2e/notation-tools.spec.ts` (regression project): 21 passed.
 - Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only differences remain inconclusive. Artifacts: `.nex/musescore-roundtrip-smoke-2026-07-10T17-15-13-592Z`.
 - `git diff --check`: passed before commit.
+
+## Iteration 2026-07-10 — Exact Single-Anchor Tuplet Entry
+
+All unlisted capabilities inherit the 58% product state above. This iteration replaces invalid range labeling with MuseScore-style division of one selected rhythmic duration, without claiming nested/custom-tuplet or complete pointer/MIDI parity.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 99% | 99% |
+| Tuplets | 52% | 78% |
+| MusicXML Roundtrip | 87% | 89% |
+| TAB Standard Notation Sync | 82% | 84% |
+| Undo | 91% | 92% |
+| Diagnostics | 82% | 86% |
+| Testing | 96% | 97% |
+| Consistency | 94% | 96% |
+| Professional Workflow | 84% | 86% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **58%**
+- Closing: **59%**
+
+`Cmd/Ctrl+2...9` and the toolbar now divide one selected note, chord, or rest into an exact tuplet group. The original onset and chord-tone IDs remain stable; the remaining equal units are semantic rests ready for continued entry. The core executor raises the part's integer division grid when needed, keeps the group duration and irregular-meter measure balance unchanged, creates separate synchronized notation/TAB spans, and preserves tuplet rests during normalization. Range conversions, tied anchors, incompatible written durations, and already-nested anchors fail closed with a visible `tuplet_command_rejected` diagnostic instead of producing malformed time modification. MusicXML carries both sounding `<time-modification>` and graphical `<tuplet>` data, while 5/8 barline, chord, ratios 2-9, paired TAB, rendered strict-Doctor, and atomic Undo/Redo regressions cover the supported workflow. Nested/custom tuplets and broad pointer/MIDI entry stress remain open.
+
+Verification evidence:
+
+- `npm test`: 941 passed, 0 failed.
+- `npm run build`: production build and TypeScript validation passed.
+- `e2e/notation-tools.spec.ts` (regression project): 22 passed.
+- Focused rendered browser tuplet workflow in `e2e/app.spec.ts`: 1 passed.
+- Bounded local MuseScore 4.7.3 roundtrip smoke: `passed-with-local-musescore-limit`; the installed CLI remained crash-unstable across source and nex-note variants, so crash-only differences remain inconclusive. Artifacts: `.nex/musescore-roundtrip-smoke-2026-07-10T20-30-02-061Z`.
+- `git diff --check`: passed before commit.

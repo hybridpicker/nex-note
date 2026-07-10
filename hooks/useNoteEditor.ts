@@ -3150,7 +3150,7 @@ export function useNoteEditor(
       voiceId: selectedNote.voiceId,
       timestampNum: selectedNote.timestampNum,
       timestampDen: selectedNote.timestampDen,
-      slash: false,
+      slash: true,
     }];
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
@@ -3161,27 +3161,29 @@ export function useNoteEditor(
   }, [selectedNote, selectedNotes, xml, applyEditorCommands, onApplyCommands, warnNoOpEdit]);
 
   const addTupletToSelection = useCallback((preset: TupletPreset) => {
-    const targets = selectedTargets(selectedNote, selectedNotes).filter((entry) => !entry.isRest);
-    if (targets.length < 2) return;
-    const first = targets[0];
-    const last = targets[targets.length - 1];
-    const sameVoice = targets.every((entry) => (
-      entry.measureNumber === first.measureNumber
-      && entry.staffIndex === first.staffIndex
-      && entry.voiceId === first.voiceId
-    ));
-    if (!sameVoice) return;
+    const targets = selectedTargets(selectedNote, selectedNotes);
+    if (targets.length !== 1) {
+      warnRejectedEdit('addTuplet', {
+        rejectionReason: 'Select exactly one note or rest whose duration should be divided into the tuplet.',
+        selectionCount: targets.length,
+      });
+      return;
+    }
+    const first = targets[0]!;
     const { actualNotes, normalNotes, label } = normalizeTupletPreset(preset);
-    dbg.editor(`addTuplet preset=${label} count=${targets.length} m.${first.measureNumber}`);
+    dbg.editor(`addTuplet preset=${label} anchor=${first.coreEntityId ?? 'timestamp'} m.${first.measureNumber}`);
     const commands: ScoreCommand[] = [{
       type: 'addTuplet',
+      coreEntityId: first.coreEntityId ?? undefined,
+      coreMeasureId: first.coreMeasureId ?? undefined,
+      corePartId: first.corePartId ?? undefined,
       measureNumber: first.measureNumber,
       staffIndex: first.staffIndex,
       voiceId: first.voiceId,
       startTimestampNum: first.timestampNum,
       startTimestampDen: first.timestampDen,
-      stopTimestampNum: last.timestampNum,
-      stopTimestampDen: last.timestampDen,
+      stopTimestampNum: first.timestampNum,
+      stopTimestampDen: first.timestampDen,
       actualNotes,
       normalNotes,
       bracket: true,
@@ -3189,11 +3191,15 @@ export function useNoteEditor(
     }];
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
-      warnNoOpEdit('addTuplet', commands[0]!);
+      const rejection = next.diagnostics.find((entry) => entry.code === 'tuplet_command_rejected');
+      warnRejectedEdit('addTuplet', {
+        command: commands[0],
+        rejectionReason: rejection?.message ?? 'The selected duration cannot be divided into this tuplet safely.',
+      });
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnRejectedEdit, xml]);
 
   const navigateNote = useCallback((direction: 'prev' | 'next') => {
     if (!selectedNote) return;

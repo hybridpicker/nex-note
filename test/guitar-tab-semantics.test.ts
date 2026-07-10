@@ -7,6 +7,7 @@ import { exportCoreToMusicXml } from '../src/musicxml-adapter/export/export-core
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
 import { resolveNextEnharmonicPitch } from '../src/shared/music/accidentals.ts';
+import { validateScoreDocument } from '../src/score-core/validation/validate-score-document.ts';
 
 const EMPTY_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -456,6 +457,36 @@ test('grace insertion mirrors a zero-time entity across paired notation and TAB 
   assert.equal(removed.graceNotes.length, 0);
   assert.equal(removed.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.some((event) => event.id === notationAnchor.id), true);
   assert.equal(removed.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events.some((event) => event.id === tabAnchor.id), true);
+});
+
+test('tuplet creation divides paired notation and TAB anchors through the core path', () => {
+  const source = importMusicXmlToCore(DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS);
+  const notationAnchor = source.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  const tabAnchor = source.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0]!;
+  const result = applyDocumentCommands({ xml: DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS, coreDocument: source }, [{
+    type: 'addTuplet',
+    coreEntityId: notationAnchor.id,
+    coreMeasureId: source.score.parts[0]!.staves[0]!.measures[0]!.id,
+    corePartId: source.score.parts[0]!.id,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    startTimestampNum: 0,
+    startTimestampDen: 4,
+    stopTimestampNum: 0,
+    stopTimestampDen: 4,
+    actualNotes: 3,
+    normalNotes: 2,
+    bracket: true,
+  }]);
+
+  assert.equal(result.diagnostics.some((entry) => entry.code === 'legacy_fallback'), false);
+  assert.equal(result.coreDocument!.tuplets.length, 2);
+  assert.equal(result.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.some((event) => event.id === notationAnchor.id), true);
+  assert.equal(result.coreDocument!.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events.some((event) => event.id === tabAnchor.id), true);
+  assert.deepEqual(result.coreDocument!.tuplets.map((tuplet) => tuplet.eventIds.length), [3, 3]);
+  assert.deepEqual(validateScoreDocument(result.coreDocument).filter((entry) => entry.level === 'error'), []);
+  assert.match(result.xml, /<staff-details number="2">/);
 });
 
 test('enharmonic respelling mirrors spelling across paired notation and TAB without changing fret', () => {

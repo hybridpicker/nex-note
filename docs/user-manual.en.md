@@ -116,7 +116,7 @@ Press `J` repeatedly to cycle a note, chord, or range through conventional enhar
 | Tie | In normal mode, links selected pitches to the next matching onset. In Note Input, creates the next note or chord and its ties atomically. Shortcut: `T`. |
 | Slur | Spans the selection or the next note. Shortcut: `S`. |
 | Grace note | `/` inserts a separate zero-time grace note before the selected anchor without changing the main note's duration; barline starts and paired notation/TAB are supported. |
-| Tuplets | Triplet and quintuplet via toolbar/palette or `Cmd/Ctrl+3` and `Cmd/Ctrl+5`. |
+| Tuplets | Select exactly one note, chord, or rest, then divide its duration with toolbar ratios 2:3 through 9:8 or `Cmd/Ctrl+2...9`; the remaining units are editable rests. |
 
 Some notation marks may be visual-only depending on playback support.
 Direction and placement editing remains intentionally conservative: the Inspector now exposes semantic placement for staff text, expression text, dynamics, existing selected articulations or fermatas, already-existing tie starts, and already-existing slur spans, while direction placement for wedges and ottavas remains roundtrip-safe in the core/import/export path.

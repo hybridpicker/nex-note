@@ -365,6 +365,7 @@ export const DOCUMENT_DIAGNOSTIC_RULE_BY_CODE: Record<string, string> = {
   tuplet_span_short: 'notation.tuplet-integrity',
   tuplet_voice_mismatch: 'notation.tuplet-integrity',
   tuplet_count_mismatch: 'notation.tuplet-integrity',
+  tuplet_command_rejected: 'notation.tuplet-integrity',
   repeat_end_without_start: 'notation.repeat-ending-integrity',
   ending_without_repeat: 'notation.repeat-ending-integrity',
   duplicate_ending_start: 'notation.repeat-ending-integrity',

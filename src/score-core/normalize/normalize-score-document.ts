@@ -15,8 +15,12 @@ function normalizeAttributes(attributes: MeasureAttributes[]): MeasureAttributes
   }));
 }
 
-function normalizeRestEventDuration(event: TimedEvent, divisions: number): TimedEvent[] {
+function normalizeRestEventDuration(event: TimedEvent, divisions: number, tupletEventIds: ReadonlySet<string>): TimedEvent[] {
   if (event.kind !== 'rest' || event.isChord) return [event];
+  // Tuplet rests intentionally use sounding durations that are not standalone
+  // binary/dotted values. Their written duration is interpreted with the
+  // TupletSpan ratio and must remain one identity-bearing rhythmic unit.
+  if (tupletEventIds.has(event.id)) return [event];
   const beatDivisions = Math.max(divisions, 1);
   const crossesBeatBoundary = event.timestampNum % beatDivisions !== 0
     && event.durationDivisions > beatDivisions - (event.timestampNum % beatDivisions);
@@ -93,6 +97,7 @@ function findPartEffectiveTiming(part: PartNode, measureNumber: number) {
 
 export function normalizeScoreDocument(document: ScoreDocumentModel): ScoreDocumentModel {
   const next = cloneDocument(document);
+  const tupletEventIds = new Set((next.tuplets ?? []).flatMap((tuplet) => tuplet.eventIds));
 
   next.metadata = {
     title: next.metadata.title?.trim() || undefined,
@@ -114,7 +119,7 @@ export function normalizeScoreDocument(document: ScoreDocumentModel): ScoreDocum
         effectiveDivisions = measure.attributes[0]?.divisions ?? partTiming.divisions ?? effectiveDivisions;
         measure.voices.forEach((voice) => {
           voice.events = voice.events
-            .flatMap((event) => normalizeRestEventDuration(event, effectiveDivisions))
+            .flatMap((event) => normalizeRestEventDuration(event, effectiveDivisions, tupletEventIds))
             .sort((a, b) => (
               a.timestampNum - b.timestampNum
               || Number(a.isChord) - Number(b.isChord)

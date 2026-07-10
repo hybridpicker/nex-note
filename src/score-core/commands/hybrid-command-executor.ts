@@ -12,6 +12,7 @@ export interface HybridExecutionResult {
   supportedCommands: ValidatedScoreCommand[];
   fallbackCommands: ValidatedScoreCommand[];
   fallbackReasons: string[];
+  coreDiagnostics: Array<{ level: 'info' | 'warning' | 'error'; code: string; message: string }>;
 }
 
 const UNSAFE_CORE_ROUNDTRIP_TAGS = [
@@ -25,6 +26,9 @@ const CORE_SAFE_WITH_UNSAFE_ROUNDTRIP_TAGS = new Set([
   'setKey',
   'setGuitarFret',
   'setAccidentalDisplay',
+  'addTuplet',
+  'addGraceNote',
+  'removeGraceNote',
   'changeNoteDuration',
   'replaceWithRest',
   'transposeDocumentChromatic',
@@ -70,6 +74,7 @@ export function executeHybridCommands(
   let nextCoreDocument = coreDocument;
   let nextXml = sourceXml;
   let selectionRemap: SelectionRemap = {};
+  const coreDiagnostics: HybridExecutionResult['coreDiagnostics'] = [];
 
   let index = 0;
   while (index < commands.length) {
@@ -87,6 +92,7 @@ export function executeHybridCommands(
       const execution = executeCoreCommands(nextCoreDocument, run);
       nextCoreDocument = execution.coreDocument;
       selectionRemap = { ...selectionRemap, ...execution.selectionRemap };
+      coreDiagnostics.push(...execution.diagnostics);
       nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
       if (hasUnsafeTags && run.some((command) => command.type === 'setGuitarFret')) {
         nextCoreDocument = importMusicXmlToCore(nextXml);
@@ -105,5 +111,6 @@ export function executeHybridCommands(
     supportedCommands,
     fallbackCommands,
     fallbackReasons,
+    coreDiagnostics,
   };
 }

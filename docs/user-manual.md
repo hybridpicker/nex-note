@@ -157,7 +157,7 @@ Die Note Input Toolbar bietet schnelle Artikulationen fuer die aktive Note. Die 
 | Tie | Verbindet eine Note mit der naechsten gleichhoehen Note. Shortcut: `T`. |
 | Slur | Span ueber Auswahl oder zur naechsten Note. Shortcut: `S`. |
 | Grace Note | `/` fuegt eine eigene zeitlose Vorschlagsnote vor dem Anker ein, ohne Dauer oder Identitaet der Hauptnote zu aendern; Taktanfang und gepaarte Notation/TAB werden unterstuetzt. |
-| Tuplets | Tuplet-Buttons 2:3 bis 9:8 in der Toolbar; alternativ `Cmd/Ctrl+2...9`. |
+| Tuplets | Genau eine Note, einen Akkord oder eine Pause waehlen und mit den Tuplet-Buttons 2:3 bis 9:8 bzw. `Cmd/Ctrl+2...9` deren Dauer teilen; die zusaetzlichen Einheiten sind direkt eingebbare Pausen. |
 | Stem direction | `X` flippt die Halsrichtung der ausgewaehlten Note und speichert sie als MusicXML-Stem. |
 | Slash notehead | `Shift+X` toggelt den Slash-Notehead der ausgewaehlten Note ueber die semantische Notenstil-Operation. |
 

@@ -41,6 +41,7 @@ import {
 import { useNoteEditor, type SelectedNote } from '../hooks/useNoteEditor.ts';
 import { applyDocumentCommands, buildDocumentState } from '../src/score-core/commands/apply-document-commands.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
+import { validateScoreDocument } from '../src/score-core/validation/validate-score-document.ts';
 import {
   buildRenderedGhostGrid,
   getRenderedGhostStaffPoints,
@@ -5619,7 +5620,7 @@ test('grace notes and barlines are encoded into exported MusicXML', () => {
   });
   hook.rerender();
 
-  assert.match(hook.xml, /<grace\/>/);
+  assert.match(hook.xml, /<grace slash="yes"\/>/);
   assert.match(hook.xml, /<barline location="right">/);
   assert.match(hook.xml, /<repeat direction="backward"\/>/);
   hook.unmount();
@@ -5660,7 +5661,7 @@ test('slash shortcut adds a grace note at the current selection', () => {
   });
   hook.rerender();
 
-  assert.match(hook.xml, /<grace\/>/);
+  assert.match(hook.xml, /<grace slash="yes"\/>/);
   hook.unmount();
 });
 
@@ -6225,15 +6226,12 @@ test('Cmd/Ctrl+Shift+A-G reaches explicit cursor pitch entry instead of clipboar
   hook.unmount();
 });
 
-test('quick tuplet insert encodes a triplet over the selected semantic range', () => {
+test('quick tuplet insert divides one selected rhythmic slot into a balanced triplet', () => {
   const hook = renderHook(SAMPLE_XML);
   const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => note.measureNumber === 1 && !note.isRest);
 
   act(() => {
     hook.current.handleNoteClick(notes[0]);
-  });
-  act(() => {
-    hook.current.handleNoteClick(notes[2], { range: true });
   });
   act(() => {
     hook.current.addTupletToSelection('triplet');
@@ -6244,10 +6242,17 @@ test('quick tuplet insert encodes a triplet over the selected semantic range', (
   assert.match(hook.xml, /<normal-notes>2<\/normal-notes>/);
   assert.match(hook.xml, /<tuplet number="1" type="start"/);
   assert.match(hook.xml, /<tuplet number="1" type="stop"/);
+  const core = importMusicXmlToCore(hook.xml);
+  const tuplet = core.tuplets[0]!;
+  assert.equal(tuplet.eventIds.filter((eventId) => {
+    const events = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+    return events.some((event) => event.id === eventId && !event.isChord);
+  }).length, 3);
+  assert.deepEqual(validateScoreDocument(core).filter((entry) => entry.level === 'error'), []);
   hook.unmount();
 });
 
-test('MuseScore tuplet shortcuts create 2 through 9 tuplet spans', () => {
+test('MuseScore tuplet shortcuts divide one compatible anchor for ratios 2 through 9', () => {
   const normalNotesByActual = new Map([
     [2, 3],
     [3, 2],
@@ -6260,15 +6265,18 @@ test('MuseScore tuplet shortcuts create 2 through 9 tuplet spans', () => {
   ]);
 
   for (const [actualNotes, normalNotes] of normalNotesByActual) {
-    const xml = makeQuarterNoteMeasureXml(actualNotes);
+    const xml = normalNotes === 3 || normalNotes === 6
+      ? `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>2</divisions><time><beats>3</beats><beat-type>8</beat-type></time></attributes>
+<note><pitch><step>C</step><octave>4</octave></pitch><duration>3</duration><voice>1</voice><type>quarter</type><dot/><staff>1</staff></note>
+</measure></part></score-partwise>`
+      : makeQuarterNoteMeasureXml(1);
     const hook = renderHook(xml);
     const notes = makeSelectedNotes(xml).filter((note) => note.measureNumber === 1 && !note.isRest);
 
     act(() => {
       hook.current.handleNoteClick(notes[0]);
-    });
-    act(() => {
-      hook.current.handleNoteClick(notes[actualNotes - 1], { range: true });
     });
     act(() => {
       hook.current.handleKeyDown(makeKeyboardEvent(String(actualNotes), {
@@ -6283,6 +6291,11 @@ test('MuseScore tuplet shortcuts create 2 through 9 tuplet spans', () => {
     assert.match(hook.xml, new RegExp(`<normal-notes>${normalNotes}</normal-notes>`));
     assert.match(hook.xml, /<tuplet number="1" type="start"/);
     assert.match(hook.xml, /<tuplet number="1" type="stop"/);
+    const core = importMusicXmlToCore(hook.xml);
+    assert.equal(core.tuplets[0]!.eventIds.filter((id) => (
+      core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.some((event) => event.id === id && !event.isChord)
+    )).length, actualNotes);
+    assert.deepEqual(validateScoreDocument(core).filter((entry) => entry.level === 'error'), []);
     hook.unmount();
   }
 });

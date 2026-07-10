@@ -92,7 +92,7 @@ Appuyez plusieurs fois sur `J` pour parcourir les graphies enharmoniques d'une n
 | Tie | Lie a la prochaine note de meme hauteur. Raccourci: `T`. |
 | Slur | Liaison d'expression sur la selection ou la note suivante. Raccourci: `S`. |
 | Grace note | `/` insere une appoggiature distincte sans duree avant l'ancrage, sans modifier la note principale; les debuts de mesure et notation/TAB appairee sont pris en charge. |
-| Tuplets | Triolet et quintolet via barre/palette ou `Cmd/Ctrl+3` et `Cmd/Ctrl+5`. |
+| Tuplets | Selectionnez une seule note, un accord ou un silence, puis divisez sa duree avec les rapports 2:3 a 9:8 ou `Cmd/Ctrl+2...9`; les unites restantes sont des silences modifiables. |
 
 Certains signes peuvent etre seulement visuels selon le moteur de lecture.
 

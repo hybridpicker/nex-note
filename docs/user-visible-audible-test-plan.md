@@ -147,6 +147,7 @@ Manual courtesy/cautionary acceptance is automated. Automatic courtesy suggestio
 | 5.8 | Press `S` over two or more notes | Slur arc drawn | Silent |
 | 5.9 | Grace-note button | Small grace note drawn before anchor | On playback, grace note precedes main note |
 | 5.10 | Select the first note after a barline in 5/8 and press `/`, then Undo/Redo | A separate small grace note appears before the unchanged anchor; both measures remain balanced and Doctor stays clean | Main-note timing is unchanged |
+| 5.11 | Select exactly one quarter note at the start of a later 5/8 measure and press `Cmd/Ctrl+3`, then Undo/Redo | The anchor becomes the first of three eighth-note triplet units followed by two editable rests; measure balance, selection, and Doctor remain stable | Group playback still occupies the original quarter-note duration |
 
 Regression note for `5.5`:
 

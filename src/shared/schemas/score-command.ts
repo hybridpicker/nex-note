@@ -115,6 +115,9 @@ export type LegacyScoreOperation =
   | ({ type: 'setLyricLine'; verseNumber: number; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end' } & NoteLocatorLike)
   | {
       type: 'addTuplet';
+      coreEntityId?: string | null;
+      coreMeasureId?: string | null;
+      corePartId?: string | null;
       measureNumber: number;
       staffIndex: number;
       voiceId: number;
@@ -832,6 +835,9 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       ensureNumber(command, 'stopTimestampDen', issues, { min: 1 });
       ensureNumber(command, 'actualNotes', issues, { min: 2, max: 32 });
       ensureNumber(command, 'normalNotes', issues, { min: 1, max: 32 });
+      if (command.coreEntityId != null) ensureString(command, 'coreEntityId', issues);
+      if (command.coreMeasureId != null) ensureString(command, 'coreMeasureId', issues);
+      if (command.corePartId != null) ensureString(command, 'corePartId', issues);
       if (command.showNumber != null && !['actual', 'both', 'none'].includes(String(command.showNumber))) {
         issues.push('showNumber must be actual, both, or none');
       }

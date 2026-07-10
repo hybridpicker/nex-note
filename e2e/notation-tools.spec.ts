@@ -723,7 +723,7 @@ test('grace entry at a barline inserts a rendered zero-time entity and preserves
   });
   await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(9);
   const editedXml = await readCurrentXml(page);
-  expect(editedXml).toMatch(/<grace\/>[\s\S]*?<step>G<\/step>[\s\S]*?<note>[\s\S]*?<step>G<\/step>/);
+  expect(editedXml).toMatch(/<grace slash="yes"\/>[\s\S]*?<step>G<\/step>[\s\S]*?<note>[\s\S]*?<step>G<\/step>/);
 
   await page.keyboard.press('Control+z');
   await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
@@ -731,6 +731,49 @@ test('grace entry at a barline inserts a rendered zero-time entity and preserves
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
   await expectNoDoctorIssues(page, 'after grace insertion undo and redo at a barline');
+});
+
+test('tuplet shortcut at a barline divides one anchor into balanced editable units atomically', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+
+  await clickRenderedNotehead(page, 4);
+  await expectSingleNoteSelection(page, 4);
+  await page.keyboard.press('Control+3');
+
+  const readTupletBoundary = async () => {
+    const core = await readCurrentCore(page);
+    const measure = core.score.parts[0].staves[0].measures[1];
+    const tuplet = core.tuplets.find((entry) => entry.eventIds.some((eventId) => (
+      measure.voices[0].events.some((event) => event.id === eventId)
+    )));
+    const events = measure.voices[0].events.filter((event) => tuplet?.eventIds.includes(event.id));
+    return {
+      ratio: tuplet ? `${tuplet.actualNotes}:${tuplet.normalNotes}` : null,
+      units: events.filter((event) => !event.isChord).map((event) => ({
+        kind: event.kind,
+        duration: event.durationDivisions,
+        type: event.durationType,
+      })),
+    };
+  };
+  await expect.poll(readTupletBoundary).toEqual({
+    ratio: '3:2',
+    units: [
+      { kind: 'note', duration: 2, type: 'eighth' },
+      { kind: 'rest', duration: 2, type: 'eighth' },
+      { kind: 'rest', duration: 2, type: 'eighth' },
+    ],
+  });
+  const editedXml = await readCurrentXml(page);
+  expect(editedXml).toContain('<actual-notes>3</actual-notes>');
+  expect(editedXml).toContain('<normal-notes>2</normal-notes>');
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
+  await expectNoDoctorIssues(page, 'after tuplet division undo and redo at a barline');
 });
 
 test('J cycles rendered enharmonic spelling with stable pitch, identity, and atomic history', async ({ page }) => {

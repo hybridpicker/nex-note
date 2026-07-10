@@ -14,12 +14,12 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
-- `npm test`: passed on 2026-07-10 (`938` tests, `0` failed)
+- `npm test`: passed on 2026-07-10 (`941` tests, `0` failed)
 - `npm run build`: passed on 2026-07-10; Next 16.2.6 compiled, TypeScript completed, and `postbuild` synced standalone assets
-- notation-tools Playwright regression project: passed on 2026-07-10 (`21` tests, `0` failed)
+- notation-tools Playwright regression project: passed on 2026-07-10 (`22` tests, `0` failed)
 - `npm run test:e2e`: passed on 2026-07-04 (`109` passed, `4` skipped, `31.5m`)
 - `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
-- MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-10 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; latest artifacts are under `.nex/musescore-roundtrip-smoke-2026-07-10T17-15-13-592Z`. Source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only step differences remain inconclusive.
+- MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip` completed on 2026-07-10 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; latest artifacts are under `.nex/musescore-roundtrip-smoke-2026-07-10T20-30-02-061Z`. Source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only step differences remain inconclusive.
 - `npm run test:coverage:check`: last passed on 2026-05-13 (`84.96%` lines, `76.57%` branches, `85.33%` functions)
 - `npm audit --audit-level=high`: last passed on 2026-05-13 (`0` vulnerabilities)
 - release validation remained on the core-first command path; no parallel direct-XML edit route was introduced to work around the runtime issues
@@ -39,6 +39,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - `J` now cycles single notes, chords, heterogeneous ranges, and complete tied chains through conventional enharmonic spellings without changing MIDI or event IDs; selection remains stable, the change is atomic, and same-MIDI paired TAB string/fret data is preserved
 - manual courtesy/cautionary accidentals now have pitch-neutral semantic metadata and accessible Palette/Inspector controls for none, round, and square enclosure; MusicXML attributes, Copy/Paste, paired TAB, atomic history, rendered output, and strict Doctor are covered
 - grace entry now preserves the selected main note and inserts a separate zero-time entity; irregular-meter barline starts, paired notation/TAB, MusicXML sequencing, rendered feedback, and atomic history are covered
+- tuplet shortcuts now divide one selected semantic duration instead of labeling an existing range; ratios 2-9 rescale divisions exactly, retain note/chord identity, create editable rests, mirror paired TAB, survive irregular-meter barline roundtrip and atomic history, and reject unsafe inputs visibly
 
 ## Manual Validation Highlights
 
@@ -56,7 +57,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - the MuseScore harness distinguishes source-baseline crashes, app-style MXL reopen checks, and MSCZ create/reopen checks; on this machine MuseScore 4.7.3 still SIGABRTs intermittently with `std::__1::system_error: mutex lock failed: Invalid argument`, including source-baseline runs, so native MusicXML/MXL/MSCZ parity remains an accepted local-tool limitation until verified on a stable MuseScore install
 - broader direction placement is still intentionally conservative: selected articulations, fermatas, ties, and slurs have above/below controls, while other direction types need targeted UI before they should be advertised as desktop-parity editing
 - chord input mode is available through the toolbar, `Shift+A...G`, `Alt/Option+1–9` interval entry, and `Cmd/Ctrl+Shift+H`, but still lacks deeper desktop-style chord-editing polish beyond the supported upward interval range
-- tuplet quick-insert is exposed in the note-input toolbar for ratios 2:3 through 9:8, matching the existing `Cmd/Ctrl+2...9` semantic command path
+- tuplet quick-insert supports exact single-anchor ratios 2:3 through 9:8; custom/nested tuplets and deeper pointer/MIDI entry inside tuplets remain intentionally partial
 - automatic courtesy-accidental detection remains a bounded workflow gap; manual cautionary intent and none/round/square enclosure are implemented and must not be described as an automatic engraving policy
 - the existing Turbopack warning remains unchanged and non-blocking for release
 

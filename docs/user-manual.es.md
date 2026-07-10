@@ -90,7 +90,7 @@ Pulsa `J` repetidamente para recorrer las escrituras enarmonicas de una nota, ac
 | Tie | Une con la siguiente nota de la misma altura. Atajo: `T`. |
 | Slur | Liga expresiva sobre seleccion o siguiente nota. Atajo: `S`. |
 | Grace note | `/` inserta una nota de adorno separada y sin tiempo antes del ancla, sin cambiar la nota principal; admite inicios de compas y notation/TAB emparejados. |
-| Tuplets | Tresillo y quintillo por barra/paleta o `Cmd/Ctrl+3` y `Cmd/Ctrl+5`. |
+| Tuplets | Seleccione una sola nota, acorde o silencio y divida su duracion con las relaciones 2:3 a 9:8 o `Cmd/Ctrl+2...9`; las unidades restantes son silencios editables. |
 
 Algunos signos pueden ser solo visuales segun el motor de reproduccion.
 

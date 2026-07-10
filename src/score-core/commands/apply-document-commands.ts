@@ -104,6 +104,8 @@ export function applyDocumentCommands(
     });
   }
 
+  diagnostics.push(...execution.coreDiagnostics);
+
   diagnostics.push(...validateScoreDocument(nextCoreDocument));
 
   return {
