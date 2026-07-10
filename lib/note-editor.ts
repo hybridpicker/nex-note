@@ -49,6 +49,7 @@ export interface NotePitchSnapshot {
 export type NoteEditOperation =
   | ({ type: 'changeNotePitch'; step: string; octave: number; alter: number } & NoteLocator)
   | ({ type: 'changeNoteDuration'; durationType: string; isDotted?: boolean } & NoteLocator)
+  | ({ type: 'replaceWithRest'; durationType: string; isDotted?: boolean } & NoteLocator)
   | ({ type: 'deleteNote' } & NoteLocator)
   | ({ type: 'rippleDelete' } & NoteLocator)
   | { type: 'rippleDeleteRange'; range: { start: NoteLocator; end: NoteLocator } }

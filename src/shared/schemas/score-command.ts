@@ -245,6 +245,7 @@ export interface ScoreDocumentSummary {
 const NOTE_EDIT_TYPES = new Set([
   'changeNotePitch',
   'changeNoteDuration',
+  'replaceWithRest',
   'deleteNote',
   'clearMeasureVoice',
   'rippleDelete',
@@ -554,6 +555,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
     case 'toggleGuitarTechnique':
     case 'changeNotePitch':
     case 'changeNoteDuration':
+    case 'replaceWithRest':
     case 'deleteNote':
     case 'rippleDelete':
     case 'toggleArticulation':
@@ -570,7 +572,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
         ensureString(command, 'step', issues);
         ensureNumber(command, 'octave', issues, { min: 0, max: 9 });
         ensureNumber(command, 'alter', issues, { min: -2, max: 2 });
-      } else if (type === 'changeNoteDuration') {
+      } else if (type === 'changeNoteDuration' || type === 'replaceWithRest') {
         ensureString(command, 'durationType', issues);
         ensureBoolean(command, 'isDotted', issues);
       }

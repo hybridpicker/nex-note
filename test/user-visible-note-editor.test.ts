@@ -5819,6 +5819,55 @@ test('same-pitch note-name replacement advances without creating a history comma
   hook.unmount();
 });
 
+test('rest input applies the active duration and advances across matching rests without extra history', () => {
+  const hook = renderHook(OVERFLOW_REST_XML);
+  const first = makeSelectedNotes(OVERFLOW_REST_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first);
+    hook.current.toggleNoteInput();
+    hook.current.handleKeyDown(makeKeyboardEvent('4'));
+    hook.current.insertRest();
+  });
+  hook.rerender();
+
+  const enteredRest = flattenVoiceEvents(hook.xml).find((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 0
+  ));
+  assert.equal(enteredRest?.kind, 'rest');
+  assert.equal(enteredRest?.durationType, 'eighth');
+  assert.equal(hook.appliedCommands.length, 1);
+  assert.equal(hook.appliedCommands[0]?.[0]?.type, 'replaceWithRest');
+
+  const matchingRest = makeSelectedNotes(hook.xml).find((note) => (
+    note.isRest
+    && note.measureNumber === 2
+    && note.timestampNum / note.timestampDen === 1 / 4
+  ));
+  assert.ok(matchingRest);
+  act(() => {
+    hook.current.handleNoteClick(matchingRest);
+    hook.current.handleKeyDown(makeKeyboardEvent('5'));
+  });
+  const xmlBeforeMatchingRest = hook.xml;
+  const historyBeforeMatchingRest = hook.appliedCommands.length;
+  act(() => {
+    hook.current.insertRest();
+  });
+
+  assert.equal(hook.xml, xmlBeforeMatchingRest);
+  assert.equal(hook.appliedCommands.length, historyBeforeMatchingRest);
+  assert.equal(hook.current.selectedNote?.measureNumber, 2);
+  assert.equal(
+    (hook.current.selectedNote?.timestampNum ?? 0) / (hook.current.selectedNote?.timestampDen ?? 1),
+    2 / 4,
+  );
+  assert.equal(hook.current.noteInputAnchor?.isRest, true);
+  assert.deepEqual(hook.previewedNoteGroups.at(-1), []);
+  hook.unmount();
+});
+
 test('Cmd/Ctrl+Shift+A-G reaches explicit cursor pitch entry instead of clipboard commands', () => {
   const hook = renderHook(SAMPLE_XML);
   const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);

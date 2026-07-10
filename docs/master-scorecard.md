@@ -260,3 +260,27 @@ All unlisted capabilities inherit the 51% product state above. This iteration fi
 - Closing: **52%**
 
 Entering a pitch that already matches the replaceable note at the cursor is now treated as a successful step-time action rather than an edit failure. The editor refreshes the last-input anchor and audible preview, advances to the next rhythmic slot with the same lane guards as a mutating entry, and deliberately skips `onApplyCommands`, leaving XML, revision history, Undo, and Redo untouched. Chord/unison no-ops continue to remain at their onset. `Q`, `W`, `Shift+Q`, and `Shift+W` duration transforms now prefer the last-input anchor over the visually advanced future cursor; direct duration selection continues to configure the next entry when the cursor has advanced. Editor coverage proves two identical C inputs advance before a later real edit and exercises the duration matrix; Playwright traverses an entire eight-note, two-measure passage with byte-identical XML, no Undo state, and clean strict diagnostics.
+
+## Iteration 2026-07-10 — Duration-Aware Step-Time Rest Entry
+
+All unlisted capabilities inherit the 52% product state above. This iteration replaces the delete-style rest shortcut with a first-class semantic rest-replacement transaction.
+
+| Capability | Baseline | Closing |
+| --- | ---: | ---: |
+| Note Input | 90% | 93% |
+| Keyboard Entry | 91% | 93% |
+| Duration Editing | 79% | 82% |
+| Rests | 74% | 84% |
+| Chord Entry | 78% | 80% |
+| Undo | 77% | 80% |
+| Testing | 87% | 89% |
+| Code Quality | 78% | 80% |
+| Consistency | 73% | 77% |
+| Professional Workflow | 65% | 68% |
+
+### Overall MuseScore Compatibility
+
+- Baseline: **52%**
+- Closing: **53%**
+
+`0`/rest entry now honors the active duration when overwriting a rhythmic slot and replaces an entire same-onset chord with one rest instead of deleting only one tone. The semantic command preserves the rhythmic entity, removes note-only attachments, retains valid tuplet membership, mirrors paired notation/TAB lanes, and applies the same duration timing rules as pitched replacement. An already matching rest is recognized before command execution, so the cursor advances while XML and Undo history remain untouched. Core, hook, and rendered Playwright regressions cover chord collapse, duration selection, consecutive rest entry, single-step undo, and strict Doctor diagnostics.

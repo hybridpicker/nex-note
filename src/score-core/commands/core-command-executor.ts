@@ -28,6 +28,7 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'deleteMeasure',
   'changeNotePitch',
   'changeNoteDuration',
+  'replaceWithRest',
   'deleteNote',
   'deleteRange',
   'clearMeasureVoice',
@@ -3462,6 +3463,106 @@ export function executeCoreCommands(
             durationType: command.durationType,
             isDotted: command.isDotted,
           });
+        }
+        break;
+      }
+      case 'replaceWithRest': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        if (!found) break;
+
+        const replaceVoiceOnset = (
+          staff: typeof found.staff,
+          measure: typeof found.measure,
+          voice: typeof found.voice,
+        ) => {
+          ensureStaffDivisionsForDuration(staff, measure.measureNumber, command.durationType, command.isDotted);
+          const timing = resolveMeasureTiming(staff, measure);
+          const simultaneousIndices = findSimultaneousEventIndices(voice, command.timestampNum, command.timestampDen);
+          const simultaneousEvents = simultaneousIndices.map((index) => voice.events[index]).filter(Boolean);
+          const root = simultaneousEvents.find((event) => !event.isChord) ?? simultaneousEvents[0];
+          if (!root) return null;
+
+          const previousDuration = simultaneousEvents.reduce((max, event) => (
+            Math.max(max, event.durationDivisions)
+          ), root.durationDivisions);
+          const replacedIds = new Set(simultaneousEvents.map((event) => event.id));
+          const rest = buildRestEventFromSpan(
+            measure,
+            timing.divisions,
+            staff.staffIndex,
+            command.voiceId,
+            root.timestampNum,
+            previousDuration,
+          );
+          rest.id = root.id;
+          voice.events = voice.events
+            .filter((event) => !replacedIds.has(event.id))
+            .concat(rest)
+            .sort((left, right) => (
+              left.timestampNum - right.timestampNum
+              || Number(left.isChord) - Number(right.isChord)
+              || left.id.localeCompare(right.id)
+            ));
+
+          // The retained rhythmic entity may remain inside a tuplet, but
+          // note-only attachments and chord members must not survive on a rest.
+          nextDocument.slurs = nextDocument.slurs.filter((slur) => (
+            !slur.startEventId
+            || !slur.stopEventId
+            || (!replacedIds.has(slur.startEventId) && !replacedIds.has(slur.stopEventId))
+          ));
+          nextDocument.graceNotes = nextDocument.graceNotes.filter((graceNote) => !replacedIds.has(graceNote.eventId));
+          nextDocument.lyricLines = nextDocument.lyricLines.filter((line) => !replacedIds.has(line.eventId));
+          nextDocument.tremolos = nextDocument.tremolos.filter((tremolo) => !replacedIds.has(tremolo.eventId));
+          nextDocument.glissandos = nextDocument.glissandos.filter((glissando) => (
+            !glissando.startEventId
+            || !glissando.stopEventId
+            || (!replacedIds.has(glissando.startEventId) && !replacedIds.has(glissando.stopEventId))
+          ));
+          nextDocument.arpeggios = nextDocument.arpeggios.filter((arpeggio) => !replacedIds.has(arpeggio.eventId));
+          replacedIds.forEach((eventId) => nextDocument.fermataEventIds.delete(eventId));
+          nextDocument.chordGroups = nextDocument.chordGroups
+            .map((group) => ({
+              ...group,
+              eventIds: group.eventIds.filter((eventId) => !replacedIds.has(eventId)),
+            }))
+            .filter((group) => group.eventIds.length > 1);
+          nextDocument.tuplets = nextDocument.tuplets
+            .map((tuplet) => ({
+              ...tuplet,
+              eventIds: tuplet.eventIds.filter((eventId) => eventId === root.id || !replacedIds.has(eventId)),
+            }))
+            .filter((tuplet) => tuplet.eventIds.length > 0);
+
+          applyDurationChangeToVoice(nextDocument, {
+            staff,
+            measure,
+            voice,
+            voiceId: command.voiceId,
+            timestampNum: command.timestampNum,
+            timestampDen: command.timestampDen,
+            durationType: command.durationType,
+            isDotted: command.isDotted,
+          });
+          return { rootId: root.id, replacedIds };
+        };
+
+        const replacement = replaceVoiceOnset(found.staff, found.measure, found.voice);
+        if (!replacement) break;
+        replacement.replacedIds.forEach((eventId) => {
+          if (eventId !== replacement.rootId) commandSelectionRemap[eventId] = replacement.rootId;
+        });
+
+        const paired = findPairedTabNotationEvent(
+          found.part,
+          command.staffIndex,
+          command.measureNumber,
+          command.voiceId,
+          command.timestampNum,
+          command.timestampDen,
+        );
+        if (paired?.voice && paired.voice !== found.voice) {
+          replaceVoiceOnset(paired.staff, paired.measure, paired.voice);
         }
         break;
       }

@@ -552,6 +552,41 @@ test('same-pitch note input advances across the score without dirtying history',
   await expectNoDoctorIssues(page, 'after no-change repeated-note passage');
 });
 
+test('rest input replaces notes and advances over an existing matching rest without dirtying history', async ({ page }) => {
+  const fixture = buildNotationToolsFixtureXml().replace(
+    '<note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>',
+    '<note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>',
+  );
+  await bootWithScore(page, fixture);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  await page.keyboard.press('0');
+
+  await expect.poll(async () => {
+    const selected = (await readE2EState(page))?.selectedNote;
+    return selected ? `${selected.measureNumber}:${selected.timestampNum}:${selected.isRest}` : null;
+  }).toBe('1:1:true');
+  const afterFirstRest = await readCurrentXml(page);
+  await expect.poll(async () => (await readE2EState(page))?.canUndo).toBe(true);
+
+  await page.keyboard.press('0');
+  await expect.poll(async () => {
+    const selected = (await readE2EState(page))?.selectedNote;
+    return selected ? `${selected.measureNumber}:${selected.timestampNum}` : null;
+  }).toBe('1:2');
+  expect(await readCurrentXml(page)).toBe(afterFirstRest);
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? []).slice(0, 2).map((event) => event.kind);
+  }).toEqual(['note', 'rest']);
+  await expect.poll(async () => (await readE2EState(page))?.canUndo).toBe(false);
+  await expectNoDoctorIssues(page, 'after duration-aware repeated rest input');
+});
+
 test('notation palette tools update clicked notes visually, semantically, and during playback', async ({ page }, testInfo) => {
   testInfo.setTimeout(90_000);
   await bootWithScore(page);

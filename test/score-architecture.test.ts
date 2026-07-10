@@ -266,6 +266,7 @@ test('normalizeScoreCommands accepts pickup measure (measureNumber 0) for note-l
   assert.doesNotThrow(() => normalizeScoreCommands([{ type: 'transposeChromatic', semitones: 1, ...locator }]));
   assert.doesNotThrow(() => normalizeScoreCommands([{ type: 'insertNoteAt', step: 'B', octave: 4, alter: 0, durationType: 'eighth', ...locator }]));
   assert.doesNotThrow(() => normalizeScoreCommands([{ type: 'insertRestAt', durationType: 'eighth', ...locator }]));
+  assert.doesNotThrow(() => normalizeScoreCommands([{ type: 'replaceWithRest', durationType: 'eighth', ...locator }]));
 });
 
 test('normalizeScoreCommands rejects measureNumber below 0', () => {
@@ -1024,6 +1025,42 @@ test('deleteNote replaces a mismatched note span with valid rest fragments', () 
   }]);
 
   assert.ok(!result.diagnostics.some((entry) => entry.code === 'event_duration_notation_mismatch'));
+});
+
+test('replaceWithRest collapses a complete chord and applies the requested duration', () => {
+  const chordState = applyDocumentCommands(buildDocumentState(SAMPLE_XML), [{
+    type: 'insertNoteAt',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'E',
+    octave: 4,
+    alter: 0,
+    durationType: 'quarter',
+    asChord: true,
+  }]);
+  const result = applyDocumentCommands(chordState, [{
+    type: 'replaceWithRest',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    durationType: 'eighth',
+    isDotted: false,
+  }]);
+
+  const measure = result.coreDocument?.score.parts[0]?.staves[0]?.measures[0];
+  const onset = measure?.voices[0]?.events.filter((event) => event.timestampNum === 0) ?? [];
+  assert.equal(onset.length, 1);
+  assert.equal(onset[0]?.kind, 'rest');
+  assert.equal(onset[0]?.durationType, 'eighth');
+  assert.equal(onset[0]?.isDotted, false);
+  assert.doesNotMatch(result.xml, /<chord\/>/);
+  assert.ok(!result.diagnostics.some((entry) => entry.code === 'event_duration_notation_mismatch'));
+  assert.ok(!result.diagnostics.some((entry) => entry.code === 'voice_timeline_gap'));
 });
 
 test('absolute rest insertion splits absorbed non-representable trailing rests', () => {

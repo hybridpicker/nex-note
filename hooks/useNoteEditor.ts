@@ -2564,14 +2564,65 @@ export function useNoteEditor(
     if (!targetNote) return;
     dbg.editor(`insertRest mode=${entryModeRef.current} dur=${DURATION_TYPE_MAP[selectedDurationRef.current]} dotted=${isDottedRef.current} voice=${selectedVoiceRef.current} after m.${targetNote.measureNumber} ts=${targetNote.timestampNum}/${targetNote.timestampDen}`);
     const overwriteSlot = entryModeRef.current === 'overwrite' || (noteInputModeRef.current && selectedVoiceRef.current === targetNote.voiceId);
-    const commands: ScoreCommand[] = overwriteSlot
-      ? [{
-        type: 'deleteNote',
+    const selectedDurationType = DURATION_TYPE_MAP[selectedDurationRef.current];
+    const advanceFromEnteredRest = (enteredRest: SelectedNote, shouldAdvance: boolean) => {
+      lastNoteInputRef.current = {
+        ...enteredRest,
+        durationType: enteredRest.durationType ?? selectedDurationType,
+        isDotted: enteredRest.isDotted ?? isDottedRef.current,
+      };
+      const rawNextSelection = shouldAdvance
+        ? findNextRhythmicSelection(coreDocument, enteredRest)
+        : null;
+      const nextSelection = isLocalNoteInputAdvance(enteredRest, rawNextSelection)
+        ? rawNextSelection
+        : null;
+      if (options?.onActiveNotesPreview) options.onActiveNotesPreview([]);
+      else options?.onActiveNotePreview?.(enteredRest);
+      const selectedAfterInput = nextSelection ?? enteredRest;
+      selectSingleNote(selectedAfterInput, {
+        visualOnly: false,
+        text: null,
+        measureNumber: selectedAfterInput.measureNumber,
+        staffIndex: selectedAfterInput.staffIndex,
+      });
+    };
+    const matchingRestSlot = overwriteSlot
+      && targetNote.isRest
+      && targetNote.durationType === selectedDurationType
+      && Boolean(targetNote.isDotted) === isDottedRef.current;
+    if (matchingRestSlot) {
+      const positionalLocator = {
         measureNumber: targetNote.measureNumber,
         staffIndex: targetNote.staffIndex,
         voiceId: targetNote.voiceId,
         timestampNum: targetNote.timestampNum,
         timestampDen: targetNote.timestampDen,
+      };
+      const canonicalRest = resolveRecentInputFromDocument(coreDocument, {
+        ...positionalLocator,
+        coreEntityId: targetNote.coreEntityId ?? null,
+        coreMeasureId: targetNote.coreMeasureId ?? null,
+        corePartId: targetNote.corePartId ?? null,
+      }, { isRest: true })
+        ?? resolveRecentInputFromDocument(coreDocument, positionalLocator, { isRest: true })
+        ?? targetNote;
+      advanceFromEnteredRest(canonicalRest, noteInputModeRef.current);
+      return;
+    }
+    const commands: ScoreCommand[] = overwriteSlot
+      ? [{
+        type: 'replaceWithRest',
+        coreEntityId: targetNote.coreEntityId ?? null,
+        coreMeasureId: targetNote.coreMeasureId ?? null,
+        corePartId: targetNote.corePartId ?? null,
+        measureNumber: targetNote.measureNumber,
+        staffIndex: targetNote.staffIndex,
+        voiceId: targetNote.voiceId,
+        timestampNum: targetNote.timestampNum,
+        timestampDen: targetNote.timestampDen,
+        durationType: selectedDurationType,
+        isDotted: isDottedRef.current,
       }]
       : [{
         type: 'insertRest',
@@ -2580,12 +2631,26 @@ export function useNoteEditor(
         voiceId: selectedVoiceRef.current,
         afterTimestampNum: targetNote.timestampNum,
         afterTimestampDen: targetNote.timestampDen,
-        durationType: DURATION_TYPE_MAP[selectedDurationRef.current],
+        durationType: selectedDurationType,
         isDotted: isDottedRef.current,
       }];
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
-      warnNoOpEdit('insertRest', commands[0]!);
+      const enteredRest = overwriteSlot
+        ? resolveRecentInputFromDocument(coreDocument, {
+          coreEntityId: targetNote.coreEntityId ?? null,
+          coreMeasureId: targetNote.coreMeasureId ?? null,
+          corePartId: targetNote.corePartId ?? null,
+          measureNumber: targetNote.measureNumber,
+          staffIndex: targetNote.staffIndex,
+          voiceId: targetNote.voiceId,
+          timestampNum: targetNote.timestampNum,
+          timestampDen: targetNote.timestampDen,
+        }, { isRest: true })
+        : null;
+      const successfulNoChangeReplace = Boolean(noteInputModeRef.current && enteredRest);
+      if (!successfulNoChangeReplace) warnNoOpEdit('insertRest', commands[0]!);
+      if (enteredRest) advanceFromEnteredRest(enteredRest, successfulNoChangeReplace);
       return;
     }
     const diagnosticTarget = {
@@ -2611,7 +2676,7 @@ export function useNoteEditor(
       timestampDen: selectedTiming?.timestampDen ?? targetNote.timestampDen,
     };
     commitNoteInputUpdate(commands, next.coreDocument, enteredLocator, targetNote, { isRest: true });
-  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, warnNoOpEdit, xml]);
+  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveEventTimingFromDocument, resolveRecentInputFromDocument, selectSingleNote, selectedNote, warnNoOpEdit, xml]);
 
   const toggleNoteInput = useCallback(() => {
     const next = !noteInputModeRef.current;
