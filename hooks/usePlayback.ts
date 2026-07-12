@@ -2,6 +2,13 @@
 
 import { useRef, useState, useCallback, useEffect, type RefObject } from 'react';
 import { dbg } from '@/lib/debug';
+import {
+  resolveMidiInstrumentSound,
+  resolveMidiSoundFromToneProgram,
+  resolvePartInstrumentId,
+  type MidiInstrumentSound,
+  type SoundfontInstrumentName,
+} from '@/lib/midi-instruments';
 import type { SelectedNote } from '@/hooks/useNoteEditor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import type { ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
@@ -48,6 +55,7 @@ interface MidiNote {
   midi: number;      // MIDI note number 0-127
   velocity: number;  // 0-1
   multiplicity?: number; // simultaneous identical note count
+  soundfont?: SoundfontInstrumentName;
 }
 
 interface TempoEntry {
@@ -83,17 +91,50 @@ const MIDI_TIME_EPSILON_S = 0.001;
 
 export function resolvePlaybackSoundfontInstrument(
   coreDocument: ScoreDocumentModel | null | undefined,
-): import('soundfont-player').InstrumentName {
-  const names = coreDocument?.score.parts
-    .flatMap((part) => [part.instrumentName, part.name])
-    .filter((name): name is string => Boolean(name))
-    .join(' ') ?? '';
-  if (/\b(classical guitar|nylon)\b/i.test(names)) return 'acoustic_guitar_nylon';
-  if (/\b(acoustic guitar)\b/i.test(names)) return 'acoustic_guitar_steel';
-  if (/\b(electric bass|bass guitar)\b/i.test(names)) return 'electric_bass_finger';
-  if (/\b(electric guitar)\b/i.test(names)) return 'electric_guitar_clean';
-  if (/\b(guitar|tablature|tab)\b/i.test(names)) return 'acoustic_guitar_nylon';
-  return 'acoustic_grand_piano';
+  partId?: string | null,
+): SoundfontInstrumentName {
+  const parts = coreDocument?.score.parts ?? [];
+  const part = (partId
+    ? parts.find((candidate) => candidate.id === partId || candidate.sourcePartId === partId)
+    : null) ?? parts[0];
+  return resolveMidiInstrumentSound(resolvePartInstrumentId(part)).soundfont;
+}
+
+type MidiTrackInstrument = {
+  name?: string;
+  channel: number;
+  instrument: {
+    number: number;
+    percussion: boolean;
+  };
+};
+
+function normalizeTrackName(value: string | null | undefined) {
+  return (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+export function resolvePlaybackTrackSound(
+  track: MidiTrackInstrument,
+  coreDocument: ScoreDocumentModel | null | undefined,
+  trackIndex = 0,
+  trackCount = 1,
+): MidiInstrumentSound & { usedFallback: boolean } {
+  const parts = coreDocument?.score.parts ?? [];
+  const trackName = normalizeTrackName(track.name);
+  const namedPart = trackName
+    ? parts.find((part) => [part.instrumentName, part.name].some((name) => {
+        const normalizedName = normalizeTrackName(name);
+        return normalizedName && (trackName.includes(normalizedName) || normalizedName.includes(trackName));
+      }))
+    : null;
+  const positionalPart = trackCount === parts.length ? parts[trackIndex] : null;
+  const onlyPart = parts.length === 1 ? parts[0] : null;
+  const fallbackInstrumentId = resolvePartInstrumentId(namedPart ?? positionalPart ?? onlyPart);
+
+  return resolveMidiSoundFromToneProgram(track.instrument.number, {
+    percussion: track.instrument.percussion || track.channel === 9,
+    fallbackInstrumentId,
+  });
 }
 
 function firstTempoBpm(parsed: Pick<ParsedMidi, 'tempos'>) {
@@ -244,6 +285,7 @@ export function normalizeMidiNotes(notes: MidiNote[]): MidiNote[] {
     if (
       previous
       && previous.midi === note.midi
+      && previous.soundfont === note.soundfont
       && Math.abs(previous.time - note.time) <= MIDI_TIME_EPSILON_S
     ) {
       previous.duration = Math.max(previous.duration, note.duration);
@@ -859,12 +901,13 @@ export function usePlayback(options?: {
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
+  const coreDocumentRef      = useRef(options?.coreDocument ?? null);
+  coreDocumentRef.current = options?.coreDocument ?? null;
   const audioCtxRef         = useRef<AudioContext | null>(null);
-  const playerRef           = useRef<PlaybackPlayer | null>(null);
-  const playerLoadRef       = useRef<Promise<PlaybackPlayer> | null>(null);
-  const playerInstrumentRef = useRef<string | null>(null);
-  const desiredInstrumentRef = useRef(resolvePlaybackSoundfontInstrument(options?.coreDocument));
-  desiredInstrumentRef.current = resolvePlaybackSoundfontInstrument(options?.coreDocument);
+  const playersRef          = useRef<Map<SoundfontInstrumentName, PlaybackPlayer>>(new Map());
+  const playerLoadsRef      = useRef<Map<SoundfontInstrumentName, Promise<PlaybackPlayer>>>(new Map());
+  const playerCacheGenerationRef = useRef(0);
+  const previewGenerationRef = useRef(0);
   const parsedMidiRef       = useRef<ParsedMidi | null>(null);
   const loadedXmlRef        = useRef<string | null>(null);
   const midiLoadRef         = useRef<{ xml: string; promise: Promise<boolean>; silent: boolean } | null>(null);
@@ -966,16 +1009,19 @@ export function usePlayback(options?: {
       }
     });
     scheduledPlaybackHandlesRef.current.clear();
-    try {
-      playerRef.current?.stop();
-    } catch {
-      // Some instrument implementations throw when there is nothing active.
-    }
-    if (options?.resetAudioContext && ac && ac.state !== 'closed') {
-      void ac.close().catch(() => undefined);
+    playersRef.current.forEach((player) => {
+      try {
+        player.stop();
+      } catch {
+        // Some instrument implementations throw when there is nothing active.
+      }
+    });
+    if (options?.resetAudioContext) {
+      playerCacheGenerationRef.current += 1;
+      if (ac && ac.state !== 'closed') void ac.close().catch(() => undefined);
       audioCtxRef.current = null;
-      playerRef.current = null;
-      playerInstrumentRef.current = null;
+      playersRef.current.clear();
+      playerLoadsRef.current.clear();
     }
   }
 
@@ -991,68 +1037,69 @@ export function usePlayback(options?: {
     scheduledPlaybackHandlesRef.current.clear();
   }
 
-  async function ensurePlayer(): Promise<PlaybackPlayer> {
-    const desiredInstrument = desiredInstrumentRef.current;
-    if (playerRef.current && playerInstrumentRef.current === desiredInstrument) return playerRef.current;
-    if (playerLoadRef.current) return playerLoadRef.current;
+  async function ensurePlayer(soundfont: SoundfontInstrumentName): Promise<PlaybackPlayer> {
+    const cachedPlayer = playersRef.current.get(soundfont);
+    if (cachedPlayer) return cachedPlayer;
+    const existingLoad = playerLoadsRef.current.get(soundfont);
+    if (existingLoad) return existingLoad;
 
-    if (playerRef.current) {
-      try {
-        playerRef.current.stop();
-      } catch {
-        // The previous score instrument may already be idle.
-      }
-      playerRef.current = null;
-      playerInstrumentRef.current = null;
-    }
-
+    const cacheGeneration = playerCacheGenerationRef.current;
     const ac = getAc();
     const e2eLoader = (globalThis as typeof globalThis & {
       __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (
         ac: AudioContext,
-        instrument: import('soundfont-player').InstrumentName,
+        instrument: SoundfontInstrumentName,
       ) => Promise<import('soundfont-player').Player> | import('soundfont-player').Player;
     }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__;
-    if (typeof e2eLoader === 'function') {
-      playerLoadRef.current = Promise.resolve(e2eLoader(ac, desiredInstrument)).then((player) => {
-        playerRef.current = player;
-        playerInstrumentRef.current = desiredInstrument;
-        return player;
-      }).finally(() => {
-        playerLoadRef.current = null;
-      });
-      return playerLoadRef.current;
-    }
+    const load = (async () => {
+      let player: PlaybackPlayer;
+      if (typeof e2eLoader === 'function') {
+        player = await e2eLoader(ac, soundfont);
+      } else {
+        const soundfontModule = await import('soundfont-player');
+        const instrument = soundfontModule.instrument ?? soundfontModule.default?.instrument;
+        if (typeof instrument !== 'function') {
+          throw new TypeError('soundfont-player instrument loader is unavailable');
+        }
 
-    playerLoadRef.current = (async () => {
-      const soundfontModule = await import('soundfont-player');
-      const instrument =
-        soundfontModule.instrument ??
-        soundfontModule.default?.instrument;
-
-      if (typeof instrument !== 'function') {
-        throw new TypeError('soundfont-player instrument loader is unavailable');
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const soundfontTimeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`soundfont load timed out after ${SOUND_FONT_LOAD_TIMEOUT_MS}ms`)), SOUND_FONT_LOAD_TIMEOUT_MS);
+        });
+        try {
+          player = await Promise.race([
+            instrument(ac, soundfont as import('soundfont-player').InstrumentName),
+            soundfontTimeout,
+          ]);
+        } catch (err) {
+          dbg.warn('playback', `soundfont ${soundfont} unavailable, falling back to oscillator playback:`, err);
+          player = createOscillatorFallbackPlayer(ac);
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
       }
 
-      const soundfontLoad = instrument(ac, desiredInstrument);
-      const soundfontTimeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`soundfont load timed out after ${SOUND_FONT_LOAD_TIMEOUT_MS}ms`)), SOUND_FONT_LOAD_TIMEOUT_MS);
-      });
-
-      try {
-        playerRef.current = await Promise.race([soundfontLoad, soundfontTimeout]);
-        playerInstrumentRef.current = desiredInstrument;
-      } catch (err) {
-        dbg.warn('playback', 'soundfont unavailable, falling back to oscillator playback:', err);
-        playerRef.current = createOscillatorFallbackPlayer(ac);
-        playerInstrumentRef.current = desiredInstrument;
+      if (cacheGeneration !== playerCacheGenerationRef.current || ac !== audioCtxRef.current) {
+        try { player.stop(); } catch { /* Ignore cleanup failures for stale loads. */ }
+        throw new Error(`Discarded stale ${soundfont} soundfont load`);
       }
-      return playerRef.current;
+      playersRef.current.set(soundfont, player);
+      return player;
     })().finally(() => {
-      playerLoadRef.current = null;
+      if (playerLoadsRef.current.get(soundfont) === load) {
+        playerLoadsRef.current.delete(soundfont);
+      }
     });
 
-    return playerLoadRef.current;
+    playerLoadsRef.current.set(soundfont, load);
+    return load;
+  }
+
+  async function ensurePlaybackPlayers(parsed: ParsedMidi) {
+    const soundfonts = new Set(parsed.notes.map((note) => (
+      note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current)
+    )));
+    await Promise.all([...soundfonts].map((soundfont) => ensurePlayer(soundfont)));
   }
 
   // ── Look-ahead scheduler ────────────────────────────────────────────────────
@@ -1062,8 +1109,7 @@ export function usePlayback(options?: {
   function runSchedulerTick() {
     const ac       = audioCtxRef.current;
     const parsed   = parsedMidiRef.current;
-    const player   = playerRef.current;
-    if (!ac || !parsed || !player || !isPlayingRef.current) return;
+    if (!ac || !parsed || !isPlayingRef.current) return;
 
     const scale = resolvePlaybackTempoScale(parsed, tempoOverrideRef.current);
 
@@ -1078,6 +1124,13 @@ export function usePlayback(options?: {
       if (noteAcTime > scheduleUntilAc) break;
 
       if (noteAcTime >= nowAc - LATE_TOLERANCE_S) {
+        const soundfont = note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current);
+        const player = playersRef.current.get(soundfont);
+        if (!player) {
+          dbg.warn('playback', `skip note ${midiName(note.midi)} because ${soundfont} is not loaded`);
+          i++;
+          continue;
+        }
         // Play at scheduled time, or immediately if slightly late
         const startAt = Math.max(noteAcTime, nowAc);
         const multiplicity = Math.max(1, note.multiplicity ?? 1);
@@ -1193,9 +1246,13 @@ export function usePlayback(options?: {
   // Pre-warm the soundfont so it's ready before the user presses play.
   // Must be called from a user-gesture context (click/keydown) to satisfy AudioContext policy.
   const prewarm = useCallback(async () => {
-    if (playerRef.current && playerInstrumentRef.current === desiredInstrumentRef.current) return;
+    const soundfont = resolvePlaybackSoundfontInstrument(
+      coreDocumentRef.current,
+      options?.selectedNoteRef?.current?.corePartId ?? options?.selectedNote?.corePartId,
+    );
+    if (playersRef.current.has(soundfont)) return;
     try {
-      await ensurePlayer();
+      await ensurePlayer(soundfont);
     } catch (err) {
       dbg.warn('playback', 'prewarm failed (non-fatal):', err);
     }
@@ -1259,9 +1316,16 @@ export function usePlayback(options?: {
         const midi = new Midi(buf);
 
         const straightRawNotes: MidiNote[] = midi.tracks
-          .flatMap(t => t.notes.map(n => ({
-            time: n.time, duration: n.duration, midi: n.midi, velocity: n.velocity,
-          })))
+          .flatMap((track, trackIndex) => {
+            const sound = resolvePlaybackTrackSound(track, options?.coreDocument, trackIndex, midi.tracks.length);
+            return track.notes.map((note) => ({
+              time: note.time,
+              duration: note.duration,
+              midi: note.midi,
+              velocity: note.velocity,
+              soundfont: sound.soundfont,
+            }));
+          })
           .sort((a, b) => a.time - b.time);
 
         const tempos: TempoEntry[] = midi.header.tempos.length > 0
@@ -1382,8 +1446,8 @@ export function usePlayback(options?: {
       const ac = getAc();
       if (ac.state === 'suspended') { await ac.resume(); }
 
-      // Ensure soundfont is ready before starting scheduler
-      await ensurePlayer();
+      // Load every track's own soundfont before starting the scheduler.
+      await ensurePlaybackPlayers(parsed);
 
       const fromScore = Number.isFinite(startScoreSeconds)
         ? clampScoreSeconds(startScoreSeconds ?? 0, parsed)
@@ -1559,10 +1623,13 @@ export function usePlayback(options?: {
   const previewNote = useCallback(async (note: SelectedNote | null) => {
     if (!note || note.isRest) return;
 
+    const previewGeneration = ++previewGenerationRef.current;
+    const soundfont = resolvePlaybackSoundfontInstrument(options?.coreDocument, note.corePartId);
     try {
       const ac = getAc();
       if (ac.state === 'suspended') await ac.resume();
-      const player = await ensurePlayer();
+      const player = await ensurePlayer(soundfont);
+      if (previewGeneration !== previewGenerationRef.current) return;
       const midi = noteToMidiNumber(note);
       const when = ac.currentTime + 0.01;
       player.stop();
@@ -1573,32 +1640,51 @@ export function usePlayback(options?: {
     } catch (err) {
       dbg.warn('playback', 'preview note failed:', err);
     }
-  }, []);
+  }, [options?.coreDocument]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const previewNotes = useCallback(async (notes: SelectedNote[]) => {
     const playableNotes = notes.filter((note) => note && !note.isRest);
     if (playableNotes.length === 0) return;
 
+    const previewGeneration = ++previewGenerationRef.current;
     try {
       const ac = getAc();
       if (ac.state === 'suspended') await ac.resume();
-      const player = await ensurePlayer();
-      const when = ac.currentTime + 0.01;
-      player.stop();
+      const notesBySoundfont = new Map<SoundfontInstrumentName, SelectedNote[]>();
       playableNotes.forEach((note) => {
-        startPlaybackNote(player, noteToMidiNumber(note), when, {
-          duration: 0.45,
-          gain: Math.max(0.35, Math.min(0.75, 0.75 / Math.sqrt(playableNotes.length))),
+        const soundfont = resolvePlaybackSoundfontInstrument(options?.coreDocument, note.corePartId);
+        const group = notesBySoundfont.get(soundfont) ?? [];
+        group.push(note);
+        notesBySoundfont.set(soundfont, group);
+      });
+      const loadedPlayers = await Promise.all([...notesBySoundfont.keys()].map(async (soundfont) => ({
+        soundfont,
+        player: await ensurePlayer(soundfont),
+      })));
+      if (previewGeneration !== previewGenerationRef.current) return;
+      const when = ac.currentTime + 0.01;
+      loadedPlayers.forEach(({ soundfont, player }) => {
+        player.stop();
+        (notesBySoundfont.get(soundfont) ?? []).forEach((note) => {
+          startPlaybackNote(player, noteToMidiNumber(note), when, {
+            duration: 0.45,
+            gain: Math.max(0.35, Math.min(0.75, 0.75 / Math.sqrt(playableNotes.length))),
+          });
         });
       });
     } catch (err) {
       dbg.warn('playback', 'preview notes failed:', err);
     }
-  }, []);
+  }, [options?.coreDocument]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => {
     cancelAnimationFrame(rafRef.current);
-    playerRef.current?.stop();
+    playerCacheGenerationRef.current += 1;
+    playersRef.current.forEach((player) => {
+      try { player.stop(); } catch { /* Ignore cleanup failures during unmount. */ }
+    });
+    playersRef.current.clear();
+    playerLoadsRef.current.clear();
     audioCtxRef.current?.close();
   }, []);
 

@@ -1473,6 +1473,61 @@ test('guitar TAB playback loads a guitar soundfont instead of piano', async ({ p
   ))).toEqual(['acoustic_guitar_nylon']);
 });
 
+test('multi-instrument playback loads each track sound plus percussion', async ({ page }) => {
+  await page.unroute('**/api/midi');
+  await page.route('**/api/midi', async (route: Route) => {
+    const midi = new Midi();
+    midi.header.setTempo(120);
+    const tracks = [
+      { name: 'Piano', channel: 0, program: 0, note: 60 },
+      { name: 'Violin', channel: 1, program: 40, note: 67 },
+      { name: 'Flute', channel: 2, program: 73, note: 72 },
+      { name: 'Trumpet', channel: 3, program: 56, note: 64 },
+      { name: 'Standard Drum Kit', channel: 9, program: 0, note: 38 },
+    ];
+    tracks.forEach((definition) => {
+      const track = midi.addTrack();
+      track.name = definition.name;
+      track.channel = definition.channel;
+      track.instrument.number = definition.program;
+      track.addNote({ midi: definition.note, time: 0, duration: 0.5, velocity: 0.8 });
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: 'audio/midi',
+      body: Buffer.from(midi.toArray()),
+    });
+  });
+
+  await bootWithScore(page, 'multi-instrument-playback.musicxml', createNewScoreXml({
+    instrumentIds: ['piano', 'violin', 'flute', 'trumpet-bb'],
+    title: 'Multi Instrument Playback',
+    subtitle: '',
+    composer: '',
+    lyricist: '',
+    copyright: '',
+    keySignatureId: 'c-major',
+    timeBeats: 4,
+    timeBeatType: 4,
+    tempo: { bpm: 120, beatUnit: 'quarter', showMarking: false },
+    measureCount: 1,
+    pickup: { enabled: false, beats: 1, beatType: 4 },
+  }));
+
+  await page.getByTitle('Play (Space)').click();
+
+  await expect.poll(async () => page.evaluate(() => (
+    [...new Set((window as typeof window & { __NEX_NOTE_E2E_LOADED_INSTRUMENTS__?: string[] })
+      .__NEX_NOTE_E2E_LOADED_INSTRUMENTS__ ?? [])].sort()
+  ))).toEqual([
+    'acoustic_grand_piano',
+    'flute',
+    'synth_drum',
+    'trumpet',
+    'violin',
+  ]);
+});
+
 test('visible guitar TAB controls write conventional notation one octave above the sounding fret', async ({ page }) => {
   await bootWithScore(page, 'guitar-tab-octave.musicxml', createNewScoreXml({
     instrumentIds: ['guitar-tab'],

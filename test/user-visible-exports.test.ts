@@ -107,6 +107,22 @@ test('sanitizeXmlForMidiExport assigns playable MIDI programs to supported score
   assert.match(sanitized.xml, /<part-name>Voice<\/part-name>[\s\S]*?<midi-program>53<\/midi-program>/);
 });
 
+test('percussion export uses General MIDI channel 10 and remains percussion in fallback MIDI', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Drum Set</part-name><score-instrument id="P1-I1"><instrument-name>Drum Set</instrument-name></score-instrument></score-part></part-list>
+  <part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><note><pitch><step>C</step><octave>2</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note></measure></part>
+</score-partwise>`;
+
+  const sanitized = sanitizeXmlForMidiExport(xml);
+  assert.match(sanitized.xml, /<midi-channel>10<\/midi-channel>/);
+  assert.match(sanitized.xml, /<midi-program>119<\/midi-program>/);
+
+  const midi = new Midi(buildFallbackMidiFromMusicXml(sanitized.xml).data);
+  assert.equal(midi.tracks[0]?.channel, 9);
+  assert.equal(midi.tracks[0]?.instrument.percussion, true);
+});
+
 test('sanitizeXmlForMidiExport keeps guitar playback and removes duplicate TAB parts', () => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">

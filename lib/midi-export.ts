@@ -4,6 +4,13 @@ import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-music
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import type { DirectionNode, MeasureNode, PartNode, StaffNode, TimedEvent } from '@/src/score-core/model/types';
 import { cleanMuseScoreStderr } from './musescore-cli';
+import {
+  musicXmlProgramToToneProgram,
+  resolveInstrumentIdFromName,
+  resolveMidiInstrumentSound,
+  resolvePartInstrumentId,
+  type MidiInstrumentSound,
+} from './midi-instruments';
 
 type XmlEl = XmlElement;
 
@@ -188,36 +195,8 @@ function isTabScorePart(scorePart: XmlEl, part: XmlEl | undefined) {
   return /\b(tab|tablature)\b/i.test(name) || partHasTabNotation(part);
 }
 
-interface PlaybackInstrument {
-  name: string;
-  midiProgram: number;
-}
-
-const PLAYBACK_INSTRUMENTS: Array<{ pattern: RegExp; instrument: PlaybackInstrument }> = [
-  { pattern: /\bpiano\b/i, instrument: { name: 'Piano', midiProgram: 1 } },
-  { pattern: /\borgan\b/i, instrument: { name: 'Organ', midiProgram: 20 } },
-  { pattern: /\bharp\b/i, instrument: { name: 'Harp', midiProgram: 47 } },
-  { pattern: /\bviolin\b/i, instrument: { name: 'Violin', midiProgram: 41 } },
-  { pattern: /\bviola\b/i, instrument: { name: 'Viola', midiProgram: 42 } },
-  { pattern: /\b(cello|violoncello)\b/i, instrument: { name: 'Cello', midiProgram: 43 } },
-  { pattern: /\b(double bass|contrabass|string bass)\b/i, instrument: { name: 'Double Bass', midiProgram: 44 } },
-  { pattern: /\bflute\b/i, instrument: { name: 'Flute', midiProgram: 74 } },
-  { pattern: /\boboe\b/i, instrument: { name: 'Oboe', midiProgram: 69 } },
-  { pattern: /\bclarinet\b/i, instrument: { name: 'Clarinet', midiProgram: 72 } },
-  { pattern: /\bbassoon\b/i, instrument: { name: 'Bassoon', midiProgram: 71 } },
-  { pattern: /\b(alto sax|alto saxophone|saxophone)\b/i, instrument: { name: 'Alto Saxophone', midiProgram: 66 } },
-  { pattern: /\btrumpet\b/i, instrument: { name: 'Trumpet', midiProgram: 57 } },
-  { pattern: /\b(horn|french horn)\b/i, instrument: { name: 'French Horn', midiProgram: 61 } },
-  { pattern: /\btrombone\b/i, instrument: { name: 'Trombone', midiProgram: 58 } },
-  { pattern: /\btuba\b/i, instrument: { name: 'Tuba', midiProgram: 59 } },
-  { pattern: /\b(soprano|alto|tenor|bass|voice|vocal|choir)\b/i, instrument: { name: 'Voice', midiProgram: 53 } },
-  { pattern: /\b(guitar|tab|tablature)\b/i, instrument: { name: 'Guitar', midiProgram: 25 } },
-];
-
-function playbackInstrumentForName(name: string): PlaybackInstrument {
-  const normalized = name.replace(/\s+\d+$/, '').trim();
-  return PLAYBACK_INSTRUMENTS.find((entry) => entry.pattern.test(normalized))?.instrument
-    ?? { name: 'Piano', midiProgram: 1 };
+function playbackInstrumentForName(name: string): MidiInstrumentSound {
+  return resolveMidiInstrumentSound(resolveInstrumentIdFromName(name));
 }
 
 function clampMidiNumber(value: number) {
@@ -348,7 +327,7 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
   let channelIndex = 0;
 
   for (const part of core.score.parts) {
-    const playbackInstrument = playbackInstrumentForName(part.instrumentName ?? part.name);
+    const playbackInstrument = resolveMidiInstrumentSound(resolvePartInstrumentId(part));
     for (const staff of part.staves) {
       const playableEvents = staff.measures.flatMap((measure) => (
         measure.voices.flatMap((voice) => voice.events.filter((event) => event.kind === 'note' && !event.hidden))
@@ -357,8 +336,8 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
 
       const track = midi.addTrack();
       track.name = trackNameForStaff(part, staff);
-      track.channel = nextMidiChannel(channelIndex++);
-      track.instrument.number = Math.max(0, Math.min(127, playbackInstrument.midiProgram - 1));
+      track.channel = playbackInstrument.percussion ? 9 : nextMidiChannel(channelIndex++);
+      track.instrument.number = musicXmlProgramToToneProgram(playbackInstrument.midiProgram);
 
       const timing = buildMeasureTiming(staff);
       for (const measure of staff.measures) {
@@ -399,11 +378,12 @@ function appendTextElement(doc: XmlDocument, parent: XmlEl, tagName: string, tex
   return child;
 }
 
-function appendMidiInstrument(doc: XmlDocument, scorePart: XmlEl, partId: string, midiProgram: number) {
+function appendMidiInstrument(doc: XmlDocument, scorePart: XmlEl, partId: string, instrument: MidiInstrumentSound, melodicChannelIndex: number) {
   const midiInstrument = doc.createElement('midi-instrument');
   midiInstrument.setAttribute('id', `${partId}-I1`);
-  appendTextElement(doc, midiInstrument, 'midi-channel', '1');
-  appendTextElement(doc, midiInstrument, 'midi-program', String(midiProgram));
+  const midiChannel = instrument.percussion ? 10 : nextMidiChannel(melodicChannelIndex) + 1;
+  appendTextElement(doc, midiInstrument, 'midi-channel', String(midiChannel));
+  appendTextElement(doc, midiInstrument, 'midi-program', String(instrument.midiProgram));
   appendTextElement(doc, midiInstrument, 'volume', '78.7402');
   appendTextElement(doc, midiInstrument, 'pan', '0');
   scorePart.appendChild(midiInstrument);
@@ -455,12 +435,13 @@ export function sanitizeXmlForMidiExport(xml: string) {
   const strippedPlaybackMetadata = stripPlaybackMetadata(doc);
   const removedDuplicateTabParts = removeDuplicateTabPlaybackParts(doc);
 
+  let melodicChannelIndex = 0;
   for (const scorePart of Array.from(doc.getElementsByTagName('score-part'))) {
     const partId = scorePart.getAttribute('id') ?? 'unknown';
     const partName = scorePart.getElementsByTagName('part-name')[0];
     const currentPartName = normalizeName(partName?.textContent);
     const targetPlayback = playbackInstrumentForName(currentPartName);
-    const targetPlaybackName = targetPlayback.name;
+    const targetPlaybackName = targetPlayback.displayName;
     if (partName?.textContent && partName.textContent !== targetPlaybackName) {
       renamedParts.push({ id: partId, from: partName.textContent, to: targetPlaybackName });
       partName.textContent = targetPlaybackName;
@@ -469,12 +450,13 @@ export function sanitizeXmlForMidiExport(xml: string) {
     const instrumentName = scorePart.getElementsByTagName('instrument-name')[0];
     const currentInstrumentName = normalizeName(instrumentName?.textContent);
     const targetInstrument = playbackInstrumentForName(currentInstrumentName || currentPartName);
-    const targetInstrumentName = targetInstrument.name;
+    const targetInstrumentName = targetInstrument.displayName;
     if (instrumentName?.textContent && instrumentName.textContent !== targetInstrumentName) {
       renamedInstruments.push({ id: partId, from: instrumentName.textContent, to: targetInstrumentName });
       instrumentName.textContent = targetInstrumentName;
     }
-    appendMidiInstrument(doc, scorePart as XmlEl, partId, targetInstrument.midiProgram);
+    appendMidiInstrument(doc, scorePart as XmlEl, partId, targetInstrument, melodicChannelIndex);
+    if (!targetInstrument.percussion) melodicChannelIndex += 1;
   }
 
   const sanitized = new XMLSerializer().serializeToString(doc);
