@@ -1473,6 +1473,43 @@ test('guitar TAB playback loads a guitar soundfont instead of piano', async ({ p
   ))).toEqual(['acoustic_guitar_nylon']);
 });
 
+test('visible guitar TAB controls write conventional notation one octave above the sounding fret', async ({ page }) => {
+  await bootWithScore(page, 'guitar-tab-octave.musicxml', createNewScoreXml({
+    instrumentIds: ['guitar-tab'],
+    title: 'Guitar TAB Octave',
+    subtitle: '',
+    composer: '',
+    lyricist: '',
+    copyright: '',
+    keySignatureId: 'c-major',
+    timeBeats: 4,
+    timeBeatType: 4,
+    tempo: { bpm: 120, beatUnit: 'quarter', showMarking: false },
+    measureCount: 1,
+    pickup: { enabled: false, beats: 1, beatType: 4 },
+  }));
+  await waitForRenderedLayout(page);
+
+  await page.getByTitle('Toggle note input (N)').click();
+  await page.getByTitle(/^Eighth note: 4/).click();
+  await page.getByTitle('Guitar tab input (TAB button)').click();
+  await page.getByTitle('Fret 0: E4').click();
+
+  await expect.poll(async () => {
+    const document = await readCurrentCore(page);
+    return document.score.parts[0]?.staves.map((staff) => staff.measures[0]?.voices[0]?.events
+      .filter((event) => event.kind === 'note')
+      .map((event) => event.kind === 'note' ? {
+        pitch: `${event.pitch.step}${event.pitch.octave}`,
+        string: event.guitar?.string ?? null,
+        fret: event.guitar?.fret ?? null,
+      } : null));
+  }).toEqual([
+    [{ pitch: 'E5', string: null, fret: null }],
+    [{ pitch: 'E4', string: 1, fret: 0 }],
+  ]);
+});
+
 test('tempo changes during playback keep the playhead position', async ({ page }) => {
   await bootWithScore(page, 'long-tempo-playback.musicxml', buildLongFixtureXml(16));
   await waitForRenderedLayout(page);
