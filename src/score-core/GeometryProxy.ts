@@ -615,7 +615,7 @@ function fractionDurationFromDivisions(
 function resolveEvent(
   coreDocument: ScoreDocumentModel,
   eventId: string,
-): { event: TimedEvent; divisions: number } | null {
+): { event: TimedEvent; divisions: number; measureId: string } | null {
   for (const part of coreDocument.score.parts) {
     for (const staff of part.staves) {
       for (const measure of staff.measures) {
@@ -623,7 +623,7 @@ function resolveEvent(
         const divisions = attr?.divisions ?? 1;
         for (const voice of measure.voices) {
           const found = voice.events.find((e) => e.id === eventId);
-          if (found) return { event: found, divisions };
+          if (found) return { event: found, divisions, measureId: measure.id };
         }
       }
     }
@@ -631,31 +631,31 @@ function resolveEvent(
   return null;
 }
 
-function buildActiveTupletsByMeasure(
+function buildActiveTupletsByMeasureId(
   coreDocument: ScoreDocumentModel | null | undefined,
-): Map<number, ActiveTupletMeta[]> {
-  const byMeasureNumber = new Map<number, ActiveTupletMeta[]>();
-  if (!coreDocument?.tuplets?.length) return byMeasureNumber;
+): Map<string, ActiveTupletMeta[]> {
+  const byMeasureId = new Map<string, ActiveTupletMeta[]>();
+  if (!coreDocument?.tuplets?.length) return byMeasureId;
 
   for (const tuplet of coreDocument.tuplets as TupletSpan[]) {
     if (!tuplet.eventIds?.length) continue;
     const resolved = tuplet.eventIds
       .map((id) => resolveEvent(coreDocument, id))
-      .filter((entry): entry is { event: TimedEvent; divisions: number } => entry != null);
+      .filter((entry): entry is { event: TimedEvent; divisions: number; measureId: string } => entry != null);
     if (resolved.length === 0) continue;
 
-    const perMeasure = new Map<number, { event: TimedEvent; divisions: number }[]>();
+    const perMeasure = new Map<string, { event: TimedEvent; divisions: number; measureId: string }[]>();
     for (const entry of resolved) {
-      const arr = perMeasure.get(entry.event.measureNumber) ?? [];
+      const arr = perMeasure.get(entry.measureId) ?? [];
       arr.push(entry);
-      perMeasure.set(entry.event.measureNumber, arr);
+      perMeasure.set(entry.measureId, arr);
     }
 
     const actualNotes = tuplet.actualNotes ?? 3;
     const normalNotes = tuplet.normalNotes ?? 2;
     const ratio = normalNotes / Math.max(actualNotes, 1);
 
-    for (const [measureNumber, entries] of perMeasure.entries()) {
+    for (const [measureId, entries] of perMeasure.entries()) {
       let start: Fraction | null = null;
       let end: Fraction | null = null;
       const first = entries[0].event;
@@ -681,12 +681,12 @@ function buildActiveTupletsByMeasure(
         voiceId: first.voiceId,
         eventIds: entries.map((e) => e.event.id),
       };
-      const list = byMeasureNumber.get(measureNumber) ?? [];
+      const list = byMeasureId.get(measureId) ?? [];
       list.push(meta);
-      byMeasureNumber.set(measureNumber, list);
+      byMeasureId.set(measureId, list);
     }
   }
-  return byMeasureNumber;
+  return byMeasureId;
 }
 
 function measureTimingForOverlay(
@@ -726,7 +726,7 @@ export class GeometryProxy {
     }
 
     const staffDetailsByMeasure = buildStaffDetailsByMeasure(osmd, container);
-    const tupletsByMeasure = buildActiveTupletsByMeasure(coreDocument);
+    const tupletsByMeasureId = buildActiveTupletsByMeasureId(coreDocument);
     const graphicalMeasureRectsById = buildGraphicalMeasureRectsById(osmd, container, coreDocument);
     const virtualOverlays = buildVirtualOverlaysForEmptyBars(
       osmd,
@@ -742,7 +742,7 @@ export class GeometryProxy {
         ...overlay,
         domRect: mergeHorizontalBounds(overlay.domRect, graphicalRect),
         staffDetails: staffDetailsForOverlay(staffDetailsByMeasure, coreDocument, overlay),
-        activeTuplets: tupletsByMeasure.get(overlay.measureNumber) ?? [],
+        activeTuplets: tupletsByMeasureId.get(overlay.measureId) ?? [],
         timeSignature: timing?.timeSignature ?? null,
         measureDurationRatio: timing?.durationRatio ?? 0,
         isVirtual: false,
@@ -754,7 +754,7 @@ export class GeometryProxy {
       return {
         ...overlay,
         staffDetails: staffDetailsForOverlay(staffDetailsByMeasure, coreDocument, overlay),
-        activeTuplets: tupletsByMeasure.get(overlay.measureNumber) ?? [],
+        activeTuplets: tupletsByMeasureId.get(overlay.measureId) ?? [],
         timeSignature: timing?.timeSignature ?? null,
         measureDurationRatio: timing?.durationRatio ?? 0,
         isVirtual: true,

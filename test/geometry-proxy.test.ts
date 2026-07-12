@@ -652,8 +652,8 @@ test('tuplet detection splits spans that cross measure boundaries', () => {
     makeGraphicalMeasure({ measureNumber: 2, staffIndex: 1, absX: 100, absY: 0, width: 100, height: 40 }),
   ]]);
   const overlays = [
-    makeOverlay('m1', 1, { x: 0, y: 0, width: 100, height: 40 }),
-    makeOverlay('m2', 2, { x: 100, y: 0, width: 100, height: 40 }),
+    makeOverlay('m1-core', 1, { x: 0, y: 0, width: 100, height: 40 }),
+    makeOverlay('m2-core', 2, { x: 100, y: 0, width: 100, height: 40 }),
   ];
 
   const makeEvent = (id: string, measureNumber: number, tsNum: number) => ({
@@ -698,6 +698,83 @@ test('tuplet detection splits spans that cross measure boundaries', () => {
   assert.equal(m2.activeTuplets[0].tupletId, 't1');
   assert.deepEqual(m1.activeTuplets[0].eventIds, ['e1']);
   assert.deepEqual(m2.activeTuplets[0].eventIds, ['e2', 'e3']);
+});
+
+test('tuplet hover metadata stays scoped to its instrument when local staff indexes repeat', () => {
+  const { container } = makeContainer({});
+  const osmd = makeOsmd([[
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, absX: 0, absY: 0, width: 100, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, absX: 0, absY: 70, width: 100, height: 40 }),
+  ]]);
+  const overlays = [
+    makeOverlay('upper-m1', 1, { x: 0, y: 0, width: 100, height: 40 }),
+    makeOverlay('lower-m1', 1, { x: 0, y: 70, width: 100, height: 40 }),
+  ];
+  const upperEvents = [0, 1, 2].map((timestampNum) => ({
+    id: `upper-e${timestampNum + 1}`,
+    kind: 'note' as const,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum,
+    timestampDen: 12,
+    durationDivisions: 1,
+    durationType: 'eighth',
+    pitch: { step: 'C', alter: 0, octave: 4 },
+  }));
+  const lowerEvent = {
+    id: 'lower-e1',
+    kind: 'note' as const,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    durationDivisions: 4,
+    durationType: 'whole',
+    pitch: { step: 'C', alter: 0, octave: 3 },
+  };
+  const coreDocument = makeCoreDoc({
+    score: {
+      id: 's',
+      parts: [
+        {
+          id: 'upper', sourcePartId: 'P1', name: 'Upper',
+          staves: [{
+            id: 'upper-st1', staffIndex: 1,
+            measures: [{
+              id: 'upper-m1', measureNumber: 1,
+              attributes: [{ id: 'upper-a1', divisions: 3, time: { beats: 4, beatType: 4 }, clefs: [] }],
+              voices: [{ id: 'upper-v1', voiceId: 1, events: upperEvents }],
+            }],
+          }],
+        },
+        {
+          id: 'lower', sourcePartId: 'P2', name: 'Lower',
+          staves: [{
+            id: 'lower-st1', staffIndex: 1,
+            measures: [{
+              id: 'lower-m1', measureNumber: 1,
+              attributes: [{ id: 'lower-a1', divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [] }],
+              voices: [{ id: 'lower-v1', voiceId: 1, events: [lowerEvent] }],
+            }],
+          }],
+        },
+      ],
+    } as any,
+    tuplets: [{ id: 'upper-t1', number: 1, eventIds: upperEvents.map((event) => event.id), actualNotes: 3, normalNotes: 2 }],
+  });
+
+  const proxy = new GeometryProxy();
+  proxy.update({ osmd, container, coreDocument, measureOverlays: overlays });
+
+  const upperContext = proxy.getDetailedContext({ x: 5, y: 20 });
+  const lowerContext = proxy.getDetailedContext({ x: 5, y: 90 });
+  assert.equal(upperContext?.measure.measureId, 'upper-m1');
+  assert.equal(upperContext?.activeTuplet?.tupletId, 'upper-t1');
+  assert.equal(lowerContext?.measure.measureId, 'lower-m1');
+  assert.equal(lowerContext?.activeTuplet, null);
+  assert.deepEqual(lowerContext?.measure.activeTuplets, []);
 });
 
 test('parallel parts with identical measure numbers resolve to distinct measureIds (anchor-drift regression)', () => {

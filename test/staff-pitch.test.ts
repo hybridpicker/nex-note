@@ -137,6 +137,22 @@ test('resolveClefAtMeasure picks up a clef from a previous measure', () => {
   assert.equal(clef.sign, 'F');
 });
 
+test('resolveClefAtMeasure isolates parallel instruments with the same local staff index', () => {
+  const upper = buildDocWithClef('G', 2);
+  const lower = buildDocWithClef('F', 4).score.parts[0]!;
+  lower.id = 'P2';
+  lower.sourcePartId = 'P2';
+  lower.staves[0]!.measures[0]!.id = 'lower-m1';
+  upper.score.parts[0]!.staves[0]!.measures[0]!.id = 'upper-m1';
+  upper.score.parts.push(lower);
+
+  const lowerClef = resolveClefAtMeasure(upper, 1, 1, {
+    corePartId: 'P2',
+    measureId: 'lower-m1',
+  });
+  assert.deepEqual(lowerClef, { sign: 'F', line: 4 });
+});
+
 test('keyFifthsAlterForStep resolves default mouse-entry accidentals from key signature', () => {
   assert.equal(keyFifthsAlterForStep(1, 'F'), 1);
   assert.equal(keyFifthsAlterForStep(3, 'G'), 1);

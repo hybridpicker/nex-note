@@ -11,6 +11,7 @@ import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
 
 function makeRenderedNote(opts: {
   id: string;
+  corePartId?: string;
   measureId: string;
   measureNumber: number;
   staffIndex: number;
@@ -27,7 +28,7 @@ function makeRenderedNote(opts: {
     note: {
       coreEntityId: opts.id,
       coreMeasureId: opts.measureId,
-      corePartId: 'p1',
+      corePartId: opts.corePartId ?? 'p1',
       measureNumber: opts.measureNumber,
       staffIndex: opts.staffIndex,
       voiceId: opts.voiceId,
@@ -256,6 +257,85 @@ test('findNearestRenderedGhostPoint ignores other staves even when their subdivi
   assert.equal(snapped?.staffIndex, 2);
   assert.equal(snapped?.timestampNum, 0);
   assert.equal(snapped?.timestampDen, 4);
+});
+
+test('buildRenderedGhostGrid isolates different rhythms across sixteen repeated local staff indexes', () => {
+  const parts = Array.from({ length: 16 }, (_, partIndex) => {
+    const partId = `p${partIndex + 1}`;
+    const measureId = `${partId}-m1`;
+    const quarterRests = partIndex % 2 === 1;
+    const timestamps = quarterRests ? [0, 1, 2, 3] : [0];
+    return {
+      partId,
+      measureId,
+      quarterRests,
+      events: timestamps.map((timestampNum) => ({
+        id: `${partId}-r${timestampNum}`,
+        kind: 'rest' as const,
+        measureNumber: 1,
+        staffIndex: 1,
+        voiceId: 1,
+        timestampNum,
+        timestampDen: 4,
+        durationDivisions: quarterRests ? 1 : 4,
+        durationType: quarterRests ? 'quarter' : 'whole',
+      })),
+    };
+  });
+  const coreDocument = makeCoreDoc({
+    score: {
+      id: 's',
+      parts: parts.map((part) => ({
+        id: part.partId,
+        sourcePartId: part.partId.toUpperCase(),
+        name: part.partId,
+        staves: [{
+          id: `${part.partId}-st1`,
+          staffIndex: 1,
+          measures: [{
+            id: part.measureId,
+            measureNumber: 1,
+            attributes: [{ id: `${part.partId}-a1`, divisions: 1, time: { beats: 4, beatType: 4 }, clefs: [] }],
+            voices: [{ id: `${part.partId}-v1`, voiceId: 1, events: part.events }],
+          }],
+        }],
+      })),
+    } as any,
+  });
+  const renderedNotes = parts.flatMap((part, partIndex) => part.events.map((event) => makeRenderedNote({
+    id: event.id,
+    corePartId: part.partId,
+    measureId: part.measureId,
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: event.timestampNum,
+    timestampDen: event.timestampDen,
+    domX: 100 + (event.timestampNum * 50),
+    domY: 40 + (partIndex * 60),
+    isRest: true,
+  })));
+  const grid = buildRenderedGhostGrid(renderedNotes, {
+    coreDocument,
+    measureOverlays: parts.map((part, partIndex) => ({
+      measureId: part.measureId,
+      measureNumber: 1,
+      pageIndex: 0,
+      systemIndex: 0,
+      domRect: { x: 80, y: partIndex * 60, width: 220, height: 40 },
+      breakBefore: false,
+    })),
+    selectedDuration: '4',
+  });
+
+  for (const part of parts) {
+    const points = getRenderedGhostStaffPoints(grid, part.measureId, 1);
+    assert.deepEqual(
+      points.map((point) => `${point.timestampNum}/${point.timestampDen}`),
+      part.quarterRests ? ['0/4', '1/4', '2/4', '3/4'] : ['0/4'],
+    );
+    assert.ok(points.every((point) => point.corePartId === part.partId));
+  }
 });
 
 test('buildRenderedGhostGrid does not expose a visible snap for an empty voice rendered as a long-rest glyph', () => {

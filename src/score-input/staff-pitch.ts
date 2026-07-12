@@ -86,12 +86,27 @@ export function resolveClefAtMeasure(
   coreDocument: ScoreDocumentModel | null | undefined,
   measureNumber: number,
   staffIndex: number,
+  scope?: { corePartId?: string | null; measureId?: string | null },
 ): Clef {
   const fallback: Clef = { sign: 'G', line: 2 };
   if (!coreDocument) return fallback;
-  for (const part of coreDocument.score.parts) {
-    const staff = part.staves.find((entry) => entry.staffIndex === staffIndex);
-    if (!staff) continue;
+  const normalizedPartId = scope?.corePartId?.replace(/^part:/, '') ?? null;
+  const matchingParts = coreDocument.score.parts.filter((part) => (
+    !normalizedPartId
+    || part.id === scope?.corePartId
+    || part.sourcePartId === scope?.corePartId
+    || part.id.replace(/^part:/, '') === normalizedPartId
+    || part.sourcePartId.replace(/^part:/, '') === normalizedPartId
+  ));
+  const parts = matchingParts.length > 0 ? matchingParts : coreDocument.score.parts;
+  const matchingStaves = parts.flatMap((part) => part.staves.filter((staff) => (
+    staff.staffIndex === staffIndex
+    && (!scope?.measureId || staff.measures.some((measure) => measure.id === scope.measureId))
+  )));
+  const staves = matchingStaves.length > 0
+    ? matchingStaves
+    : parts.flatMap((part) => part.staves.filter((staff) => staff.staffIndex === staffIndex));
+  for (const staff of staves) {
     const sorted = [...staff.measures]
       .filter((measure) => measure.measureNumber <= measureNumber)
       .sort((a, b) => b.measureNumber - a.measureNumber);

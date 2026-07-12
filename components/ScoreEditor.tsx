@@ -7580,7 +7580,10 @@ export function buildSemanticPitchDebugBands(input: {
           segment,
         ])).values()]
         .sort((left, right) => left.x - right.x || left.width - right.width);
-      const clef = resolveClefAtMeasure(input.coreDocument, overlay.measureNumber, staff.staffIndex);
+      const clef = resolveClefAtMeasure(input.coreDocument, overlay.measureNumber, staff.staffIndex, {
+        corePartId: corePartIdForMeasureId(input.coreDocument, overlay.measureId),
+        measureId: overlay.measureId,
+      });
       const topStaffStep = mouseEntryTopStaffStep();
       const bottomStaffStep = Math.max(mouseEntryBottomStaffStep(staff.lineCount), 4);
       const halfStep = staff.lineDistanceDom / 2;
@@ -9567,9 +9570,19 @@ function getMeasureKeyFifths(
   coreDocument: ScoreDocumentModel | null,
   measureNumber: number,
   staffIndex: number,
+  corePartId?: string | null,
 ) {
   if (!coreDocument) return 0;
-  for (const part of coreDocument.score.parts) {
+  const normalizedPartId = corePartId?.replace(/^part:/, '') ?? null;
+  const matchingParts = coreDocument.score.parts.filter((part) => (
+    !normalizedPartId
+    || part.id === corePartId
+    || part.sourcePartId === corePartId
+    || part.id.replace(/^part:/, '') === normalizedPartId
+    || part.sourcePartId.replace(/^part:/, '') === normalizedPartId
+  ));
+  const parts = matchingParts.length > 0 ? matchingParts : coreDocument.score.parts;
+  for (const part of parts) {
     const staff = part.staves.find((entry) => entry.staffIndex === staffIndex);
     if (!staff) continue;
     const measures = [...staff.measures]
@@ -9712,7 +9725,10 @@ function resolveGhostNoteTargetLegacy(
   // so we approximate staff half-step from the reference notehead height.
   const referenceCenter = getRenderedPitchCenter(reference.rendered, containerRect);
   const halfStep = Math.max(reference.rendered.domRect.height / 2, 4);
-  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, reference.semantic.staffIndex);
+  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, reference.semantic.staffIndex, {
+    corePartId: reference.semantic.corePartId,
+    measureId: overlay.measureId,
+  });
   const referenceStaffStep = Math.round((referenceCenter.y - reference.rendered.domRect.y) / halfStep) - 2;
   const pointerStaffStepFromReference = Math.round((domPoint.y - referenceCenter.y) / halfStep);
   const rawFallbackStaffStep = referenceStaffStep + pointerStaffStepFromReference;
@@ -10014,7 +10030,10 @@ function resolveSemanticAnchorGhostTarget(
     ? notesInMeasure
     : getPitchedStaffEntriesAcrossScore(ghostIndex, targetStaffIndex, anchorPartId);
 
-  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, targetStaffIndex);
+  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, targetStaffIndex, {
+    corePartId: anchorPartId,
+    measureId: overlay.measureId,
+  });
   const fallbackStaffStep = clampMouseEntryStaffStep(staffStep);
   const fallbackSnappedY = staff.topLineDomY + (fallbackStaffStep * (staff.lineDistanceDom / 2));
   const pitchCalibrationSamples = pitchedInMeasure.length > 0
@@ -10422,7 +10441,10 @@ function mapProxyContextToGhostTarget(
     return candidateDx < bestDx ? candidate : best;
   }, null as (typeof activeNotes)[number] | null);
 
-  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, targetStaffIndex);
+  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, targetStaffIndex, {
+    corePartId: preferredPartId,
+    measureId: overlay.measureId,
+  });
   const insideStaffCapture = Boolean(staffCaptureRect && isPointInsideNoteRect(domPoint, staffCaptureRect));
   if (!isMouseEntryStaffStepVisible(staffStep, staff.lineCount) && !insideStaffCapture) return null;
   const fallbackStaffStep = clampMouseEntryStaffStep(staffStep);
@@ -10892,7 +10914,10 @@ function resolveRestOnlyGhostTarget(
   const visibleTimestamp = normalizeFraction(visiblePoint.timestampNum, Math.max(visiblePoint.timestampDen, 1));
   const commitTimestamp = normalizeFraction(commitPoint.timestampNum, Math.max(commitPoint.timestampDen, 1));
   const placementMode: GhostPlacementMode = 'replace';
-  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, staff.staffIndex);
+  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, staff.staffIndex, {
+    corePartId: restPoint.corePartId,
+    measureId: overlay.measureId,
+  });
   const directStaffStep = staff.lineDistanceDom > 0
     ? Math.round((domPoint.y - staff.topLineDomY) / (staff.lineDistanceDom / 2))
     : resolvedStaffContext.staffStep;
@@ -11113,7 +11138,10 @@ export function resolveClickedRestAnchorGhostTarget(
     : 4;
   const fallbackStaffStep = clampMouseEntryStaffStep(pointerStaffStep);
   const fallbackSnappedY = staff.topLineDomY + (fallbackStaffStep * halfStep);
-  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, anchor.staffIndex);
+  const clef = resolveClefAtMeasure(coreDocument, overlay.measureNumber, anchor.staffIndex, {
+    corePartId: anchor.corePartId,
+    measureId: overlay.measureId,
+  });
   const pitchResolution = constrainMouseEntryPitchResolution({
     resolution: resolveGhostPitchFromCalibration({
       pointerY: domPoint.y,
@@ -12129,7 +12157,12 @@ export default function ScoreEditor({
         note: dragSession.note,
         deltaStaffSteps,
         mode: dragTransposeMode,
-        keyFifths: getMeasureKeyFifths(coreDocument, dragSession.note.measureNumber, targetStaffIndex),
+        keyFifths: getMeasureKeyFifths(
+          coreDocument,
+          dragSession.note.measureNumber,
+          targetStaffIndex,
+          dragSession.note.corePartId,
+        ),
       });
       const staffChanged = previousStaffIndex !== targetStaffIndex;
       dragSession.currentStaffIndex = targetStaffIndex;

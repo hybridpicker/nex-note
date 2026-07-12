@@ -95,6 +95,7 @@ type SemanticGridSummary = {
 };
 
 type GhostSnapshot = {
+  part: string | null;
   measure: string | null;
   staff: string | null;
   voice: string | null;
@@ -102,6 +103,7 @@ type GhostSnapshot = {
   pitch: string | null;
   mode: string | null;
   commitMeasure: string | null;
+  commitPart: string | null;
   commitStaff: string | null;
   commitVoice: string | null;
   commitTimestamp: string | null;
@@ -308,6 +310,38 @@ function buildMultiInstrumentRestGridScore(measureCount = 6) {
 ${partList}
   </part-list>
 ${partBodies}
+</score-partwise>
+`;
+}
+
+function buildDifferentRhythmInstrumentScore() {
+  const upperMeasure = [
+    noteXml({ duration: 4, staff: 1, step: 'C', octave: 4 }),
+    noteXml({ duration: 4, staff: 1, rest: true }),
+    noteXml({ duration: 8, staff: 1, rest: true }),
+  ].join('\n');
+  const lowerMeasure = noteXml({ duration: 16, staff: 1, rest: true, wholeRest: true });
+  const buildPart = (partId: string, body: string, clef: { sign: 'G' | 'F'; line: 2 | 4 }) => `  <part id="${partId}">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>${clef.sign}</sign><line>${clef.line}</line></clef>
+      </attributes>
+${body}
+    </measure>
+  </part>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <work><work-title>Different Rhythm Instruments</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name>Upper</part-name></score-part>
+    <score-part id="P2"><part-name>Lower</part-name></score-part>
+  </part-list>
+${buildPart('P1', upperMeasure, { sign: 'G', line: 2 })}
+${buildPart('P2', lowerMeasure, { sign: 'F', line: 4 })}
 </score-partwise>
 `;
 }
@@ -651,6 +685,7 @@ async function readGhost(page: Page): Promise<GhostSnapshot | null> {
       return Number.isFinite(parsed) ? parsed : null;
     };
     return {
+      part: element.dataset.ghostCorePartId ?? null,
       measure: element.dataset.ghostMeasure ?? null,
       staff: element.dataset.ghostStaff ?? null,
       voice: element.dataset.ghostVoice ?? null,
@@ -658,6 +693,7 @@ async function readGhost(page: Page): Promise<GhostSnapshot | null> {
       pitch: element.dataset.ghostPitch ?? null,
       mode: element.dataset.ghostMode ?? null,
       commitMeasure: element.dataset.ghostCommitMeasure ?? null,
+      commitPart: element.dataset.ghostCommitCorePartId ?? null,
       commitStaff: element.dataset.ghostCommitStaff ?? null,
       commitVoice: element.dataset.ghostCommitVoice ?? null,
       commitTimestamp: element.dataset.ghostCommitTimestamp ?? null,
@@ -1273,6 +1309,55 @@ test('multi-instrument full-rest score exposes one clean snap on every staff row
       });
     }
   }
+});
+
+test('different rhythms stay isolated across instruments with the same local staff index', async ({ page }) => {
+  await bootWithScore(page, buildDifferentRhythmInstrumentScore(), 'snap-different-rhythm-instruments.musicxml');
+  await enterQuarterNoteMode(page);
+  const report = await waitForDebugReport(page);
+  assertNoDuplicateSnaps(report, 'different rhythm instruments');
+
+  const upperSnaps = report.snaps
+    .filter((snap) => snap.measure === 1 && snap.part === 'part:P1' && snap.staff === 1)
+    .sort((left, right) => left.ratio - right.ratio);
+  const lowerSnaps = report.snaps
+    .filter((snap) => snap.measure === 1 && snap.part === 'part:P2' && snap.staff === 1)
+    .sort((left, right) => left.ratio - right.ratio);
+  expect(upperSnaps.map((snap) => snap.ratio)).toEqual([0, 0.25, 0.5]);
+  expect(lowerSnaps.map((snap) => snap.ratio)).toEqual([0]);
+
+  const upperLateSnap = upperSnaps[2]!;
+  const lowerRestSnap = lowerSnaps[0]!;
+  for (let index = 0; index < 3; index += 1) {
+    const upperHover = await hoverSnap(page, upperLateSnap);
+    expect(upperHover.ghost.part).toBe('part:P1');
+    expect(upperHover.ghost.commitPart).toBe('part:P1');
+    expectGhostAndCommitOnSnap(upperHover.ghost, upperLateSnap, upperHover.center.x, 'upper rapid hover');
+
+    const lowerHover = await hoverSnap(page, lowerRestSnap);
+    expect(lowerHover.ghost.part).toBe('part:P2');
+    expect(lowerHover.ghost.commitPart).toBe('part:P2');
+    expectGhostAndCommitOnSnap(lowerHover.ghost, lowerRestSnap, lowerHover.center.x, 'lower rapid hover');
+    expect(lowerHover.ghost.pitch, 'lower hover must use the lower instrument bass clef').not.toBe(upperHover.ghost.pitch);
+  }
+
+  const before = await readCurrentCore(page);
+  const upperEventIds = before.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.map((event) => event.id);
+  const lowerHover = await hoverSnap(page, lowerRestSnap);
+  await page.mouse.click(
+    lowerHover.ghost.box.x + lowerHover.ghost.noteheadCenterX,
+    lowerHover.ghost.box.y + lowerHover.ghost.noteheadCenterY,
+  );
+
+  await expect.poll(async () => {
+    const core = await readCurrentCore(page);
+    return core.score.parts[1]!.staves[0]!.measures[0]!.voices[0]!.events[0]?.kind ?? null;
+  }, { timeout: 5_000 }).toBe('note');
+  const after = await readCurrentCore(page);
+  expect(
+    after.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.map((event) => event.id),
+    'lower-staff insertion must not mutate the upper instrument',
+  ).toEqual(upperEventIds);
 });
 
 test('brass quartet template exposes one clean rest snap on each single-staff part', async ({ page }) => {
