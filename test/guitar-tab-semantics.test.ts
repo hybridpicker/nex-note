@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { applyDocumentCommands } from '../src/score-core/commands/apply-document-commands.ts';
 import { applyCoreCommands } from '../src/score-core/commands/core-command-executor.ts';
+import { createDefaultNewScoreDraft, createNewScoreXml } from '../lib/new-score.ts';
 import { exportCoreToMusicXml } from '../src/musicxml-adapter/export/export-core-to-musicxml.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
@@ -185,6 +186,62 @@ test('setGuitarFret keeps paired standard notation one octave above the TAB note
   assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 0, octave: 3 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 3, tuning: 'standard', techniques: [] });
+});
+
+test('Guitar Pro 1-3-0 controls on the clickable notation rest write C5-D5-E5 above sounding C4-D4-E4 TAB', () => {
+  const draft = createDefaultNewScoreDraft();
+  draft.instrumentIds = ['guitar-tab'];
+  draft.measureCount = 1;
+  const sourceXml = createNewScoreXml(draft);
+  const source = importMusicXmlToCore(sourceXml);
+  const partId = source.score.parts[0]!.id;
+  const commands = [
+    { timestampNum: 0, timestampDen: 8, step: 'C', octave: 4, string: 2, fret: 1 },
+    { timestampNum: 1, timestampDen: 8, step: 'D', octave: 4, string: 2, fret: 3 },
+    { timestampNum: 2, timestampDen: 8, step: 'E', octave: 4, string: 1, fret: 0 },
+  ].map((entry) => ({
+    type: 'insertNoteAt' as const,
+    corePartId: partId,
+    measureNumber: 1,
+    // A blank TAB staff has no clickable rest glyph. The real UI anchors the
+    // guitar controls on staff 1 while their pitches still describe sounding
+    // guitar strings.
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: entry.timestampNum,
+    timestampDen: entry.timestampDen,
+    step: entry.step,
+    octave: entry.octave,
+    alter: 0,
+    durationType: 'eighth',
+    isDotted: false,
+    guitar: { string: entry.string, fret: entry.fret, tuning: 'standard' },
+  }));
+
+  const next = applyCoreCommands(source, commands as any);
+  const notationPitches = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .filter((event) => event.kind === 'note')
+    .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null);
+  const tabNotes = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .filter((event) => event.kind === 'note')
+    .map((event) => event.kind === 'note' ? {
+      pitch: `${event.pitch.step}${event.pitch.octave}`,
+      string: event.guitar?.string,
+      fret: event.guitar?.fret,
+    } : null);
+
+  assert.deepEqual(notationPitches, ['C5', 'D5', 'E5']);
+  assert.deepEqual(tabNotes, [
+    { pitch: 'C4', string: 2, fret: 1 },
+    { pitch: 'D4', string: 2, fret: 3 },
+    { pitch: 'E4', string: 1, fret: 0 },
+  ]);
+
+  const roundTripped = importMusicXmlToCore(exportCoreToMusicXml(sourceXml, next));
+  const roundTripNotationPitches = roundTripped.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .filter((event) => event.kind === 'note')
+    .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null);
+  assert.deepEqual(roundTripNotationPitches, ['C5', 'D5', 'E5']);
 });
 
 test('tie toggles mirror matching pitches across paired notation and TAB staves', () => {

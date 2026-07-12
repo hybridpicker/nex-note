@@ -5224,6 +5224,27 @@ export function executeCoreCommands(
         }
 
         const inserted = buildInsertedEvent(found.measure, command, insertionOffset, timing.divisions, timing.durationDivisions);
+        const pairedGuitarStaff = inserted.kind === 'note' && inserted.guitar
+          ? findPairedStaffVoice(
+            found.part,
+            found.staff.staffIndex,
+            command.measureNumber,
+            command.voiceId,
+          )
+          : null;
+        if (
+          inserted.kind === 'note'
+          && inserted.guitar
+          && !isTabStaff(found.part, found.staff.staffIndex)
+          && pairedGuitarStaff?.isTab
+        ) {
+          // The TAB controls always produce sounding pitches. In a blank
+          // notation+TAB score the clickable rest belongs to the notation
+          // staff, so convert that source event to conventional guitar
+          // notation before mirroring its sounding pitch to TAB.
+          inserted.pitch = guitarSoundingToWrittenPitch(inserted.pitch);
+          inserted.guitar = undefined;
+        }
 
         if (spanningRest && !(command.type === 'insertNoteAt' && command.asChord)) {
           found.voice.events.splice(spanningRestIndex, 1);

@@ -1008,10 +1008,13 @@ export function usePlayback(options?: {
 
     const ac = getAc();
     const e2eLoader = (globalThis as typeof globalThis & {
-      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (ac: AudioContext) => Promise<import('soundfont-player').Player> | import('soundfont-player').Player;
+      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (
+        ac: AudioContext,
+        instrument: import('soundfont-player').InstrumentName,
+      ) => Promise<import('soundfont-player').Player> | import('soundfont-player').Player;
     }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__;
     if (typeof e2eLoader === 'function') {
-      playerLoadRef.current = Promise.resolve(e2eLoader(ac)).then((player) => {
+      playerLoadRef.current = Promise.resolve(e2eLoader(ac, desiredInstrument)).then((player) => {
         playerRef.current = player;
         playerInstrumentRef.current = desiredInstrument;
         return player;

@@ -332,19 +332,30 @@ async function installPlaybackStubs(page: Page) {
   await page.addInitScript(() => {
     (window as typeof window & {
       __NEX_NOTE_E2E_PREVIEW_STARTS__?: Array<{ note: string | number }>;
-      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: () => Promise<{ start: (note: string | number) => void; stop: () => void }>;
+      __NEX_NOTE_E2E_LOADED_INSTRUMENTS__?: string[];
+      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (_ac: AudioContext, instrument: string) => Promise<{ start: (note: string | number) => void; stop: () => void }>;
     }).__NEX_NOTE_E2E_PREVIEW_STARTS__ = [];
     (window as typeof window & {
       __NEX_NOTE_E2E_PREVIEW_STARTS__?: Array<{ note: string | number }>;
-      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: () => Promise<{ start: (note: string | number) => void; stop: () => void }>;
-    }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__ = async () => ({
-      start(note) {
-        (window as typeof window & {
-          __NEX_NOTE_E2E_PREVIEW_STARTS__?: Array<{ note: string | number }>;
-        }).__NEX_NOTE_E2E_PREVIEW_STARTS__?.push({ note });
-      },
-      stop() {},
-    });
+      __NEX_NOTE_E2E_LOADED_INSTRUMENTS__?: string[];
+      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (_ac: AudioContext, instrument: string) => Promise<{ start: (note: string | number) => void; stop: () => void }>;
+    }).__NEX_NOTE_E2E_LOADED_INSTRUMENTS__ = [];
+    (window as typeof window & {
+      __NEX_NOTE_E2E_PREVIEW_STARTS__?: Array<{ note: string | number }>;
+      __NEX_NOTE_E2E_LOADED_INSTRUMENTS__?: string[];
+      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (_ac: AudioContext, instrument: string) => Promise<{ start: (note: string | number) => void; stop: () => void }>;
+    }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__ = async (_ac, instrument) => {
+      (window as typeof window & { __NEX_NOTE_E2E_LOADED_INSTRUMENTS__?: string[] })
+        .__NEX_NOTE_E2E_LOADED_INSTRUMENTS__?.push(instrument);
+      return {
+        start(note) {
+          (window as typeof window & {
+            __NEX_NOTE_E2E_PREVIEW_STARTS__?: Array<{ note: string | number }>;
+          }).__NEX_NOTE_E2E_PREVIEW_STARTS__?.push({ note });
+        },
+        stop() {},
+      };
+    };
   });
 }
 
@@ -1436,6 +1447,30 @@ test('playback controls and responsive panel behavior work in the browser with s
   await expect(page.getByTitle(/Show panel|Panel einblenden/)).toBeVisible();
   await page.getByTitle(/Show panel|Panel einblenden/).click();
   await expect(page.getByRole('button', { name: 'Inspector' })).toBeVisible();
+});
+
+test('guitar TAB playback loads a guitar soundfont instead of piano', async ({ page }) => {
+  await bootWithScore(page, 'guitar-tab-playback.musicxml', createNewScoreXml({
+    instrumentIds: ['guitar-tab'],
+    title: 'Guitar TAB Playback',
+    subtitle: '',
+    composer: '',
+    lyricist: '',
+    copyright: '',
+    keySignatureId: 'c-major',
+    timeBeats: 4,
+    timeBeatType: 4,
+    tempo: { bpm: 120, beatUnit: 'quarter', showMarking: false },
+    measureCount: 1,
+    pickup: { enabled: false, beats: 1, beatType: 4 },
+  }));
+
+  await page.getByTitle('Play (Space)').click();
+
+  await expect.poll(async () => page.evaluate(() => (
+    (window as typeof window & { __NEX_NOTE_E2E_LOADED_INSTRUMENTS__?: string[] })
+      .__NEX_NOTE_E2E_LOADED_INSTRUMENTS__ ?? []
+  ))).toEqual(['acoustic_guitar_nylon']);
 });
 
 test('tempo changes during playback keep the playhead position', async ({ page }) => {
