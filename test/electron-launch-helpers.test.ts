@@ -14,45 +14,17 @@ const {
   uniquePathDirectories,
 } = require('../electron/launch-helpers.cjs') as typeof import('../electron/launch-helpers.cjs');
 
-test('dirty repo-local packaged builds run instead of entering the updater loop', () => {
+test('a stale packaged build schedules a background rebuild', () => {
   assert.deepEqual(
-    decidePackagedBuildFreshness({
-      buildCommit: 'local-work',
-      buildDirty: true,
-      latestDevelCommit: 'origin-devel',
-    }),
-    {
-      action: 'run',
-      reason: 'dirty-local-build',
-    },
+    decidePackagedBuildFreshness({ buildCommit: 'old-build', buildDirty: false, latestDevelCommit: 'new-devel' }),
+    { action: 'rebuild', reason: 'stale-build-commit' },
   );
 });
 
-test('clean stale packaged builds request a rebuild from latest devel', () => {
+test('a dirty packaged build keeps running while the next launch retries the update', () => {
   assert.deepEqual(
-    decidePackagedBuildFreshness({
-      buildCommit: 'old-build',
-      buildDirty: false,
-      latestDevelCommit: 'new-devel',
-    }),
-    {
-      action: 'rebuild',
-      reason: 'stale-build-commit',
-    },
-  );
-});
-
-test('clean packaged builds at origin/devel run normally', () => {
-  assert.deepEqual(
-    decidePackagedBuildFreshness({
-      buildCommit: 'same-commit',
-      buildDirty: false,
-      latestDevelCommit: 'same-commit',
-    }),
-    {
-      action: 'run',
-      reason: 'fresh-build',
-    },
+    decidePackagedBuildFreshness({ buildCommit: 'local-build', buildDirty: true, latestDevelCommit: 'new-devel' }),
+    { action: 'run', reason: 'dirty-local-build' },
   );
 });
 

@@ -38,7 +38,7 @@ const DUAL_STAFF_TAB_XML = `<?xml version="1.0" encoding="UTF-8"?>
       </attributes>
       <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
       <backup><duration>1</duration></backup>
-      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>5</string><fret>3</fret></technical></notations></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>5</string><fret>3</fret></technical></notations></note>
     </measure>
   </part>
 </score-partwise>`;
@@ -66,9 +66,9 @@ const DUAL_STAFF_TAB_REST_ANCHORS_XML = `<?xml version="1.0" encoding="UTF-8"?>
       <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
       <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
       <backup><duration>4</duration></backup>
-      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>5</string><fret>3</fret></technical></notations></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>5</string><fret>3</fret></technical></notations></note>
       <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff></note>
-      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>2</string><fret>5</fret></technical></notations></note>
+      <note><pitch><step>E</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>4</string><fret>2</fret></technical></notations></note>
       <note><rest/><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff></note>
     </measure>
   </part>
@@ -166,7 +166,7 @@ test('setGuitarFret preserves existing guitar techniques when only fret metadata
   });
 });
 
-test('setGuitarFret keeps paired standard notation pitch aligned with the TAB note in core edits', () => {
+test('setGuitarFret keeps paired standard notation one octave above the TAB note', () => {
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
     type: 'setGuitarFret',
     corePartId: 'part:P1',
@@ -182,7 +182,7 @@ test('setGuitarFret keeps paired standard notation pitch aligned with the TAB no
 
   const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
   const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
-  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 0, octave: 3 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 3, tuning: 'standard', techniques: [] });
 });
@@ -251,7 +251,7 @@ test('setGuitarFret keeps Guitar Pro style staff-details TAB imports paired with
   const imported = result.coreDocument;
   const notationNote = imported?.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
   const tabNote = imported?.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
-  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 0, octave: 3 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'G', alter: 0, octave: 2 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 3, techniques: [] });
   assert.match(result.xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
@@ -273,13 +273,13 @@ const DUAL_STAFF_TAB_FLAT_XML = `<?xml version="1.0" encoding="UTF-8"?>
       </attributes>
       <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
       <backup><duration>1</duration></backup>
-      <note><pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>1</string><fret>6</fret></technical></notations></note>
+      <note><pitch><step>B</step><alter>-1</alter><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>3</string><fret>3</fret></technical></notations></note>
     </measure>
   </part>
 </score-partwise>`;
 
 test('setGuitarFret moves a TAB note to another string without changing the pitch', () => {
-  // C4 = 3rd fret on the A string ↔ 10th fret on the D string.
+  // Sounding C3 = 3rd fret on the A string ↔ 8th fret on the low E string.
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
     type: 'setGuitarFret',
     corePartId: 'part:P1',
@@ -288,20 +288,20 @@ test('setGuitarFret moves a TAB note to another string without changing the pitc
     voiceId: 1,
     timestampNum: 0,
     timestampDen: 1,
-    string: 4,
-    fret: 10,
+    string: 6,
+    fret: 8,
     tuning: 'standard',
   } as any]);
 
   const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
   const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
   assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'C', alter: 0, octave: 4 });
-  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'C', alter: 0, octave: 4 });
-  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 4, fret: 10, tuning: 'standard', techniques: [] });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'C', alter: 0, octave: 3 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 6, fret: 8, tuning: 'standard', techniques: [] });
 });
 
 test('setGuitarFret keeps flat spelling when the sounding pitch is unchanged', () => {
-  // Bb4 from string 1 fret 6 to string 2 fret 11 must stay Bb, not become A#.
+  // Sounding Bb3 moved to another string must stay Bb, not become A#.
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_FLAT_XML), [{
     type: 'setGuitarFret',
     corePartId: 'part:P1',
@@ -310,16 +310,16 @@ test('setGuitarFret keeps flat spelling when the sounding pitch is unchanged', (
     voiceId: 1,
     timestampNum: 0,
     timestampDen: 1,
-    string: 2,
-    fret: 11,
+    string: 4,
+    fret: 8,
     tuning: 'standard',
   } as any]);
 
   const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
   const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
   assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'B', alter: -1, octave: 4 });
-  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'B', alter: -1, octave: 4 });
-  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 2, fret: 11, tuning: 'standard', techniques: [] });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'B', alter: -1, octave: 3 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 4, fret: 8, tuning: 'standard', techniques: [] });
 });
 
 test('standard notation insertNoteAt automatically creates paired TAB fingering', () => {
@@ -347,8 +347,8 @@ test('standard notation insertNoteAt automatically creates paired TAB fingering'
   assert.deepEqual(notationBeatTwo?.kind === 'note' ? notationBeatTwo.pitch : null, { step: 'E', alter: 0, octave: 4 });
   assert.equal(notationBeatTwo?.kind === 'note' ? notationBeatTwo.guitar : undefined, undefined);
   assert.equal(tabBeatTwo?.kind, 'note');
-  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'E', alter: 0, octave: 4 });
-  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 1, fret: 0 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'E', alter: 0, octave: 3 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 4, fret: 2 });
 });
 
 test('standard notation changeNotePitch updates paired TAB pitch and fingering', () => {
@@ -361,14 +361,14 @@ test('standard notation changeNotePitch updates paired TAB pitch and fingering',
     timestampNum: 0,
     timestampDen: 1,
     step: 'G',
-    octave: 2,
+    octave: 3,
     alter: 1,
     writtenAccidental: 'sharp',
   } as any]);
 
   const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
   const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
-  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 1, octave: 2 });
+  assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'G', alter: 1, octave: 3 });
   assert.equal(notationNote?.kind === 'note' ? notationNote.writtenAccidental : null, 'sharp');
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'G', alter: 1, octave: 2 });
   assert.equal(tabNote?.kind === 'note' ? tabNote.writtenAccidental : null, 'sharp');
@@ -439,8 +439,9 @@ test('grace insertion mirrors a zero-time entity across paired notation and TAB 
   assert.equal(tabEvents.some((event) => event.id === tabAnchor.id), true);
   assert.equal(notationEvents.filter((event) => graceIds.has(event.id) && event.durationDivisions === 0).length, 1);
   assert.equal(tabEvents.filter((event) => graceIds.has(event.id) && event.durationDivisions === 0).length, 1);
-  assert.deepEqual(tabEvents.find((event) => event.id === tabAnchor.id)?.kind === 'note'
-    ? tabEvents.find((event) => event.id === tabAnchor.id)!.guitar
+  const retainedTabAnchor = tabEvents.find((event) => event.id === tabAnchor.id);
+  assert.deepEqual(retainedTabAnchor?.kind === 'note'
+    ? retainedTabAnchor.guitar
     : null, tabAnchor.kind === 'note' ? tabAnchor.guitar : null);
 
   const notationGrace = notationEvents.find((event) => graceIds.has(event.id))!;
@@ -505,7 +506,7 @@ test('enharmonic respelling mirrors spelling across paired notation and TAB with
   const notationNote = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0];
   const tabNote = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0];
   assert.deepEqual(notationNote?.kind === 'note' ? notationNote.pitch : null, { step: 'D', alter: -2, octave: 4 });
-  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'D', alter: -2, octave: 4 });
+  assert.deepEqual(tabNote?.kind === 'note' ? tabNote.pitch : null, { step: 'D', alter: -2, octave: 3 });
   assert.deepEqual(tabNote?.kind === 'note' ? tabNote.guitar : null, { string: 5, fret: 3, techniques: [] });
 });
 
@@ -539,8 +540,8 @@ test('standard notation repitch preserves the paired TAB string when reachable',
 
   const tabBeatTwo = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
     .find((event) => event.timestampNum === 1);
-  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'F', alter: 0, octave: 4 });
-  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 1, fret: 1 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'F', alter: 0, octave: 3 });
+  assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 4, fret: 3 });
 });
 
 test('insertNoteAt with guitar converts the paired notation rest at the same rhythmic anchor', () => {
@@ -568,18 +569,18 @@ test('insertNoteAt with guitar converts the paired notation rest at the same rhy
   const tabBeatTwo = tabEvents.find((event) => event.timestampNum === 1);
 
   assert.equal(notationBeatTwo?.kind, 'note');
-  assert.deepEqual(notationBeatTwo?.kind === 'note' ? notationBeatTwo.pitch : null, { step: 'A', alter: 0, octave: 3 });
+  assert.deepEqual(notationBeatTwo?.kind === 'note' ? notationBeatTwo.pitch : null, { step: 'A', alter: 0, octave: 4 });
   assert.equal(notationBeatTwo?.kind === 'note' ? notationBeatTwo.guitar : undefined, undefined);
   assert.equal(tabBeatTwo?.kind, 'note');
   assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.pitch : null, { step: 'A', alter: 0, octave: 3 });
   assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 4, fret: 7, tuning: 'standard' });
   assert.deepEqual(
     notationEvents.map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType}`),
-    ['0/4:C4:quarter', '1/4:A3:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
+    ['0/4:C4:quarter', '1/4:A4:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
   );
   assert.deepEqual(
     tabEvents.map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.kind === 'note' ? event.guitar?.fret ?? 'ng' : 'r'}`),
-    ['0/4:C4:3', '1/4:A3:7', '2/4:E4:5', '3/4:rest:r'],
+    ['0/4:C3:3', '1/4:A3:7', '2/4:E3:2', '3/4:rest:r'],
   );
 });
 
@@ -604,13 +605,13 @@ test('document command guitar insertNoteAt mirrors paired notation in staff-deta
     result.coreDocument?.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
       .sort((a, b) => a.timestampNum - b.timestampNum)
       .map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType}`),
-    ['0/4:C4:quarter', '1/4:A3:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
+    ['0/4:C4:quarter', '1/4:A4:quarter', '2/4:E4:quarter', '3/4:rest:quarter'],
   );
   assert.deepEqual(
     result.coreDocument?.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
       .sort((a, b) => a.timestampNum - b.timestampNum)
       .map((event) => `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.kind === 'note' ? event.guitar?.fret ?? 'ng' : 'r'}`),
-    ['0/4:C4:3', '1/4:A3:7', '2/4:E4:5', '3/4:rest:r'],
+    ['0/4:C3:3', '1/4:A3:7', '2/4:E3:2', '3/4:rest:r'],
   );
   assert.match(result.xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
 });

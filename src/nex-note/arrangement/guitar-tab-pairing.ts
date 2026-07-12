@@ -1,6 +1,6 @@
 import type { DocumentState } from '@/src/score-core/commands/apply-document-commands';
 import type { MeasureNode, NoteEvent, ScoreDocumentModel } from '@/src/score-core/model/types';
-import { MAX_GUITAR_FRET, STANDARD_GUITAR_TUNING } from '@/src/score-input/guitar-fretboard';
+import { guitarWrittenToSoundingPitch, MAX_GUITAR_FRET, STANDARD_GUITAR_TUNING } from '@/src/score-input/guitar-fretboard';
 
 type ScorePart = ScoreDocumentModel['score']['parts'][number];
 
@@ -89,7 +89,7 @@ export function guitarPlacementForPitch(
   pitch: { step: string; alter: number; octave: number },
   sourceGuitar?: NonNullable<NoteEvent['guitar']>,
 ): NonNullable<NoteEvent['guitar']> | null {
-  const targetMidi = writtenPitchToMidi(pitch);
+  const targetMidi = writtenPitchToMidi(guitarWrittenToSoundingPitch(pitch));
   const sourceString = sourceGuitar?.string;
   const sourceFret = sourceGuitar?.fret;
   const sourceTuning = sourceGuitar?.tuning;
@@ -128,7 +128,7 @@ export function guitarPlacementForPitch(
 }
 
 export function describeGuitarPlacementFailure(pitch: { step: string; alter: number; octave: number }) {
-  const targetMidi = writtenPitchToMidi(pitch);
+  const targetMidi = writtenPitchToMidi(guitarWrittenToSoundingPitch(pitch));
   const minMidi = Math.min(...STANDARD_GUITAR_TUNING.map((entry) => entry.openMidi));
   const maxMidi = Math.max(...STANDARD_GUITAR_TUNING.map((entry) => entry.openMidi + MAX_GUITAR_FRET));
   if (targetMidi < minMidi) {

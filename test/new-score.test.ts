@@ -104,6 +104,8 @@ test('createNewScoreXml builds combined notation and TAB staves for guitar-famil
   assert.match(xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>6<\/staff-lines><\/staff-details>/);
   assert.match(xml, /<staff-details number="2"><staff-type>tab<\/staff-type><staff-lines>4<\/staff-lines><\/staff-details>/);
   assert.equal((xml.match(/<clef number="2"><sign>TAB<\/sign><line>5<\/line><\/clef>/g) ?? []).length, 2);
+  assert.match(xml, /<part-name>Electric Guitar \+ TAB<\/part-name>[\s\S]*?<midi-program>28<\/midi-program>/);
+  assert.match(xml, /<part-name>Electric Bass \+ TAB<\/part-name>[\s\S]*?<midi-program>34<\/midi-program>/);
   assert.equal((xml.match(/<staff>2<\/staff>/g) ?? []).length, 4);
 
   const projected = projectLayoutToDocument(importMusicXmlToCore(xml));

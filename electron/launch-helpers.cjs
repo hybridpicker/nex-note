@@ -102,23 +102,14 @@ async function resolveExecutable(command, env = process.env) {
 
 function decidePackagedBuildFreshness({ buildCommit, buildDirty, latestDevelCommit }) {
   if (buildDirty) {
-    return {
-      action: 'run',
-      reason: 'dirty-local-build',
-    };
+    return { action: 'run', reason: 'dirty-local-build' };
   }
 
   if (!buildCommit || buildCommit !== latestDevelCommit) {
-    return {
-      action: 'rebuild',
-      reason: !buildCommit ? 'missing-build-commit' : 'stale-build-commit',
-    };
+    return { action: 'rebuild', reason: !buildCommit ? 'missing-build-commit' : 'stale-build-commit' };
   }
 
-  return {
-    action: 'run',
-    reason: 'fresh-build',
-  };
+  return { action: 'run', reason: 'fresh-build' };
 }
 
 function isAllowedRendererPermission(permission, requestingUrl, rendererUrl) {

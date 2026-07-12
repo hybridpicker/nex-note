@@ -21,6 +21,7 @@ let mainWindow = null;
 let nextProcess = null;
 let rendererReady = false;
 let applicationMenu = null;
+let develUpdateStarted = false;
 const pendingOpenFilePaths = [];
 const menuState = {
   hasScore: false,
@@ -420,7 +421,7 @@ async function execFileText(command, args, options = {}) {
   const env = buildChildProcessEnv({}, options.env || process.env);
   const resolvedCommand = await resolveExecutable(command, env);
   if (!resolvedCommand) {
-    throw new Error(`Could not find executable "${command}" on PATH: ${env.PATH}`);
+    throw new Error(`Could not find executable "${command}" on PATH`);
   }
 
   return new Promise((resolve, reject) => {
@@ -473,150 +474,56 @@ async function readBuildInfo() {
   }
 }
 
-async function startLatestDevelRebuild(repoRoot) {
-  const dirty = await execFileText('git', ['-C', repoRoot, 'status', '--porcelain']);
-  const updaterEnv = buildChildProcessEnv({
-    NEX_NOTE_AUTO_LATEST_DEVEL_RELAUNCH: '1',
-  });
-  const npmCommand = await resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm', updaterEnv);
+async function updateToLatestDevelInBackground() {
+  if (develUpdateStarted || isElectronDevRuntime()) return;
 
-  if (dirty) {
-    dialog.showErrorBox(
-      'Nex Note cannot update from devel',
-      [
-        'This repo-local packaged app is stale, but the working tree has local changes.',
-        'Nex Note will not overwrite or hide those changes.',
-        '',
-        `Repo: ${repoRoot}`,
-        '',
-        'Commit, stash, or discard local changes, then run:',
-        `cd "${repoRoot}" && npm run electron:latest`,
-      ].join('\n'),
-    );
-    app.quit();
-    return false;
-  }
-
-  if (!npmCommand) {
-    dialog.showErrorBox(
-      'Nex Note cannot update from devel',
-      [
-        'This repo-local packaged app is stale, but npm could not be found from the app launch environment.',
-        '',
-        `Repo: ${repoRoot}`,
-        `PATH: ${updaterEnv.PATH}`,
-        '',
-        'Run this from Terminal after npm is available:',
-        `cd "${repoRoot}" && npm run electron:latest`,
-      ].join('\n'),
-    );
-    app.quit();
-    return false;
-  }
-
-  const updater = spawn(npmCommand, ['run', 'electron:latest'], {
-    cwd: repoRoot,
-    detached: true,
-    stdio: 'ignore',
-    env: updaterEnv,
-  });
-
-  const didSpawn = await new Promise((resolve) => {
-    updater.once('spawn', () => resolve(true));
-    updater.once('error', (error) => {
-      dialog.showErrorBox(
-        'Nex Note cannot update from devel',
-        [
-          'This repo-local packaged app is stale, but the updater process could not be started.',
-          '',
-          `Repo: ${repoRoot}`,
-          `Command: ${npmCommand} run electron:latest`,
-          `Error: ${error?.message ?? String(error)}`,
-          '',
-          'Run this from Terminal:',
-          `cd "${repoRoot}" && npm run electron:latest`,
-        ].join('\n'),
-      );
-      resolve(false);
-    });
-  });
-
-  if (!didSpawn) {
-    app.quit();
-    return false;
-  }
-
-  updater.unref();
-
-  dialog.showMessageBoxSync({
-    type: 'info',
-    title: 'Updating Nex Note',
-    message: 'Nex Note is updating to the latest pushed devel build.',
-    detail: 'The stale app will close now. The rebuilt app will reopen automatically when the update finishes.',
-    buttons: ['OK'],
-  });
-  app.quit();
-  return false;
-}
-
-async function verifyPackagedBuildFreshness() {
-  if (process.env.NEX_NOTE_SKIP_DEVEL_FRESHNESS_CHECK === '1' || isElectronDevRuntime()) {
-    return true;
-  }
-
-  const repoRoot = await findRepoRootForPackagedApp();
-  if (!repoRoot) return true;
-
-  const buildInfo = await readBuildInfo();
-  const buildCommit = typeof buildInfo?.gitCommit === 'string' ? buildInfo.gitCommit : null;
-  const buildDirty = Boolean(buildInfo?.dirty);
-
-  let latestDevelCommit;
   try {
+    const repoRoot = await findRepoRootForPackagedApp();
+    if (!repoRoot) return;
+
+    const [dirty, buildInfo] = await Promise.all([
+      execFileText('git', ['-C', repoRoot, 'status', '--porcelain']),
+      readBuildInfo(),
+    ]);
+    if (dirty) {
+      console.log('[electron] Skipping devel update because the repository has local changes.');
+      return;
+    }
+
     await execFileText('git', ['-C', repoRoot, 'fetch', 'origin', 'devel:refs/remotes/origin/devel']);
-    latestDevelCommit = await execFileText('git', ['-C', repoRoot, 'rev-parse', 'origin/devel']);
-  } catch (error) {
-    dialog.showErrorBox(
-      'Nex Note cannot verify devel',
-      [
-        'This repo-local packaged app is configured to run only after verifying origin/devel.',
-        'The latest pushed devel commit could not be fetched.',
-        '',
-        `Repo: ${repoRoot}`,
-        `Error: ${error?.message ?? String(error)}`,
-        '',
-        'Run this after network access is available:',
-        `cd "${repoRoot}" && npm run electron:latest`,
-      ].join('\n'),
-    );
-    app.quit();
-    return false;
-  }
-
-  const freshness = decidePackagedBuildFreshness({
-    buildCommit,
-    buildDirty,
-    latestDevelCommit,
-  });
-
-  if (freshness.reason === 'dirty-local-build') {
-    console.log('[electron] Packaged app was built from a dirty local tree; skipping devel freshness update.');
-  }
-
-  if (freshness.action === 'run') {
-    return true;
-  }
-
-  if (freshness.action === 'rebuild') {
-    console.log('[electron] Packaged app is stale; rebuilding from latest origin/devel.', {
-      buildCommit,
+    const latestDevelCommit = await execFileText('git', ['-C', repoRoot, 'rev-parse', 'origin/devel']);
+    const freshness = decidePackagedBuildFreshness({
+      buildCommit: typeof buildInfo?.gitCommit === 'string' ? buildInfo.gitCommit : null,
+      buildDirty: Boolean(buildInfo?.dirty),
       latestDevelCommit,
-      buildDirty,
     });
-    return startLatestDevelRebuild(repoRoot);
-  }
+    if (freshness.action === 'run') return;
 
-  return true;
+    const updaterEnv = buildChildProcessEnv({ NEX_NOTE_BACKGROUND_DEVEL_UPDATE: '1' });
+    const npmCommand = await resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm', updaterEnv);
+    if (!npmCommand) {
+      console.error('[electron] Cannot update to origin/devel: npm was not found.');
+      return;
+    }
+
+    develUpdateStarted = true;
+    const updater = spawn(npmCommand, ['run', 'electron:latest'], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+      env: updaterEnv,
+    });
+    updater.once('error', (error) => {
+      console.error('[electron] Could not start the origin/devel updater:', error);
+      develUpdateStarted = false;
+    });
+    updater.unref();
+    console.log('[electron] Updating to the latest origin/devel build in the background.');
+  } catch (error) {
+    // A Dock/Finder launch must remain usable when offline or when developer
+    // tooling is unavailable. The next launch retries the background update.
+    console.error('[electron] Could not check origin/devel for updates:', error);
+  }
 }
 
 function getAssetPath(...segments) {
@@ -870,7 +777,6 @@ if (!singleInstanceLock) {
 
   app.whenReady().then(async () => {
     app.setName(APP_NAME);
-    if (!(await verifyPackagedBuildFreshness())) return;
     if (typeof app.setAccessibilitySupportEnabled === 'function') {
       app.setAccessibilitySupportEnabled(true);
     }
@@ -884,6 +790,7 @@ if (!singleInstanceLock) {
     createApplicationMenu();
     queueCommandLineFiles(process.argv.slice(1));
     await createWindow();
+    void updateToLatestDevelInBackground();
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {

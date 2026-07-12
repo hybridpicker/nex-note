@@ -2,7 +2,14 @@ import { noteTypeToDivisions } from '@/lib/note-editor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
-import { chooseGuitarFingeringForPitch, pitchToMidi, resolveGuitarFretPitch, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
+import {
+  chooseGuitarFingeringForPitch,
+  guitarSoundingToWrittenPitch,
+  guitarWrittenToSoundingPitch,
+  pitchToMidi,
+  resolveGuitarFretPitch,
+  resolveGuitarTuning,
+} from '@/src/score-input/guitar-fretboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import type { ClipboardAbsoluteEvent, ClipboardTargetOffset, ClipboardTimedDirection, ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
@@ -783,6 +790,18 @@ function findPairedStaffVoice(
   return null;
 }
 
+function pitchForPairedGuitarStaff(
+  part: ScoreDocumentModel['score']['parts'][number],
+  sourceStaffIndex: number,
+  pairedIsTab: boolean,
+  pitch: { step: string; alter: number; octave: number },
+) {
+  const sourceIsTab = isTabStaff(part, sourceStaffIndex);
+  if (pairedIsTab && !sourceIsTab) return guitarWrittenToSoundingPitch(pitch);
+  if (!pairedIsTab && sourceIsTab) return guitarSoundingToWrittenPitch(pitch);
+  return pitch;
+}
+
 type CoreGuitarMetadata = NonNullable<Extract<TimedEvent, { kind: 'note' }>['guitar']>;
 type CommandGuitarMetadata = {
   string: 1 | 2 | 3 | 4 | 5 | 6;
@@ -1550,9 +1569,16 @@ function mirrorGuitarInsertionToPairedStaff(input: {
   );
   if (!paired) return;
 
+  const sourceIsTab = isTabStaff(input.part, input.sourceStaffIndex);
+  const pairedPitch = paired.isTab
+    ? guitarWrittenToSoundingPitch(input.sourceInserted.pitch)
+    : sourceIsTab
+      ? guitarSoundingToWrittenPitch(input.sourceInserted.pitch)
+      : input.sourceInserted.pitch;
+
   const guitar = paired.isTab
     ? resolveSyncedGuitarFingering({
-      pitch: input.sourceInserted.pitch,
+      pitch: pairedPitch,
       requested: 'guitar' in input.command ? input.command.guitar : undefined,
     })
     : undefined;
@@ -1578,6 +1604,9 @@ function mirrorGuitarInsertionToPairedStaff(input: {
   const pairedCommand = {
     ...input.command,
     staffIndex: paired.staff.staffIndex,
+    step: pairedPitch.step,
+    alter: pairedPitch.alter ?? 0,
+    octave: pairedPitch.octave,
     guitar,
   };
   const inserted = buildInsertedEvent(
@@ -3493,8 +3522,13 @@ export function executeCoreCommands(
             if (paired?.event) {
               paired.event.kind = 'note';
               const pairedNote = paired.event as Extract<TimedEvent, { kind: 'note' }>;
-              const pairedSoundingPitchUnchanged = pitchMidiNumber(pairedNote.pitch) === pitchMidiNumber(nextPitch);
-              pairedNote.pitch = { ...nextPitch };
+              const pairedPitch = paired.isTab
+                ? guitarWrittenToSoundingPitch(nextPitch)
+                : sourceIsTab
+                  ? guitarSoundingToWrittenPitch(nextPitch)
+                  : nextPitch;
+              const pairedSoundingPitchUnchanged = pitchMidiNumber(pairedNote.pitch) === pitchMidiNumber(pairedPitch);
+              pairedNote.pitch = { ...pairedPitch };
               pairedNote.writtenAccidental = command.writtenAccidental;
               if (!command.writtenAccidental) {
                 pairedNote.accidentalCautionary = undefined;
@@ -3507,7 +3541,7 @@ export function executeCoreCommands(
               }
               if (paired.isTab && !pairedSoundingPitchUnchanged) {
                 pairedNote.guitar = resolveSyncedGuitarFingering({
-                  pitch: nextPitch,
+                  pitch: pairedPitch,
                   existing: pairedNote.guitar,
                 });
               }
@@ -3713,11 +3747,13 @@ export function executeCoreCommands(
         if (event && event.kind === 'note') {
           const tuning = resolveGuitarTuning(command.tuning ?? event.guitar?.tuning);
           const pitch = resolveGuitarFretPitch(command.string, command.fret, tuning);
+          const sourceIsTab = found ? isTabStaff(found.part, command.staffIndex) : Boolean(event.guitar);
+          const sourcePitch = sourceIsTab ? pitch : guitarSoundingToWrittenPitch(pitch);
           const previous = event.guitar;
           // Keep the existing spelling when the sounding pitch is unchanged —
           // a string change at constant pitch must not respell Bb as A#.
-          if (pitchMidiNumber(event.pitch) !== pitch.midi) {
-            event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+          if (pitchMidiNumber(event.pitch) !== pitchMidiNumber(sourcePitch)) {
+            event.pitch = { step: sourcePitch.step, alter: sourcePitch.alter, octave: sourcePitch.octave };
             event.writtenAccidental = undefined;
             event.accidentalCautionary = undefined;
             event.accidentalEnclosure = undefined;
@@ -3741,8 +3777,9 @@ export function executeCoreCommands(
             command.timestampDen,
           );
           if (paired?.event) {
-            if (pitchMidiNumber(paired.event.pitch) !== pitch.midi) {
-              paired.event.pitch = { step: pitch.step, alter: pitch.alter, octave: pitch.octave };
+            const pairedPitch = paired.isTab ? pitch : guitarSoundingToWrittenPitch(pitch);
+            if (pitchMidiNumber(paired.event.pitch) !== pitchMidiNumber(pairedPitch)) {
+              paired.event.pitch = { step: pairedPitch.step, alter: pairedPitch.alter, octave: pairedPitch.octave };
               paired.event.writtenAccidental = undefined;
               paired.event.accidentalCautionary = undefined;
               paired.event.accidentalEnclosure = undefined;
@@ -3994,13 +4031,7 @@ export function executeCoreCommands(
             command.timestampNum,
             command.timestampDen,
           );
-          const pairedEvent = paired?.voice.events.find((candidate) => (
-            candidate.kind === 'note'
-            && timestampsEqual(candidate.timestampNum, candidate.timestampDen, event.timestampNum, event.timestampDen)
-            && candidate.pitch.step === event.pitch.step
-            && candidate.pitch.alter === event.pitch.alter
-            && candidate.pitch.octave === event.pitch.octave
-          ));
+          const pairedEvent = paired?.event;
           if (pairedEvent?.kind === 'note') {
             pairedEvent.tieStart = nextTieStart;
             if (!nextTieStart) pairedEvent.tiePlacement = undefined;
@@ -4731,11 +4762,15 @@ export function executeCoreCommands(
             command.measureNumber,
             command.voiceId,
           );
+          const expectedPairedPitch = paired
+            ? pitchForPairedGuitarStaff(found.part, command.staffIndex, paired.isTab, event.pitch)
+            : null;
           const pairedIndex = paired?.voice.events.findIndex((entry) => (
             entry.kind === 'note'
             && !nextDocument.graceNotes.some((grace) => grace.eventId === entry.id)
             && timestampsEqual(entry.timestampNum, entry.timestampDen, command.timestampNum, command.timestampDen)
-            && pitchMidiNumber(entry.pitch) === pitchMidiNumber(event.pitch)
+            && expectedPairedPitch != null
+            && pitchMidiNumber(entry.pitch) === pitchMidiNumber(expectedPairedPitch)
           )) ?? -1;
           const pairedEvent = pairedIndex >= 0 ? paired?.voice.events[pairedIndex] : undefined;
           if (pairedEvent?.kind === 'note' && paired) {
@@ -4774,12 +4809,16 @@ export function executeCoreCommands(
             command.measureNumber,
             command.voiceId,
           );
+          const expectedPairedPitch = paired
+            ? pitchForPairedGuitarStaff(found.part, command.staffIndex, paired.isTab, event.pitch)
+            : null;
           const pairedGraceIndexes = paired?.voice.events.reduce<number[]>((indexes, entry, index) => {
             if (
               entry.kind === 'note'
               && nextDocument.graceNotes.some((grace) => grace.eventId === entry.id)
               && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
-              && pitchMidiNumber(entry.pitch) === pitchMidiNumber(event.pitch)
+              && expectedPairedPitch != null
+              && pitchMidiNumber(entry.pitch) === pitchMidiNumber(expectedPairedPitch)
             ) indexes.push(index);
             return indexes;
           }, []) ?? [];

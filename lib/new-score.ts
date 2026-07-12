@@ -12,6 +12,7 @@ export interface InstrumentDefinition {
   }>;
   chromaticTranspose?: number;
   diatonicTranspose?: number;
+  midiProgram?: number;
 }
 
 export interface NewScoreTemplate {
@@ -77,7 +78,7 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
   { id: 'alto', name: 'Alto', shortName: 'A.', family: 'Voices', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
   { id: 'tenor', name: 'Tenor', shortName: 'T.', family: 'Voices', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
   { id: 'bass', name: 'Bass', shortName: 'B.', family: 'Voices', staves: 1, clefs: [{ sign: 'F', line: 4 }] },
-  { id: 'guitar', name: 'Guitar', shortName: 'Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  { id: 'guitar', name: 'Guitar', shortName: 'Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }], midiProgram: 25 },
   {
     id: 'guitar-tab',
     name: 'Guitar + TAB',
@@ -86,8 +87,9 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
     staves: 2,
     clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
     staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+    midiProgram: 25,
   },
-  { id: 'acoustic-guitar', name: 'Acoustic Guitar', shortName: 'A. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  { id: 'acoustic-guitar', name: 'Acoustic Guitar', shortName: 'A. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }], midiProgram: 26 },
   {
     id: 'acoustic-guitar-tab',
     name: 'Acoustic Guitar + TAB',
@@ -96,8 +98,9 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
     staves: 2,
     clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
     staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+    midiProgram: 26,
   },
-  { id: 'classical-guitar', name: 'Classical Guitar', shortName: 'C. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  { id: 'classical-guitar', name: 'Classical Guitar', shortName: 'C. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }], midiProgram: 25 },
   {
     id: 'classical-guitar-tab',
     name: 'Classical Guitar + TAB',
@@ -106,8 +109,9 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
     staves: 2,
     clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
     staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+    midiProgram: 25,
   },
-  { id: 'electric-guitar', name: 'Electric Guitar', shortName: 'E. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }] },
+  { id: 'electric-guitar', name: 'Electric Guitar', shortName: 'E. Gtr.', family: 'Guitars', staves: 1, clefs: [{ sign: 'G', line: 2 }], midiProgram: 28 },
   {
     id: 'electric-guitar-tab',
     name: 'Electric Guitar + TAB',
@@ -116,8 +120,9 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
     staves: 2,
     clefs: [{ sign: 'G', line: 2 }, { sign: 'TAB', line: 5 }],
     staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 6 }],
+    midiProgram: 28,
   },
-  { id: 'electric-bass', name: 'Electric Bass', shortName: 'E. Bass', family: 'Guitars', staves: 1, clefs: [{ sign: 'F', line: 4 }] },
+  { id: 'electric-bass', name: 'Electric Bass', shortName: 'E. Bass', family: 'Guitars', staves: 1, clefs: [{ sign: 'F', line: 4 }], midiProgram: 34 },
   {
     id: 'electric-bass-tab',
     name: 'Electric Bass + TAB',
@@ -126,6 +131,7 @@ export const INSTRUMENT_DEFINITIONS: InstrumentDefinition[] = [
     staves: 2,
     clefs: [{ sign: 'F', line: 4 }, { sign: 'TAB', line: 5 }],
     staffDetails: [{ staffIndex: 2, staffType: 'tab', staffLines: 4 }],
+    midiProgram: 34,
   },
   { id: 'five-string-electric-bass', name: '5-String Electric Bass', shortName: '5-Str. Bass', family: 'Guitars', staves: 1, clefs: [{ sign: 'F', line: 4 }] },
   {
@@ -420,6 +426,9 @@ export function createNewScoreXml(draft: NewScoreDraft) {
       `<part-name>${escapeXml(partName)}</part-name>`,
       instrument.shortName ? `<part-abbreviation>${escapeXml(instrument.shortName)}</part-abbreviation>` : '',
       `<score-instrument id="${partId}-I1"><instrument-name>${escapeXml(instrument.name)}</instrument-name></score-instrument>`,
+      instrument.midiProgram != null
+        ? `<midi-instrument id="${partId}-I1"><midi-program>${instrument.midiProgram}</midi-program></midi-instrument>`
+        : '',
       '</score-part>',
     ].filter(Boolean).join('');
   }).join('');

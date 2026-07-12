@@ -102,6 +102,16 @@ export function pitchToMidi(pitch: { step: string; alter?: number; octave: numbe
   return ((pitch.octave + 1) * 12) + (semitoneByStep[pitch.step.toUpperCase()] ?? 0) + (pitch.alter ?? 0);
 }
 
+/** Guitar standard notation is written one octave above its sounding pitch. */
+export function guitarWrittenToSoundingPitch<T extends { step: string; alter?: number; octave: number }>(pitch: T): T {
+  return { ...pitch, octave: pitch.octave - 1 };
+}
+
+/** Convert a sounding guitar/TAB pitch to conventional guitar notation. */
+export function guitarSoundingToWrittenPitch<T extends { step: string; alter?: number; octave: number }>(pitch: T): T {
+  return { ...pitch, octave: pitch.octave + 1 };
+}
+
 /**
  * Fret that produces `midi` on the given string, or null when the pitch is
  * not reachable there (below the open string or beyond the last fret).

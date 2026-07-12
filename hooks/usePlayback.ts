@@ -81,6 +81,21 @@ const PLAYHEAD_PROGRESS_EPSILON = 0.002;
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const MIDI_TIME_EPSILON_S = 0.001;
 
+export function resolvePlaybackSoundfontInstrument(
+  coreDocument: ScoreDocumentModel | null | undefined,
+): import('soundfont-player').InstrumentName {
+  const names = coreDocument?.score.parts
+    .flatMap((part) => [part.instrumentName, part.name])
+    .filter((name): name is string => Boolean(name))
+    .join(' ') ?? '';
+  if (/\b(classical guitar|nylon)\b/i.test(names)) return 'acoustic_guitar_nylon';
+  if (/\b(acoustic guitar)\b/i.test(names)) return 'acoustic_guitar_steel';
+  if (/\b(electric bass|bass guitar)\b/i.test(names)) return 'electric_bass_finger';
+  if (/\b(electric guitar)\b/i.test(names)) return 'electric_guitar_clean';
+  if (/\b(guitar|tablature|tab)\b/i.test(names)) return 'acoustic_guitar_nylon';
+  return 'acoustic_grand_piano';
+}
+
 function firstTempoBpm(parsed: Pick<ParsedMidi, 'tempos'>) {
   const bpm = parsed.tempos[0]?.bpm ?? 120;
   return Number.isFinite(bpm) && bpm > 0 ? bpm : 120;
@@ -847,6 +862,9 @@ export function usePlayback(options?: {
   const audioCtxRef         = useRef<AudioContext | null>(null);
   const playerRef           = useRef<PlaybackPlayer | null>(null);
   const playerLoadRef       = useRef<Promise<PlaybackPlayer> | null>(null);
+  const playerInstrumentRef = useRef<string | null>(null);
+  const desiredInstrumentRef = useRef(resolvePlaybackSoundfontInstrument(options?.coreDocument));
+  desiredInstrumentRef.current = resolvePlaybackSoundfontInstrument(options?.coreDocument);
   const parsedMidiRef       = useRef<ParsedMidi | null>(null);
   const loadedXmlRef        = useRef<string | null>(null);
   const midiLoadRef         = useRef<{ xml: string; promise: Promise<boolean>; silent: boolean } | null>(null);
@@ -957,6 +975,7 @@ export function usePlayback(options?: {
       void ac.close().catch(() => undefined);
       audioCtxRef.current = null;
       playerRef.current = null;
+      playerInstrumentRef.current = null;
     }
   }
 
@@ -973,8 +992,19 @@ export function usePlayback(options?: {
   }
 
   async function ensurePlayer(): Promise<PlaybackPlayer> {
-    if (playerRef.current) return playerRef.current;
+    const desiredInstrument = desiredInstrumentRef.current;
+    if (playerRef.current && playerInstrumentRef.current === desiredInstrument) return playerRef.current;
     if (playerLoadRef.current) return playerLoadRef.current;
+
+    if (playerRef.current) {
+      try {
+        playerRef.current.stop();
+      } catch {
+        // The previous score instrument may already be idle.
+      }
+      playerRef.current = null;
+      playerInstrumentRef.current = null;
+    }
 
     const ac = getAc();
     const e2eLoader = (globalThis as typeof globalThis & {
@@ -983,6 +1013,7 @@ export function usePlayback(options?: {
     if (typeof e2eLoader === 'function') {
       playerLoadRef.current = Promise.resolve(e2eLoader(ac)).then((player) => {
         playerRef.current = player;
+        playerInstrumentRef.current = desiredInstrument;
         return player;
       }).finally(() => {
         playerLoadRef.current = null;
@@ -1000,16 +1031,18 @@ export function usePlayback(options?: {
         throw new TypeError('soundfont-player instrument loader is unavailable');
       }
 
-      const soundfontLoad = instrument(ac, 'acoustic_grand_piano');
+      const soundfontLoad = instrument(ac, desiredInstrument);
       const soundfontTimeout = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error(`soundfont load timed out after ${SOUND_FONT_LOAD_TIMEOUT_MS}ms`)), SOUND_FONT_LOAD_TIMEOUT_MS);
       });
 
       try {
         playerRef.current = await Promise.race([soundfontLoad, soundfontTimeout]);
+        playerInstrumentRef.current = desiredInstrument;
       } catch (err) {
         dbg.warn('playback', 'soundfont unavailable, falling back to oscillator playback:', err);
         playerRef.current = createOscillatorFallbackPlayer(ac);
+        playerInstrumentRef.current = desiredInstrument;
       }
       return playerRef.current;
     })().finally(() => {
@@ -1157,7 +1190,7 @@ export function usePlayback(options?: {
   // Pre-warm the soundfont so it's ready before the user presses play.
   // Must be called from a user-gesture context (click/keydown) to satisfy AudioContext policy.
   const prewarm = useCallback(async () => {
-    if (playerRef.current) return; // already loaded
+    if (playerRef.current && playerInstrumentRef.current === desiredInstrumentRef.current) return;
     try {
       await ensurePlayer();
     } catch (err) {

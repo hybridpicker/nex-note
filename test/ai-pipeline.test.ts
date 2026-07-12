@@ -1430,10 +1430,10 @@ test('runAiCommandPipeline materializes diatonic alternate lick versions from na
       existing.push(`${command.guitar!.string}:${command.guitar!.fret}`);
       tabsByMeasure.set(command.measureNumber, existing);
     });
-  assert.deepEqual(tabsByMeasure.get(3), ['1:3', '1:7', '1:10', '1:14']);
-  assert.deepEqual(tabsByMeasure.get(4), ['1:14', '1:10', '1:7', '1:3']);
-  assert.deepEqual(tabsByMeasure.get(5), ['1:2', '1:5', '1:9', '1:12']);
-  assert.deepEqual(tabsByMeasure.get(6), ['1:12', '1:9', '1:5', '1:2']);
+  assert.deepEqual(tabsByMeasure.get(3), ['3:0', '2:0', '2:3', '1:2']);
+  assert.deepEqual(tabsByMeasure.get(4), ['1:2', '2:3', '2:0', '3:0']);
+  assert.deepEqual(tabsByMeasure.get(5), ['4:4', '3:2', '2:2', '1:0']);
+  assert.deepEqual(tabsByMeasure.get(6), ['1:0', '2:2', '3:2', '4:4']);
   const chordCommand = result.commands.find((command) => command.type === 'addChords');
   assert.ok(chordCommand);
   if (!chordCommand || chordCommand.type !== 'addChords') return;
@@ -1504,7 +1504,7 @@ test('runAiCommandPipeline pairs separate MuseScore notation and TAB parts', asy
     insertNoteCommands
       .filter((command) => command.corePartId === 'part:P2' && command.measureNumber === 3 && command.guitar)
       .map((command) => `${command.guitar!.string}:${command.guitar!.fret}`),
-    ['1:3', '1:7', '1:10', '1:14'],
+    ['3:0', '2:0', '2:3', '1:2'],
   );
 
   const applied = applyDocumentCommands(buildDocumentState(TWO_MEASURE_A7_LICK_SEPARATE_TAB_PARTS_XML), result.commands);
@@ -1514,7 +1514,7 @@ test('runAiCommandPipeline pairs separate MuseScore notation and TAB parts', asy
   assert.deepEqual(tabMeasures?.map((measure) => (
     measure.voices.flatMap((voice) => voice.events).filter((event) => event.kind === 'note' && event.guitar).length
   )), [4, 4, 4, 4]);
-  assert.match(applied.xml, /<technical><string>1<\/string><fret>3<\/fret><\/technical>/);
+  assert.match(applied.xml, /<technical><string>3<\/string><fret>0<\/fret><\/technical>/);
 });
 
 test('runAiCommandPipeline targets arrangement instrument fitting at the detected part', async () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applySwingToMidiNotes, buildMeasureBeatRanges, buildPlaybackMeasureBeatRanges, normalizeMidiNotes, resolveFullPlaybackDurationSeconds, resolvePlaybackQuarterBeatSeconds, resolvePlaybackTempoChangeOrigin, resolvePlaybackTempoScale, resolveStartScoreSeconds, resolveVisiblePlayheadSeconds, scoreSecondsToCursorTarget, scoreSecondsToCursorTargetForDocument } from '../hooks/usePlayback.ts';
+import { applySwingToMidiNotes, buildMeasureBeatRanges, buildPlaybackMeasureBeatRanges, normalizeMidiNotes, resolveFullPlaybackDurationSeconds, resolvePlaybackQuarterBeatSeconds, resolvePlaybackSoundfontInstrument, resolvePlaybackTempoChangeOrigin, resolvePlaybackTempoScale, resolveStartScoreSeconds, resolveVisiblePlayheadSeconds, scoreSecondsToCursorTarget, scoreSecondsToCursorTargetForDocument } from '../hooks/usePlayback.ts';
 import { resolveReachedPlaybackOnset } from '../lib/playback-highlight.ts';
 import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
 
@@ -52,6 +52,15 @@ function makeCoreDocument(): ScoreDocumentModel {
     revision: 1,
   } as unknown as ScoreDocumentModel;
 }
+
+test('guitar scores select a guitar soundfont instead of piano', () => {
+  const guitarDocument = makeCoreDocument();
+  guitarDocument.score.parts[0]!.name = 'Guitar + TAB';
+  guitarDocument.score.parts[0]!.instrumentName = 'Guitar + TAB';
+
+  assert.equal(resolvePlaybackSoundfontInstrument(guitarDocument), 'acoustic_guitar_nylon');
+  assert.equal(resolvePlaybackSoundfontInstrument(makeCoreDocument()), 'acoustic_grand_piano');
+});
 
 function makeRepeatCoreDocument(): ScoreDocumentModel {
   const document = makeCoreDocument();

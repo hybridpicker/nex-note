@@ -296,7 +296,20 @@ test('buildRealizationPlan mirrors realized voices onto the paired TAB staff', (
   assert.ok(fixture);
   if (!fixture) return;
   const documentState = buildDocumentState(NOTATION_AND_TAB_PARTS_XML);
-  const voicingCandidate = fixture.response.voicingCandidates[0];
+  const fixtureVoicingCandidate = fixture.response.voicingCandidates[0];
+  const voicingCandidate = fixtureVoicingCandidate
+    ? {
+      ...fixtureVoicingCandidate,
+      slices: fixtureVoicingCandidate.slices.map((slice) => ({
+        ...slice,
+        voices: slice.voices.map((voice) => (
+          voice.voiceIndex === 3 && voice.pitch
+            ? { ...voice, pitch: { ...voice.pitch, octave: voice.pitch.octave + 1 } }
+            : voice
+        )),
+      })),
+    }
+    : undefined;
   assert.ok(voicingCandidate);
   if (!voicingCandidate) return;
   const spec: ArrangementSpec = {
@@ -336,7 +349,7 @@ test('buildRealizationPlan mirrors realized voices onto the paired TAB staff', (
   ));
   assert.deepEqual(
     firstMelodyTabInsert?.type === 'insertNoteAt' ? firstMelodyTabInsert.guitar : null,
-    { string: 4, fret: 24 },
+    { string: 5, fret: 17 },
   );
   const firstBassTabInsert = tabInserts.find((command) => (
     command.type === 'insertNoteAt'

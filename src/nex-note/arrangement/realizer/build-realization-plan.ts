@@ -8,6 +8,7 @@ import {
   guitarPlacementForPitch,
   isTabStaffForArrangement,
 } from '@/src/nex-note/arrangement/guitar-tab-pairing';
+import { guitarWrittenToSoundingPitch } from '@/src/score-input/guitar-fretboard';
 
 interface Fraction {
   num: number;
@@ -265,7 +266,7 @@ function buildPairedTabMirrorTarget(params: {
       ...event,
       kind: 'note' as const,
       staffIndex: mirrorTarget.staffIndex,
-      pitch: event.pitch,
+      pitch: guitarWrittenToSoundingPitch(event.pitch),
       guitar,
     }];
   });
