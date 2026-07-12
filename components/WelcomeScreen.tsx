@@ -37,12 +37,42 @@ function providerReadyLabel(provider: ProviderName, settings: AiModelSettings, o
   const config = settings.providers[provider];
   if (!config.enabled) return 'Off';
   if (provider === 'ollama') {
-    if (config.apiKey.trim()) return 'Cloud key saved';
+    if (config.apiKey.trim()) return 'Cloud ready';
     if (ollamaConnectionState === 'connected') return 'Local ready';
     if (ollamaConnectionState === 'checking') return 'Checking';
     return 'Setup needed';
   }
   return config.apiKey.trim() ? 'Key saved' : 'Needs key';
+}
+
+function ScoreMotif() {
+  return (
+    <div className="pointer-events-none relative mx-auto aspect-[4/3] w-full max-w-[500px]" aria-hidden="true">
+      <div className="absolute inset-x-[8%] top-[7%] bottom-[3%] rotate-[2.5deg] rounded-[0.4rem] bg-white/45 shadow-[0_28px_80px_-24px_rgba(13,18,32,0.45)]" />
+      <div className="absolute inset-x-[3%] top-[2%] bottom-[8%] -rotate-[1.5deg] overflow-hidden rounded-[0.45rem] border border-white/80 bg-[#fffefb] shadow-[0_34px_90px_-32px_rgba(13,18,32,0.5)]">
+        <div className="absolute left-[9%] top-[9%] h-2 w-[38%] rounded-full bg-slate-900/85" />
+        <div className="absolute left-[9%] top-[14%] h-1.5 w-[23%] rounded-full bg-slate-300" />
+        {[31, 49, 67].map((top, groupIndex) => (
+          <div key={top} className="absolute left-[9%] right-[8%]" style={{ top: `${top}%` }}>
+            {[0, 6, 12, 18, 24].map((offset) => (
+              <div key={offset} className="absolute left-0 right-0 h-px bg-slate-300" style={{ top: offset }} />
+            ))}
+            {[14, 31, 53, 72].map((left, noteIndex) => (
+              <div key={left} className="absolute" style={{ left: `${left}%`, top: 4 + ((noteIndex + groupIndex) % 4) * 5 }}>
+                <span className="block h-[9px] w-[12px] -rotate-[18deg] rounded-[50%] bg-slate-800" />
+                <span className="absolute -top-6 right-0 h-7 w-px bg-slate-800" />
+              </div>
+            ))}
+          </div>
+        ))}
+        <div className="absolute bottom-[6%] right-[8%] text-[9px] font-semibold uppercase tracking-[0.28em] text-nex-accent">nex-note</div>
+      </div>
+      <div className="absolute bottom-[4%] left-0 rounded-2xl border border-white/60 bg-white/80 px-4 py-3 shadow-xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-nex-accent">A blank page, ready</p>
+        <p className="mt-1 text-xs text-slate-500">Notation · TAB · orchestration</p>
+      </div>
+    </div>
+  );
 }
 
 export default function WelcomeScreen({
@@ -61,164 +91,143 @@ export default function WelcomeScreen({
   onOpenAiSettings,
 }: WelcomeScreenProps) {
   const { t } = useI18n();
-  const normalizedSettings = normalizeAiModelSettings(aiModelSettings);
+  const settings = normalizeAiModelSettings(aiModelSettings);
   const activeProvider = aiProvider === 'benchmark' ? 'ollama' : aiProvider;
-  const activeProviderConfig = normalizedSettings.providers[activeProvider];
-  const enabledProviders = AI_PROVIDER_ORDER.filter((provider) => normalizedSettings.providers[provider].enabled);
-  const cloudProvidersWithKeys = AI_PROVIDER_ORDER.filter((provider) => (
-    provider !== 'ollama'
-    && normalizedSettings.providers[provider].enabled
-    && normalizedSettings.providers[provider].apiKey.trim()
-  ));
+  const providerConfig = settings.providers[activeProvider];
 
   let aiStatusTitle = t('welcome.aiCheckingTitle');
   let aiStatusDescription = t('welcome.aiCheckingDescription');
-  let aiStatusTone = 'border-slate-200 bg-white text-slate-600';
+  let aiReady = false;
 
   if (aiSettingsHydrated) {
     if (activeProvider === 'ollama') {
-      if (activeProviderConfig.apiKey.trim()) {
-        aiStatusTitle = t('welcome.aiReadyTitle');
-        aiStatusDescription = t('welcome.aiOllamaCloudDescription', { model: activeProviderConfig.selectedModel || ollamaModel });
-        aiStatusTone = 'border-emerald-200 bg-emerald-50/70 text-emerald-800';
-      } else if (ollamaConnectionState === 'connected') {
-        aiStatusTitle = t('welcome.aiReadyTitle');
-        aiStatusDescription = t('welcome.aiOllamaLocalDescription', { model: activeProviderConfig.selectedModel || ollamaModel });
-        aiStatusTone = 'border-emerald-200 bg-emerald-50/70 text-emerald-800';
-      } else if (ollamaConnectionState === 'checking') {
-        aiStatusTitle = t('welcome.aiCheckingTitle');
-        aiStatusDescription = t('welcome.aiCheckingDescription');
-      } else {
-        aiStatusTitle = t('welcome.aiSetupTitle');
-        aiStatusDescription = t('welcome.aiOllamaSetupDescription');
-        aiStatusTone = 'border-amber-200 bg-amber-50/80 text-amber-800';
-      }
-    } else if (activeProviderConfig.apiKey.trim()) {
-      aiStatusTitle = t('welcome.aiReadyTitle');
-      aiStatusDescription = t('welcome.aiCloudReadyDescription', {
-        provider: PROVIDER_LABELS[activeProvider],
-        model: activeProviderConfig.selectedModel,
-      });
-      aiStatusTone = 'border-emerald-200 bg-emerald-50/70 text-emerald-800';
+      aiReady = Boolean(providerConfig.apiKey.trim()) || ollamaConnectionState === 'connected';
+      aiStatusTitle = aiReady ? t('welcome.aiReadyTitle') : t('welcome.aiSetupTitle');
+      aiStatusDescription = providerConfig.apiKey.trim()
+        ? t('welcome.aiOllamaCloudDescription', { model: providerConfig.selectedModel || ollamaModel })
+        : aiReady
+          ? t('welcome.aiOllamaLocalDescription', { model: providerConfig.selectedModel || ollamaModel })
+          : t('welcome.aiOllamaSetupDescription');
     } else {
-      aiStatusTitle = t('welcome.aiSetupTitle');
-      aiStatusDescription = t('welcome.aiCloudSetupDescription', { provider: PROVIDER_LABELS[activeProvider] });
-      aiStatusTone = 'border-amber-200 bg-amber-50/80 text-amber-800';
+      aiReady = Boolean(providerConfig.apiKey.trim());
+      aiStatusTitle = aiReady ? t('welcome.aiReadyTitle') : t('welcome.aiSetupTitle');
+      aiStatusDescription = aiReady
+        ? t('welcome.aiCloudReadyDescription', { provider: PROVIDER_LABELS[activeProvider], model: providerConfig.selectedModel })
+        : t('welcome.aiCloudSetupDescription', { provider: PROVIDER_LABELS[activeProvider] });
     }
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-50" data-testid="welcome-screen">
-      <div className="mx-auto grid min-h-full w-full max-w-[1480px] gap-5 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)] xl:px-8">
-        <main className="flex min-h-[620px] flex-col justify-center">
-          <section className="border-b border-slate-200 pb-7">
-            <div className="max-w-4xl">
-              <NexNoteBrand className="h-[28px]" />
-              <h1 className="mt-12 max-w-xl text-4xl font-semibold leading-tight text-nex-ink sm:text-5xl">
-                {t('welcome.title')}
+    <div className="nex-welcome-stage flex-1 overflow-auto" data-testid="welcome-screen">
+      <div className="mx-auto w-full max-w-[1500px] px-5 pb-10 pt-5 sm:px-8 lg:px-10">
+        <header className="flex items-center justify-between border-b border-slate-900/10 pb-5">
+          <NexNoteBrand className="h-[26px]" />
+          <div className="flex items-center gap-3">
+            <span className="hidden text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400 sm:block">Composition workspace</span>
+            <button
+              type="button"
+              onClick={onOpenAiSettings}
+              className="flex items-center gap-2 rounded-full border border-slate-900/10 bg-white/60 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur transition hover:border-slate-900/20 hover:bg-white"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${aiReady ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              {PROVIDER_LABELS[activeProvider]}
+            </button>
+          </div>
+        </header>
+
+        <main>
+          <section className="grid min-h-[510px] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1.02fr)_minmax(440px,0.98fr)] lg:py-14">
+            <div className="max-w-[720px]">
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-nex-accent">Your music starts here</p>
+              <h1 className="mt-6 max-w-[680px] text-[clamp(3.15rem,6.2vw,6.8rem)] font-semibold leading-[0.91] tracking-[-0.065em] text-nex-ink">
+                Write without <span className="text-nex-accent">friction.</span>
               </h1>
-              <p className="mt-4 max-w-2xl text-[0.98rem] leading-7 text-slate-600">
-                {t('welcome.subtitle')}
+              <p className="mt-7 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
+                {t('welcome.subtitle')} Shape the ensemble first—nex-note prepares the page so you can stay with the music.
               </p>
 
-              <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={onCreateBlankScore}
                   aria-label={t('command.newScore.title')}
-                  className="group flex min-h-[5.75rem] flex-col justify-between rounded-lg bg-nex-ink px-4 py-4 text-left text-sm font-semibold text-white shadow-[0_16px_38px_-28px_rgba(15,23,42,0.88)] transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nex-accent/35"
+                  className="group flex min-h-14 items-center justify-between gap-8 rounded-2xl bg-nex-ink px-5 py-3 text-sm font-semibold text-white shadow-[0_20px_46px_-22px_rgba(11,15,20,0.72)] transition hover:-translate-y-0.5 hover:bg-nex-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nex-accent/35"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white/12 text-lg transition-colors group-hover:bg-white/18">+</span>
                   <span>{t('welcome.newScore')}</span>
+                  <span className="text-xl font-light transition-transform group-hover:translate-x-1">→</span>
                 </button>
                 <button
                   onClick={onChooseTemplate}
-                  className="group flex min-h-[5.75rem] flex-col justify-between rounded-lg border border-slate-200 bg-white px-4 py-4 text-left text-sm font-semibold text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nex-accent/25"
+                  className="group flex min-h-14 items-center justify-between gap-8 rounded-2xl border border-slate-900/12 bg-white/70 px-5 py-3 text-sm font-semibold text-slate-800 backdrop-blur transition hover:-translate-y-0.5 hover:border-nex-accent/30 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nex-accent/25"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600 transition-colors group-hover:bg-white">
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 12h16M4 19h16" />
-                    </svg>
-                  </span>
                   <span>{t('welcome.chooseTemplate')}</span>
+                  <span className="text-slate-400 transition-transform group-hover:translate-x-1 group-hover:text-nex-accent">↗</span>
                 </button>
                 <button
                   onClick={onOpenFile}
-                  className="group flex min-h-[5.75rem] flex-col justify-between rounded-lg border border-slate-200 bg-white px-4 py-4 text-left text-sm font-semibold text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nex-accent/25"
+                  className="min-h-14 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500 transition hover:bg-white/70 hover:text-slate-900"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-600 transition-colors group-hover:bg-white">
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7} aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
-                    </svg>
-                  </span>
-                  <span>{t('welcome.openFile')}</span>
+                  {t('welcome.openFile')}
                 </button>
               </div>
             </div>
+            <ScoreMotif />
           </section>
 
-          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)]">
-            <UploadZone onFileSelected={onFileSelected} onFilesSelected={onFilesSelected} loadingMessage={importStatus} />
-            <section className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{t('welcome.aiTools')}</p>
-                  <h2 className="mt-2 text-sm font-semibold text-nex-ink">{aiStatusTitle}</h2>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">{aiStatusDescription}</p>
-                </div>
-                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${aiStatusTone}`}>
-                  {PROVIDER_LABELS[activeProvider]}
-                </span>
+          <section className="grid gap-4 border-t border-slate-900/10 pt-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.66fr)_minmax(330px,0.82fr)]">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+              <UploadZone onFileSelected={onFileSelected} onFilesSelected={onFilesSelected} loadingMessage={importStatus} />
+              <div className="rounded-2xl border border-slate-900/10 bg-white/65 p-4 backdrop-blur-sm">
+                <RecentFiles
+                  onFileSelected={onFileSelected}
+                  onOpenSavedScore={onOpenLibraryScore}
+                  className="mt-0"
+                  emptyFallback={(
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">{t('welcome.recent')}</p>
+                      <div className="mt-3 flex items-center justify-between rounded-xl border border-dashed border-slate-300/80 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">{t('welcome.noFiles')}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">{t('welcome.noFilesHelp')}</p>
+                        </div>
+                        <span className="text-xl text-slate-300">↺</span>
+                      </div>
+                    </div>
+                  )}
+                />
               </div>
+            </div>
 
-              <div className="mt-4 grid gap-2">
+            <section className="rounded-2xl border border-slate-900/10 bg-[#111522] p-5 text-white shadow-[0_24px_65px_-42px_rgba(11,15,20,0.9)]">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-white/45">{t('welcome.aiTools')}</p>
+                <span className={`h-2 w-2 rounded-full ${aiReady ? 'bg-emerald-400' : 'bg-amber-300'}`} />
+              </div>
+              <h2 className="mt-5 text-lg font-semibold tracking-tight">{aiStatusTitle}</h2>
+              <p className="mt-2 text-xs leading-5 text-white/55">{aiStatusDescription}</p>
+              <div className="mt-5 space-y-2 border-t border-white/10 pt-4">
                 {AI_PROVIDER_ORDER.map((providerName) => (
-                  <div key={providerName} className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
-                    <span className="text-xs font-medium text-slate-600">{PROVIDER_LABELS[providerName]}</span>
-                    <span className="text-xs text-slate-500">{providerReadyLabel(providerName, normalizedSettings, ollamaConnectionState)}</span>
+                  <div key={providerName} className="flex items-center justify-between text-xs">
+                    <span className="text-white/55">{PROVIDER_LABELS[providerName]}</span>
+                    <span className={settings.providers[providerName].enabled ? 'text-white' : 'text-white/30'}>
+                      {providerReadyLabel(providerName, settings, ollamaConnectionState)}
+                    </span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
-                  <span className="text-xs font-medium text-slate-600">{t('welcome.aiLocalFallbacks')}</span>
-                  <span className="text-xs text-emerald-700">{t('welcome.aiAlwaysOn')}</span>
+                <div className="flex items-center justify-between border-t border-white/10 pt-2 text-xs">
+                  <span className="text-white/55">{t('welcome.aiLocalFallbacks')}</span>
+                  <span className="text-nex-cyan">{t('welcome.aiAlwaysOn')}</span>
                 </div>
               </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-slate-500">
-                  {t('welcome.aiEnabledProviders', { count: enabledProviders.length, keyed: cloudProvidersWithKeys.length })}
-                </p>
-                <button
-                  type="button"
-                  onClick={onOpenAiSettings}
-                  className="rounded-md border border-nex-border bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-nex-ink"
-                >
-                  {t('welcome.aiSettings')}
-                </button>
-              </div>
+              <button type="button" onClick={onOpenAiSettings} className="mt-5 text-xs font-semibold text-white transition hover:text-nex-cyan">
+                {t('welcome.aiSettings')} →
+              </button>
             </section>
-          </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-            <RecentFiles
-              onFileSelected={onFileSelected}
-              onOpenSavedScore={onOpenLibraryScore}
-              className="mt-0"
-              emptyFallback={(
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{t('welcome.recent')}</p>
-                  <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5">
-                    <p className="text-sm font-medium text-slate-700">{t('welcome.noFiles')}</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">{t('welcome.noFilesHelp')}</p>
-                  </div>
-                </div>
-              )}
-            />
-          </div>
+            <aside className="min-h-[250px] rounded-2xl border border-slate-900/10 bg-white/65 p-1 backdrop-blur-sm">
+              <ScoreLibrary onOpenScore={onOpenLibraryScore} />
+            </aside>
+          </section>
         </main>
-
-        <aside className="min-h-0 border-t border-slate-200 pt-6 lg:sticky lg:top-5 lg:max-h-[calc(100vh-2.5rem)] lg:overflow-auto lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-          <ScoreLibrary onOpenScore={onOpenLibraryScore} />
-        </aside>
       </div>
     </div>
   );

@@ -37,12 +37,32 @@ const BEAT_UNIT_OPTIONS = [
 
 const EMPTY_USER_TEMPLATES: UserScoreTemplate[] = [];
 
-function SectionTitle({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
+function SectionTitle({ eyebrow, title, description, tone = 'light' }: { eyebrow: string; title: string; description: string; tone?: 'light' | 'dark' }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-400">{eyebrow}</p>
-      <h3 className="mt-2 text-xl font-semibold tracking-tight text-stone-950">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-stone-600">{description}</p>
+      <p className={`text-[10px] font-bold uppercase tracking-[0.26em] ${tone === 'dark' ? 'text-nex-cyan' : 'text-nex-accent'}`}>{eyebrow}</p>
+      <h3 className={`mt-2 text-2xl font-semibold tracking-[-0.025em] ${tone === 'dark' ? 'text-white' : 'text-nex-ink'}`}>{title}</h3>
+      <p className={`mt-2 max-w-xl text-sm leading-6 ${tone === 'dark' ? 'text-white/45' : 'text-slate-500'}`}>{description}</p>
+    </div>
+  );
+}
+
+function InstrumentMark({ name, family }: { name: string; family: string }) {
+  const initials = name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2);
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-[10px] font-bold tracking-wide text-slate-700 shadow-sm" aria-hidden="true">
+      {initials || family.slice(0, 2)}
+    </span>
+  );
+}
+
+function MiniatureStaff({ parts }: { parts: number }) {
+  return (
+    <div className="relative h-16 overflow-hidden rounded-xl border border-slate-200 bg-[#fffefb]" aria-hidden="true">
+      {[15, 23, 31, 39, 47].map((top) => <span key={top} className="absolute left-3 right-3 h-px bg-slate-200" style={{ top }} />)}
+      {Array.from({ length: Math.min(parts, 5) }).map((_, index) => (
+        <span key={index} className="absolute h-2.5 w-3 -rotate-12 rounded-[50%] bg-slate-700" style={{ left: `${18 + index * 15}%`, top: 25 + (index % 3) * 5 }} />
+      ))}
     </div>
   );
 }
@@ -162,45 +182,54 @@ export default function NewScoreDialog({
     if (file) onImportTemplateFile?.(file);
   }
 
+  const tabItems: Array<{ id: DialogTab; number: string; kicker: string; label: string }> = [
+    { id: 'instruments', number: '01', kicker: 'Build', label: t('newScore.tabs.instruments') },
+    { id: 'templates', number: '02', kicker: 'Explore', label: t('newScore.tabs.templates') },
+    { id: 'info', number: '03', kicker: 'Refine', label: t('newScore.tabs.info') },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 px-4 py-8">
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-stone-200 bg-[#fcfbf7] shadow-[0_30px_120px_-40px_rgba(24,24,27,0.55)]">
-        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700">{t('newScore.eyebrow')}</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-stone-950">{t('newScore.title')}</h2>
+    <div className="nex-score-studio-backdrop fixed inset-0 z-50 flex items-center justify-center px-3 py-3 sm:px-5 sm:py-5">
+      <div className="nex-score-studio flex max-h-[96vh] w-full max-w-[1380px] flex-col overflow-hidden rounded-[1.75rem] border border-white/20 shadow-[0_38px_140px_-30px_rgba(0,0,0,0.72)]">
+        <div className="flex items-center justify-between border-b border-slate-200/80 bg-white/75 px-5 py-4 backdrop-blur-md sm:px-7">
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-nex-ink text-lg font-light text-white">♩</div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-nex-accent">Score studio</p>
+              <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-nex-ink">{t('newScore.title')}</h2>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-2xl border border-stone-200 px-3 py-2 text-sm text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900"
+            className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-nex-ink"
           >
-            {t('newScore.cancel')}
+            <span>{t('newScore.cancel')}</span><span aria-hidden="true">×</span>
           </button>
         </div>
 
-        <div className="border-b border-stone-200 px-6 py-3">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'instruments', label: t('newScore.tabs.instruments') },
-              { id: 'templates', label: t('newScore.tabs.templates') },
-              { id: 'info', label: t('newScore.tabs.info') },
-            ].map((item) => (
+        <div className="border-b border-slate-200/80 bg-white/55 px-5 sm:px-7">
+          <div className="grid max-w-3xl grid-cols-3">
+            {tabItems.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setTab(item.id as DialogTab)}
-                className={`rounded-full px-4 py-2 text-sm transition-colors ${
-                  tab === item.id ? 'bg-stone-950 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                onClick={() => setTab(item.id)}
+                className={`relative flex items-center gap-3 border-b-2 px-1 py-3 text-left transition ${
+                  tab === item.id ? 'border-nex-accent' : 'border-transparent hover:border-slate-300'
                 }`}
               >
-                {item.label}
+                <span className={`text-[10px] font-bold ${tab === item.id ? 'text-nex-accent' : 'text-slate-300'}`}>{item.number}</span>
+                <span className="min-w-0">
+                  <span className="hidden text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400 sm:block">{item.kicker}</span>
+                  <span className={`block truncate text-xs font-semibold sm:text-sm ${tab === item.id ? 'text-nex-ink' : 'text-slate-500'}`}>{item.label}</span>
+                </span>
               </button>
             ))}
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-4 sm:p-7">
           {tab === 'instruments' && (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <div className="grid gap-7 lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
               <div className="space-y-5">
                 <SectionTitle
                   eyebrow={t('newScore.instruments.eyebrow')}
@@ -208,26 +237,27 @@ export default function NewScoreDialog({
                   description={t('newScore.instruments.description')}
                 />
 
-                <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
-                  <div className="rounded-3xl border border-stone-200 bg-white p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">{t('newScore.family')}</p>
+                <div className="grid gap-3 md:grid-cols-[170px_minmax(0,1fr)]">
+                  <div className="rounded-2xl border border-slate-200 bg-white/75 p-3 shadow-[0_14px_45px_-38px_rgba(15,23,42,0.45)]">
+                    <p className="px-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{t('newScore.family')}</p>
                     <div className="mt-3 space-y-1">
                       {NEW_SCORE_FAMILIES.map((familyOption) => (
                         <button
                           key={familyOption}
                           onClick={() => setFamily(familyOption)}
-                          className={`flex w-full items-center justify-between rounded-2xl px-3 py-2 text-sm transition-colors ${
-                            family === familyOption ? 'bg-amber-100 text-amber-950' : 'text-stone-600 hover:bg-stone-100'
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition-colors ${
+                            family === familyOption ? 'bg-nex-ink text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
                           }`}
                         >
                           {familyOption}
+                          {family === familyOption && <span className="text-[10px] text-white/50">●</span>}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-stone-200 bg-white p-4">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-stone-400" htmlFor="instrument-search">
+                  <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-[0_18px_60px_-46px_rgba(15,23,42,0.55)]">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400" htmlFor="instrument-search">
                       {t('newScore.search')}
                     </label>
                     <input
@@ -235,21 +265,22 @@ export default function NewScoreDialog({
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder={t('newScore.searchPlaceholder')}
-                      className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                     />
                     <div className="mt-4 grid gap-2 sm:grid-cols-2">
                       {visibleInstruments.map((instrument) => (
                         <button
                           key={instrument.id}
                           onClick={() => addInstrument(instrument.id)}
-                          className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-left transition-colors hover:border-amber-300 hover:bg-amber-50"
+                          className="group rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-nex-accent/35 hover:shadow-[0_14px_32px_-24px_rgba(79,70,255,0.55)]"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-stone-900">{instrument.name}</p>
-                              <p className="mt-1 text-xs text-stone-500">{instrument.family} · {instrument.staves} {instrument.staves === 1 ? 'staff' : 'staves'}</p>
+                            <InstrumentMark name={instrument.name} family={instrument.family} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-slate-900">{instrument.name}</p>
+                              <p className="mt-1 text-xs text-slate-500">{instrument.family} · {instrument.staves} {instrument.staves === 1 ? 'staff' : 'staves'}</p>
                             </div>
-                            <span className="rounded-full bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">{t('newScore.add')}</span>
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-base text-slate-500 transition group-hover:bg-nex-accent group-hover:text-white" aria-label={t('newScore.add')}>+</span>
                           </div>
                         </button>
                       ))}
@@ -258,15 +289,16 @@ export default function NewScoreDialog({
                 </div>
               </div>
 
-              <div className="rounded-[2rem] border border-stone-200 bg-white p-5">
+              <div className="self-start rounded-2xl border border-slate-200 bg-[#111522] p-5 text-white shadow-[0_28px_70px_-42px_rgba(11,15,20,0.9)] lg:sticky lg:top-0">
                 <SectionTitle
                   eyebrow={t('newScore.yourScore')}
                   title={t('newScore.instrumentOrder')}
                   description={t('newScore.instrumentOrderDescription')}
+                  tone="dark"
                 />
                 <div className="mt-5 space-y-2">
                   {selectedInstruments.length === 0 ? (
-                    <div className="rounded-3xl border border-dashed border-stone-200 bg-stone-50 p-6 text-sm text-stone-500">
+                    <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-6 text-sm leading-6 text-white/45">
                       {t('newScore.addInstrumentHint')}
                     </div>
                   ) : (
@@ -274,17 +306,20 @@ export default function NewScoreDialog({
                       <button
                         key={instrument.id}
                         onClick={() => setSelectedInstrumentIndex(index)}
-                        className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${
+                        className={`flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition ${
                           selectedInstrumentIndex === index
-                            ? 'border-amber-300 bg-amber-50'
-                            : 'border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+                            ? 'border-nex-cyan/50 bg-white/12'
+                            : 'border-white/10 bg-white/[0.04] hover:border-white/25 hover:bg-white/[0.08]'
                         }`}
                       >
-                        <div>
-                          <p className="text-sm font-semibold text-stone-900">{instrument.definition.name}</p>
-                          <p className="mt-1 text-xs text-stone-500">{instrument.definition.family}</p>
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-[10px] font-bold text-white/70">{index + 1}</span>
+                          <div>
+                            <p className="text-sm font-semibold text-white">{instrument.definition.name}</p>
+                            <p className="mt-1 text-xs text-white/40">{instrument.definition.family}</p>
+                          </div>
                         </div>
-                        <span className="text-xs font-semibold text-stone-400">{index + 1}</span>
+                        <span className="text-white/25">⠿</span>
                       </button>
                     ))
                   )}
@@ -294,21 +329,21 @@ export default function NewScoreDialog({
                   <button
                     onClick={() => moveSelectedInstrument(-1)}
                     disabled={!selectedInstrument || selectedInstrumentIndex === 0}
-                    className="rounded-2xl bg-stone-100 px-3 py-2 text-sm text-stone-700 transition-colors hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/65 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     {t('newScore.moveUp')}
                   </button>
                   <button
                     onClick={() => moveSelectedInstrument(1)}
                     disabled={!selectedInstrument || selectedInstrumentIndex >= selectedInstruments.length - 1}
-                    className="rounded-2xl bg-stone-100 px-3 py-2 text-sm text-stone-700 transition-colors hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/65 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     {t('newScore.moveDown')}
                   </button>
                   <button
                     onClick={removeSelectedInstrument}
                     disabled={!selectedInstrument}
-                    className="rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl border border-rose-400/15 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-400/20 disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     {t('newScore.remove')}
                   </button>
@@ -318,8 +353,8 @@ export default function NewScoreDialog({
           )}
 
           {tab === 'templates' && (
-            <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-              <div className="rounded-[2rem] border border-stone-200 bg-white p-5">
+            <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
+              <div className="self-start rounded-2xl border border-slate-200 bg-white/80 p-5 lg:sticky lg:top-0">
                 <SectionTitle
                   eyebrow={t('newScore.templates')}
                   title={t('newScore.tabs.templates')}
@@ -330,8 +365,8 @@ export default function NewScoreDialog({
                     <button
                       key={category}
                       onClick={() => setTemplateCategory(category)}
-                      className={`flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left text-sm transition-colors ${
-                        templateCategory === category ? 'bg-sky-100 text-sky-950' : 'text-stone-600 hover:bg-stone-100'
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                        templateCategory === category ? 'bg-nex-ink text-white' : 'text-slate-600 hover:bg-slate-100'
                       }`}
                     >
                       {category}
@@ -339,7 +374,7 @@ export default function NewScoreDialog({
                   ))}
                 </div>
                 {userTemplateStatus && (
-                  <p className="mt-5 text-xs leading-5 text-stone-500">{userTemplateStatus}</p>
+                  <p className="mt-5 text-xs leading-5 text-slate-500">{userTemplateStatus}</p>
                 )}
                 <input
                   ref={importTemplateInputRef}
@@ -351,23 +386,24 @@ export default function NewScoreDialog({
                 <button
                   type="button"
                   onClick={() => importTemplateInputRef.current?.click()}
-                  className="mt-4 w-full rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-left text-sm text-stone-700 transition-colors hover:border-sky-300 hover:bg-sky-50"
+                  className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold text-slate-700 transition hover:border-nex-accent/30 hover:bg-nex-accent-muted"
                 >
                   Import user template file
                 </button>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid content-start gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {visibleTemplates.map((template) => (
                   <button
                     key={template.id}
                     onClick={() => template.source === 'local' ? onChooseUserTemplate?.(template) : applyTemplate(template.instrumentIds)}
-                    className="rounded-[2rem] border border-stone-200 bg-white p-5 text-left transition-transform hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-[0_20px_60px_-36px_rgba(14,116,144,0.45)]"
+                    className="group flex min-h-[250px] flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:-translate-y-1 hover:border-nex-accent/35 hover:shadow-[0_22px_55px_-34px_rgba(79,70,255,0.55)]"
                   >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">{template.category}</p>
-                    <h3 className="mt-3 text-lg font-semibold text-stone-950">{template.name}</h3>
-                    <p className="mt-2 text-sm leading-6 text-stone-600">{template.description}</p>
-                    <p className="mt-4 text-xs font-medium text-stone-400">
+                    <MiniatureStaff parts={template.source === 'built-in' ? template.instrumentIds.length : 1} />
+                    <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.22em] text-nex-accent">{template.category}</p>
+                    <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">{template.name}</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">{template.description}</p>
+                    <p className="mt-auto pt-4 text-xs font-semibold text-slate-400 transition group-hover:text-nex-accent">
                       {template.source === 'local'
                         ? `${template.private ? 'Private local' : 'Local'} ${template.format.toUpperCase()} template`
                         : `${template.instrumentIds.length} ${template.instrumentIds.length === 1 ? 'instrument' : 'instruments'}`}
@@ -379,8 +415,8 @@ export default function NewScoreDialog({
           )}
 
           {tab === 'info' && (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-              <div className="rounded-[2rem] border border-stone-200 bg-white p-5">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.12fr)_minmax(340px,0.88fr)]">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_18px_60px_-48px_rgba(15,23,42,0.55)] sm:p-6">
                 <SectionTitle
                   eyebrow={t('newScore.info.eyebrow')}
                   title={t('newScore.info.title')}
@@ -388,62 +424,62 @@ export default function NewScoreDialog({
                 />
 
                 <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <label className="text-sm text-stone-700">
+                  <label className="text-sm text-slate-700">
                     {t('newScore.field.title')}
                     <input
                       aria-label="Title"
                       value={draft.title}
                       onChange={(event) => updateDraft({ title: event.target.value })}
-                      className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                     />
                   </label>
-                  <label className="text-sm text-stone-700">
+                  <label className="text-sm text-slate-700">
                     {t('newScore.field.composer')}
                     <input
                       aria-label="Composer"
                       value={draft.composer}
                       onChange={(event) => updateDraft({ composer: event.target.value })}
-                      className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                     />
                   </label>
-                  <label className="text-sm text-stone-700">
+                  <label className="text-sm text-slate-700">
                     {t('newScore.field.subtitle')}
                     <input
                       aria-label="Subtitle"
                       value={draft.subtitle}
                       onChange={(event) => updateDraft({ subtitle: event.target.value })}
-                      className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                     />
                   </label>
-                  <label className="text-sm text-stone-700">
+                  <label className="text-sm text-slate-700">
                     {t('newScore.field.lyricist')}
                     <input
                       aria-label="Lyricist"
                       value={draft.lyricist}
                       onChange={(event) => updateDraft({ lyricist: event.target.value })}
-                      className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                     />
                   </label>
                 </div>
 
-                <label className="mt-4 block text-sm text-stone-700">
+                <label className="mt-4 block text-sm text-slate-700">
                   {t('newScore.field.copyright')}
                   <input
                     aria-label="Copyright"
                     value={draft.copyright}
                     onChange={(event) => updateDraft({ copyright: event.target.value })}
-                    className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                   />
                 </label>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <label className="text-sm text-stone-700">
+                  <label className="text-sm text-slate-700">
                     {t('newScore.field.key')}
                     <select
                       aria-label="Key signature"
                       value={draft.keySignatureId}
                       onChange={(event) => updateDraft({ keySignatureId: event.target.value })}
-                      className="mt-2 w-full rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/10"
                     >
                       {KEY_SIGNATURE_OPTIONS.map((option) => (
                         <option key={option.id} value={option.id}>{option.label}</option>
@@ -451,7 +487,7 @@ export default function NewScoreDialog({
                     </select>
                   </label>
                   <div className="grid grid-cols-2 gap-3">
-                    <label className="text-sm text-stone-700">
+                    <label className="text-sm text-slate-700">
                       {t('newScore.field.beats')}
                       <input
                         aria-label="Time beats"
@@ -460,16 +496,16 @@ export default function NewScoreDialog({
                         max={32}
                         value={draft.timeBeats}
                         onChange={(event) => updateDraft({ timeBeats: Number(event.target.value) || 1 })}
-                        className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                       />
                     </label>
-                    <label className="text-sm text-stone-700">
+                    <label className="text-sm text-slate-700">
                       {t('newScore.field.beatValue')}
                       <select
                         aria-label="Time beat type"
                         value={draft.timeBeatType}
                         onChange={(event) => updateDraft({ timeBeatType: Number(event.target.value) })}
-                        className="mt-2 w-full rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/10"
                       >
                         {[1, 2, 4, 8, 16].map((value) => (
                           <option key={value} value={value}>{value}</option>
@@ -479,10 +515,10 @@ export default function NewScoreDialog({
                   </div>
                 </div>
 
-                <div className="mt-6 rounded-3xl bg-stone-50 p-4">
-                  <p className="text-sm font-semibold text-stone-900">{t('newScore.tempo')}</p>
+                <div className="mt-6 rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+                  <p className="text-sm font-semibold text-slate-900">{t('newScore.tempo')}</p>
                   <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                    <label className="text-sm text-stone-700">
+                    <label className="text-sm text-slate-700">
                       {t('newScore.startingTempo')}
                       <input
                         aria-label="Tempo bpm"
@@ -494,10 +530,10 @@ export default function NewScoreDialog({
                           ...current,
                           tempo: { ...current.tempo, bpm: Number(event.target.value) || 20 },
                         }))}
-                        className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                       />
                     </label>
-                    <label className="text-sm text-stone-700">
+                    <label className="text-sm text-slate-700">
                       {t('newScore.beatUnit')}
                       <select
                         aria-label="Tempo beat unit"
@@ -506,7 +542,7 @@ export default function NewScoreDialog({
                           ...current,
                           tempo: { ...current.tempo, beatUnit: event.target.value as NewScoreDraft['tempo']['beatUnit'] },
                         }))}
-                        className="mt-2 w-full rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/10"
                       >
                         {BEAT_UNIT_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
@@ -514,7 +550,7 @@ export default function NewScoreDialog({
                       </select>
                     </label>
                   </div>
-                  <label className="mt-4 flex items-center gap-3 text-sm text-stone-700">
+                  <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
                     <input
                       aria-label="Show tempo marking"
                       type="checkbox"
@@ -523,16 +559,16 @@ export default function NewScoreDialog({
                         ...current,
                         tempo: { ...current.tempo, showMarking: event.target.checked },
                       }))}
-                      className="h-4 w-4 rounded border-stone-300 text-stone-900"
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
                     />
                     {t('newScore.showTempo')}
                   </label>
                 </div>
 
-                <div className="mt-6 rounded-3xl bg-stone-50 p-4">
-                  <p className="text-sm font-semibold text-stone-900">{t('newScore.measures')}</p>
+                <div className="mt-6 rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+                  <p className="text-sm font-semibold text-slate-900">{t('newScore.measures')}</p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="text-sm text-stone-700">
+                    <label className="text-sm text-slate-700">
                       {t('newScore.initialMeasures')}
                       <input
                         aria-label="Initial number of measures"
@@ -541,14 +577,14 @@ export default function NewScoreDialog({
                         max={256}
                         value={draft.measureCount}
                         onChange={(event) => updateDraft({ measureCount: Number(event.target.value) || 1 })}
-                        className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                       />
                     </label>
-                    <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                       {selectedInstruments.length} {selectedInstruments.length === 1 ? 'instrument' : 'instruments'} selected
                     </div>
                   </div>
-                  <label className="mt-4 flex items-center gap-3 text-sm text-stone-700">
+                  <label className="mt-4 flex items-center gap-3 text-sm text-slate-700">
                     <input
                       aria-label="Create pickup measure"
                       type="checkbox"
@@ -557,13 +593,13 @@ export default function NewScoreDialog({
                         ...current,
                         pickup: { ...current.pickup, enabled: event.target.checked },
                       }))}
-                      className="h-4 w-4 rounded border-stone-300 text-stone-900"
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
                     />
                     {t('newScore.createPickup')}
                   </label>
                   {draft.pickup.enabled && (
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <label className="text-sm text-stone-700">
+                      <label className="text-sm text-slate-700">
                         {t('newScore.pickupBeats')}
                         <input
                           aria-label="Pickup beats"
@@ -575,10 +611,10 @@ export default function NewScoreDialog({
                             ...current,
                             pickup: { ...current.pickup, beats: Number(event.target.value) || 1 },
                           }))}
-                          className="mt-2 w-full rounded-2xl border border-stone-200 px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:bg-white focus:ring-2 focus:ring-nex-accent/10"
                         />
                       </label>
-                      <label className="text-sm text-stone-700">
+                      <label className="text-sm text-slate-700">
                         {t('newScore.pickupBeatValue')}
                         <select
                           aria-label="Pickup beat type"
@@ -587,7 +623,7 @@ export default function NewScoreDialog({
                             ...current,
                             pickup: { ...current.pickup, beatType: Number(event.target.value) },
                           }))}
-                          className="mt-2 w-full rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-stone-400"
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-nex-accent focus:ring-2 focus:ring-nex-accent/10"
                         >
                           {[1, 2, 4, 8, 16].map((value) => (
                             <option key={value} value={value}>{value}</option>
@@ -599,15 +635,16 @@ export default function NewScoreDialog({
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="rounded-[2rem] border border-stone-200 bg-white p-5">
+              <div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_65px_-46px_rgba(15,23,42,0.55)]">
                   <SectionTitle
                     eyebrow={t('newScore.summary')}
                     title={draft.title.trim() || t('newScore.untitled')}
                     description={t('newScore.summaryDescription')}
                   />
                   <div className="mt-5 grid gap-3">
-                    <div className="rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
+                    <MiniatureStaff parts={selectedInstruments.length} />
+                    <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
                       {selectedInstruments.map((instrument) => instrument.definition.name).join(' · ') || t('newScore.noInstruments')}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -637,15 +674,16 @@ export default function NewScoreDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-stone-200 px-6 py-4">
-          <p className="text-sm text-stone-500">
+        <div className="flex items-center justify-between border-t border-slate-200 bg-white/80 px-5 py-4 backdrop-blur sm:px-7">
+          <p className="text-xs font-medium text-slate-500 sm:text-sm">
             {canCreate ? `${selectedInstruments.length} instrument${selectedInstruments.length === 1 ? '' : 's'} selected` : t('newScore.selectToContinue')}
           </p>
           <div className="flex items-center gap-3">
             {tab !== 'info' && (
               <button
-                onClick={() => setTab(tab === 'instruments' ? 'templates' : 'info')}
-                className="rounded-2xl bg-stone-100 px-4 py-2.5 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-200"
+                onClick={() => setTab('info')}
+                disabled={!canCreate}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {t('newScore.next')}
               </button>
@@ -653,9 +691,9 @@ export default function NewScoreDialog({
             <button
               onClick={() => onCreate(draft)}
               disabled={!canCreate}
-              className="rounded-2xl bg-stone-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300"
+              className="group flex items-center gap-5 rounded-xl bg-nex-ink px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_30px_-18px_rgba(11,15,20,0.8)] transition hover:bg-nex-accent disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
             >
-              {t('newScore.createScore')}
+              {t('newScore.createScore')} <span className="transition-transform group-hover:translate-x-0.5">→</span>
             </button>
           </div>
         </div>

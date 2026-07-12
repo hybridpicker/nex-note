@@ -43,6 +43,38 @@ body {
   font-family: var(--font-geist-sans);
 }
 
+.nex-welcome-stage {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 76% 18%, rgb(79 70 255 / 0.13), transparent 31rem),
+    radial-gradient(circle at 88% 46%, rgb(0 214 198 / 0.08), transparent 24rem),
+    linear-gradient(145deg, #f8f8f5 0%, #f3f5fa 54%, #eef0ff 100%);
+}
+
+.nex-welcome-stage::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0.22;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.12'/%3E%3C/svg%3E");
+}
+
+.nex-score-studio-backdrop {
+  background:
+    radial-gradient(circle at 50% 8%, rgb(79 70 255 / 0.24), transparent 34rem),
+    rgb(5 8 15 / 0.76);
+  backdrop-filter: blur(16px);
+}
+
+.nex-score-studio {
+  background:
+    radial-gradient(circle at 85% 0%, rgb(79 70 255 / 0.06), transparent 24rem),
+    #f8f9fc;
+}
+
 .nex-brand-toolbar {
   border-color: rgb(230 233 239 / 0.92);
   background: rgb(255 255 255 / 0.94);
