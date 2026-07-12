@@ -112,6 +112,29 @@ function decidePackagedBuildFreshness({ buildCommit, buildDirty, latestDevelComm
   return { action: 'run', reason: 'fresh-build' };
 }
 
+function decidePackagedStartupFreshness({ buildCommit, buildDirty, localHeadCommit, repoDirty }) {
+  if (repoDirty) {
+    return { action: 'block', reason: 'dirty-repository' };
+  }
+
+  if (buildDirty) {
+    return { action: 'block', reason: 'dirty-packaged-build' };
+  }
+
+  if (!buildCommit || !localHeadCommit || buildCommit !== localHeadCommit) {
+    return {
+      action: 'update',
+      reason: !buildCommit
+        ? 'missing-build-commit'
+        : !localHeadCommit
+          ? 'missing-local-head'
+          : 'stale-local-build',
+    };
+  }
+
+  return { action: 'run', reason: 'fresh-local-build' };
+}
+
 function isAllowedRendererPermission(permission, requestingUrl, rendererUrl) {
   // Chromium performs both MIDI permission checks even when the renderer asks
   // for non-SysEx access. The renderer still requests `sysex: false`, so the
@@ -131,6 +154,7 @@ module.exports = {
   buildChildProcessEnv,
   buildExecutablePath,
   decidePackagedBuildFreshness,
+  decidePackagedStartupFreshness,
   isAllowedRendererPermission,
   pathExists,
   resolveExecutable,

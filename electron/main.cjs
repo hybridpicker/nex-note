@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
   buildChildProcessEnv,
   decidePackagedBuildFreshness,
+  decidePackagedStartupFreshness,
   isAllowedRendererPermission,
   pathExists,
   resolveExecutable,
@@ -474,6 +475,121 @@ async function readBuildInfo() {
   }
 }
 
+function createDevelUpdateWindow(buildCommit, localHeadCommit) {
+  const icon = getAssetPath(process.platform === 'darwin' ? 'Icon-nexnote.icns' : 'app-icon.png');
+  mainWindow = new BrowserWindow({
+    width: 560,
+    height: 300,
+    resizable: false,
+    maximizable: false,
+    title: `${APP_NAME} — Updating`,
+    icon,
+    backgroundColor: '#f8fafc',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  const shortBuild = buildCommit ? buildCommit.slice(0, 8) : 'unknown';
+  const shortHead = localHeadCommit ? localHeadCommit.slice(0, 8) : 'unknown';
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <title>Nex Note — Updating</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; color: #0f172a; }
+      main { min-height: 100vh; display: grid; place-content: center; gap: 14px; padding: 36px; box-sizing: border-box; text-align: center; }
+      h1 { margin: 0; font-size: 24px; }
+      p { margin: 0; color: #475569; line-height: 1.5; }
+      code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
+      .bar { width: 360px; height: 6px; overflow: hidden; border-radius: 999px; background: #dbeafe; }
+      .bar::after { content: ''; display: block; width: 45%; height: 100%; border-radius: inherit; background: #2563eb; animation: move 1.2s ease-in-out infinite alternate; }
+      @keyframes move { from { transform: translateX(-15%); } to { transform: translateX(135%); } }
+    </style>
+  </head>
+  <body><main>
+    <h1>Updating Nex Note…</h1>
+    <p>The installed development app is behind the repository and will restart automatically.</p>
+    <div class="bar" aria-label="Update in progress"></div>
+    <p><code>${shortBuild} → ${shortHead}</code></p>
+  </main></body>
+</html>`;
+  void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+}
+
+async function ensurePackagedBuildMatchesLocalHead() {
+  if (isElectronDevRuntime()) return false;
+
+  try {
+    const repoRoot = await findRepoRootForPackagedApp();
+    if (!repoRoot) return false;
+
+    const [dirty, localHeadCommit, buildInfo] = await Promise.all([
+      execFileText('git', ['-C', repoRoot, 'status', '--porcelain']),
+      execFileText('git', ['-C', repoRoot, 'rev-parse', 'HEAD']),
+      readBuildInfo(),
+    ]);
+    const startup = decidePackagedStartupFreshness({
+      buildCommit: typeof buildInfo?.gitCommit === 'string' ? buildInfo.gitCommit : null,
+      buildDirty: Boolean(buildInfo?.dirty),
+      localHeadCommit,
+      repoDirty: Boolean(dirty),
+    });
+    if (startup.action === 'run') return false;
+
+    if (startup.action === 'block') {
+      dialog.showErrorBox(
+        'Nex Note build is not current',
+        'The repository or packaged build contains uncommitted changes, so Nex Note cannot prove that this app matches the code. Commit or stash the changes, then run npm run electron:latest.',
+      );
+      app.quit();
+      return true;
+    }
+
+    const updaterEnv = buildChildProcessEnv({ NEX_NOTE_STARTUP_DEVEL_UPDATE: '1' });
+    const npmCommand = await resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm', updaterEnv);
+    if (!npmCommand) {
+      dialog.showErrorBox('Nex Note could not update', 'npm was not found. Run npm run electron:latest from the repository.');
+      app.quit();
+      return true;
+    }
+
+    develUpdateStarted = true;
+    createDevelUpdateWindow(buildInfo?.gitCommit, localHeadCommit);
+    const updater = spawn(npmCommand, ['run', 'electron:latest'], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+      env: updaterEnv,
+    });
+    updater.once('error', (error) => {
+      console.error('[electron] Could not start required startup update:', error);
+      dialog.showErrorBox('Nex Note could not update', String(error?.message || error));
+      app.quit();
+    });
+    updater.once('exit', (code) => {
+      if (code === 0) return;
+      console.error(`[electron] Required startup update exited with code ${code}.`);
+      dialog.showErrorBox(
+        'Nex Note could not update',
+        'The current app was not opened because its build is stale. Run npm run electron:latest from the repository and try again.',
+      );
+      app.quit();
+    });
+    return true;
+  } catch (error) {
+    console.error('[electron] Could not verify the packaged app against local HEAD:', error);
+    dialog.showErrorBox(
+      'Nex Note build could not be verified',
+      'The app was not opened because its packaged commit could not be compared with the repository. Run npm run electron:latest from the repository.',
+    );
+    app.quit();
+    return true;
+  }
+}
+
 async function updateToLatestDevelInBackground() {
   if (develUpdateStarted || isElectronDevRuntime()) return;
 
@@ -787,6 +903,7 @@ if (!singleInstanceLock) {
     if (process.platform === 'darwin' && app.dock) {
       app.dock.setIcon(getAssetPath('app-icon.png'));
     }
+    if (await ensurePackagedBuildMatchesLocalHead()) return;
     createApplicationMenu();
     queueCommandLineFiles(process.argv.slice(1));
     await createWindow();

@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   buildChildProcessEnv,
   decidePackagedBuildFreshness,
+  decidePackagedStartupFreshness,
   isAllowedRendererPermission,
   resolveExecutable,
   uniquePathDirectories,
@@ -25,6 +26,51 @@ test('a dirty packaged build keeps running while the next launch retries the upd
   assert.deepEqual(
     decidePackagedBuildFreshness({ buildCommit: 'local-build', buildDirty: true, latestDevelCommit: 'new-devel' }),
     { action: 'run', reason: 'dirty-local-build' },
+  );
+});
+
+test('packaged startup updates before opening when the bundle is behind local HEAD', () => {
+  assert.deepEqual(
+    decidePackagedStartupFreshness({
+      buildCommit: 'old-build',
+      buildDirty: false,
+      localHeadCommit: 'current-head',
+      repoDirty: false,
+    }),
+    { action: 'update', reason: 'stale-local-build' },
+  );
+});
+
+test('packaged startup opens only an exact clean local build', () => {
+  assert.deepEqual(
+    decidePackagedStartupFreshness({
+      buildCommit: 'current-head',
+      buildDirty: false,
+      localHeadCommit: 'current-head',
+      repoDirty: false,
+    }),
+    { action: 'run', reason: 'fresh-local-build' },
+  );
+});
+
+test('packaged startup blocks ambiguous dirty repository and build states', () => {
+  assert.deepEqual(
+    decidePackagedStartupFreshness({
+      buildCommit: 'current-head',
+      buildDirty: false,
+      localHeadCommit: 'current-head',
+      repoDirty: true,
+    }),
+    { action: 'block', reason: 'dirty-repository' },
+  );
+  assert.deepEqual(
+    decidePackagedStartupFreshness({
+      buildCommit: 'current-head',
+      buildDirty: true,
+      localHeadCommit: 'current-head',
+      repoDirty: false,
+    }),
+    { action: 'block', reason: 'dirty-packaged-build' },
   );
 });
 
