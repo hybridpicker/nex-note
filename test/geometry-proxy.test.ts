@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GeometryProxy, buildStaffDetailsByMeasure } from '../src/score-core/GeometryProxy.ts';
+import { GeometryProxy, buildGraphicalMeasureRectsById, buildStaffDetailsByMeasure } from '../src/score-core/GeometryProxy.ts';
 import type { RenderedMeasureLayoutOverlay } from '../src/render-bridge/osmd/layout-plan-bridge.ts';
 import { buildRenderedGhostGrid } from '../src/render-bridge/osmd/rendered-ghost-grid.ts';
 import type { RenderedNote } from '../src/render-bridge/osmd/note-selection.ts';
@@ -50,11 +50,18 @@ function makeGraphicalMeasure(opts: {
   height: number;
   lineCount?: number;
   staveLineYs?: number[];
+  partId?: string;
+  musicSheetStaffId?: number;
 }) {
   const staveLineYs = opts.staveLineYs ?? null;
   return {
     MeasureNumber: opts.measureNumber,
-    ParentStaff: { Id: opts.staffIndex, stafflineCount: opts.lineCount ?? 5 },
+    ParentStaff: {
+      Id: opts.staffIndex,
+      idInMusicSheet: opts.musicSheetStaffId,
+      stafflineCount: opts.lineCount ?? 5,
+      ParentInstrument: opts.partId ? { IdString: opts.partId } : undefined,
+    },
     stave: staveLineYs ? {
       getYForLine: (index: number) => staveLineYs[index] ?? staveLineYs[staveLineYs.length - 1],
     } : undefined,
@@ -208,6 +215,29 @@ test('buildStaffDetailsByMeasure keeps repeated staff indexes on separate instru
   assert.equal(details.length, 2);
   assert.deepEqual(details.map((detail) => detail.staffIndex), [1, 1]);
   assert.deepEqual(details.map((detail) => detail.topLineDomY), [0, 80]);
+});
+
+test('buildStaffDetailsByMeasure preserves stable part and global staff identities', () => {
+  const { container } = makeContainer({});
+  const osmd = makeOsmd([[
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, partId: 'P4', musicSheetStaffId: 3, absX: 0, absY: 180, width: 100, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, partId: 'P1', musicSheetStaffId: 0, absX: 0, absY: 0, width: 100, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, partId: 'P3', musicSheetStaffId: 2, absX: 0, absY: 120, width: 100, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, partId: 'P2', musicSheetStaffId: 1, absX: 0, absY: 60, width: 100, height: 40 }),
+  ]]);
+
+  const details = buildStaffDetailsByMeasure(osmd, container).get(1) ?? [];
+
+  assert.deepEqual(details.map((detail) => ({
+    part: detail.corePartId,
+    globalStaff: detail.musicSheetStaffId,
+    y: detail.topLineDomY,
+  })), [
+    { part: 'P1', globalStaff: 0, y: 0 },
+    { part: 'P2', globalStaff: 1, y: 60 },
+    { part: 'P3', globalStaff: 2, y: 120 },
+    { part: 'P4', globalStaff: 3, y: 180 },
+  ]);
 });
 
 test('getDetailedContext returns null outside any measure and a populated context inside', () => {
@@ -821,6 +851,44 @@ test('parallel parts with identical measure numbers resolve to distinct measureI
   assert.equal(fluteCtx.measure.measureId, 'flute-m5');
   assert.equal(oboeCtx.measure.measureId, 'oboe-m5');
   assert.notEqual(fluteCtx.measure.measureId, oboeCtx.measure.measureId);
+});
+
+test('OSMD part identities map visible subsets without depending on row-block size', () => {
+  const { container } = makeContainer({});
+  const makePart = (partNumber: number) => ({
+    id: `part:P${partNumber}`,
+    sourcePartId: `P${partNumber}`,
+    name: `Part ${partNumber}`,
+    staves: [{
+      id: `staff:P${partNumber}`,
+      staffIndex: 1,
+      measures: [1, 2].map((measureNumber) => ({
+        id: `P${partNumber}-m${measureNumber}`,
+        measureNumber,
+        attributes: [],
+        voices: [],
+      })),
+    }],
+  });
+  const coreDocument = makeCoreDoc({
+    score: { id: 's', parts: [1, 2, 3, 4, 5, 6].map(makePart) } as any,
+  });
+  // Only a changing subset of instruments is visible in each rendered system.
+  // Row-block inference would assign these four rows to P1..P4 in order.
+  const osmd = makeOsmd([[
+    makeGraphicalMeasure({ measureNumber: 2, staffIndex: 1, partId: 'P6', musicSheetStaffId: 5, absX: 220, absY: 460, width: 90, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, partId: 'P5', musicSheetStaffId: 4, absX: 20, absY: 140, width: 90, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 2, staffIndex: 1, partId: 'P2', musicSheetStaffId: 1, absX: 220, absY: 400, width: 90, height: 40 }),
+    makeGraphicalMeasure({ measureNumber: 1, staffIndex: 1, partId: 'P3', musicSheetStaffId: 2, absX: 20, absY: 80, width: 90, height: 40 }),
+  ]]);
+
+  const rects = buildGraphicalMeasureRectsById(osmd, container, coreDocument);
+
+  assert.deepEqual([...rects.keys()].sort(), ['P2-m2', 'P3-m1', 'P5-m1', 'P6-m2']);
+  assert.equal(rects.get('P3-m1')?.y, 80);
+  assert.equal(rects.get('P5-m1')?.y, 140);
+  assert.equal(rects.get('P2-m2')?.y, 400);
+  assert.equal(rects.get('P6-m2')?.y, 460);
 });
 
 test('parallel parts with identical local staff indexes resolve by rendered row order', () => {

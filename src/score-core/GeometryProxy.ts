@@ -25,6 +25,10 @@ export interface Fraction {
 
 export interface StaffDetail {
   staffIndex: number;
+  /** MusicXML/OSMD part identity. Staff indexes restart for every part. */
+  corePartId?: string | null;
+  /** OSMD's score-global staff identity, used only as a stable fallback. */
+  musicSheetStaffId?: number | null;
   topLineDomY: number;
   bottomLineDomY: number;
   lineDistanceDom: number;
@@ -185,6 +189,19 @@ function graphicalMeasureStaffIndex(graphicalMeasure: any): number | null {
   return typeof id === 'number' ? id : null;
 }
 
+function graphicalMeasurePartId(graphicalMeasure: any): string | null {
+  const parentStaff = graphicalMeasure?.ParentStaff ?? graphicalMeasure?.parentStaff;
+  const parentInstrument = parentStaff?.ParentInstrument ?? parentStaff?.parentInstrument;
+  const id = parentInstrument?.IdString ?? parentInstrument?.idString;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
+function graphicalMeasureMusicSheetStaffId(graphicalMeasure: any): number | null {
+  const parentStaff = graphicalMeasure?.ParentStaff ?? graphicalMeasure?.parentStaff;
+  const id = parentStaff?.idInMusicSheet ?? parentStaff?.IdInMusicSheet;
+  return typeof id === 'number' && Number.isFinite(id) ? id : null;
+}
+
 function readRenderedStaffLineYs(
   graphicalMeasure: any,
   lineCount: number,
@@ -278,7 +295,15 @@ function extractStaffDetail(
   const lineDistanceDom = (bottomLineDomY - topLineDomY) / gaps;
   if (!Number.isFinite(lineDistanceDom) || lineDistanceDom <= 0) return null;
 
-  return { staffIndex, topLineDomY, bottomLineDomY, lineDistanceDom, lineCount };
+  return {
+    staffIndex,
+    corePartId: graphicalMeasurePartId(graphicalMeasure),
+    musicSheetStaffId: graphicalMeasureMusicSheetStaffId(graphicalMeasure),
+    topLineDomY,
+    bottomLineDomY,
+    lineDistanceDom,
+    lineCount,
+  };
 }
 
 function resolveSvg(container: HTMLElement): SvgLike | null {
@@ -304,6 +329,8 @@ export function buildStaffDetailsByMeasure(
     const tolerance = Math.max(1, detail.lineDistanceDom * 0.25);
     if (!existing.some((entry) => (
       entry.staffIndex === detail.staffIndex
+      && entry.corePartId === detail.corePartId
+      && entry.musicSheetStaffId === detail.musicSheetStaffId
       && Math.abs(((entry.topLineDomY + entry.bottomLineDomY) / 2) - centerY) <= tolerance
     ))) {
       existing.push(detail);
@@ -355,14 +382,22 @@ function measureIdentityFor(
   coreDocument: ScoreDocumentModel | null | undefined,
   measureNumber: number,
   staffIndex: number | null,
+  corePartId?: string | null,
 ): { measureId: string | null } {
   if (!coreDocument) return { measureId: null };
-  // Measure number alone is ambiguous across parallel parts (two instruments
-  // both have a "measure 5"). The OSMD GraphicalMeasure is anchored to a
-  // specific staff, so we disambiguate by matching staffIndex first and fall
-  // back to the number-only lookup only when staffIndex is unknown.
+  const normalizedPartId = corePartId?.replace(/^part:/, '') ?? null;
+  const matchingParts = normalizedPartId
+    ? coreDocument.score.parts.filter((part) => (
+      part.id.replace(/^part:/, '') === normalizedPartId
+      || part.sourcePartId.replace(/^part:/, '') === normalizedPartId
+    ))
+    : coreDocument.score.parts;
+  const parts = matchingParts.length > 0 ? matchingParts : coreDocument.score.parts;
+
+  // Staff indexes restart for every MusicXML part. A rendered part identity
+  // therefore has priority over both the local staff index and visual Y order.
   if (staffIndex != null) {
-    for (const part of coreDocument.score.parts) {
+    for (const part of parts) {
       for (const staff of part.staves) {
         if (staff.staffIndex !== staffIndex) continue;
         const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
@@ -370,7 +405,7 @@ function measureIdentityFor(
       }
     }
   }
-  for (const part of coreDocument.score.parts) {
+  for (const part of parts) {
     for (const staff of part.staves) {
       const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
       if (measure) return { measureId: measure.id };
@@ -436,6 +471,17 @@ function buildVisualMeasureIdentityMap(
 
   const rows = groupGraphicalMeasuresByVisualRow(entries);
   const byGraphicalMeasure = new Map<any, string>();
+  for (const entry of entries) {
+    const corePartId = graphicalMeasurePartId(entry.graphicalMeasure);
+    if (!corePartId) continue;
+    const direct = measureIdentityFor(
+      coreDocument,
+      entry.measureNumber,
+      graphicalMeasureStaffIndex(entry.graphicalMeasure),
+      corePartId,
+    ).measureId;
+    if (direct) byGraphicalMeasure.set(entry.graphicalMeasure, direct);
+  }
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += staves.length) {
     const systemRows = rows.slice(rowIndex, rowIndex + staves.length);
     for (let staffOffset = 0; staffOffset < staves.length; staffOffset += 1) {
@@ -443,6 +489,7 @@ function buildVisualMeasureIdentityMap(
       const row = systemRows[staffOffset];
       if (!staff || !row) continue;
       for (const entry of row) {
+        if (byGraphicalMeasure.has(entry.graphicalMeasure)) continue;
         const measure = staff.measures.find((candidate) => candidate.measureNumber === entry.measureNumber);
         if (measure) byGraphicalMeasure.set(entry.graphicalMeasure, measure.id);
       }
@@ -464,15 +511,45 @@ export function staffIndexForMeasureId(
   return null;
 }
 
+function staffIdentityForMeasureId(
+  coreDocument: ScoreDocumentModel | null | undefined,
+  measureId: string,
+): { staffIndex: number; partId: string; sourcePartId: string } | null {
+  if (!coreDocument) return null;
+  for (const part of coreDocument.score.parts) {
+    for (const staff of part.staves) {
+      if (staff.measures.some((measure) => measure.id === measureId)) {
+        return { staffIndex: staff.staffIndex, partId: part.id, sourcePartId: part.sourcePartId };
+      }
+    }
+  }
+  return null;
+}
+
+function staffDetailMatchesPart(
+  detail: StaffDetail,
+  identity: { partId: string; sourcePartId: string },
+) {
+  const detailPartId = detail.corePartId?.replace(/^part:/, '') ?? null;
+  if (!detailPartId) return false;
+  return identity.partId.replace(/^part:/, '') === detailPartId
+    || identity.sourcePartId.replace(/^part:/, '') === detailPartId;
+}
+
 function staffDetailsForOverlay(
   staffDetailsByMeasure: Map<number, StaffDetail[]>,
   coreDocument: ScoreDocumentModel | null | undefined,
   overlay: Pick<RenderedMeasureLayoutOverlay, 'measureId' | 'measureNumber' | 'domRect'>,
 ) {
   const details = staffDetailsByMeasure.get(overlay.measureNumber) ?? [];
-  const staffIndex = staffIndexForMeasureId(coreDocument, overlay.measureId);
-  if (staffIndex == null) return details;
-  const matching = details.filter((detail) => detail.staffIndex === staffIndex);
+  const identity = staffIdentityForMeasureId(coreDocument, overlay.measureId);
+  if (!identity) return details;
+  const partMatching = details.filter((detail) => (
+    detail.staffIndex === identity.staffIndex && staffDetailMatchesPart(detail, identity)
+  ));
+  const matching = partMatching.length > 0
+    ? partMatching
+    : details.filter((detail) => detail.staffIndex === identity.staffIndex);
   if (matching.length <= 1) return matching.length > 0 ? matching : details;
   const overlayCenterY = overlay.domRect.y + (overlay.domRect.height / 2);
   return [matching.slice().sort((left, right) => {
@@ -523,7 +600,12 @@ export function buildGraphicalMeasureRectsById(
     if (measureNumber == null) continue;
     const staffIndex = graphicalMeasureStaffIndex(graphicalMeasure);
     const measureId = visualMeasureIds.get(graphicalMeasure)
-      ?? measureIdentityFor(coreDocument, measureNumber, staffIndex).measureId;
+      ?? measureIdentityFor(
+        coreDocument,
+        measureNumber,
+        staffIndex,
+        graphicalMeasurePartId(graphicalMeasure),
+      ).measureId;
     if (!measureId) continue;
 
     const domRect = extractMeasureDomRect(graphicalMeasure, svgEl, container);
@@ -556,7 +638,12 @@ function buildVirtualOverlaysForEmptyBars(
     if (measureNumber == null) continue;
     const staffIndex = graphicalMeasureStaffIndex(graphicalMeasure);
     const measureId = visualMeasureIds.get(graphicalMeasure)
-      ?? measureIdentityFor(coreDocument, measureNumber, staffIndex).measureId;
+      ?? measureIdentityFor(
+        coreDocument,
+        measureNumber,
+        staffIndex,
+        graphicalMeasurePartId(graphicalMeasure),
+      ).measureId;
     if (!measureId || coveredIds.has(measureId)) continue;
 
     const domRect = extractMeasureDomRect(graphicalMeasure, svgEl, container);

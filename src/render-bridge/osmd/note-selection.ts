@@ -41,6 +41,19 @@ interface TimedEventMatch {
   visualOrder: number;
 }
 
+function normalizePartId(value: string | null | undefined) {
+  return value?.replace(/^part:/, '') ?? null;
+}
+
+function selectedPartMatches(
+  part: ScoreDocumentModel['score']['parts'][number],
+  corePartId: string | null | undefined,
+) {
+  const expected = normalizePartId(corePartId);
+  if (!expected) return true;
+  return normalizePartId(part.id) === expected || normalizePartId(part.sourcePartId) === expected;
+}
+
 function matchesTimedEvent(note: SelectedNote, event: TimedEvent) {
   if (event.measureNumber !== note.measureNumber) return false;
   if (event.staffIndex !== note.staffIndex) return false;
@@ -98,6 +111,10 @@ function findRestSpanEventMatches(note: SelectedNote, coreDocument?: ScoreDocume
   const matches: TimedEventMatch[] = [];
   let visualOrder = 0;
   for (const part of coreDocument.score.parts) {
+    if (!selectedPartMatches(part, note.corePartId)) {
+      visualOrder += part.staves.length;
+      continue;
+    }
     for (const staff of part.staves) {
       const currentVisualOrder = visualOrder++;
       if (staff.staffIndex !== note.staffIndex) continue;
@@ -139,6 +156,7 @@ function findCoreIdentity(note: SelectedNote, coreDocument?: ScoreDocumentModel 
   }
 
   for (const part of coreDocument.score.parts) {
+    if (!selectedPartMatches(part, note.corePartId)) continue;
     for (const staff of part.staves) {
       if (staff.staffIndex !== note.staffIndex) continue;
       const measure = staff.measures.find((entry) => entry.measureNumber === note.measureNumber);
@@ -195,6 +213,10 @@ function findExactTimedEventMatch(note: SelectedNote, coreDocument?: ScoreDocume
 
   let visualOrder = 0;
   for (const part of coreDocument.score.parts) {
+    if (!selectedPartMatches(part, note.corePartId)) {
+      visualOrder += part.staves.length;
+      continue;
+    }
     for (const staff of part.staves) {
       const currentVisualOrder = visualOrder++;
       if (staff.staffIndex !== note.staffIndex) continue;
@@ -336,6 +358,7 @@ export function normalizeSelectedNote(graphicalNote: any, coreDocument?: ScoreDo
   const parentVoiceEntry = sourceNote.ParentVoiceEntry ?? sourceNote.parentVoiceEntry;
   const parentVoice = parentVoiceEntry?.ParentVoice ?? parentVoiceEntry?.parentVoice;
   const parentStaff = sourceNote.ParentStaff ?? sourceNote.parentStaff;
+  const parentInstrument = parentStaff?.ParentInstrument ?? parentStaff?.parentInstrument;
   const timestamp = parentVoiceEntry?.Timestamp ?? parentVoiceEntry?.timestamp;
   const pitch = sourceNote.Pitch ?? sourceNote.pitch;
 
@@ -363,6 +386,7 @@ export function normalizeSelectedNote(graphicalNote: any, coreDocument?: ScoreDo
     isRest: !pitch,
     durationType: sourceNote.NoteTypeXml ?? sourceNote.noteTypeXml ?? undefined,
     isDotted: Boolean(sourceNote.NoteDots?.length ?? sourceNote.noteDots?.length ?? sourceNote.NoteDot ?? sourceNote.noteDot),
+    corePartId: parentInstrument?.IdString ?? parentInstrument?.idString ?? null,
     graphicalNote,
   }, coreDocument);
 
@@ -612,7 +636,10 @@ export function repairRenderedRestPartIdentity(notes: RenderedNote[], coreDocume
     const seed = group[0]?.note;
     if (!seed) continue;
 
-    const candidates = findRestSpanEventMatches(seed, coreDocument)
+    // This repair runs only when OSMD did not expose a usable part identity;
+    // clear the provisional first-part match so visual-order fallback can see
+    // every otherwise identical rest candidate.
+    const candidates = findRestSpanEventMatches({ ...seed, corePartId: null }, coreDocument)
       .sort((a, b) => (
         a.visualOrder - b.visualOrder
         || a.event.id.localeCompare(b.event.id)

@@ -4,8 +4,9 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { attachCoreSelectionIdentity, normalizeSelectedNote, repairRenderedDuplicatePartIdentity, repairRenderedRestPartIdentity, resolveSemanticMeasureClickTarget, selectedNoteEquals } from '../src/render-bridge/osmd/note-selection.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import type { SelectedNote } from '../hooks/useNoteEditor.ts';
-import { findNearestRenderedNoteInMeasure, getVisibleMeasureSelectionIds, sanitizeXmlForOsmdRender } from '../components/ScoreEditor.tsx';
+import { findNearestRenderedNoteInMeasure, getVisibleMeasureSelectionIds, mergeAugmentedMeasureOverlays, sanitizeXmlForOsmdRender } from '../components/ScoreEditor.tsx';
 import type { RenderedNote } from '../src/render-bridge/osmd/note-selection.ts';
+import type { RenderedMeasureLayoutOverlay } from '../src/render-bridge/osmd/layout-plan-bridge.ts';
 
 (globalThis as typeof globalThis & { DOMParser?: typeof globalThis.DOMParser }).DOMParser =
   DOMParser as unknown as typeof globalThis.DOMParser;
@@ -48,6 +49,38 @@ function makeSelectedNote(): SelectedNote {
     graphicalNote: null,
   };
 }
+
+test('augmented overlay merge preserves real staff geometry for existing measures', () => {
+  const makeOverlay = (domRect: RenderedMeasureLayoutOverlay['domRect']): RenderedMeasureLayoutOverlay => ({
+    measureId: 'm1',
+    measureNumber: 1,
+    systemIndex: 0,
+    pageIndex: 0,
+    widthWeight: 1,
+    domRect,
+    breakBefore: false,
+    pageBreakBefore: false,
+    staffSpacing: null,
+  });
+  const base = makeOverlay({ x: 20, y: 10, width: 80, height: 120 });
+  const augmented = {
+    ...makeOverlay({ x: 10, y: 10, width: 100, height: 120 }),
+    staffDetails: [{
+      staffIndex: 1,
+      corePartId: 'P4',
+      musicSheetStaffId: 3,
+      topLineDomY: 44,
+      bottomLineDomY: 64,
+      lineDistanceDom: 5,
+      lineCount: 5,
+    }],
+  };
+
+  const [merged] = mergeAugmentedMeasureOverlays([base], [augmented]);
+
+  assert.deepEqual(merged.domRect, augmented.domRect);
+  assert.deepEqual(merged.staffDetails, augmented.staffDetails);
+});
 
 test('attachCoreSelectionIdentity resolves core ids from the score document', () => {
   const core = importMusicXmlToCore(SAMPLE_XML);
@@ -93,6 +126,37 @@ test('normalizeSelectedNote prefers the matched core pitch over OSMD runtime pit
   assert.equal(normalized?.step, 'C');
   assert.equal(normalized?.octave, 4);
   assert.equal(normalized?.coreEntityId != null, true);
+});
+
+test('normalizeSelectedNote uses the OSMD part identity when local staff indexes repeat', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Upper</part-name></score-part>
+    <score-part id="P2"><part-name>Lower</part-name></score-part>
+  </part-list>
+  ${['P1', 'P2'].map((partId) => `<part id="${partId}"><measure number="1">
+    <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+    <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+  </measure></part>`).join('')}
+</score-partwise>`;
+  const core = importMusicXmlToCore(xml);
+  const normalized = normalizeSelectedNote({
+    sourceNote: {
+      SourceMeasure: { MeasureNumberXML: 1 },
+      ParentVoiceEntry: {
+        ParentVoice: { VoiceId: 1 },
+        Timestamp: { Numerator: 0, Denominator: 1 },
+      },
+      ParentStaff: { Id: 1, ParentInstrument: { IdString: 'P2' } },
+      Pitch: { FundamentalNote: 0, Accidental: 2, Octave: 4 },
+      NoteTypeXml: 'quarter',
+      NoteDots: [],
+    },
+  }, core);
+
+  assert.equal(normalized?.corePartId, core.score.parts[1]?.id);
+  assert.equal(normalized?.coreMeasureId, core.score.parts[1]?.staves[0]?.measures[0]?.id);
 });
 
 test('repairRenderedRestPartIdentity maps identical rendered rests to their visual parts', () => {

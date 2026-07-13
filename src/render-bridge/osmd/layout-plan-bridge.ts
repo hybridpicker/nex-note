@@ -55,6 +55,8 @@ export interface RenderedMeasureLayoutOverlay {
   staffSpacing: number | null;
   staffDetails?: Array<{
     staffIndex: number;
+    corePartId?: string | null;
+    musicSheetStaffId?: number | null;
     topLineDomY: number;
     bottomLineDomY: number;
     lineDistanceDom: number;

@@ -4372,13 +4372,22 @@ function refineMeasureOverlaysForNoteInput(
   return overlays;
 }
 
-function mergeAugmentedMeasureOverlays(
+export function mergeAugmentedMeasureOverlays(
   overlays: RenderedMeasureLayoutOverlay[],
   augmentedMeasures: readonly RenderedMeasureLayoutOverlay[],
 ) {
-  const byId = new Set(overlays.map((overlay) => overlay.measureId));
-  const missing = augmentedMeasures.filter((measure) => !byId.has(measure.measureId));
-  return missing.length === 0 ? overlays : [...overlays, ...missing].sort((left, right) => (
+  const augmentedById = new Map(augmentedMeasures.map((measure) => [measure.measureId, measure]));
+  const merged = overlays.map((overlay) => {
+    const augmented = augmentedById.get(overlay.measureId);
+    if (!augmented) return overlay;
+    augmentedById.delete(overlay.measureId);
+    return {
+      ...overlay,
+      domRect: augmented.domRect,
+      staffDetails: augmented.staffDetails,
+    };
+  });
+  return [...merged, ...augmentedById.values()].sort((left, right) => (
     left.pageIndex - right.pageIndex
     || left.systemIndex - right.systemIndex
     || left.measureNumber - right.measureNumber
@@ -4421,6 +4430,7 @@ function expandMeasureOverlayStaffBounds(
       details,
       staffIndex,
       overlay.domRect.y + (overlay.domRect.height / 2),
+      corePartIdForMeasureId(coreDocument, overlay.measureId),
     );
     if (!detail) return overlay;
 
@@ -4452,10 +4462,16 @@ function findNearestStaffDetail(
   details: StaffDetail[],
   staffIndex: number | null | undefined,
   yHint: number | null | undefined,
+  corePartId?: string | null,
 ): StaffDetail | null {
+  const normalizedPartId = corePartId?.replace(/^part:/, '') ?? null;
+  const matchingPartDetails = normalizedPartId
+    ? details.filter((detail) => detail.corePartId?.replace(/^part:/, '') === normalizedPartId)
+    : details;
+  const scopedDetails = matchingPartDetails.length > 0 ? matchingPartDetails : details;
   const candidates = staffIndex == null
-    ? details
-    : details.filter((detail) => detail.staffIndex === staffIndex);
+    ? scopedDetails
+    : scopedDetails.filter((detail) => detail.staffIndex === staffIndex);
   if (candidates.length === 0) return null;
   if (typeof yHint !== 'number' || !Number.isFinite(yHint)) return candidates[0] ?? null;
   return candidates
@@ -4563,6 +4579,7 @@ function capMeasureOverlayStaffYBounds(
       details,
       staffIndex,
       overlay.domRect.y + (overlay.domRect.height / 2),
+      corePartIdForMeasureId(coreDocument, overlay.measureId),
     );
     if (!detail) return overlay;
     const rect = captureMeasureRectForStaff(
@@ -9543,6 +9560,8 @@ function buildFallbackStaffDetailForEmptyMeasure(
 
   return {
     staffIndex,
+    corePartId: corePartIdForMeasureId(coreDocument, context.measure.measureId),
+    musicSheetStaffId: null,
     topLineDomY,
     bottomLineDomY: topLineDomY + staffHeight,
     lineDistanceDom,
@@ -13577,7 +13596,7 @@ export default function ScoreEditor({
           const graphicalMeasureRects = buildDomMeasureRectsByVisualOrder(containerRef.current, coreDocument);
           const osmdGraphicalMeasureRects = buildGraphicalMeasureRectsById(activeOsmd, containerRef.current, coreDocument);
           for (const [measureId, rect] of osmdGraphicalMeasureRects.entries()) {
-            if (!graphicalMeasureRects.has(measureId)) graphicalMeasureRects.set(measureId, rect);
+            graphicalMeasureRects.set(measureId, rect);
           }
           const staffDetailsByMeasure = buildStaffDetailsByMeasure(activeOsmd, containerRef.current);
           staffDetailsByMeasureRef.current = staffDetailsByMeasure;
@@ -13739,7 +13758,7 @@ export default function ScoreEditor({
       const graphicalMeasureRects = buildDomMeasureRectsByVisualOrder(container, coreDocument);
       const osmdGraphicalMeasureRects = buildGraphicalMeasureRectsById(osmd, container, coreDocument);
       for (const [measureId, rect] of osmdGraphicalMeasureRects.entries()) {
-        if (!graphicalMeasureRects.has(measureId)) graphicalMeasureRects.set(measureId, rect);
+        graphicalMeasureRects.set(measureId, rect);
       }
       const staffDetailsByMeasure = buildStaffDetailsByMeasure(osmd, container);
       staffDetailsByMeasureRef.current = staffDetailsByMeasure;
