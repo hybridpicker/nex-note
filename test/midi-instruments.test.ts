@@ -13,6 +13,7 @@ import { INSTRUMENT_DEFINITIONS } from '../lib/new-score.ts';
 import {
   normalizeMidiNotes,
   resolvePlaybackSoundfontInstrument,
+  resolvePlaybackTrackPart,
   resolvePlaybackTrackSound,
 } from '../hooks/usePlayback.ts';
 import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
@@ -100,4 +101,42 @@ test('simultaneous notes on different instrument tracks retain separate timbres'
 
   assert.equal(notes.length, 2);
   assert.deepEqual(notes.map((note) => note.soundfont), ['acoustic_grand_piano', 'violin']);
+});
+
+test('collapsed MIDI tracks retain the identity of score parts that contain notes', () => {
+  const makePart = (number: number, hasNote: boolean) => ({
+    id: `part:P${number}`,
+    sourcePartId: `P${number}`,
+    name: number === 1 ? 'Singing bowls' : `Glockenspiel ${number - 1}`,
+    instrumentName: number === 1 ? 'Singing bowls' : `Glockenspiel ${number - 1}`,
+    staves: [{
+      id: `staff:P${number}`,
+      staffIndex: 1,
+      measures: [{
+        id: `measure:P${number}:1`,
+        measureNumber: 1,
+        voices: [{
+          id: `voice:P${number}:1`,
+          voiceId: 1,
+          events: hasNote ? [{ kind: 'note', hidden: false }] : [{ kind: 'rest' }],
+        }],
+      }],
+    }],
+  });
+  const document = {
+    score: { parts: [makePart(1, true), makePart(2, false), makePart(3, false)] },
+  } as unknown as ScoreDocumentModel;
+  const collapsedTrack = {
+    name: 'Piano',
+    channel: 0,
+    instrument: { number: 0, percussion: false },
+  };
+
+  assert.equal(resolvePlaybackTrackPart(collapsedTrack, document, 0, 1)?.sourcePartId, 'P1');
+
+  const laterPartsDocument = {
+    score: { parts: [makePart(1, false), makePart(2, true), makePart(3, true)] },
+  } as unknown as ScoreDocumentModel;
+  assert.equal(resolvePlaybackTrackPart(collapsedTrack, laterPartsDocument, 0, 2)?.sourcePartId, 'P2');
+  assert.equal(resolvePlaybackTrackPart(collapsedTrack, laterPartsDocument, 1, 2)?.sourcePartId, 'P3');
 });

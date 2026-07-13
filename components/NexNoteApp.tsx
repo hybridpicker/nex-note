@@ -53,6 +53,7 @@ import { buildBugReportBundle, exportBugReportBundle, type BugReportChatMessage 
 import { isDebugEnabled } from '@/lib/debug';
 import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-recorder';
 import { usePlayback } from '@/hooks/usePlayback';
+import type { PlaybackSampleBank } from '@/lib/playback-sample-bank';
 import { useMidiInput } from '@/hooks/useMidiInput';
 import { useNoteEditor, type ArticulationKind, type BarlineKind, type DynamicKind, type SelectedNote } from '@/hooks/useNoteEditor';
 import { useScoreDocument, type ScoreDocumentSelectionAnchor } from '@/hooks/useScoreDocument';
@@ -74,6 +75,7 @@ import { buildNewScoreFilename, createDefaultNewScoreDraft, createNewScoreXml, t
 import { buildScoreImageBatchBaseName, isScoreImageFilename, sortScoreImagePages } from '@/lib/score-image-pages';
 import {
   dedupeUserTemplates,
+  findUserTemplateForSamplePlayback,
   normalizeUserTemplatesFromFolder,
   type ElectronUserTemplateFolderPayload,
   type UserScoreTemplate,
@@ -126,6 +128,11 @@ type NexNoteElectronApi = {
   onOpenFile: (callback: (payload: ElectronOpenPayload) => void) => () => void;
   openFileDialog: () => Promise<void>;
   listUserTemplates: () => Promise<ElectronUserTemplateFolderPayload[]>;
+  readUserTemplateSample: (payload: {
+    sourceLabel: string;
+    directory: string;
+    filename: string;
+  }) => Promise<ArrayBuffer | Uint8Array>;
   performNativeEditCommand: (command: NativeEditCommand) => Promise<void>;
   updateMenuState: (state: {
     hasScore: boolean;
@@ -967,11 +974,37 @@ export default function Home({ searchParams }: HomeProps) {
   }, []);
 
   // Playback
+  const activeSampleTemplate = useMemo(
+    () => findUserTemplateForSamplePlayback(userTemplates, coreDocument),
+    [coreDocument, userTemplates],
+  );
+  const playbackSampleBank = useMemo<PlaybackSampleBank | null>(() => {
+    const sampleBank = activeSampleTemplate?.sampleBank;
+    const sourceLabel = activeSampleTemplate?.sourceLabel;
+    const electronApi = getNexNoteElectronApi();
+    if (!sampleBank || !sourceLabel || !electronApi?.readUserTemplateSample) return null;
+    return {
+      ...sampleBank,
+      id: `${sourceLabel}:${activeSampleTemplate.id}:${sampleBank.directory}`,
+      async loadSample(filename) {
+        const data = await electronApi.readUserTemplateSample({
+          sourceLabel,
+          directory: sampleBank.directory,
+          filename,
+        });
+        if (data instanceof ArrayBuffer) return data;
+        if (ArrayBuffer.isView(data)) {
+          return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+        }
+        throw new TypeError(`Local template sample "${filename}" did not contain audio data.`);
+      },
+    };
+  }, [activeSampleTemplate]);
   const {
     playbackState, currentMeasure, currentBeat, totalBeats, midiLoading,
     ensureMidiLoaded, preloadMidi, prewarm, play, pause, stop, seek, seekToCursorTarget, startFromNote, previewNote, previewNotes, setTempo, tempoOverride, hasMidi, playbackError, playbackCursorTarget, playhead,
     metronomeEnabled, setMetronomeEnabled,
-  } = usePlayback({ coreDocument, selectedNoteRef: playbackSelectedNoteRef, selectedMeasureNumbers });
+  } = usePlayback({ coreDocument, selectedNoteRef: playbackSelectedNoteRef, selectedMeasureNumbers, sampleBank: playbackSampleBank });
 
   const markMidiReady = useCallback((loadedXml: string) => {
     setImportLifecycle((current) => current.xml === loadedXml
@@ -3005,6 +3038,11 @@ export default function Home({ searchParams }: HomeProps) {
     }
 
     void (async () => {
+      const notesToPreview = simultaneousNotes.length > 0 ? simultaneousNotes : [note];
+      if (playbackSampleBank) {
+        await previewNotes(notesToPreview);
+        return;
+      }
       if (xml && await ensureMidiLoaded(xml)) {
         markMidiReady(xml);
         await seekToCursorTarget({
@@ -3013,10 +3051,9 @@ export default function Home({ searchParams }: HomeProps) {
           timestampDen: note.timestampDen,
         });
       }
-      const notesToPreview = simultaneousNotes.length > 0 ? simultaneousNotes : [note];
       await previewNotes(notesToPreview);
     })();
-  }, [coreDocument, ensureMidiLoaded, handleNoteClick, markMidiReady, playbackState, previewNotes, seekToCursorTarget, startFromNote, xml]);
+  }, [coreDocument, ensureMidiLoaded, handleNoteClick, markMidiReady, playbackSampleBank, playbackState, previewNotes, seekToCursorTarget, startFromNote, xml]);
 
   useEffect(() => {
     const target = window as typeof window & {

@@ -86,7 +86,9 @@ if (!existsSync(path.join(root, 'node_modules'))) {
   run('npm', ['ci']);
 }
 
-run('npm', ['run', 'electron:build']);
+// A local refresh only needs the .app bundle. Creating a DMG and ZIP is
+// release work and makes every automatic update needlessly slow.
+run('npm', ['run', 'electron:refresh']);
 if (process.env.NEX_NOTE_BACKGROUND_DEVEL_UPDATE === '1') {
   console.log('Updated the packaged app in the background; it will be used on the next normal launch.');
   process.exit(0);

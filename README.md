@@ -196,7 +196,7 @@ For local testing against the latest pushed `devel`, use the guarded launcher:
 npm run electron:latest
 ```
 
-This fetches `origin/devel`, fast-forwards the local `devel` branch, builds the macOS package, quits any running Nex Note app, and opens the rebuilt app. Repo-local packaged apps also verify their embedded build commit against `origin/devel` on startup; when stale, they start the latest-devel rebuild/relaunch flow automatically.
+This fetches `origin/devel`, fast-forwards the local `devel` branch, rebuilds the macOS app bundle, quits any running Nex Note app, and opens the rebuilt app. It deliberately skips DMG and ZIP creation; those are release artifacts, not prerequisites for a local app refresh. Repo-local packaged apps open immediately and refresh a stale build in the background for the next launch.
 
 ### Packaged Launch Guardrails
 
@@ -208,7 +208,7 @@ Those helpers own:
 - executable resolution before spawning updater commands.
 - repo-local packaged build freshness decisions.
 
-Dirty local packaged builds are treated as local developer builds and are allowed to launch. Clean packaged builds with a missing or stale embedded commit still use the guarded latest-`devel` rebuild path. This prevents a locally rebuilt app from quitting before opening just because the working tree contains the very launch fix being tested.
+Dirty local packaged builds are treated as local developer builds and are allowed to launch. Clean packaged builds also remain usable while the latest `devel` build is prepared in the background. This keeps a normal Dock or Finder launch responsive while preserving automatic updates for the next launch.
 
 Do not move these rules back into untested inline startup code. Update `test/electron-launch-helpers.test.ts` when changing packaged launch, updater, or macOS PATH behavior.
 
@@ -224,7 +224,7 @@ npm install
 npm run electron:latest
 ```
 
-Expected local outputs are under `dist/macos`, including a `.app` bundle and packaged macOS archive/disk image when Electron Builder completes.
+`npm run electron:latest` produces the refreshed `.app` bundle under `dist/macos`. Use `npm run electron:build` when you also need the macOS archive and disk-image release artifacts.
 
 ## Founder Test File Intake
 

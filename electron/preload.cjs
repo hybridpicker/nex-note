@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('nexNoteElectron', {
   listUserTemplates() {
     return ipcRenderer.invoke('nex-note:list-user-templates');
   },
+  readUserTemplateSample(payload) {
+    return ipcRenderer.invoke('nex-note:read-user-template-sample', payload);
+  },
   performNativeEditCommand(command) {
     return ipcRenderer.invoke('nex-note:native-edit-command', command);
   },

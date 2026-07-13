@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -9,7 +9,6 @@ const require = createRequire(import.meta.url);
 const {
   buildChildProcessEnv,
   decidePackagedBuildFreshness,
-  decidePackagedStartupFreshness,
   isAllowedRendererPermission,
   resolveExecutable,
   uniquePathDirectories,
@@ -29,49 +28,21 @@ test('a dirty packaged build keeps running while the next launch retries the upd
   );
 });
 
-test('packaged startup updates before opening when the bundle is behind local HEAD', () => {
-  assert.deepEqual(
-    decidePackagedStartupFreshness({
-      buildCommit: 'old-build',
-      buildDirty: false,
-      localHeadCommit: 'current-head',
-      repoDirty: false,
-    }),
-    { action: 'update', reason: 'stale-local-build' },
-  );
+test('the packaged app opens before scheduling a background update', () => {
+  const mainSource = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
+  const openWindow = mainSource.indexOf('await createWindow();');
+  const scheduleUpdate = mainSource.indexOf('void updateToLatestDevelInBackground();');
+
+  assert.ok(openWindow >= 0);
+  assert.ok(scheduleUpdate > openWindow);
+  assert.doesNotMatch(mainSource, /ensurePackagedBuildMatchesLocalHead/);
 });
 
-test('packaged startup opens only an exact clean local build', () => {
-  assert.deepEqual(
-    decidePackagedStartupFreshness({
-      buildCommit: 'current-head',
-      buildDirty: false,
-      localHeadCommit: 'current-head',
-      repoDirty: false,
-    }),
-    { action: 'run', reason: 'fresh-local-build' },
-  );
-});
+test('the latest-devel launcher refreshes only the app bundle', () => {
+  const launcher = readFileSync(new URL('../scripts/launch-latest-devel-app.mjs', import.meta.url), 'utf8');
 
-test('packaged startup blocks ambiguous dirty repository and build states', () => {
-  assert.deepEqual(
-    decidePackagedStartupFreshness({
-      buildCommit: 'current-head',
-      buildDirty: false,
-      localHeadCommit: 'current-head',
-      repoDirty: true,
-    }),
-    { action: 'block', reason: 'dirty-repository' },
-  );
-  assert.deepEqual(
-    decidePackagedStartupFreshness({
-      buildCommit: 'current-head',
-      buildDirty: true,
-      localHeadCommit: 'current-head',
-      repoDirty: false,
-    }),
-    { action: 'block', reason: 'dirty-packaged-build' },
-  );
+  assert.match(launcher, /run\('npm', \['run', 'electron:refresh'\]\);/);
+  assert.doesNotMatch(launcher, /run\('npm', \['run', 'electron:build'\]\);/);
 });
 
 test('packaged launch PATH keeps inherited directories and adds macOS binary defaults', () => {

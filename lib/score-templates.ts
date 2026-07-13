@@ -1,4 +1,5 @@
 import type { NewScoreTemplate } from '@/lib/new-score';
+import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 
 export type ScoreTemplateSource = 'built-in' | 'local';
 export type UserScoreTemplateFormat = 'musicxml' | 'nxn';
@@ -17,6 +18,18 @@ export interface UserScoreTemplate {
   format: UserScoreTemplateFormat;
   private: boolean;
   sourceLabel?: string;
+  sampleBank?: UserTemplateSampleBank;
+}
+
+export interface UserTemplateSampleBankPart {
+  partNames: string[];
+  samples: Record<string, string>;
+}
+
+export interface UserTemplateSampleBank {
+  directory: string;
+  scoreTitle?: string;
+  parts: UserTemplateSampleBankPart[];
 }
 
 export interface UserTemplateFileCandidate {
@@ -48,9 +61,11 @@ type TemplateIndexEntry = {
   musicxml?: unknown;
   nxn?: unknown;
   private?: unknown;
+  sampleBank?: unknown;
 };
 
 const TEMPLATE_FILE_PATTERN = /\.(musicxml|nxn)$/i;
+const SAMPLE_FILE_PATTERN = /\.(wav|aif|aiff|mp3|m4a|ogg|flac)$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -58,6 +73,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizePitchName(value: string) {
+  const match = value.trim().match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
+  return match ? `${match[1].toUpperCase()}${match[2]}${match[3]}` : null;
+}
+
+function normalizeSafePathSegment(value: unknown, pattern?: RegExp) {
+  if (typeof value !== 'string') return null;
+  const segment = value.trim();
+  if (!segment || segment === '.' || segment === '..' || segment.includes('/') || segment.includes('\\')) return null;
+  if (pattern && !pattern.test(segment)) return null;
+  return segment;
+}
+
+function normalizeTemplateSampleBankPart(value: unknown): UserTemplateSampleBankPart | null {
+  if (!isRecord(value) || !Array.isArray(value.partNames) || !isRecord(value.samples)) return null;
+  const partNames = value.partNames
+    .filter((name): name is string => typeof name === 'string')
+    .map(normalizeWhitespace)
+    .filter(Boolean);
+  const samples = Object.entries(value.samples).reduce<Record<string, string>>((result, [pitch, filename]) => {
+    const normalizedPitch = normalizePitchName(pitch);
+    const normalizedFilename = normalizeSafePathSegment(filename, SAMPLE_FILE_PATTERN);
+    if (normalizedPitch && normalizedFilename) result[normalizedPitch] = normalizedFilename;
+    return result;
+  }, {});
+  if (partNames.length === 0 || Object.keys(samples).length === 0) return null;
+  return { partNames: [...new Set(partNames)], samples };
+}
+
+function normalizeTemplateSampleBank(value: unknown): UserTemplateSampleBank | undefined {
+  if (!isRecord(value) || !Array.isArray(value.parts)) return undefined;
+  const directory = normalizeSafePathSegment(value.directory);
+  if (!directory) return undefined;
+  const parts = value.parts
+    .map(normalizeTemplateSampleBankPart)
+    .filter((part): part is UserTemplateSampleBankPart => Boolean(part));
+  if (parts.length === 0) return undefined;
+  const scoreTitle = typeof value.scoreTitle === 'string' && value.scoreTitle.trim()
+    ? normalizeWhitespace(value.scoreTitle)
+    : undefined;
+  return { directory, scoreTitle, parts };
 }
 
 function slugify(value: string) {
@@ -114,6 +172,7 @@ function buildIndexedTemplate(entry: TemplateIndexEntry, files: Set<string>, sou
     ? normalizeWhitespace(entry.description)
     : `${format === 'nxn' ? 'Nex Note project' : 'MusicXML score'} template.`;
 
+  const sampleBank = normalizeTemplateSampleBank(entry.sampleBank);
   return {
     id,
     source: 'local',
@@ -124,6 +183,7 @@ function buildIndexedTemplate(entry: TemplateIndexEntry, files: Set<string>, sou
     format,
     private: entry.private === true,
     sourceLabel,
+    ...(sampleBank ? { sampleBank } : {}),
   };
 }
 
@@ -195,4 +255,28 @@ export function dedupeUserTemplates(templates: UserScoreTemplate[]) {
 
 export function buildTemplateCategories(templates: Array<NewScoreTemplate | UserScoreTemplate>) {
   return ['All', ...new Set(templates.map((template) => template.category))];
+}
+
+function normalizedMatchText(value: string | null | undefined) {
+  return normalizeWhitespace(value ?? '').toLocaleLowerCase();
+}
+
+export function findUserTemplateForSamplePlayback(
+  templates: UserScoreTemplate[],
+  document: ScoreDocumentModel | null | undefined,
+) {
+  const scoreTitle = normalizedMatchText(document?.metadata.title);
+  if (!scoreTitle) return null;
+  const documentPartNames = new Set((document?.score.parts ?? []).flatMap((part) => (
+    [part.name, part.instrumentName].map(normalizedMatchText).filter(Boolean)
+  )));
+
+  return templates.find((template) => {
+    const sampleBank = template.sampleBank;
+    if (!sampleBank) return false;
+    if (normalizedMatchText(sampleBank.scoreTitle ?? template.name) !== scoreTitle) return false;
+    return sampleBank.parts.some((part) => (
+      part.partNames.some((name) => documentPartNames.has(normalizedMatchText(name)))
+    ));
+  }) ?? null;
 }
