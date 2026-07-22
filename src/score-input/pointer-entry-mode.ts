@@ -58,18 +58,49 @@ function pointerPitchesEqual(left: PointerPitchLocator, right: PointerPitchLocat
     && left.alter === right.alter;
 }
 
+export function shouldTreatPointerAsExplicitVisibleGhost(input: {
+  ghostTarget: PointerGhostCommitTarget | null | undefined;
+  renderedPathNote: (PointerPitchLocator & { isRest?: boolean }) | null | undefined;
+  clickedVisibleGhost: boolean;
+}) {
+  const { ghostTarget, renderedPathNote } = input;
+  if (!input.clickedVisibleGhost || !ghostTarget?.resolvedTarget) return false;
+  if (!renderedPathNote || renderedPathNote.isRest) return true;
+
+  // The score SVG is below the pointer-transparent ghost overlay, so the event
+  // path can legitimately contain a different rendered note even when the user
+  // clicked the visible ghost notehead. Preserve direct-note selection only for
+  // the same semantic onset; a stale glyph from another onset cannot win.
+  return !pointerEntryLocatorsShareOnset(ghostTarget, renderedPathNote);
+}
+
 export function shouldCommitPointerGhostOverDirectNote(input: {
   ghostTarget: PointerGhostCommitTarget | null | undefined;
-  directNote: PointerPitchLocator | null | undefined;
+  directNote: (PointerPitchLocator & { isRest?: boolean }) | null | undefined;
   directlyHitRendered: boolean;
   clickedNoteheadPath: boolean;
   directNoteheadHit?: boolean;
   clickedVisibleGhostAtPointer: boolean;
+  chordInputIntent?: boolean;
   altKey: boolean;
 }) {
   const { ghostTarget, directNote } = input;
   if (!ghostTarget?.resolvedTarget) return false;
-  if (input.altKey || input.clickedVisibleGhostAtPointer) return true;
+  if (input.altKey) return true;
+  if (
+    directNote
+    && !directNote.isRest
+    && (
+      input.directNoteheadHit
+      || input.directlyHitRendered
+      || input.clickedNoteheadPath
+      || pointerEntryLocatorsShareOnset(ghostTarget, directNote)
+    )
+    && !input.chordInputIntent
+  ) {
+    return false;
+  }
+  if (input.clickedVisibleGhostAtPointer) return true;
   if (!directNote) return false;
 
   const mode = ghostTarget.resolvedTarget.mode ?? ghostTarget.placementMode;
@@ -77,7 +108,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
     && !pointerPitchesEqual(ghostTarget, directNote);
 
   if (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath) {
-    return mode === 'chord' && sameOnsetDifferentPitch;
+    return Boolean(input.chordInputIntent) && mode === 'chord' && sameOnsetDifferentPitch;
   }
 
   return sameOnsetDifferentPitch;

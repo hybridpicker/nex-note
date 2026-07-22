@@ -1570,7 +1570,7 @@ function mirrorGuitarInsertionToPairedStaff(input: {
   command: Extract<ValidatedScoreCommand, { type: 'insertNoteAt' | 'insertNote' }>;
   sourceInserted: TimedEvent;
 }) {
-  if (('asChord' in input.command && input.command.asChord) || input.sourceInserted.kind !== 'note') return;
+  if (input.sourceInserted.kind !== 'note') return;
   const paired = findPairedStaffVoice(
     input.part,
     input.sourceStaffIndex,
@@ -1602,6 +1602,45 @@ function mirrorGuitarInsertionToPairedStaff(input: {
     input.sourceInserted.timestampDen,
   );
   const pairedDuration = requestedDurationDivisions(input.command.durationType, input.command.isDotted, pairedTiming.divisions);
+  const pairedCommand = {
+    ...input.command,
+    staffIndex: paired.staff.staffIndex,
+    step: pairedPitch.step,
+    alter: pairedPitch.alter ?? 0,
+    octave: pairedPitch.octave,
+    guitar,
+  };
+
+  if ('asChord' in input.command && input.command.asChord) {
+    const hasRhythmicRoot = paired.voice.events.some((event) => (
+      !event.isChord
+      && event.kind === 'note'
+      && event.timestampNum === pairedInsertionOffset
+    ));
+    const duplicatePitch = paired.voice.events.some((event) => (
+      event.kind === 'note'
+      && event.timestampNum === pairedInsertionOffset
+      && event.pitch.step === pairedPitch.step
+      && event.pitch.alter === (pairedPitch.alter ?? 0)
+      && event.pitch.octave === pairedPitch.octave
+    ));
+    if (!hasRhythmicRoot || duplicatePitch) return;
+
+    paired.voice.events.push(buildInsertedEvent(
+      paired.measure,
+      pairedCommand,
+      pairedInsertionOffset,
+      pairedTiming.divisions,
+      pairedTiming.durationDivisions,
+    ));
+    paired.voice.events.sort((a, b) => (
+      a.timestampNum - b.timestampNum
+      || Number(a.isChord) - Number(b.isChord)
+      || a.id.localeCompare(b.id)
+    ));
+    return;
+  }
+
   const pairedRestIndex = paired.voice.events.findIndex((event) => (
     !event.isChord
     && event.kind === 'rest'
@@ -1611,14 +1650,6 @@ function mirrorGuitarInsertionToPairedStaff(input: {
   const pairedRest = pairedRestIndex >= 0 ? paired.voice.events[pairedRestIndex] ?? null : null;
   if (!pairedRest) return;
 
-  const pairedCommand = {
-    ...input.command,
-    staffIndex: paired.staff.staffIndex,
-    step: pairedPitch.step,
-    alter: pairedPitch.alter ?? 0,
-    octave: pairedPitch.octave,
-    guitar,
-  };
   const inserted = buildInsertedEvent(
     paired.measure,
     pairedCommand,

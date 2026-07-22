@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildInteractiveEditMap } from '../src/score-input/edit-map.ts';
 import { resolvePointerEditTarget } from '../src/score-input/pointer-resolver.ts';
-import { pointerEntryLocatorsShareOnset, resolveMuseScorePointerEntryMode, shouldCommitPointerGhostOverDirectNote } from '../src/score-input/pointer-entry-mode.ts';
+import { pointerEntryLocatorsShareOnset, resolveMuseScorePointerEntryMode, shouldCommitPointerGhostOverDirectNote, shouldTreatPointerAsExplicitVisibleGhost } from '../src/score-input/pointer-entry-mode.ts';
 import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut } from '../src/score-input/keyboard-resolver.ts';
 import { inspectResolvedEditTarget } from '../src/score-input/note-entry-validator.ts';
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '../src/score-input/commit-resolver.ts';
@@ -767,6 +767,112 @@ test('shouldCommitPointerGhostOverDirectNote lets a same-onset different-pitch g
   }), true);
 });
 
+test('visible ghost at beat 2 wins over a rendered rest path at beat 3', () => {
+  const ghostTarget = {
+    measureId: 'm1',
+    corePartId: 'p1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 8,
+    timestampDen: 32,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+    placementMode: 'replace' as const,
+    resolvedTarget: { mode: 'replace' as const },
+  };
+  const laterRest = {
+    ...ghostTarget,
+    timestampNum: 16,
+    isRest: true,
+  };
+
+  assert.equal(shouldTreatPointerAsExplicitVisibleGhost({
+    ghostTarget,
+    renderedPathNote: laterRest,
+    clickedVisibleGhost: true,
+  }), true);
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget,
+    directNote: laterRest,
+    directlyHitRendered: true,
+    clickedNoteheadPath: false,
+    directNoteheadHit: true,
+    clickedVisibleGhostAtPointer: true,
+    altKey: false,
+  }), true);
+});
+
+test('locked visible ghost is not discarded by a rendered path at another onset', () => {
+  const ghostTarget = {
+    measureId: 'm1',
+    corePartId: 'p1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 8,
+    timestampDen: 32,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+    placementMode: 'replace' as const,
+    resolvedTarget: { mode: 'replace' as const },
+  };
+
+  assert.equal(shouldTreatPointerAsExplicitVisibleGhost({
+    ghostTarget,
+    renderedPathNote: { ...ghostTarget, timestampNum: 16, step: 'C', isRest: false },
+    clickedVisibleGhost: true,
+  }), true);
+});
+
+test('same-onset same-pitch rendered notehead remains a direct selection target', () => {
+  const ghostTarget = {
+    measureId: 'm1',
+    corePartId: 'p1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 8,
+    timestampDen: 32,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+    placementMode: 'chord' as const,
+    resolvedTarget: { mode: 'chord' as const },
+  };
+
+  assert.equal(shouldTreatPointerAsExplicitVisibleGhost({
+    ghostTarget,
+    renderedPathNote: { ...ghostTarget, isRest: false },
+    clickedVisibleGhost: true,
+  }), false);
+});
+
+test('same-onset different-pitch rendered notehead remains selectable in overwrite mode', () => {
+  const ghostTarget = {
+    measureId: 'm1',
+    corePartId: 'p1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 8,
+    timestampDen: 32,
+    step: 'G',
+    octave: 4,
+    alter: 0,
+    placementMode: 'replace' as const,
+    resolvedTarget: { mode: 'replace' as const },
+  };
+
+  assert.equal(shouldTreatPointerAsExplicitVisibleGhost({
+    ghostTarget,
+    renderedPathNote: { ...ghostTarget, step: 'B', isRest: false },
+    clickedVisibleGhost: true,
+  }), false);
+});
+
 test('shouldCommitPointerGhostOverDirectNote lets an insert ghost beat proximity note selection', () => {
   const directNote = {
     measureId: 'm1',
@@ -824,6 +930,7 @@ test('shouldCommitPointerGhostOverDirectNote keeps insert-mode direct notehead c
     clickedNoteheadPath: true,
     directNoteheadHit: true,
     clickedVisibleGhostAtPointer: false,
+    chordInputIntent: true,
     altKey: false,
   }), false);
 });
@@ -855,6 +962,7 @@ test('shouldCommitPointerGhostOverDirectNote lets chord ghosts beat overlapping 
     clickedNoteheadPath: true,
     directNoteheadHit: true,
     clickedVisibleGhostAtPointer: false,
+    chordInputIntent: true,
     altKey: false,
   }), true);
 });
@@ -915,6 +1023,7 @@ test('shouldCommitPointerGhostOverDirectNote lets explicit ghost or modifier cli
     clickedNoteheadPath: true,
     directNoteheadHit: true,
     clickedVisibleGhostAtPointer: true,
+    chordInputIntent: true,
     altKey: false,
   }), true);
 
@@ -925,6 +1034,7 @@ test('shouldCommitPointerGhostOverDirectNote lets explicit ghost or modifier cli
     clickedNoteheadPath: true,
     directNoteheadHit: true,
     clickedVisibleGhostAtPointer: false,
+    chordInputIntent: true,
     altKey: true,
   }), true);
 });

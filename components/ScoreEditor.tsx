@@ -53,6 +53,7 @@ import { resolvePointerEditTarget } from '@/src/score-input/pointer-resolver';
 import {
   resolveMuseScorePointerEntryMode,
   shouldCommitPointerGhostOverDirectNote,
+  shouldTreatPointerAsExplicitVisibleGhost,
   type PointerEntryLocator,
 } from '@/src/score-input/pointer-entry-mode';
 import {
@@ -12617,17 +12618,18 @@ export default function ScoreEditor({
     const clickedDomGhostTarget = clickedCurrentGhost
       ? findRecentGhostTargetForElement(visibleGhostElement, recentGhostNoteTargetsRef.current)
       : null;
-    const clickedElementGhostTarget = clickedCurrentGhost
-      ? cloneGhostTargetFromElement(
-          visibleGhostElement,
-          clickedDomGhostTarget ?? ghostNoteTarget ?? previousGhostNoteTargetRef.current,
-          rect,
-        )
-      : null;
+    const visibleElementGhostTarget = cloneGhostTargetFromElement(
+      visibleGhostElement,
+      findRecentGhostTargetForElement(visibleGhostElement, recentGhostNoteTargetsRef.current)
+        ?? ghostNoteTarget
+        ?? previousGhostNoteTargetRef.current,
+      rect,
+    );
+    const clickedElementGhostTarget = clickedCurrentGhost ? visibleElementGhostTarget : null;
     const clickedVisibleGhostTargetAtPointer = clickedCurrentGhost
-      ? (clickedLockedVisibleGhost ? lockedVisibleGhostTarget : null)
-        ?? clickedElementGhostTarget
+      ? clickedElementGhostTarget
         ?? clickedDomGhostTarget
+        ?? (clickedLockedVisibleGhost ? lockedVisibleGhostTarget : null)
         ?? ghostNoteTarget
       : isPointInsideGhostNotehead(
           domPoint,
@@ -12637,12 +12639,6 @@ export default function ScoreEditor({
         ? previousGhostNoteTargetRef.current
         : null;
     const clickedVisibleGhostAtPointer = Boolean(clickedVisibleGhostTargetAtPointer);
-    const clickedExplicitVisibleGhostAtPointer = Boolean(
-      clickedVisibleGhostTargetAtPointer
-      && (clickedVisibleGhostElementPath || clickedLockedVisibleGhost || clickedCurrentGhost)
-      && !clickedNoteheadPath
-      && !pathHitRendered
-    );
     const semanticNoteheadHit = !directlyHitRendered && clickedNoteheadPath && layoutBridgeRef.current
       ? (() => {
           const measureElement = findMeasureElementForPoint(container, eventPathNodes, e.clientX, e.clientY);
@@ -12682,6 +12678,23 @@ export default function ScoreEditor({
       ?? crossVoicePathHitRendered?.note
       ?? crossVoiceGeometryHitRendered?.note
       ?? proximityNote;
+    const directNoteheadHit = Boolean(
+      guitarFretTextHit
+      || directlyHitRendered
+      || semanticNoteheadHit
+      || crossVoicePathHitRendered
+      || crossVoiceGeometryHitRendered
+      || clickedNoteheadPath
+    );
+    const clickedExplicitVisibleGhostAtPointer = shouldTreatPointerAsExplicitVisibleGhost({
+      ghostTarget: clickedVisibleGhostTargetAtPointer,
+      renderedPathNote: directNoteheadHit ? directNote : pathHitRendered?.note,
+      clickedVisibleGhost: Boolean(
+        clickedVisibleGhostElementPath
+        || clickedLockedVisibleGhost
+        || clickedCurrentGhost
+      ),
+    });
     if (directNote) {
       const confidenceReport = guitarFretTextHit
         ? buildTextTargetSelectionConfidence('note-input-guitar-fret-text', guitarFretTextHit, domPoint, visualText, 'direct-tab-fret-text')
@@ -12703,26 +12716,50 @@ export default function ScoreEditor({
       dbg.score(`note-input direct candidate → part=${directNote.corePartId ?? 'partless'} entity=${directNote.coreEntityId ?? 'none'} m.${directNote.measureNumber} staff=${directNote.staffIndex} voice=${directNote.voiceId} ts=${directNote.timestampNum}/${directNote.timestampDen} pitch=${debugPitchLabel(directNote)}`);
     }
 
-    const directNoteheadHit = Boolean(
-      guitarFretTextHit
-      || directlyHitRendered
-      || semanticNoteheadHit
-      || crossVoicePathHitRendered
-      || crossVoiceGeometryHitRendered
-      || clickedNoteheadPath
-    );
     const ghostCommitAtPointer = shouldCommitPointerGhostOverDirectNote({
-      ghostTarget: clickedVisibleGhostTargetAtPointer ?? lockedVisibleGhostTarget ?? ghostNoteTarget,
+      ghostTarget: clickedVisibleGhostTargetAtPointer
+        ?? (e.altKey ? visibleElementGhostTarget : null)
+        ?? ghostNoteTarget
+        ?? lockedVisibleGhostTarget,
       directNote,
       directlyHitRendered: Boolean(directlyHitRendered),
       clickedNoteheadPath,
       directNoteheadHit,
       clickedVisibleGhostAtPointer: clickedExplicitVisibleGhostAtPointer,
+      chordInputIntent: chordInputMode,
       altKey: e.altKey,
     });
-    const forcedGhostCommitTarget = ghostCommitAtPointer
-      ? clickedVisibleGhostTargetAtPointer ?? lockedVisibleGhostTarget ?? ghostNoteTarget
+    const rawForcedGhostCommitTarget = ghostCommitAtPointer
+      ? clickedVisibleGhostTargetAtPointer
+        ?? (e.altKey ? visibleElementGhostTarget : null)
+        ?? ghostNoteTarget
+        ?? lockedVisibleGhostTarget
       : null;
+    const forcedGhostCommitTarget = e.altKey && rawForcedGhostCommitTarget
+      ? {
+          ...rawForcedGhostCommitTarget,
+          voiceId: selectedVoice,
+          placementMode: directNote && !directNote.isRest && directNote.voiceId !== selectedVoice
+            ? 'insert'
+            : rawForcedGhostCommitTarget.placementMode,
+          resolvedTarget: rawForcedGhostCommitTarget.resolvedTarget
+            ? {
+                ...rawForcedGhostCommitTarget.resolvedTarget,
+                voiceId: selectedVoice,
+                mode: directNote && !directNote.isRest && directNote.voiceId !== selectedVoice
+                  ? 'insert'
+                  : rawForcedGhostCommitTarget.resolvedTarget.mode,
+                allowOccupiedInsert: directNote && !directNote.isRest && directNote.voiceId !== selectedVoice
+                  ? true
+                  : rawForcedGhostCommitTarget.resolvedTarget.allowOccupiedInsert,
+                diagnostics: [
+                  ...rawForcedGhostCommitTarget.resolvedTarget.diagnostics,
+                  'modifier-selected-voice-locked',
+                ],
+              }
+            : rawForcedGhostCommitTarget.resolvedTarget,
+        }
+      : rawForcedGhostCommitTarget;
     if (
       noteInputMode
       && directNote

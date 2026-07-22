@@ -408,6 +408,50 @@ test('standard notation insertNoteAt automatically creates paired TAB fingering'
   assert.deepEqual(tabBeatTwo?.kind === 'note' ? tabBeatTwo.guitar : null, { string: 4, fret: 2 });
 });
 
+test('standard notation chord insertion mirrors TAB members and round-trips before following rests', () => {
+  const commands = [
+    { step: 'E', octave: 4, asChord: false },
+    { step: 'G', octave: 4, asChord: true },
+    { step: 'B', octave: 4, asChord: true },
+  ].map((pitch) => ({
+    type: 'insertNoteAt' as const,
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: pitch.step,
+    octave: pitch.octave,
+    alter: 0,
+    durationType: 'quarter',
+    isDotted: false,
+    asChord: pitch.asChord,
+  }));
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), commands as any);
+
+  const assertChord = (document: ScoreDocumentModel) => {
+    const notation = document.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+      .filter((event) => event.kind === 'note' && event.timestampNum === 1);
+    const tab = document.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+      .filter((event) => event.kind === 'note' && event.timestampNum === 1);
+    assert.equal(notation.length, 3);
+    assert.deepEqual(notation.map((event) => event.isChord), [false, true, true]);
+    assert.equal(tab.length, 3);
+    assert.deepEqual(tab.map((event) => event.isChord), [false, true, true]);
+    assert.ok(tab.every((event) => event.kind === 'note' && event.guitar && event.guitar.string >= 1 && event.guitar.fret >= 0));
+  };
+
+  assertChord(next);
+  const exported = exportCoreToMusicXml(DUAL_STAFF_TAB_REST_ANCHORS_XML, next);
+  const notationRoot = exported.indexOf('<step>E</step>');
+  const firstChord = exported.indexOf('<chord/>', notationRoot);
+  const secondChord = exported.indexOf('<chord/>', firstChord + 1);
+  const followingRest = exported.indexOf('<rest', secondChord);
+  assert.ok(notationRoot >= 0 && firstChord > notationRoot && secondChord > firstChord && followingRest > secondChord);
+  assertChord(importMusicXmlToCore(exported));
+});
+
 test('standard notation changeNotePitch updates paired TAB pitch and fingering', () => {
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
     type: 'changeNotePitch',
