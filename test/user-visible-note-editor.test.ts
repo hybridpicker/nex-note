@@ -5874,6 +5874,194 @@ test('A-G note input chooses the closest octave and Shift+A-G stacks above the c
   hook.unmount();
 });
 
+test('input by duration prepares a three-note chord and commits it atomically with a duration key', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first ?? null);
+    hook.current.handleKeyDown(makeKeyboardEvent('M'));
+    hook.current.handleKeyDown(makeKeyboardEvent('C'));
+    hook.current.handleKeyDown(makeKeyboardEvent('E', { shiftKey: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('G', { shiftKey: true }));
+  });
+  hook.rerender();
+
+  assert.equal(hook.current.inputByDurationMode, true);
+  assert.equal(hook.current.preparedDurationPitchLabel, 'C4+E4+G4');
+  assert.equal(hook.appliedCommands.length, 0);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('5', { code: 'Digit5' }));
+  });
+  hook.rerender();
+
+  const chord = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note'
+    && event.measureNumber === 1
+    && event.voiceId === 1
+    && event.timestampNum === 0
+  ));
+  assert.deepEqual(chord.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
+    'C4',
+    'E4',
+    'G4',
+  ]);
+  assert.equal(chord.every((event) => event.durationType === 'quarter'), true);
+  assert.equal(hook.appliedCommands.length, 1);
+  hook.unmount();
+});
+
+test('input by duration consumes an armed accidental on only the next prepared tone', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => {
+    hook.current.handleNoteClick(first ?? null);
+    hook.current.handleKeyDown(makeKeyboardEvent('M'));
+    hook.current.handleKeyDown(makeKeyboardEvent('+'));
+    hook.current.handleKeyDown(makeKeyboardEvent('C'));
+    hook.current.handleKeyDown(makeKeyboardEvent('E', { shiftKey: true }));
+  });
+  hook.rerender();
+
+  assert.equal(hook.current.preparedDurationPitchLabel, 'C♯4+E4');
+  assert.equal(hook.current.selectedAccidental, null);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('5', { code: 'Digit5' }));
+  });
+  hook.rerender();
+
+  const chord = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note'
+    && event.measureNumber === 1
+    && event.voiceId === 1
+    && event.timestampNum === 0
+  ));
+  assert.deepEqual(chord.map((event) => event.kind === 'note'
+    ? `${event.pitch.step}:${event.pitch.alter}:${event.writtenAccidental ?? 'implicit'}`
+    : null), [
+    'C:0:implicit',
+    'C:1:sharp',
+    'E:0:implicit',
+  ]);
+  hook.unmount();
+});
+
+test('input by duration prepares a rest and commits it only when a duration is chosen', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+  const before = hook.xml;
+
+  act(() => {
+    hook.current.handleNoteClick(first ?? null);
+    hook.current.handleKeyDown(makeKeyboardEvent('M'));
+    hook.current.handleKeyDown(makeKeyboardEvent('0', { code: 'Digit0' }));
+  });
+  hook.rerender();
+
+  assert.equal(hook.current.preparedDurationPitchLabel, 'REST');
+  assert.equal(hook.xml, before);
+  assert.equal(hook.appliedCommands.length, 0);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('4', { code: 'Digit4' }));
+  });
+  hook.rerender();
+
+  const entered = flattenVoiceEvents(hook.xml).find((event) => (
+    event.measureNumber === 1
+    && event.voiceId === 1
+    && event.timestampNum === 0
+  ));
+  assert.equal(entered?.kind, 'rest');
+  assert.equal(entered?.durationType, 'eighth');
+  assert.equal(hook.appliedCommands.length, 1);
+  hook.unmount();
+});
+
+test('duration-first pitch cursor arrows and Backspace correct the prepared chord without editing the score', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+  const before = hook.xml;
+
+  act(() => {
+    hook.current.handleNoteClick(first ?? null);
+    hook.current.handleKeyDown(makeKeyboardEvent('M'));
+    hook.current.handleKeyDown(makeKeyboardEvent('E', { shiftKey: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('G', { shiftKey: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('Backspace'));
+    hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp'));
+    hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp', { ctrlKey: true }));
+  });
+  hook.rerender();
+
+  assert.equal(hook.current.preparedDurationPitchLabel, 'C4+F5');
+  assert.equal(hook.xml, before);
+  assert.equal(hook.appliedCommands.length, 0);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('5', { code: 'Digit5' }));
+  });
+  hook.rerender();
+
+  const chord = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note'
+    && event.measureNumber === 1
+    && event.voiceId === 1
+    && event.timestampNum === 0
+  ));
+  assert.deepEqual(chord.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
+    'C4',
+    'F5',
+  ]);
+  assert.equal(hook.appliedCommands.length, 1);
+  hook.unmount();
+});
+
+test('duration-first three-note entry stays atomic and isolated in voice 2', () => {
+  const xml = MULTI_VOICE_CLICK_XML.replace(
+    '<note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>',
+    '<note><rest/><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>',
+  );
+  const hook = renderHook(xml);
+  const voiceTwoRest = makeSelectedNotes(xml).find((note) => (
+    note.measureNumber === 1 && note.voiceId === 2 && note.timestampNum === 0 && note.isRest
+  ));
+  assert.ok(voiceTwoRest);
+
+  act(() => {
+    hook.current.handleNoteClick(voiceTwoRest ?? null);
+    hook.current.handleKeyDown(makeKeyboardEvent('2', { code: 'Digit2', ctrlKey: true, altKey: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('M'));
+    hook.current.handleKeyDown(makeKeyboardEvent('C'));
+    hook.current.handleKeyDown(makeKeyboardEvent('E', { shiftKey: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('G', { shiftKey: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('5', { code: 'Digit5' }));
+  });
+  hook.rerender();
+
+  const onset = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note' && event.measureNumber === 1 && event.timestampNum === 0
+  ));
+  const voiceOne = onset.filter((event) => event.voiceId === 1);
+  const voiceTwo = onset.filter((event) => event.voiceId === 2);
+  assert.deepEqual(voiceOne.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), ['C4']);
+  assert.deepEqual(voiceTwo.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
+    'C4',
+    'E4',
+    'G4',
+  ]);
+  assert.equal(voiceTwo.every((event) => event.durationType === 'quarter'), true);
+  assert.equal(hook.appliedCommands.length, 1);
+  hook.unmount();
+});
+
 test('A-G note input follows the active key signature when no accidental is armed', () => {
   const gMajorXml = SAMPLE_XML.replace('<fifths>0</fifths>', '<fifths>1</fifths>');
   const hook = renderHook(gMajorXml);

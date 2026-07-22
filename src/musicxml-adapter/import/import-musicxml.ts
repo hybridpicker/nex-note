@@ -295,6 +295,33 @@ function directChildrenByTag(parent: XmlElement, tagName: string): XmlElement[] 
   return result;
 }
 
+function parseTimeSignatureElement(time: XmlElement | null | undefined): {
+  beats: number;
+  beatType: number;
+  beatGroups?: number[];
+} | null {
+  if (!time) return null;
+  const beatsText = directChildrenByTag(time, 'beats')[0]?.textContent?.trim() ?? '';
+  const beatType = parseIntSafe(directChildrenByTag(time, 'beat-type')[0]?.textContent, 0);
+  const beatGroups = beatsText
+    .split('+')
+    .map((value) => parseIntSafe(value, 0));
+  const beats = beatGroups.reduce((sum, value) => sum + value, 0);
+  return {
+    beats,
+    beatType,
+    ...(beatGroups.length > 1 ? { beatGroups } : {}),
+  };
+}
+
+function isUsableTimeSignature(time: NonNullable<ReturnType<typeof parseTimeSignatureElement>>) {
+  if (time.beats <= 0 || time.beatType <= 0) return false;
+  if (!time.beatGroups) return true;
+  return time.beatGroups.length > 1
+    && time.beatGroups.every((group) => Number.isInteger(group) && group > 0)
+    && time.beatGroups.reduce((sum, group) => sum + group, 0) === time.beats;
+}
+
 function firstElementChild(parent?: XmlElement | null): XmlElement | null {
   if (!parent) return null;
   for (let i = 0; i < parent.childNodes.length; i++) {
@@ -326,9 +353,7 @@ function readMetadata(doc: XmlDocument) {
 function buildMeasureAttributes(measure: XmlElement, measureNumber: number): MeasureAttributes[] {
   return directChildrenByTag(measure, 'attributes').map((attributesEl, index) => {
     const keyFifths = parseIntSafe(attributesEl.getElementsByTagName('fifths')[0]?.textContent, 0);
-    const beats = parseIntSafe(attributesEl.getElementsByTagName('beats')[0]?.textContent, 0);
-    const beatType = parseIntSafe(attributesEl.getElementsByTagName('beat-type')[0]?.textContent, 0);
-    const hasTime = attributesEl.getElementsByTagName('time').length > 0;
+    const parsedTime = parseTimeSignatureElement(directChildrenByTag(attributesEl, 'time')[0]);
     const hasKey = attributesEl.getElementsByTagName('key').length > 0;
     const clefs = Array.from(attributesEl.getElementsByTagName('clef')).map((clef, clefIndex) => ({
       staffIndex: parseIntSafe(clef.getAttribute('number'), clefIndex + 1),
@@ -340,7 +365,7 @@ function buildMeasureAttributes(measure: XmlElement, measureNumber: number): Mea
       id: makeId('attr', measureNumber, index),
       divisions: parseIntSafe(attributesEl.getElementsByTagName('divisions')[0]?.textContent, 0) || undefined,
       keyFifths: hasKey ? keyFifths : undefined,
-      time: hasTime ? { beats, beatType } : undefined,
+      time: parsedTime ?? undefined,
       clefs,
     };
   });
@@ -869,10 +894,10 @@ function buildStaffs(part: XmlElement, collectors: SemanticCollectors): StaffNod
   }, 1);
   const effectiveTimingByMeasure = new Map<XmlElement, {
     divisions: number;
-    time?: { beats: number; beatType: number };
+    time?: { beats: number; beatType: number; beatGroups?: number[] };
   }>();
   let currentDivisions = 1;
-  let currentTime: { beats: number; beatType: number } | undefined;
+  let currentTime: { beats: number; beatType: number; beatGroups?: number[] } | undefined;
   for (const measure of measures) {
     const attributes = directChildrenByTag(measure, 'attributes');
     const explicitDivisions = attributes.reduce((value, attribute) => (
@@ -882,11 +907,8 @@ function buildStaffs(part: XmlElement, collectors: SemanticCollectors): StaffNod
     for (const attribute of attributes) {
       const time = attribute.getElementsByTagName('time')[0];
       if (!time) continue;
-      const beats = parseIntSafe(time.getElementsByTagName('beats')[0]?.textContent, 0);
-      const beatType = parseIntSafe(time.getElementsByTagName('beat-type')[0]?.textContent, 0);
-      if (beats > 0 && beatType > 0) {
-        currentTime = { beats, beatType };
-      }
+      const parsedTime = parseTimeSignatureElement(time);
+      if (parsedTime && isUsableTimeSignature(parsedTime)) currentTime = parsedTime;
     }
     effectiveTimingByMeasure.set(measure, { divisions: currentDivisions, time: currentTime });
   }

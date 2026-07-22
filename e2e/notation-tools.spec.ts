@@ -547,6 +547,96 @@ test('letter-name input chooses the closest octave and stacks Shift pitches abov
   await expectNoDoctorIssues(page, 'after closest-octave letter and chord entry');
 });
 
+test('N duration-first editing previews and commits a three-note chord atomically', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  await page.keyboard.press('M');
+  await page.keyboard.press('C');
+  await page.keyboard.press('Shift+E');
+  await page.keyboard.press('Shift+G');
+
+  const durationMode = page.locator('button[title^="Input by duration (M)"]:visible').first();
+  await expect(durationMode).toHaveAttribute('aria-pressed', 'true');
+  await expect(durationMode).toContainText('DUR C4+E4+G4');
+  await expect(page.getByTestId('duration-input-pitch-cursor')).toHaveAttribute('data-ghost-pitch', 'G4');
+  expect(await readCurrentXml(page)).toBe(initialXml);
+
+  const firstNoteBox = await page.locator('[data-testid="score-canvas"] .vf-notehead').nth(0).boundingBox();
+  const secondNoteBox = await page.locator('[data-testid="score-canvas"] .vf-notehead').nth(1).boundingBox();
+  expect(firstNoteBox).not.toBeNull();
+  expect(secondNoteBox).not.toBeNull();
+  await page.mouse.click(
+    ((firstNoteBox?.x ?? 0) + (firstNoteBox?.width ?? 0) + (secondNoteBox?.x ?? 0)) / 2,
+    (firstNoteBox?.y ?? 0) + ((firstNoteBox?.height ?? 0) / 2),
+  );
+  expect(await readCurrentXml(page)).toBe(initialXml);
+  await clickRenderedNotehead(page, 0);
+  expect(await readCurrentXml(page)).toBe(initialXml);
+
+  await page.keyboard.press('5');
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && event.timestampNum === 0)
+      .map((event) => event.kind === 'note'
+        ? `${event.pitch.step}${event.pitch.octave}:${event.durationType}`
+        : null);
+  }).toEqual(['C4:quarter', 'E4:quarter', 'G4:quarter']);
+  await expect.poll(async () => (await readE2EState(page))?.canUndo).toBe(true);
+
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await expectNoDoctorIssues(page, 'after duration-first chord entry and atomic undo');
+});
+
+test('N duration-first mouse controls prepare chords and rests before an atomic commit', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+
+  await clickRenderedNotehead(page, 0);
+  await page.locator('button[title="Toggle note input (N)"]:visible').first().click();
+  await page.locator('button[title^="Input by duration (M)"]:visible').first().click();
+  await page.locator('button[title^="Set active note to C"]:visible').first().click();
+  await page.locator('button[title^="Set active note to E"]:visible').first().click({ modifiers: ['Shift'] });
+  await page.locator('button[title^="Set active note to G"]:visible').first().click({ modifiers: ['Shift'] });
+
+  await expect(page.locator('button[title^="Input by duration (M)"]:visible').first()).toContainText('DUR C4+E4+G4');
+  expect(await readCurrentXml(page)).toBe(initialXml);
+
+  await page.locator('button[title^="Quarter note: 5"]:visible').first().click();
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && event.timestampNum === 0)
+      .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}:${event.durationType}` : null);
+  }).toEqual(['C4:quarter', 'E4:quarter', 'G4:quarter']);
+  const chordXml = await readCurrentXml(page);
+
+  await page.locator('button[title="Insert rest (R or 0)"]:visible').first().click();
+  await expect(page.locator('button[title^="Input by duration (M)"]:visible').first()).toContainText('DUR REST');
+  expect(await readCurrentXml(page)).toBe(chordXml);
+
+  await page.locator('button[title^="Eighth note: 4"]:visible').first().click();
+  await expect.poll(async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    const event = (measure.voices[0]?.events ?? []).find((candidate) => (
+      candidate.timestampNum * 4 === candidate.timestampDen
+    ));
+    return event ? `${event.kind}:${event.durationType}` : null;
+  }).toBe('rest:eighth');
+
+  const undo = page.locator('button[title="Undo (Cmd/Ctrl+Z)"]:visible').first();
+  await undo.click();
+  await expect.poll(async () => readCurrentXml(page)).toBe(chordXml);
+  await undo.click();
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await expectNoDoctorIssues(page, 'after mouse-only duration-first chord and rest undo');
+});
+
 test('A-G letter entry keeps a nearest-octave passage continuous across measures', async ({ page }) => {
   await bootWithScore(page);
 

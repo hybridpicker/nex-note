@@ -194,6 +194,8 @@ interface Props {
   noteInputMode: boolean;
   chordInputMode: boolean;
   stepInputKeyboardMode: boolean;
+  inputByDurationMode: boolean;
+  preparedDurationPitchLabel: string;
   midiInputEnabled: boolean;
   midiInputStatus: MidiInputStatus;
   midiInputDevices: string[];
@@ -210,11 +212,12 @@ interface Props {
   entryMode: NoteEntryMode;
   selectedNote: SelectedNote | null;
   selectedBarlineMeasureNumber?: number | null;
-  onChangeActivePitch: (step: string) => void;
+  onChangeActivePitch: (step: string, addToChord?: boolean) => void;
   onChangeActiveOctave: (direction: 1 | -1) => void;
   onToggleEntryMode: () => void;
   onToggleChordInputMode: () => void;
   onToggleStepInputKeyboardMode: () => void;
+  onToggleInputByDurationMode: () => void;
   onToggleMidiInput: () => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
@@ -300,6 +303,7 @@ function TBtn({
       disabled={disabled}
       title={resolvedTitle}
       aria-label={resolvedTitle}
+      aria-pressed={typeof active === 'boolean' ? active : undefined}
       className={`${w} h-8 flex items-center justify-center rounded-md transition-colors shrink-0 select-none ${
         disabled
           ? 'cursor-not-allowed text-slate-300'
@@ -409,10 +413,10 @@ function stripShortcutSuffix(label: string) {
 export default function NoteInputToolbar({
   placement = 'toolbar',
   coreDocument,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, midiInputEnabled, midiInputStatus, midiInputDevices, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
   selectedDuration, selectedAccidental, isDotted, selectedVoice,
   entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave,
-  onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleMidiInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique,
+  onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique,
   onDurationChange, onAccidentalChange, onToggleDotted,
   onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
@@ -472,10 +476,12 @@ export default function NoteInputToolbar({
     ? ACCIDENTALS.find((accidental) => accidental.value === selectedAccidental)?.title ?? ''
     : t('note.natural');
   const activeModes = [
+    noteInputMode ? 'EDIT N' : null,
     `${t('note.voice')} ${selectedVoice}`,
     entryMode === 'overwrite' ? 'OVR' : 'INS',
     chordInputMode ? 'CHD' : null,
     stepInputKeyboardMode ? 'STEP' : null,
+    inputByDurationMode ? `DUR ${preparedDurationPitchLabel || '—'}` : null,
     midiInputEnabled ? 'MIDI' : null,
     leadsheetMode ? 'LEAD' : null,
     guitarInputMode ? 'TAB' : null,
@@ -746,6 +752,16 @@ export default function NoteInputToolbar({
         wide
       >
         <span className="text-[10px] font-semibold tracking-wider">STEP</span>
+      </TBtn>
+      <TBtn
+        onClick={onToggleInputByDurationMode}
+        title={`Input by duration (M): choose a pitch or chord first, then press 1–9 or click a duration${inputByDurationMode && preparedDurationPitchLabel ? ` - prepared ${preparedDurationPitchLabel}` : ''}${noteInputMode ? '' : ' - enables Note Input'}`}
+        active={inputByDurationMode}
+        wide
+      >
+        <span className="text-[10px] font-semibold tracking-wider">
+          {inputByDurationMode && preparedDurationPitchLabel ? `DUR ${preparedDurationPitchLabel}` : 'DUR'}
+        </span>
       </TBtn>
       <TBtn
         onClick={onToggleMidiInput}
@@ -1061,8 +1077,8 @@ export default function NoteInputToolbar({
             <button
               key={step}
               type="button"
-              onClick={() => onChangeActivePitch(step)}
-              title={withShortcut(t('note.setPitch', { step }), step)}
+              onClick={(event) => onChangeActivePitch(step, inputByDurationMode && event.shiftKey)}
+              title={`${withShortcut(t('note.setPitch', { step }), step)}${inputByDurationMode ? ' — Shift+click adds a chord tone' : ''}`}
               className={`h-7 min-w-7 rounded-md px-1.5 text-[11px] font-semibold transition-colors ${
                 selectedNote.step === step
                   ? 'nex-brand-active'

@@ -25,6 +25,7 @@ import { buildClipboardPayloadFromSelection } from '@/src/score-core/query/clipb
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score-input/commit-resolver';
 import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut } from '@/src/score-input/keyboard-resolver';
 import type { MidiPitch } from '@/src/score-input/midi-input';
+import { formatPreparedDurationPitches, prepareDurationPitch, updatePreparedDurationPitches, type PreparedDurationPitch } from '@/src/score-input/input-by-duration';
 import { resolveGuitarFretPitch, resolveGuitarTuning, type GuitarFretPitch, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import { resolveQwertyPianoKey } from '@/src/score-input/repitch-mode';
 import { inspectResolvedEditTarget } from '@/src/score-input/note-entry-validator';
@@ -33,7 +34,7 @@ import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import { resolveNextEnharmonicPitch, writtenAccidentalToAlter, type AccidentalEnclosure, type WrittenAccidental } from '@/src/shared/music/accidentals';
-import { diatonicPitchIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
+import { diatonicPitchIndex, pitchFromDiatonicIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
 
@@ -810,6 +811,9 @@ export function useNoteEditor(
   const [entryMode, setEntryMode] = useState<NoteEntryMode>('insert');
   const [chordInputMode, setChordInputMode] = useState(false);
   const [stepInputKeyboardMode, setStepInputKeyboardMode] = useState(false);
+  const [inputByDurationMode, setInputByDurationMode] = useState(false);
+  const [preparedDurationPitches, setPreparedDurationPitches] = useState<PreparedDurationPitch[]>([]);
+  const [preparedDurationRest, setPreparedDurationRest] = useState(false);
   const [leadsheetMode, setLeadsheetMode] = useState(false);
   const [guitarInputMode, setGuitarInputMode] = useState(false);
   const [selectedGuitarString, setSelectedGuitarString] = useState<GuitarStringNumber>(1);
@@ -830,6 +834,9 @@ export function useNoteEditor(
   const entryModeRef = useRef<NoteEntryMode>('insert');
   const chordInputModeRef = useRef(false);
   const stepInputKeyboardModeRef = useRef(false);
+  const inputByDurationModeRef = useRef(false);
+  const preparedDurationPitchesRef = useRef<PreparedDurationPitch[]>([]);
+  const preparedDurationRestRef = useRef(false);
   const leadsheetModeRef = useRef(false);
   const guitarInputModeRef = useRef(false);
   const selectedGuitarStringRef = useRef<GuitarStringNumber>(1);
@@ -884,6 +891,21 @@ export function useNoteEditor(
   const setNoteInputModeLive = useCallback((value: boolean) => {
     noteInputModeRef.current = value;
     setNoteInputMode(value);
+  }, []);
+
+  const setInputByDurationModeLive = useCallback((value: boolean) => {
+    inputByDurationModeRef.current = value;
+    setInputByDurationMode(value);
+  }, []);
+
+  const setPreparedDurationPitchesLive = useCallback((value: PreparedDurationPitch[]) => {
+    preparedDurationPitchesRef.current = value;
+    setPreparedDurationPitches(value);
+  }, []);
+
+  const setPreparedDurationRestLive = useCallback((value: boolean) => {
+    preparedDurationRestRef.current = value;
+    setPreparedDurationRest(value);
   }, []);
 
   const setSelectedDurationLive = useCallback((value: NoteDuration) => {
@@ -1947,7 +1969,7 @@ export function useNoteEditor(
     }
   }, [applyEditorCommands, onApplyCommands, resolveActiveDurationTarget, resolveSelectionFromDocument, selectedNote, selectedNotes, setIsDottedLive, setSelectedDurationLive, setSelectedNoteLive, warnNoOpEdit, xml]);
 
-  const setDuration = useCallback((duration: NoteDuration) => {
+  const setDurationSelection = useCallback((duration: NoteDuration) => {
     // With an active note, duration buttons edit that note even while note
     // input is enabled. Without a selection they set the next entry duration.
     const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
@@ -2245,11 +2267,21 @@ export function useNoteEditor(
     });
   }, [coreDocument, insertNote, selectedNote]);
 
-  const insertMidiChord = useCallback((inputPitches: MidiPitch[]) => {
+  const insertMidiChord = useCallback((inputPitches: MidiPitch[], inputOptions?: {
+    duration?: NoteDuration;
+    dotted?: boolean;
+    addToMatchingChord?: boolean;
+    insertAtCursor?: boolean;
+  }) => {
     if (!noteInputModeRef.current) return false;
-    const pitches = [...new Map(inputPitches.map((pitch) => [pitch.midi, pitch])).values()]
+    let pitches = [...new Map(inputPitches.map((pitch) => [pitch.midi, pitch])).values()]
       .sort((left, right) => left.midi - right.midi);
     if (pitches.length === 0) return false;
+    if (inputByDurationModeRef.current && !inputOptions) {
+      setPreparedDurationRestLive(false);
+      setPreparedDurationPitchesLive(pitches);
+      return true;
+    }
 
     const targetNote = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
     if (!targetNote) return false;
@@ -2262,8 +2294,11 @@ export function useNoteEditor(
       timestampNum: targetNote.timestampNum,
       timestampDen: targetNote.timestampDen,
     });
-    const firstPitch = pitches[0]!;
-    const firstTarget = resolveKeyboardEditTarget({
+    const duration = inputOptions?.duration ?? selectedDurationRef.current;
+    const dotted = inputOptions?.dotted ?? isDottedRef.current;
+    const durationType = DURATION_TYPE_MAP[duration];
+    const initialPitch = pitches[0]!;
+    let firstTarget = resolveKeyboardEditTarget({
       anchor: {
         coreMeasureId: targetNote.coreMeasureId ?? null,
         corePartId: targetNote.corePartId ?? null,
@@ -2273,7 +2308,7 @@ export function useNoteEditor(
         timestampNum: targetNote.timestampNum,
         timestampDen: targetNote.timestampDen,
       },
-      pitch: firstPitch,
+      pitch: initialPitch,
       entryMode: entryModeRef.current,
       noteInputMode: true,
       chordInputMode: false,
@@ -2283,12 +2318,50 @@ export function useNoteEditor(
         timestampDen: selectedTiming.timestampDen,
         durationDivisions: selectedTiming.durationDivisions,
       } : null,
+      insertAtCursor: inputOptions?.insertAtCursor,
     });
     if (!firstTarget) return false;
 
-    const duration = selectedDurationRef.current;
-    const dotted = isDottedRef.current;
-    const durationType = DURATION_TYPE_MAP[duration];
+    const existingAtTarget = findEventReference(coreDocument, {
+      coreMeasureId: firstTarget.measureId,
+      corePartId: firstTarget.corePartId,
+      measureNumber: firstTarget.measureNumber,
+      staffIndex: firstTarget.staffIndex,
+      voiceId: firstTarget.voiceId,
+      timestampNum: firstTarget.timestampNum,
+      timestampDen: firstTarget.timestampDen,
+    })?.event ?? null;
+    if (
+      inputOptions?.addToMatchingChord
+      && existingAtTarget?.kind === 'note'
+      && existingAtTarget.durationType === durationType
+      && Boolean(existingAtTarget.isDotted) === dotted
+    ) {
+      const matchingTarget = firstTarget;
+      const existingMidis = new Set(getSimultaneousPitchedNotes(coreDocument, {
+        ...targetNote,
+        voiceId: matchingTarget.voiceId,
+        timestampNum: matchingTarget.timestampNum,
+        timestampDen: matchingTarget.timestampDen,
+      }).filter((note) => note.voiceId === matchingTarget.voiceId).map((note) => (
+        prepareDurationPitch({ step: note.step, octave: note.octave, alter: note.alter }).midi
+      )));
+      pitches = pitches.filter((pitch) => !existingMidis.has(pitch.midi));
+      if (pitches.length === 0) return false;
+      firstTarget = {
+        ...firstTarget,
+        mode: 'chord',
+        step: pitches[0]!.step,
+        octave: pitches[0]!.octave,
+        alter: pitches[0]!.alter,
+        relativeAfterTimestampNum: undefined,
+        relativeAfterTimestampDen: undefined,
+        existingEventKind: 'note',
+        existingEventStartsAtTarget: true,
+        diagnostics: [...firstTarget.diagnostics, 'input-by-duration-matching-chord'],
+      };
+    }
+    const firstPitch = pitches[0]!;
     const inspected = inspectResolvedEditTarget({
       coreDocument,
       target: firstTarget,
@@ -2311,6 +2384,7 @@ export function useNoteEditor(
       isDotted: dotted,
       existingEventKind: validatedTarget.existingEventKind ?? null,
       preserveOverflow: Boolean(validatedTarget.preserveOverflow),
+      writtenAccidental: (firstPitch as PreparedDurationPitch).writtenAccidental,
     });
     for (const pitch of pitches.slice(1)) {
       commands.push(...buildNoteEntryCommitCommands({
@@ -2329,6 +2403,7 @@ export function useNoteEditor(
         durationType,
         isDotted: dotted,
         existingEventKind: 'note',
+        writtenAccidental: (pitch as PreparedDurationPitch).writtenAccidental,
       }));
     }
 
@@ -2358,7 +2433,21 @@ export function useNoteEditor(
       },
     );
     return true;
-  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, warnNoOpEdit, warnRejectedEdit, xml]);
+  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, warnNoOpEdit, warnRejectedEdit, xml]);
+
+  const commitPreparedDurationPitches = useCallback((duration: NoteDuration) => {
+    const pitches = preparedDurationPitchesRef.current;
+    if (!inputByDurationModeRef.current || pitches.length === 0) return false;
+    const anchor = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
+    const committed = insertMidiChord(pitches, {
+      duration,
+      dotted: isDottedRef.current,
+      addToMatchingChord: true,
+      insertAtCursor: Boolean(anchor && selectedVoiceRef.current !== anchor.voiceId),
+    });
+    if (committed) setSelectedDurationLive(duration);
+    return committed;
+  }, [insertMidiChord, selectedNote, setSelectedDurationLive]);
 
   const insertTiedNote = useCallback(() => {
     if (!noteInputModeRef.current) return false;
@@ -2719,7 +2808,7 @@ export function useNoteEditor(
 
   const insertRest = useCallback(() => {
     const targetNote = selectedNoteRef.current ?? selectedNote;
-    if (!targetNote) return;
+    if (!targetNote) return false;
     dbg.editor(`insertRest mode=${entryModeRef.current} dur=${DURATION_TYPE_MAP[selectedDurationRef.current]} dotted=${isDottedRef.current} voice=${selectedVoiceRef.current} after m.${targetNote.measureNumber} ts=${targetNote.timestampNum}/${targetNote.timestampDen}`);
     const overwriteSlot = entryModeRef.current === 'overwrite' || (noteInputModeRef.current && selectedVoiceRef.current === targetNote.voiceId);
     const selectedDurationType = DURATION_TYPE_MAP[selectedDurationRef.current];
@@ -2766,7 +2855,7 @@ export function useNoteEditor(
         ?? resolveRecentInputFromDocument(coreDocument, positionalLocator, { isRest: true })
         ?? targetNote;
       advanceFromEnteredRest(canonicalRest, noteInputModeRef.current);
-      return;
+      return true;
     }
     const commands: ScoreCommand[] = overwriteSlot
       ? [{
@@ -2809,7 +2898,7 @@ export function useNoteEditor(
       const successfulNoChangeReplace = Boolean(noteInputModeRef.current && enteredRest);
       if (!successfulNoChangeReplace) warnNoOpEdit('insertRest', commands[0]!);
       if (enteredRest) advanceFromEnteredRest(enteredRest, successfulNoChangeReplace);
-      return;
+      return successfulNoChangeReplace;
     }
     const diagnosticTarget = {
       measureNumber: targetNote.measureNumber,
@@ -2834,7 +2923,32 @@ export function useNoteEditor(
       timestampDen: selectedTiming?.timestampDen ?? targetNote.timestampDen,
     };
     commitNoteInputUpdate(commands, next.coreDocument, enteredLocator, targetNote, { isRest: true });
+    return true;
   }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveEventTimingFromDocument, resolveRecentInputFromDocument, selectSingleNote, selectedNote, warnNoOpEdit, xml]);
+
+  const prepareInputByDurationRest = useCallback(() => {
+    if (!inputByDurationModeRef.current) {
+      insertRest();
+      return;
+    }
+    setPreparedDurationPitchesLive([]);
+    setPreparedDurationRestLive(true);
+  }, [insertRest, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
+
+  const commitPreparedDurationInput = useCallback((duration: NoteDuration) => {
+    if (!inputByDurationModeRef.current) return false;
+    setSelectedDurationLive(duration);
+    if (preparedDurationRestRef.current) return insertRest();
+    return commitPreparedDurationPitches(duration);
+  }, [commitPreparedDurationPitches, insertRest, setSelectedDurationLive]);
+
+  const setDuration = useCallback((duration: NoteDuration) => {
+    if (inputByDurationModeRef.current) {
+      commitPreparedDurationInput(duration);
+      return;
+    }
+    setDurationSelection(duration);
+  }, [commitPreparedDurationInput, setDurationSelection]);
 
   const toggleNoteInput = useCallback(() => {
     const next = !noteInputModeRef.current;
@@ -2844,21 +2958,41 @@ export function useNoteEditor(
     }
     if (!next) {
       setStepInputKeyboardModeLive(false);
+      setInputByDurationModeLive(false);
       // Guitar fret entry requires note input; leaving guitar mode armed
       // without it makes fret digits silently act as duration shortcuts.
       setGuitarInputModeLive(false);
     }
     setNoteInputModeLive(next);
-  }, [ensureNoteInputAnchor, setGuitarInputModeLive, setNoteInputModeLive, setSelectedAccidentalLive, setStepInputKeyboardModeLive]);
+  }, [ensureNoteInputAnchor, setGuitarInputModeLive, setInputByDurationModeLive, setNoteInputModeLive, setSelectedAccidentalLive, setStepInputKeyboardModeLive]);
+
+  const toggleInputByDurationMode = useCallback(() => {
+    const next = !inputByDurationModeRef.current;
+    if (next) {
+      ensureNoteInputAnchor();
+      setNoteInputModeLive(true);
+      setStepInputKeyboardModeLive(false);
+      const anchor = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
+      if (!preparedDurationRestRef.current && preparedDurationPitchesRef.current.length === 0) {
+        setPreparedDurationPitchesLive([
+          prepareDurationPitch(anchor && !anchor.isRest
+            ? { step: anchor.step, octave: anchor.octave, alter: anchor.alter }
+            : { step: 'C', octave: 4, alter: 0 }),
+        ]);
+      }
+    }
+    setInputByDurationModeLive(next);
+  }, [ensureNoteInputAnchor, selectedNote, setInputByDurationModeLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive]);
 
   const toggleStepInputKeyboardMode = useCallback(() => {
     const next = !stepInputKeyboardModeRef.current;
     if (next) {
       ensureNoteInputAnchor();
       setNoteInputModeLive(true);
+      setInputByDurationModeLive(false);
     }
     setStepInputKeyboardModeLive(next);
-  }, [ensureNoteInputAnchor, setNoteInputModeLive, setStepInputKeyboardModeLive]);
+  }, [ensureNoteInputAnchor, setInputByDurationModeLive, setNoteInputModeLive, setStepInputKeyboardModeLive]);
 
   const toggleArticulation = useCallback((articulation: ArticulationKind) => {
     const targets = selectedTargets(selectedNote, selectedNotes);
@@ -3528,6 +3662,101 @@ export function useNoteEditor(
     changePitch(currentSelectedNote.step, next);
   }, [changePitch, selectedNote, setSelectedAccidentalLive]);
 
+  const prepareInputByDurationPitch = useCallback((step: string, addToChord = false) => {
+    const anchor = selectedNoteRef.current ?? selectedNote;
+    if (!anchor || !/^[A-G]$/i.test(step)) return;
+    setPreparedDurationRestLive(false);
+    const normalizedStep = step.toUpperCase();
+    const highestPreparedPitch = preparedDurationPitchesRef.current.reduce<PreparedDurationPitch | null>((highest, pitch) => (
+      !highest || diatonicPitchIndex(pitch.step, pitch.octave) > diatonicPitchIndex(highest.step, highest.octave)
+        ? pitch
+        : highest
+    ), null);
+    const reference: SelectedNote = highestPreparedPitch
+      ? { ...anchor, ...highestPreparedPitch, isRest: false }
+      : anchor;
+    const resolved = resolvePitchNameEntry(normalizedStep, 0, reference, addToChord ? 'above' : 'closest');
+    const alter = selectedAccidentalRef.current
+      ? writtenAccidentalToAlter(selectedAccidentalRef.current)
+      : resolveMeasureAccidentalAlter(coreDocument, {
+        corePartId: anchor.corePartId,
+        measureNumber: anchor.measureNumber,
+        staffIndex: anchor.staffIndex,
+        timestampNum: anchor.timestampNum,
+        timestampDen: anchor.timestampDen,
+        step: normalizedStep,
+        octave: resolved.octave,
+      });
+    setPreparedDurationPitchesLive(updatePreparedDurationPitches(
+      preparedDurationPitchesRef.current,
+      prepareDurationPitch({
+        ...resolved,
+        alter,
+        writtenAccidental: selectedAccidentalRef.current ?? undefined,
+      }),
+      addToChord ? 'add' : 'replace',
+    ));
+    if (selectedAccidentalRef.current) setSelectedAccidentalLive(null);
+  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, setSelectedAccidentalLive]);
+
+  const moveInputByDurationPitchCursor = useCallback((direction: 1 | -1) => {
+    const anchor = selectedNoteRef.current ?? selectedNote;
+    if (!anchor) return;
+    const current = preparedDurationPitchesRef.current;
+    const active = current[current.length - 1]
+      ?? prepareDurationPitch(anchor.isRest
+        ? { step: 'C', octave: 4, alter: 0 }
+        : { step: anchor.step, octave: anchor.octave, alter: anchor.alter });
+    const nextDiatonic = pitchFromDiatonicIndex(Math.max(0, Math.min(
+      diatonicPitchIndex('B', 9),
+      diatonicPitchIndex(active.step, active.octave) + direction,
+    )));
+    const alter = resolveMeasureAccidentalAlter(coreDocument, {
+      corePartId: anchor.corePartId,
+      measureNumber: anchor.measureNumber,
+      staffIndex: anchor.staffIndex,
+      timestampNum: anchor.timestampNum,
+      timestampDen: anchor.timestampDen,
+      step: nextDiatonic.step,
+      octave: nextDiatonic.octave,
+    });
+    const moved = prepareDurationPitch({ ...nextDiatonic, alter });
+    const next = current.length > 0 ? [...current.slice(0, -1), moved] : [moved];
+    setPreparedDurationRestLive(false);
+    setPreparedDurationPitchesLive([...new Map(next.map((pitch) => [pitch.midi, pitch])).values()]
+      .sort((left, right) => left.midi - right.midi));
+  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
+
+  const removeLastPreparedDurationTone = useCallback(() => {
+    if (preparedDurationRestRef.current) {
+      setPreparedDurationRestLive(false);
+      const anchor = selectedNoteRef.current ?? selectedNote;
+      setPreparedDurationPitchesLive([prepareDurationPitch(anchor && !anchor.isRest
+        ? { step: anchor.step, octave: anchor.octave, alter: anchor.alter }
+        : { step: 'C', octave: 4, alter: 0 })]);
+      return true;
+    }
+    if (preparedDurationPitchesRef.current.length <= 1) return false;
+    setPreparedDurationPitchesLive(preparedDurationPitchesRef.current.slice(0, -1));
+    return true;
+  }, [selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
+
+  const changeInputByDurationOctave = useCallback((direction: 1 | -1) => {
+    if (!inputByDurationModeRef.current) {
+      changeOctave(direction);
+      return;
+    }
+    if (preparedDurationRestRef.current || preparedDurationPitchesRef.current.length === 0) return;
+    const pitches = preparedDurationPitchesRef.current;
+    const active = pitches[pitches.length - 1]!;
+    const moved = prepareDurationPitch({
+      ...active,
+      octave: Math.max(-1, Math.min(9, active.octave + direction)),
+    });
+    setPreparedDurationPitchesLive([...pitches.slice(0, -1), moved]
+      .sort((left, right) => left.midi - right.midi));
+  }, [changeOctave, setPreparedDurationPitchesLive]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't intercept when user is typing in an input/textarea
     const target = e.target as HTMLElement;
@@ -3640,6 +3869,12 @@ export function useNoteEditor(
       return;
     }
 
+    if (key === 'M' && !metaKey && !e.altKey) {
+      e.preventDefault();
+      toggleInputByDurationMode();
+      return;
+    }
+
     if (key === 'N') {
       e.preventDefault();
       toggleNoteInput();
@@ -3675,8 +3910,18 @@ export function useNoteEditor(
     if (key === 'ESCAPE') {
       e.preventDefault();
       setStepInputKeyboardModeLive(false);
+      setInputByDurationModeLive(false);
       setNoteInputModeLive(false);
       clearSelection();
+      return;
+    }
+
+    if (
+      inputByDurationModeRef.current
+      && (key === 'BACKSPACE' || key === 'DELETE')
+      && removeLastPreparedDurationTone()
+    ) {
+      e.preventDefault();
       return;
     }
 
@@ -3848,13 +4093,19 @@ export function useNoteEditor(
     if (durationShortcut) {
       e.preventDefault();
       if (durationShortcut.type === 'selectDuration') {
-        setSelectedDurationLive(durationShortcut.duration);
+        if (inputByDurationModeRef.current) commitPreparedDurationInput(durationShortcut.duration);
+        else setSelectedDurationLive(durationShortcut.duration);
       }
       return;
     }
 
     // Rest insert
     if (key === 'R' || e.key === '0') {
+      if (inputByDurationModeRef.current && e.key === '0') {
+        e.preventDefault();
+        prepareInputByDurationRest();
+        return;
+      }
       if (key === 'R' && noteInputMode && lastNoteInputRef.current && !e.shiftKey) {
         e.preventDefault();
         repeatLastInput();
@@ -3862,6 +4113,19 @@ export function useNoteEditor(
       }
       if (selectedNote) { e.preventDefault(); insertRest(); }
       return;
+    }
+
+    if (inputByDurationModeRef.current && !e.altKey && !e.shiftKey) {
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && metaKey) {
+        e.preventDefault();
+        changeInputByDurationOctave(e.key === 'ArrowUp' ? 1 : -1);
+        return;
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        moveInputByDurationPitchCursor(e.key === 'ArrowUp' ? 1 : -1);
+        return;
+      }
     }
 
     // Dotted toggle
@@ -3924,6 +4188,10 @@ export function useNoteEditor(
           });
         return { ...diatonicPitch, alter };
       };
+      if (inputByDurationModeRef.current && currentSelectedNote) {
+        prepareInputByDurationPitch(key, e.shiftKey);
+        return;
+      }
       if (noteInputModeRef.current && currentSelectedNote) {
         const addingChordTone = e.shiftKey || chordInputModeRef.current;
         const melodicReference = lastNoteInputRef.current ?? currentSelectedNote;
@@ -3970,7 +4238,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, setChordInputModeLive, setEntryModeLive, setIsDottedLive, setNoteInputModeLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
+  }, [selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
 
   return {
     selection: {
@@ -3992,6 +4260,11 @@ export function useNoteEditor(
     entryMode,
     chordInputMode,
     stepInputKeyboardMode,
+    inputByDurationMode,
+    preparedDurationPitchLabel: preparedDurationRest ? 'REST' : formatPreparedDurationPitches(preparedDurationPitches),
+    preparedDurationActivePitch: preparedDurationRest
+      ? null
+      : preparedDurationPitches[preparedDurationPitches.length - 1] ?? null,
     leadsheetMode,
     guitarInputMode,
     selectedGuitarString,
@@ -4005,6 +4278,7 @@ export function useNoteEditor(
     editorError,
     toggleNoteInput,
     toggleStepInputKeyboardMode,
+    toggleInputByDurationMode,
     toggleEntryMode: () => setEntryModeLive(entryModeRef.current === 'insert' ? 'overwrite' : 'insert'),
     toggleChordInputMode: () => setChordInputModeLive(!chordInputModeRef.current),
     toggleLeadsheetMode: () => setLeadsheetModeLive(!leadsheetModeRef.current),
@@ -4042,6 +4316,9 @@ export function useNoteEditor(
     clearSelection,
     restoreSelection,
     changePitch,
+    prepareInputByDurationPitch,
+    prepareInputByDurationRest,
+    changeInputByDurationOctave,
     replaceSelectedPitchAndAdvance,
     changeNoteDuration,
     changeOctave,

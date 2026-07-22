@@ -53,7 +53,7 @@ function tupletScaledDuration(
 
 function getEffectiveAttributes(document: ScoreDocumentModel, partIndex: number, staffIndex: number, measureIndex: number) {
   let divisions: number | undefined;
-  let time: { beats: number; beatType: number } | undefined;
+  let time: { beats: number; beatType: number; beatGroups?: number[] } | undefined;
 
   for (let m = measureIndex; m >= 0; m--) {
     const measure = document.score.parts[partIndex].staves[staffIndex].measures[m];
@@ -69,6 +69,7 @@ function getEffectiveAttributes(document: ScoreDocumentModel, partIndex: number,
         time = {
           beats: attribute.time.beats,
           beatType: attribute.time.beatType,
+          ...(attribute.time.beatGroups ? { beatGroups: [...attribute.time.beatGroups] } : {}),
         };
       }
       if (divisions != null && time != null) {
@@ -267,6 +268,16 @@ export function validateScoreDocument(document: ScoreDocumentModel | null): Docu
         for (const attribute of measure.attributes) {
           if (attribute.time && (attribute.time.beats <= 0 || attribute.time.beatType <= 0)) {
             diagnostics.push(createDiagnostic('invalid_time_signature', `Measure ${measure.measureNumber} contains an invalid time signature.`));
+          }
+          if (attribute.time?.beatGroups) {
+            const validGroups = attribute.time.beatGroups.every((group) => Number.isInteger(group) && group > 0);
+            const groupedBeats = attribute.time.beatGroups.reduce((sum, group) => sum + group, 0);
+            if (!validGroups || attribute.time.beatGroups.length < 2 || groupedBeats !== attribute.time.beats) {
+              diagnostics.push(createDiagnostic(
+                'invalid_time_signature',
+                `Measure ${measure.measureNumber} contains additive beat groups that do not match its time signature.`,
+              ));
+            }
           }
           if (attribute.keyFifths != null && (attribute.keyFifths < -7 || attribute.keyFifths > 7)) {
             diagnostics.push(createDiagnostic('key_range', `Measure ${measure.measureNumber} contains a key signature outside the supported fifths range.`));

@@ -71,6 +71,7 @@ export interface GhostPreviewTarget {
     diagnostics?: string[];
   };
   snapResolution?: unknown;
+  cursorOnly?: boolean;
 }
 
 export interface ScoreInputOverlayProps {
@@ -197,7 +198,8 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       : null;
   const isTabPreview = target.tabFret != null;
   const showPianoRoll = Boolean(target.transposeMode) && !isTabPreview;
-  const showPlacementBadge = Boolean(target.transposeMode) || target.isGraceTarget || target.placementMode !== 'insert';
+  const showPlacementBadge = !target.cursorOnly
+    && (Boolean(target.transposeMode) || target.isGraceTarget || target.placementMode !== 'insert');
   const placementLabels = {
     replace: t('note.placementReplace'),
     insert: t('note.placementInsert'),
@@ -207,7 +209,8 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
   return (
     <div
       className="pointer-events-none absolute z-[5] overflow-visible"
-      data-testid="ghost-note-preview"
+      data-testid={target.cursorOnly ? 'duration-input-pitch-cursor' : 'ghost-note-preview'}
+      data-duration-input-cursor={target.cursorOnly ? 'true' : undefined}
       data-ghost-measure-id={target.measureId ?? ''}
       data-ghost-core-part-id={target.corePartId ?? ''}
       data-ghost-measure={target.measureNumber}

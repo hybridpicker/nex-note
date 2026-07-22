@@ -104,7 +104,12 @@ function getDivisions(doc: XmlDocument): number {
 type XmlElementNode = NonNullable<XmlDocument['documentElement']>;
 
 function getMeasureDurationDivisions(measure: XmlElementNode, divisions: number): number {
-  const beats = parseInt(measure.getElementsByTagName('beats')[0]?.textContent ?? '4', 10) || 4;
+  const beatsText = measure.getElementsByTagName('beats')[0]?.textContent ?? '4';
+  const beats = beatsText
+    .split('+')
+    .map((value) => parseInt(value.trim(), 10))
+    .filter((value) => Number.isInteger(value) && value > 0)
+    .reduce((sum, value) => sum + value, 0) || 4;
   const beatType = parseInt(measure.getElementsByTagName('beat-type')[0]?.textContent ?? '4', 10) || 4;
   return Math.max(1, Math.round((beats * divisions * 4) / beatType));
 }

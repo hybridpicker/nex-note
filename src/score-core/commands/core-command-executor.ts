@@ -13,6 +13,7 @@ import {
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import type { ClipboardAbsoluteEvent, ClipboardTargetOffset, ClipboardTimedDirection, ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
+import { applyRhythmSpellingToDocument, type RhythmSpellingTarget } from '@/src/layout/rhythm-speller';
 
 const CORE_SUPPORTED_COMMANDS = new Set([
   'setTitle',
@@ -115,6 +116,14 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'setMultiMeasureRest',
   'addGuitarBend',
   'addGuitarTap',
+]);
+
+const RHYTHM_SPELLING_COMMANDS = new Set<ValidatedScoreCommand['type']>([
+  'changeNoteDuration',
+  'insertNote',
+  'insertNoteAt',
+  'insertRest',
+  'insertRestAt',
 ]);
 
 function cloneDocument<T>(value: T): T {
@@ -1429,8 +1438,9 @@ function buildInsertedEvent(
   const guitar = 'guitar' in command && command.guitar
     ? structuredClone(command.guitar) as Extract<TimedEvent, { kind: 'note' }>['guitar']
     : undefined;
+  const eventCount = measure.voices.reduce((sum, voice) => sum + voice.events.length, 0);
   const common = {
-    id: `${measure.id}:event:${command.voiceId}:${insertionOffset}:${Date.now()}`,
+    id: `${measure.id}:event:${command.voiceId}:${insertionOffset}:${Date.now()}:${eventCount}`,
     kind: command.type === 'insertNote' ? 'note' as const : 'rest' as const,
     measureNumber: measure.measureNumber,
     staffIndex: command.staffIndex,
@@ -5581,6 +5591,42 @@ export function executeCoreCommands(
     selectionRemap = mergeSelectionRemaps(selectionRemap, commandSelectionRemap);
   }
 
+  const rhythmSpellingTargets: RhythmSpellingTarget[] = [];
+  const noteEntryBatch = commands.some((command) => (
+    command.type === 'changeNotePitch'
+    || command.type === 'insertNote'
+    || command.type === 'insertNoteAt'
+    || command.type === 'insertRest'
+    || command.type === 'insertRestAt'
+  ));
+  for (const command of commands) {
+    if (!RHYTHM_SPELLING_COMMANDS.has(command.type)) continue;
+    if (command.type === 'changeNoteDuration' && !noteEntryBatch) continue;
+    const candidate = command as {
+      measureNumber?: unknown;
+      staffIndex?: unknown;
+      voiceId?: unknown;
+      timestampNum?: unknown;
+      timestampDen?: unknown;
+      corePartId?: unknown;
+    };
+    if (
+      !Number.isFinite(candidate.measureNumber)
+      || !Number.isFinite(candidate.staffIndex)
+      || !Number.isFinite(candidate.voiceId)
+      || !Number.isFinite(candidate.timestampNum)
+      || !Number.isFinite(candidate.timestampDen)
+    ) continue;
+    rhythmSpellingTargets.push({
+      partId: typeof candidate.corePartId === 'string' ? candidate.corePartId : null,
+      measureNumber: Number(candidate.measureNumber),
+      staffIndex: Number(candidate.staffIndex),
+      voiceId: Number(candidate.voiceId),
+      timestampNum: Number(candidate.timestampNum),
+      timestampDen: Number(candidate.timestampDen),
+    });
+  }
+  applyRhythmSpellingToDocument(nextDocument, rhythmSpellingTargets);
   rebuildDefaultBeams(nextDocument);
   pruneDanglingTieStarts(nextDocument);
   nextDocument.index = rebuildScoreIndex(nextDocument);

@@ -149,6 +149,8 @@ interface Props {
   selectedNote: SelectedNote | null;
   selectedNotes: SelectedNote[];
   noteInputMode: boolean;
+  inputByDurationMode?: boolean;
+  preparedDurationActivePitch?: { step: string; octave: number; alter: number } | null;
   selectedDuration: NoteDuration;
   selectedAccidental: 'double-sharp' | 'sharp' | 'flat' | 'double-flat' | 'natural' | null;
   isDotted: boolean;
@@ -386,6 +388,7 @@ interface GhostNoteTarget {
   tabFret?: number | null;
   tabString?: number | null;
   placementLockedByModifier?: boolean;
+  cursorOnly?: boolean;
   reflowHints?: Array<{
     left: number;
     top: number;
@@ -11616,6 +11619,8 @@ export default function ScoreEditor({
   selectedNote,
   selectedNotes,
   noteInputMode,
+  inputByDurationMode = false,
+  preparedDurationActivePitch = null,
   selectedDuration,
   selectedAccidental,
   isDotted,
@@ -12221,7 +12226,7 @@ export default function ScoreEditor({
       }
       return;
     }
-    if (!noteInputMode) {
+    if (!noteInputMode || inputByDurationMode) {
       if (ghostNoteTarget) setGhostNoteTarget(null);
       return;
     }
@@ -12367,7 +12372,7 @@ export default function ScoreEditor({
       if (ghostTargetsEqual(current, nextGhost)) return current;
       return nextGhost;
     });
-  }, [chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, isDotted, noteInputAnchor, noteInputMode, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
+  }, [chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
 
   // Pointer handler — convert DOM click to OSMD note
   const handlePointerDown = useCallback((e: PointerEvent) => {
@@ -12726,7 +12731,7 @@ export default function ScoreEditor({
       && !chordInputMode
       && (directNote.voiceId === selectedVoice || directNoteheadHit)
     ) {
-      if (e.button === 0 && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
+      if (!inputByDurationMode && e.button === 0 && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
         startDirectNoteDrag(directNote);
       }
       e.preventDefault();
@@ -12765,7 +12770,7 @@ export default function ScoreEditor({
       return;
     }
 
-    if (noteInputMode) {
+    if (noteInputMode && !inputByDurationMode) {
       lastAdvancedGhostAnchorRef.current = null;
       const overlayAtPoint = findMeasureOverlayForPoint(measureLayoutOverlaysRef.current, domPoint);
       const pointerGhostAnchor = selectedNote?.isRest
@@ -13422,7 +13427,7 @@ export default function ScoreEditor({
       applyMeasureSelection([], null);
       onNoteClick(null);
     }
-  }, [applyMeasureSelection, chordInputMode, coreDocument, entryMode, ghostNoteTarget, graceEventIds, isDotted, noteInputAnchor, noteInputMode, onNoteClick, onPlaceNoteAt, onSetChordSymbol, overlayLayerOffset, scheduleRenderedGeometryRefresh, selectedAccidental, selectedDuration, selectedNote, selectedVoice, visualDebugEnabled, zoomPercent]);
+  }, [applyMeasureSelection, chordInputMode, coreDocument, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onNoteClick, onPlaceNoteAt, onSetChordSymbol, overlayLayerOffset, scheduleRenderedGeometryRefresh, selectedAccidental, selectedDuration, selectedNote, selectedVoice, visualDebugEnabled, zoomPercent]);
 
   const handleDoubleClick = useCallback((event: MouseEvent) => {
     if (!onSetGuitarFret) return;
@@ -14527,7 +14532,92 @@ export default function ScoreEditor({
     })}`);
   }, [dragPreviewTarget, ghostNoteTarget, noteInputMode, overlayLayerOffset]);
 
-  const rawSemanticAnchorTarget = dragPreviewTarget ?? ghostNoteTarget;
+  const durationInputPitchCursorTarget = useMemo<GhostNoteTarget | null>(() => {
+    if (
+      !inputByDurationMode
+      || !preparedDurationActivePitch
+      || !noteInputAnchor?.coreMeasureId
+    ) return null;
+    const anchorPoint = findRenderedGhostPointForAnchor(
+      renderedGhostGridRef.current,
+      noteInputAnchor,
+    );
+    if (!anchorPoint) return null;
+    const overlay = measureLayoutOverlays.find((entry) => entry.measureId === noteInputAnchor.coreMeasureId) ?? null;
+    const staffCandidates = (staffDetailsByMeasureRef.current.get(noteInputAnchor.measureNumber) ?? [])
+      .filter((entry) => entry.staffIndex === noteInputAnchor.staffIndex);
+    const staff = staffCandidates.find((entry) => (
+      noteInputAnchor.corePartId && entry.corePartId === noteInputAnchor.corePartId
+    )) ?? staffCandidates.sort((left, right) => (
+      Math.abs(((left.topLineDomY + left.bottomLineDomY) / 2) - anchorPoint.domY)
+      - Math.abs(((right.topLineDomY + right.bottomLineDomY) / 2) - anchorPoint.domY)
+    ))[0] ?? null;
+    if (!staff) return null;
+
+    const clef = resolveClefAtMeasure(coreDocument, noteInputAnchor.measureNumber, noteInputAnchor.staffIndex, {
+      corePartId: noteInputAnchor.corePartId,
+      measureId: noteInputAnchor.coreMeasureId,
+    });
+    const staffStep = topLineDiatonicIndex(clef)
+      - diatonicPitchIndex(preparedDurationActivePitch.step, preparedDurationActivePitch.octave);
+    const snappedY = staff.topLineDomY + (staffStep * (staff.lineDistanceDom / 2));
+    const stemDirection = resolvePreviewStemDirection({ staffStep, voiceId: selectedVoice });
+    const previewMetrics = buildGhostPreviewMetrics(
+      anchorPoint.domX,
+      snappedY,
+      preparedDurationActivePitch.alter,
+      isDotted,
+      selectedDuration,
+      stemDirection,
+    );
+
+    return {
+      measureId: noteInputAnchor.coreMeasureId,
+      corePartId: noteInputAnchor.corePartId ?? anchorPoint.corePartId ?? null,
+      measureNumber: noteInputAnchor.measureNumber,
+      pageIndex: overlay?.pageIndex ?? anchorPoint.pageIndex ?? null,
+      systemIndex: overlay?.systemIndex ?? anchorPoint.systemIndex ?? null,
+      staffIndex: noteInputAnchor.staffIndex,
+      voiceId: selectedVoice,
+      timestampNum: noteInputAnchor.timestampNum,
+      timestampDen: noteInputAnchor.timestampDen,
+      step: preparedDurationActivePitch.step,
+      octave: preparedDurationActivePitch.octave,
+      alter: preparedDurationActivePitch.alter,
+      domCenter: { x: anchorPoint.domX, y: snappedY },
+      domRect: { x: anchorPoint.domX - 6, y: snappedY - 6, width: 12, height: 12 },
+      pointerX: anchorPoint.domX,
+      previewLeft: previewMetrics.previewLeft,
+      previewTop: previewMetrics.previewTop,
+      previewWidth: previewMetrics.previewWidth,
+      previewHeight: previewMetrics.previewHeight,
+      accidentalOffsetX: previewMetrics.accidentalOffsetX,
+      noteheadCenterX: previewMetrics.noteheadCenterX,
+      stemDirection,
+      placementMode: 'insert',
+      placementAnchorIsRest: noteInputAnchor.isRest,
+      semanticAnchorIsRest: noteInputAnchor.isRest,
+      semanticAnchorLabel: semanticAnchorLabel(noteInputAnchor),
+      ledgerLines: buildLedgerLineSegments({
+        staffStep,
+        lineCount: staff.lineCount,
+        topLineDomY: staff.topLineDomY,
+        lineDistanceDom: staff.lineDistanceDom,
+        previewTop: previewMetrics.previewTop,
+        noteheadCenterX: previewMetrics.noteheadCenterX,
+      }),
+      cursorOnly: true,
+      snapResolution: {
+        resolver: 'input-by-duration-cursor',
+        rawPointerX: roundTraceNumber(anchorPoint.domX),
+      },
+    };
+  }, [coreDocument, inputByDurationMode, isDotted, measureLayoutOverlays, noteInputAnchor, preparedDurationActivePitch, renderViewportRevision, selectedDuration, selectedVoice]);
+
+  const rawSemanticAnchorTarget = dragPreviewTarget
+    ?? (inputByDurationMode
+      ? durationInputPitchCursorTarget ?? ghostNoteTarget
+      : ghostNoteTarget);
   // TAB string-drag previews are pinned to a rendered TAB note; the rendered
   // snap grid only models notation staves and would discard or move them.
   const isTabStringDragPreview = dragPreviewTarget?.tabFret != null;
@@ -14587,11 +14677,13 @@ export default function ScoreEditor({
       viewportBox,
     })
     : [];
-  const visibleScoreInputTarget = !isTabStringDragPreview && (ghostTargetOverlapsProtectedRect(
-    activeSemanticAnchorTarget,
-    semanticProtectedDebugRects,
-  ) || ghostTargetOverlapsBarlineGuard(activeSemanticAnchorTarget, measureLayoutOverlays)
-    || ghostTargetOverlapsLeadingTimeSignatureGuard(activeSemanticAnchorTarget, measureLayoutOverlays))
+  const visibleScoreInputTarget = !isTabStringDragPreview
+    && !activeSemanticAnchorTarget?.cursorOnly
+    && (ghostTargetOverlapsProtectedRect(
+      activeSemanticAnchorTarget,
+      semanticProtectedDebugRects,
+    ) || ghostTargetOverlapsBarlineGuard(activeSemanticAnchorTarget, measureLayoutOverlays)
+      || ghostTargetOverlapsLeadingTimeSignatureGuard(activeSemanticAnchorTarget, measureLayoutOverlays))
     ? null
     : activeSemanticAnchorTarget;
   const scoreInputLeadingGuardOverlay = activeSemanticAnchorTarget
@@ -16154,7 +16246,7 @@ export default function ScoreEditor({
                   enabled={noteInputMode || Boolean(dragPreviewTarget)}
                   duration={selectedDuration}
                   isDotted={isDotted}
-                  leadingGuardRightX={scoreInputLeadingGuardRightX}
+                  leadingGuardRightX={visibleScoreInputTarget?.cursorOnly ? null : scoreInputLeadingGuardRightX}
                 />
               </div>
             </div>

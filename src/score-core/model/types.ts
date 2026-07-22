@@ -171,6 +171,8 @@ export interface MeasureAttributes {
   time?: {
     beats: number;
     beatType: number;
+    /** Additive numerator grouping, for example [3, 2] for 3+2/8. */
+    beatGroups?: number[];
   };
   clefs: Array<{
     staffIndex: number;

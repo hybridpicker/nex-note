@@ -9,6 +9,7 @@ import type {
 export interface EffectiveTimeSignature {
   beats: number;
   beatType: number;
+  beatGroups?: number[];
 }
 
 export interface EffectiveMeasureTiming {
@@ -75,6 +76,7 @@ export function buildEffectiveMeasureTimingsFromStaff(staff: StaffNode): Effecti
         timeSignature = {
           beats: attribute.time.beats,
           beatType: attribute.time.beatType,
+          ...(attribute.time.beatGroups ? { beatGroups: [...attribute.time.beatGroups] } : {}),
         };
       }
     }
@@ -116,6 +118,7 @@ export function getEffectiveMeasureTimingFromStaff(
       ? {
         beats: attribute.time.beats,
         beatType: attribute.time.beatType,
+        ...(attribute.time.beatGroups ? { beatGroups: [...attribute.time.beatGroups] } : {}),
       }
       : null
   ));

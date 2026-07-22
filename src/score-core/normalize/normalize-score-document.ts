@@ -68,7 +68,7 @@ function rebuildIndex(document: ScoreDocumentModel): ScoreDocumentModel['index']
 
 function findPartEffectiveTiming(part: PartNode, measureNumber: number) {
   let divisions: number | null = null;
-  let time: { beats: number; beatType: number } | null = null;
+  let time: { beats: number; beatType: number; beatGroups?: number[] } | null = null;
 
   for (const staff of part.staves) {
     const measureIndex = staff.measures.findIndex((measure) => measure.measureNumber === measureNumber);
@@ -85,6 +85,7 @@ function findPartEffectiveTiming(part: PartNode, measureNumber: number) {
           time = {
             beats: attribute.time.beats,
             beatType: attribute.time.beatType,
+            ...(attribute.time.beatGroups ? { beatGroups: [...attribute.time.beatGroups] } : {}),
           };
         }
         if (divisions != null && time != null) return { divisions, time };

@@ -465,7 +465,19 @@ function updateAttributes(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
 
         if (attributeSource.time) {
           const time = getOrCreateDirectChild(doc, attributes, 'time');
-          setOrCreateTextElement(doc, time, 'beats', String(attributeSource.time.beats));
+          const beatGroups = attributeSource.time.beatGroups;
+          const hasValidBeatGroups = Boolean(
+            beatGroups
+            && beatGroups.length > 1
+            && beatGroups.every((group) => Number.isInteger(group) && group > 0)
+            && beatGroups.reduce((sum, group) => sum + group, 0) === attributeSource.time.beats,
+          );
+          setOrCreateTextElement(
+            doc,
+            time,
+            'beats',
+            hasValidBeatGroups ? beatGroups!.join('+') : String(attributeSource.time.beats),
+          );
           setOrCreateTextElement(doc, time, 'beat-type', String(attributeSource.time.beatType));
         }
 

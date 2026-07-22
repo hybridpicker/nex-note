@@ -1016,11 +1016,11 @@ export default function Home({ searchParams }: HomeProps) {
   // Note editor
   const {
     selection, noteInputAnchor, selectedNote, selectedNotes, clipboardCount, noteInputMode, selectedDuration, selectedAccidental,
-    isDotted, selectedVoice, entryMode, chordInputMode, stepInputKeyboardMode, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
+    isDotted, selectedVoice, entryMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, preparedDurationActivePitch, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
     editorError,
-    toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
+    toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleInputByDurationMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
     toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
-    changePitch, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, setAccidentalDisplay, clearArticulations, addDynamic, toggleTie, toggleSlur,
+    changePitch, prepareInputByDurationPitch, prepareInputByDurationRest, changeInputByDurationOctave, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, setAccidentalDisplay, clearArticulations, addDynamic, toggleTie, toggleSlur,
     transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, placeNoteAt,
   } = useNoteEditor(
     xml,
@@ -4478,6 +4478,8 @@ export default function Home({ searchParams }: HomeProps) {
       selectedNote={viewOnly ? null : selectedNote}
       selectedNotes={viewOnly ? [] : selectedNotes}
       noteInputMode={viewOnly ? false : noteInputMode}
+      inputByDurationMode={viewOnly ? false : inputByDurationMode}
+      preparedDurationActivePitch={viewOnly ? null : preparedDurationActivePitch}
       selectedDuration={selectedDuration}
       selectedAccidental={selectedAccidental}
       isDotted={isDotted}
@@ -4840,6 +4842,8 @@ export default function Home({ searchParams }: HomeProps) {
                     noteInputMode={noteInputMode}
                     chordInputMode={chordInputMode}
                     stepInputKeyboardMode={stepInputKeyboardMode}
+                    inputByDurationMode={inputByDurationMode}
+                    preparedDurationPitchLabel={preparedDurationPitchLabel}
                     midiInputEnabled={midiInputEnabled}
                     midiInputStatus={midiInputStatus}
                     midiInputDevices={midiInputDevices}
@@ -4856,12 +4860,13 @@ export default function Home({ searchParams }: HomeProps) {
                     entryMode={entryMode}
                     selectedBarlineMeasureNumber={selectedBarlineMeasureNumber}
                     selectedNote={selectedNote}
-                    onChangeActivePitch={(step) => changePitch(step, selectedAccidental)}
-                    onChangeActiveOctave={changeOctave}
+                    onChangeActivePitch={(step, addToChord) => inputByDurationMode ? prepareInputByDurationPitch(step, Boolean(addToChord)) : changePitch(step, selectedAccidental)}
+                    onChangeActiveOctave={inputByDurationMode ? changeInputByDurationOctave : changeOctave}
                     onToggleNoteInput={toggleNoteInput}
                     onToggleEntryMode={toggleEntryMode}
                     onToggleChordInputMode={toggleChordInputMode}
                     onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
+                    onToggleInputByDurationMode={toggleInputByDurationMode}
                     onToggleMidiInput={handleToggleMidiInput}
                     onToggleLeadsheetMode={toggleLeadsheetMode}
                     onToggleGuitarInputMode={toggleGuitarInputMode}
@@ -4872,7 +4877,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onAccidentalChange={setAccidental}
                     onToggleDotted={toggleDotted}
                     onVoiceChange={v => setVoice(v as 1 | 2 | 3 | 4)}
-                    onInsertRest={insertRest}
+                    onInsertRest={inputByDurationMode ? prepareInputByDurationRest : insertRest}
                     onInsertSlash={insertSlash}
                     onFillSlashMeasure={fillSlashMeasure}
                     onInsertStepInputPitch={(step, octave, alter) => (
@@ -4971,6 +4976,8 @@ export default function Home({ searchParams }: HomeProps) {
                         noteInputMode={noteInputMode}
                         chordInputMode={chordInputMode}
                         stepInputKeyboardMode={stepInputKeyboardMode}
+                        inputByDurationMode={inputByDurationMode}
+                        preparedDurationPitchLabel={preparedDurationPitchLabel}
                         midiInputEnabled={midiInputEnabled}
                         midiInputStatus={midiInputStatus}
                         midiInputDevices={midiInputDevices}
@@ -4987,11 +4994,12 @@ export default function Home({ searchParams }: HomeProps) {
                         entryMode={entryMode}
                         selectedNote={selectedNote}
                         selectedBarlineMeasureNumber={selectedBarlineMeasureNumber}
-                        onChangeActivePitch={(step) => changePitch(step, selectedAccidental)}
-                        onChangeActiveOctave={changeOctave}
+                        onChangeActivePitch={(step, addToChord) => inputByDurationMode ? prepareInputByDurationPitch(step, Boolean(addToChord)) : changePitch(step, selectedAccidental)}
+                        onChangeActiveOctave={inputByDurationMode ? changeInputByDurationOctave : changeOctave}
                         onToggleEntryMode={toggleEntryMode}
                         onToggleChordInputMode={toggleChordInputMode}
                         onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
+                        onToggleInputByDurationMode={toggleInputByDurationMode}
                         onToggleMidiInput={handleToggleMidiInput}
                         onToggleLeadsheetMode={toggleLeadsheetMode}
                         onToggleGuitarInputMode={toggleGuitarInputMode}
@@ -5005,7 +5013,7 @@ export default function Home({ searchParams }: HomeProps) {
                         onAccidentalChange={setAccidental}
                         onToggleDotted={toggleDotted}
                         onVoiceChange={v => setVoice(v as 1 | 2 | 3 | 4)}
-                        onInsertRest={insertRest}
+                        onInsertRest={inputByDurationMode ? prepareInputByDurationRest : insertRest}
                         onInsertSlash={insertSlash}
                         onFillSlashMeasure={fillSlashMeasure}
                         onInsertStepInputPitch={(step, octave, alter) => (

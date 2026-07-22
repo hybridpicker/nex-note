@@ -125,6 +125,8 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     noteInputMode: false,
     chordInputMode: false,
     stepInputKeyboardMode: false,
+    inputByDurationMode: false,
+    preparedDurationPitchLabel: '',
     midiInputEnabled: false,
     midiInputStatus: 'idle',
     midiInputDevices: [],
@@ -146,6 +148,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleEntryMode() {},
     onToggleChordInputMode() {},
     onToggleStepInputKeyboardMode() {},
+    onToggleInputByDurationMode() {},
     onToggleMidiInput() {},
     onToggleLeadsheetMode() {},
     onToggleGuitarInputMode() {},
@@ -681,6 +684,42 @@ test('NotationToolbar exposes a QWERTY step-input surface when the step keyboard
   assert.equal(root.findAllByProps({ 'data-testid': 'step-input-panel' }).length, 1);
   assert.equal(toggled, 1);
   assert.deepEqual(inserted, [{ step: 'C', octave: 4, alter: 0 }]);
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
+test('NotationToolbar exposes duration-first chord preparation inside Notation Edit mode', () => {
+  let toggled = 0;
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NotationToolbar, toolbarProps({
+      noteInputMode: true,
+      inputByDurationMode: true,
+      preparedDurationPitchLabel: 'C4+E4+G4',
+      onToggleInputByDurationMode() {
+        toggled += 1;
+      },
+    })));
+  });
+
+  const root = renderer!.root;
+  const durationToggle = root.findAll((node) => (
+    node.type === 'button'
+    && typeof node.props.title === 'string'
+    && node.props.title.startsWith('Input by duration (M)')
+  ))[0];
+
+  assert.ok(durationToggle);
+  assert.equal(durationToggle.props['aria-pressed'], true);
+  assert.ok(root.findAll((node) => String(node.children?.join('') ?? '') === 'DUR C4+E4+G4').length > 0);
+
+  act(() => {
+    durationToggle.props.onClick();
+  });
+  assert.equal(toggled, 1);
 
   act(() => {
     renderer?.unmount();
@@ -1300,6 +1339,48 @@ test('ScoreInputOverlay keeps standard note entry focused on the notation glyph'
     root.findAll((node) => node.props.style?.transform === 'translateX(12px)').length,
     0,
   );
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
+test('ScoreInputOverlay identifies the non-committing duration-first pitch cursor separately from mouse ghosts', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+  act(() => {
+    renderer = create(React.createElement(ScoreInputOverlay, {
+      enabled: true,
+      duration: '4',
+      isDotted: false,
+      target: {
+        measureNumber: 1,
+        staffIndex: 1,
+        timestampNum: 0,
+        timestampDen: 4,
+        voiceId: 2,
+        step: 'F',
+        octave: 5,
+        alter: 1,
+        previewLeft: 96,
+        previewTop: 64,
+        previewWidth: 28,
+        previewHeight: 54,
+        accidentalOffsetX: 9,
+        noteheadCenterX: 19.5,
+        stemDirection: 'down',
+        placementMode: 'replace',
+        ledgerLines: [],
+        cursorOnly: true,
+      },
+    }));
+  });
+
+  const root = renderer!.root;
+  const cursor = root.findAllByProps({ 'data-testid': 'duration-input-pitch-cursor' });
+  assert.equal(cursor.length, 1);
+  assert.equal(cursor[0]?.props['data-duration-input-cursor'], 'true');
+  assert.equal(cursor[0]?.props['data-ghost-pitch'], 'F#5');
+  assert.equal(root.findAllByProps({ 'data-testid': 'ghost-note-preview' }).length, 0);
 
   act(() => {
     renderer?.unmount();

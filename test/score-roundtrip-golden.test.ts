@@ -47,6 +47,29 @@ const FULL_REST_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const ADDITIVE_METER_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <time><beats>3+2</beats><beat-type>8</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <rest measure="yes"/>
+        <duration>5</duration>
+        <voice>1</voice>
+        <type>whole</type>
+        <staff>1</staff>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+
 const UNBEAMED_EIGHTHS_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
   <part-list>
@@ -335,6 +358,27 @@ test('export writes rightEnding to right barline, not left', () => {
   const m1 = reimported.score.parts[0].staves[0].measures[0];
   assert.ok(!m1.leftEnding, 'ending must not be on left barline after roundtrip');
   assert.deepEqual(m1.rightEnding, { number: '1', type: 'start' });
+});
+
+test('additive meter grouping survives MusicXML import, export, and re-import', () => {
+  const core = importMusicXmlToCore(ADDITIVE_METER_XML);
+  const time = core.score.parts[0]!.staves[0]!.measures[0]!.attributes[0]!.time;
+  assert.deepEqual(time, { beats: 5, beatType: 8, beatGroups: [3, 2] });
+
+  const neutralSource = ADDITIVE_METER_XML.replace('<beats>3+2</beats>', '<beats>5</beats>');
+  const exported = exportCoreToMusicXml(neutralSource, core);
+  assert.match(exported, /<beats>3\+2<\/beats>/);
+
+  const reimportedTime = importMusicXmlToCore(exported)
+    .score.parts[0]!.staves[0]!.measures[0]!.attributes[0]!.time;
+  assert.deepEqual(reimportedTime, { beats: 5, beatType: 8, beatGroups: [3, 2] });
+  assert.equal(validateScoreDocument(core).some((entry) => entry.code === 'invalid_time_signature'), false);
+
+  time!.beatGroups = [2, 2];
+  assert.equal(validateScoreDocument(core).some((entry) => (
+    entry.code === 'invalid_time_signature'
+    && entry.message.includes('additive beat groups')
+  )), true);
 });
 
 test('export preserves trailing rests after a whole-rest measure is split by insertNoteAt', () => {
