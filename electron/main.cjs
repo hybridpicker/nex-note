@@ -1,5 +1,5 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
-const { execFile, fork, spawn } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
@@ -22,6 +22,9 @@ let nextProcess = null;
 let rendererReady = false;
 let applicationMenu = null;
 let develUpdateStarted = false;
+let packagedServerUrl = null;
+let packagedServerRestartTimer = null;
+let quitting = false;
 const pendingOpenFilePaths = [];
 const menuState = {
   hasScore: false,
@@ -636,27 +639,63 @@ async function readActiveDevServer(rootDir) {
   }
 }
 
-async function startPackagedServer() {
-  const port = await findOpenPort();
+function forwardPackagedServerOutput(stream, level) {
+  stream?.setEncoding('utf8');
+  stream?.on('data', (chunk) => {
+    const message = String(chunk).trim();
+    if (message) console[level](`[electron:next] ${message}`);
+  });
+}
+
+async function launchPackagedServer(port) {
   const appPath = app.getAppPath();
   const standaloneDir = path.join(appPath, '.next', 'standalone');
   const serverPath = path.join(standaloneDir, 'server.js');
   const url = `http://127.0.0.1:${port}`;
 
   console.log(`[electron] Starting packaged Next server from ${standaloneDir}`);
-  nextProcess = fork(serverPath, [], {
+  const child = spawn(process.execPath, [serverPath], {
     cwd: standaloneDir,
     env: {
       ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
       HOSTNAME: '127.0.0.1',
       PORT: String(port),
       NODE_ENV: 'production',
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  nextProcess = child;
+  packagedServerUrl = url;
+  forwardPackagedServerOutput(child.stdout, 'log');
+  forwardPackagedServerOutput(child.stderr, 'error');
+
+  child.once('exit', (code, signal) => {
+    if (nextProcess === child) nextProcess = null;
+    if (quitting || isElectronDevRuntime()) return;
+    console.error(`[electron] Packaged Next server exited (${signal ?? code ?? 'unknown'}); restarting.`);
+    if (packagedServerRestartTimer) clearTimeout(packagedServerRestartTimer);
+    packagedServerRestartTimer = setTimeout(() => {
+      packagedServerRestartTimer = null;
+      void launchPackagedServer(port).catch((error) => {
+        console.error('[electron] Could not restart packaged Next server:', error);
+      });
+    }, 250);
+  });
+
+  child.once('error', (error) => {
+    console.error('[electron] Packaged Next server process failed:', error);
   });
 
   await waitForServer(url);
   return url;
+}
+
+async function startPackagedServer() {
+  if (nextProcess && isProcessAlive(nextProcess.pid) && packagedServerUrl) {
+    return packagedServerUrl;
+  }
+  return launchPackagedServer(await findOpenPort());
 }
 
 async function startDevServer() {
@@ -845,6 +884,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  quitting = true;
+  if (packagedServerRestartTimer) {
+    clearTimeout(packagedServerRestartTimer);
+    packagedServerRestartTimer = null;
+  }
   if (nextProcess && !nextProcess.killed) {
     nextProcess.kill();
   }

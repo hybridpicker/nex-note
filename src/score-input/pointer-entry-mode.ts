@@ -87,6 +87,8 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   const { ghostTarget, directNote } = input;
   if (!ghostTarget?.resolvedTarget) return false;
   if (input.altKey) return true;
+  const directNoteSharesOnset = pointerEntryLocatorsShareOnset(ghostTarget, directNote);
+  const directNoteSharesPitch = Boolean(directNote && pointerPitchesEqual(ghostTarget, directNote));
   if (
     directNote
     && !directNote.isRest
@@ -94,7 +96,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
       input.directNoteheadHit
       || input.directlyHitRendered
       || input.clickedNoteheadPath
-      || pointerEntryLocatorsShareOnset(ghostTarget, directNote)
+      || (directNoteSharesOnset && directNoteSharesPitch)
     )
     && !input.chordInputIntent
   ) {
@@ -104,8 +106,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   if (!directNote) return false;
 
   const mode = ghostTarget.resolvedTarget.mode ?? ghostTarget.placementMode;
-  const sameOnsetDifferentPitch = pointerEntryLocatorsShareOnset(ghostTarget, directNote)
-    && !pointerPitchesEqual(ghostTarget, directNote);
+  const sameOnsetDifferentPitch = directNoteSharesOnset && !directNoteSharesPitch;
 
   if (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath) {
     return Boolean(input.chordInputIntent) && mode === 'chord' && sameOnsetDifferentPitch;

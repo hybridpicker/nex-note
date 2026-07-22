@@ -2521,7 +2521,7 @@ test('clicking inside the visible ghost preview commits the same timestamp it sh
 });
 
 test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchronized chord', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   await bootWithScore(page, 'little-walk-guitar-tab.musicxml', littleWalkGuitarTabFixtureXml, '/?debug=true&visual-debug=true');
   await waitForRenderedLayout(page);
 
@@ -2604,6 +2604,86 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
     const chordCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
     const chordCenterY = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28');
     await page.mouse.click(chordBox!.x + chordCenterX, chordBox!.y + chordCenterY);
+
+    if (memberIndex === 0) {
+      const exactOnsetX = await page.locator(
+        '[data-semantic-snap-measure="1"][data-semantic-snap-staff="1"][data-semantic-snap-timestamp="8/32"]',
+      ).first().evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.x + (rect.width / 2);
+      });
+      const pitchLaneAvailability = await page.locator(
+        '[data-semantic-pitch-band-measure="1"][data-semantic-pitch-band-staff="1"]',
+      ).evaluateAll((elements, onsetX) => elements
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            pitch: element.getAttribute('data-semantic-pitch-band-pitch'),
+            staffStep: Number(element.getAttribute('data-semantic-pitch-band-step')),
+            x: Number(onsetX),
+            y: rect.y + (rect.height / 2),
+            left: rect.x,
+            right: rect.x + rect.width,
+          };
+        })
+        .filter((lane) => lane.x >= lane.left && lane.x <= lane.right && lane.staffStep >= -4 && lane.staffStep <= 12)
+        .sort((left, right) => left.staffStep - right.staffStep), exactOnsetX);
+      const unavailablePitchLanes: Array<{ pitch: string | null; staffStep: number; xOffset: number; shownPitch: string | null; timestamp: string | null }> = [];
+      for (const xOffset of [-10, -6, 0, 6, 10]) {
+        for (const lane of pitchLaneAvailability) {
+          if (lane.pitch && usedPitches.has(lane.pitch)) continue;
+          await page.mouse.move(lane.x + xOffset, lane.y);
+          const preview = await ghost.isVisible().catch(() => false)
+            ? {
+                pitch: await ghost.getAttribute('data-ghost-pitch'),
+                timestamp: await ghost.getAttribute('data-ghost-timestamp'),
+              }
+            : null;
+          if (!preview || preview.timestamp !== '8/32' || preview.pitch !== lane.pitch) {
+            unavailablePitchLanes.push({
+              pitch: lane.pitch,
+              staffStep: lane.staffStep,
+              xOffset,
+              shownPitch: preview?.pitch ?? null,
+              timestamp: preview?.timestamp ?? null,
+            });
+          }
+        }
+      }
+      expect(unavailablePitchLanes, `unavailable higher chord pitch lanes: ${JSON.stringify(unavailablePitchLanes)}`).toEqual([]);
+
+      for (const lane of pitchLaneAvailability.filter((entry) => entry.staffStep <= 3)) {
+        await page.mouse.move(lane.x, lane.y);
+        await expect(ghost).toBeVisible();
+        await expect(ghost).toHaveAttribute('data-ghost-timestamp', '8/32');
+        const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
+        if (!candidatePitch || usedPitches.has(candidatePitch)) continue;
+        const chordCountBeforeClick = await page.evaluate(() => {
+          const core = window.__NEX_NOTE_E2E_STATE__?.core;
+          return core?.score.parts[0]?.staves[0]?.measures[0]?.voices
+            .find((voice) => voice.voiceId === 1)?.events
+            .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
+        });
+        const candidateBox = await ghost.boundingBox();
+        expect(candidateBox).toBeTruthy();
+        const candidateCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
+        const candidateCenterY = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28');
+        await page.mouse.click(candidateBox!.x + candidateCenterX, candidateBox!.y + candidateCenterY);
+        await expect.poll(async () => {
+          const core = await readCurrentCore(page);
+          return core.score.parts[0].staves[0].measures[0].voices
+            .find((voice) => voice.voiceId === 1)?.events
+            .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
+        }, { message: `visible higher ghost ${candidatePitch} at staff step ${lane.staffStep} did not commit` }).toBe(chordCountBeforeClick + 1);
+        await page.keyboard.press(`${MOD}+Z`);
+        await expect.poll(async () => {
+          const core = await readCurrentCore(page);
+          return core.score.parts[0].staves[0].measures[0].voices
+            .find((voice) => voice.voiceId === 1)?.events
+            .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
+        }).toBe(chordCountBeforeClick);
+      }
+    }
   }
 
   const assertChordStructure = async () => {

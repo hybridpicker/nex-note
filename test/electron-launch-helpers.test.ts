@@ -38,6 +38,16 @@ test('the packaged app opens before scheduling a background update', () => {
   assert.doesNotMatch(mainSource, /ensurePackagedBuildMatchesLocalHead/);
 });
 
+test('the packaged Next server runs as Node and automatically restarts after an unexpected exit', () => {
+  const mainSource = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
+
+  assert.match(mainSource, /spawn\(process\.execPath, \[serverPath\]/);
+  assert.match(mainSource, /ELECTRON_RUN_AS_NODE: '1'/);
+  assert.match(mainSource, /child\.once\('exit'/);
+  assert.match(mainSource, /launchPackagedServer\(port\)/);
+  assert.match(mainSource, /quitting \|\| isElectronDevRuntime\(\)/);
+});
+
 test('the latest-devel launcher refreshes only the app bundle', () => {
   const launcher = readFileSync(new URL('../scripts/launch-latest-devel-app.mjs', import.meta.url), 'utf8');
 
