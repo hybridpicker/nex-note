@@ -99,26 +99,23 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   if (
     directNote
     && !directNote.isRest
-    && (
-      input.directNoteheadHit
-      || input.directlyHitRendered
-      || input.clickedNoteheadPath
-      || (directNoteSharesOnset && directNoteSharesPitch)
-    )
+    && directNoteSharesOnset
+    && directNoteSharesPitch
     && !input.chordInputIntent
   ) {
     return false;
   }
   if (!directNote) return false;
 
-  const mode = ghostTarget.resolvedTarget.mode ?? ghostTarget.placementMode;
   const sameOnsetDifferentPitch = directNoteSharesOnset && !directNoteSharesPitch;
 
+  if (sameOnsetDifferentPitch) return true;
+
   if (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath) {
-    return Boolean(input.chordInputIntent) && mode === 'chord' && sameOnsetDifferentPitch;
+    return false;
   }
 
-  return sameOnsetDifferentPitch;
+  return false;
 }
 
 export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarget>(

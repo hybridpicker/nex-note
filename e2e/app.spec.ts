@@ -2721,7 +2721,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
     if (!(await ghost.isVisible().catch(() => false))) continue;
     if (await ghost.getAttribute('data-ghost-timestamp') !== '8/32') continue;
     const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
-    if (!candidatePitch || candidatePitch !== lane.pitch || usedPitches.has(candidatePitch)) continue;
+    if (!candidatePitch || usedPitches.has(candidatePitch)) continue;
     const candidateBox = await ghost.boundingBox();
     expect(candidateBox).toBeTruthy();
     const candidateCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
@@ -2804,6 +2804,132 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
   await expect.poll(async () => (await assertChordStructure()).notationCount).toBe(2);
   await page.keyboard.press(`${MOD}+Shift+Z`);
   await expect.poll(async () => (await assertChordStructure()).notationCount).toBe(3);
+});
+
+test('Little Walk Guitar + TAB accepts every visible chord size from one through six with CHD alternating', async ({ page }) => {
+  test.setTimeout(180_000);
+  await bootWithScore(page, 'little-walk-guitar-tab.musicxml', littleWalkGuitarTabFixtureXml, '/?debug=true&visual-debug=true');
+  await waitForRenderedLayout(page);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await page.keyboard.press('5');
+
+  const ghost = page.getByTestId('ghost-note-preview');
+  const initialMap = await scanGhostMapForMeasure(page, 1, { xSteps: 96, yRatios: [0.4] });
+  const beatTwo = initialMap.find((entry) => Math.abs(entry.ratio - 0.25) < 1e-6);
+  expect(beatTwo, `ghost map: ${JSON.stringify(initialMap)}`).toBeTruthy();
+  await page.mouse.move(beatTwo!.x, beatTwo!.y);
+  await expect(ghost).toBeVisible();
+  const rootPitch = await ghost.getAttribute('data-ghost-pitch');
+  expect(rootPitch).toBeTruthy();
+  const rootBox = await ghost.boundingBox();
+  expect(rootBox).toBeTruthy();
+  await page.mouse.click(
+    rootBox!.x + Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0'),
+    rootBox!.y + Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28'),
+  );
+
+  const usedPitches = new Set<string>([rootPitch!]);
+  const readPolyphony = async () => {
+    const core = await readCurrentCore(page);
+    const notation = core.score.parts[0].staves[0].measures[0].voices
+      .find((voice) => voice.voiceId === 1)?.events
+      .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25) ?? [];
+    const tab = core.score.parts[0].staves[1].measures[0].voices
+      .find((voice) => voice.voiceId === 1)?.events
+      .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25) ?? [];
+    return {
+      notationCount: notation.length,
+      tabCount: tab.length,
+      tabStrings: tab.map((event) => event.kind === 'note' ? event.guitar?.string ?? null : null),
+      uniqueTabStringCount: new Set(tab.map((event) => event.kind === 'note' ? event.guitar?.string ?? null : null)).size,
+      tabFingeringsValid: tab.every((event) => event.kind === 'note'
+        && (event.guitar?.string ?? 0) >= 1
+        && (event.guitar?.string ?? 7) <= 6
+        && (event.guitar?.fret ?? -1) >= 0),
+    };
+  };
+
+  await expect.poll(async () => (await readPolyphony()).notationCount).toBe(1);
+  for (let targetCount = 2; targetCount <= 6; targetCount += 1) {
+    const chordModeShouldBeOn = targetCount % 2 === 0;
+    if (Boolean((await readE2EState(page))?.chordInputMode) !== chordModeShouldBeOn) {
+      await page.keyboard.press(`${MOD}+Shift+H`);
+    }
+    await expect.poll(async () => Boolean((await readE2EState(page))?.chordInputMode)).toBe(chordModeShouldBeOn);
+
+    const onsetX = await page.locator(
+      '[data-semantic-snap-measure="1"][data-semantic-snap-staff="1"][data-semantic-snap-timestamp="8/32"]',
+    ).first().evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.x + (rect.width / 2);
+    });
+    const lanes = await page.locator(
+      '[data-semantic-pitch-band-measure="1"][data-semantic-pitch-band-staff="1"]',
+    ).evaluateAll((elements, exactX) => elements
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          pitch: element.getAttribute('data-semantic-pitch-band-pitch'),
+          staffStep: Number(element.getAttribute('data-semantic-pitch-band-step')),
+          x: Number(exactX),
+          y: rect.y + (rect.height / 2),
+          left: rect.x,
+          right: rect.x + rect.width,
+        };
+      })
+      .filter((lane) => lane.x >= lane.left && lane.x <= lane.right && lane.staffStep >= -3 && lane.staffStep <= 20)
+      .sort((left, right) => Math.abs(left.staffStep - 4) - Math.abs(right.staffStep - 4)), onsetX);
+
+    let committedPitch: string | null = null;
+    const candidateDiagnostics: Array<Record<string, unknown>> = [];
+    for (const lane of lanes) {
+      if (!lane.pitch || usedPitches.has(lane.pitch)) continue;
+      await page.mouse.move(lane.x, lane.y);
+      if (!(await ghost.isVisible().catch(() => false))) {
+        candidateDiagnostics.push({ lanePitch: lane.pitch, staffStep: lane.staffStep, visible: false });
+        continue;
+      }
+      const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
+      const candidateTimestamp = await ghost.getAttribute('data-ghost-timestamp');
+      if (!candidatePitch || usedPitches.has(candidatePitch) || candidateTimestamp !== '8/32') {
+        candidateDiagnostics.push({ lanePitch: lane.pitch, staffStep: lane.staffStep, visible: true, candidatePitch, candidateTimestamp });
+        continue;
+      }
+      const candidateBox = await ghost.boundingBox();
+      if (!candidateBox) continue;
+      await page.mouse.click(
+        candidateBox.x + Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0'),
+        candidateBox.y + Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28'),
+      );
+      await page.waitForTimeout(100);
+      const countAfterClick = (await readPolyphony()).notationCount;
+      candidateDiagnostics.push({ lanePitch: lane.pitch, staffStep: lane.staffStep, visible: true, candidatePitch, candidateTimestamp, countAfterClick });
+      if (countAfterClick === targetCount) {
+        committedPitch = candidatePitch;
+        usedPitches.add(candidatePitch);
+        break;
+      }
+    }
+
+    expect(
+      committedPitch,
+      `could not grow chord to ${targetCount} notes from ${[...usedPitches].join(', ')} with CHD ${chordModeShouldBeOn ? 'on' : 'off'}: ${JSON.stringify(candidateDiagnostics)}`,
+    ).toBeTruthy();
+    await expect.poll(readPolyphony).toEqual({
+      notationCount: targetCount,
+      tabCount: targetCount,
+      tabStrings: expect.any(Array),
+      uniqueTabStringCount: targetCount,
+      tabFingeringsValid: true,
+    });
+    const stats = await readPolyphony();
+    expect(new Set(stats.tabStrings).size, `duplicate TAB string at ${targetCount} notes: ${JSON.stringify(stats.tabStrings)}`).toBe(targetCount);
+  }
+
+  for (let count = 0; count < 6; count += 1) await page.keyboard.press(`${MOD}+Z`);
+  await expect.poll(async () => (await readE2EState(page))?.canUndo).toBe(false);
 });
 
 test('mouse note input visible ghost coverage includes Alt-click committing selected voice over existing notehead', async ({ page }) => {

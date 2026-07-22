@@ -903,7 +903,7 @@ test('shouldCommitPointerGhostOverDirectNote lets an insert ghost beat proximity
   }), true);
 });
 
-test('shouldCommitPointerGhostOverDirectNote keeps insert-mode direct notehead clicks selectable', () => {
+test('shouldCommitPointerGhostOverDirectNote commits a different-pitch same-onset ghost over a dense notehead hit', () => {
   const directNote = {
     measureId: 'm1',
     measureNumber: 1,
@@ -932,7 +932,7 @@ test('shouldCommitPointerGhostOverDirectNote keeps insert-mode direct notehead c
     clickedVisibleGhostAtPointer: false,
     chordInputIntent: true,
     altKey: false,
-  }), false);
+  }), true);
 });
 
 test('shouldCommitPointerGhostOverDirectNote lets chord ghosts beat overlapping noteheads for a new pitch', () => {

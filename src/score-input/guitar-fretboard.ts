@@ -155,6 +155,63 @@ export function chooseGuitarFingeringForPitch(
   ))[0] ?? null;
 }
 
+/**
+ * Finds a playable fingering for a simultaneous pitch set without assigning
+ * two notes to the same string. The search is deliberately global: choosing
+ * the lowest fret greedily for each new note can consume a string that a later
+ * chord member is forced to use.
+ */
+export function chooseDistinctGuitarFingeringsForPitches(
+  pitches: Array<{ step: string; alter?: number; octave: number }>,
+  tuning: GuitarStringTuning[] | GuitarTuningPreset = STANDARD_GUITAR_TUNING,
+  preferredStrings: Array<1 | 2 | 3 | 4 | 5 | 6 | undefined> = [],
+): Array<{ string: 1 | 2 | 3 | 4 | 5 | 6; fret: number }> | null {
+  if (pitches.length === 0) return [];
+  if (pitches.length > 6) return null;
+  const strings = Array.isArray(tuning) ? tuning : tuning.strings;
+  const candidates = pitches.map((pitch, pitchIndex) => strings
+    .map((stringTuning) => {
+      const fret = fretForMidiOnString(pitchToMidi(pitch), stringTuning.string, tuning);
+      if (fret == null) return null;
+      const preferred = preferredStrings[pitchIndex];
+      return {
+        string: stringTuning.string,
+        fret,
+        score: fret + (preferred === stringTuning.string ? -8 : 0),
+      };
+    })
+    .filter((candidate): candidate is { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; score: number } => candidate != null)
+    .sort((left, right) => left.score - right.score || left.string - right.string));
+  if (candidates.some((entries) => entries.length === 0)) return null;
+
+  const order = pitches.map((_, index) => index)
+    .sort((left, right) => candidates[left]!.length - candidates[right]!.length || left - right);
+  const current: Array<{ string: 1 | 2 | 3 | 4 | 5 | 6; fret: number } | undefined> = Array(pitches.length);
+  let best: Array<{ string: 1 | 2 | 3 | 4 | 5 | 6; fret: number }> | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  const search = (depth: number, usedStrings: Set<number>, score: number) => {
+    if (score >= bestScore) return;
+    if (depth >= order.length) {
+      bestScore = score;
+      best = current.map((entry) => ({ string: entry!.string, fret: entry!.fret }));
+      return;
+    }
+    const pitchIndex = order[depth]!;
+    for (const candidate of candidates[pitchIndex]!) {
+      if (usedStrings.has(candidate.string)) continue;
+      current[pitchIndex] = candidate;
+      usedStrings.add(candidate.string);
+      search(depth + 1, usedStrings, score + candidate.score);
+      usedStrings.delete(candidate.string);
+      current[pitchIndex] = undefined;
+    }
+  };
+
+  search(0, new Set<number>(), 0);
+  return best;
+}
+
 export function resolveGuitarFretPitch(
   string: 1 | 2 | 3 | 4 | 5 | 6,
   fret: number,

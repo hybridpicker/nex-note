@@ -440,6 +440,7 @@ test('standard notation chord insertion mirrors TAB members and round-trips befo
     assert.equal(tab.length, 3);
     assert.deepEqual(tab.map((event) => event.isChord), [false, true, true]);
     assert.ok(tab.every((event) => event.kind === 'note' && event.guitar && event.guitar.string >= 1 && event.guitar.fret >= 0));
+    assert.equal(new Set(tab.map((event) => event.kind === 'note' ? event.guitar?.string : null)).size, 3);
   };
 
   assertChord(next);

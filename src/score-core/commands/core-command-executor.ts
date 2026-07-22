@@ -3,6 +3,7 @@ import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-tim
 import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
 import {
+  chooseDistinctGuitarFingeringsForPitches,
   chooseGuitarFingeringForPitch,
   guitarSoundingToWrittenPitch,
   guitarWrittenToSoundingPitch,
@@ -1586,14 +1587,6 @@ function mirrorGuitarInsertionToPairedStaff(input: {
       ? guitarSoundingToWrittenPitch(input.sourceInserted.pitch)
       : input.sourceInserted.pitch;
 
-  const guitar = paired.isTab
-    ? resolveSyncedGuitarFingering({
-      pitch: pairedPitch,
-      requested: 'guitar' in input.command ? input.command.guitar : undefined,
-    })
-    : undefined;
-  if (paired.isTab && !guitar) return;
-
   ensureStaffDivisionsForDuration(paired.staff, paired.measure.measureNumber, input.command.durationType, input.command.isDotted);
   const pairedTiming = resolveMeasureTiming(paired.staff, paired.measure);
   const pairedInsertionOffset = timestampToDivisionsOffset(
@@ -1601,6 +1594,38 @@ function mirrorGuitarInsertionToPairedStaff(input: {
     input.sourceInserted.timestampNum,
     input.sourceInserted.timestampDen,
   );
+
+  let guitar = paired.isTab
+    ? resolveSyncedGuitarFingering({
+      pitch: pairedPitch,
+      requested: 'guitar' in input.command ? input.command.guitar : undefined,
+    })
+    : undefined;
+
+  if (paired.isTab && 'asChord' in input.command && input.command.asChord && !input.command.guitar) {
+    const existingChordNotes = paired.voice.events.filter((event): event is Extract<TimedEvent, { kind: 'note' }> => (
+      event.kind === 'note'
+      && event.timestampNum === pairedInsertionOffset
+    ));
+    const tuning = resolveGuitarTuning(existingChordNotes.find((event) => event.guitar?.tuning)?.guitar?.tuning);
+    const fingerings = chooseDistinctGuitarFingeringsForPitches(
+      [...existingChordNotes.map((event) => event.pitch), pairedPitch],
+      tuning,
+      [...existingChordNotes.map((event) => event.guitar?.string), undefined],
+    );
+    if (!fingerings) return;
+    existingChordNotes.forEach((event, index) => {
+      const fingering = fingerings[index]!;
+      event.guitar = {
+        ...event.guitar,
+        string: fingering.string,
+        fret: fingering.fret,
+      };
+    });
+    const newFingering = fingerings[fingerings.length - 1]!;
+    guitar = { string: newFingering.string, fret: newFingering.fret };
+  }
+  if (paired.isTab && !guitar) return;
   const pairedDuration = requestedDurationDivisions(input.command.durationType, input.command.isDotted, pairedTiming.divisions);
   const pairedCommand = {
     ...input.command,
