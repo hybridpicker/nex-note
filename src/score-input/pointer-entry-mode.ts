@@ -69,9 +69,10 @@ export function shouldTreatPointerAsExplicitVisibleGhost(input: {
 
   // The score SVG is below the pointer-transparent ghost overlay, so the event
   // path can legitimately contain a different rendered note even when the user
-  // clicked the visible ghost notehead. Preserve direct-note selection only for
-  // the same semantic onset; a stale glyph from another onset cannot win.
-  return !pointerEntryLocatorsShareOnset(ghostTarget, renderedPathNote);
+  // clicked the visible ghost notehead. Preserve direct-note selection only when
+  // the rendered note is the exact same semantic pitch at the same onset.
+  return !pointerEntryLocatorsShareOnset(ghostTarget, renderedPathNote)
+    || !pointerPitchesEqual(ghostTarget, renderedPathNote);
 }
 
 export function shouldCommitPointerGhostOverDirectNote(input: {
@@ -90,6 +91,12 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   const directNoteSharesOnset = pointerEntryLocatorsShareOnset(ghostTarget, directNote);
   const directNoteSharesPitch = Boolean(directNote && pointerPitchesEqual(ghostTarget, directNote));
   if (
+    input.clickedVisibleGhostAtPointer
+    && !(directNote && !directNote.isRest && directNoteSharesOnset && directNoteSharesPitch)
+  ) {
+    return true;
+  }
+  if (
     directNote
     && !directNote.isRest
     && (
@@ -102,7 +109,6 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   ) {
     return false;
   }
-  if (input.clickedVisibleGhostAtPointer) return true;
   if (!directNote) return false;
 
   const mode = ghostTarget.resolvedTarget.mode ?? ghostTarget.placementMode;

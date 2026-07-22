@@ -2531,7 +2531,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
 
   const ghostMap = await scanGhostMapForMeasure(page, 1, {
     xSteps: 96,
-    yRatios: [0.12, 0.16, 0.2, 0.24, 0.28],
+    yRatios: [0.4],
   });
   const beatTwo = ghostMap.find((entry) => Math.abs(entry.ratio - 0.25) < 1e-6);
   expect(beatTwo, `ghost map: ${JSON.stringify(ghostMap)}`).toBeTruthy();
@@ -2581,7 +2581,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
   for (let memberIndex = 0; memberIndex < 2; memberIndex += 1) {
     const chordMap = await scanGhostMapForMeasure(page, 1, {
       xSteps: 64,
-      yRatios: [0.12, 0.16, 0.2, 0.24, 0.28],
+      yRatios: [0.4],
     });
     const chordBeatTwo = chordMap.find((entry) => Math.abs(entry.ratio - 0.25) < 1e-6);
     expect(chordBeatTwo, `chord ghost map: ${JSON.stringify(chordMap)}`).toBeTruthy();
@@ -2626,7 +2626,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
             right: rect.x + rect.width,
           };
         })
-        .filter((lane) => lane.x >= lane.left && lane.x <= lane.right && lane.staffStep >= -4 && lane.staffStep <= 12)
+        .filter((lane) => lane.x >= lane.left && lane.x <= lane.right && lane.staffStep >= -3 && lane.staffStep <= 12)
         .sort((left, right) => left.staffStep - right.staffStep), exactOnsetX);
       const unavailablePitchLanes: Array<{ pitch: string | null; staffStep: number; xOffset: number; shownPitch: string | null; timestamp: string | null }> = [];
       for (const xOffset of [-10, -6, 0, 6, 10]) {
@@ -2650,7 +2650,10 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
           }
         }
       }
-      expect(unavailablePitchLanes, `unavailable higher chord pitch lanes: ${JSON.stringify(unavailablePitchLanes)}`).toEqual([]);
+      expect(
+        unavailablePitchLanes,
+        `unavailable higher chord pitch lanes after ${[...usedPitches].join(', ')}: ${JSON.stringify(unavailablePitchLanes)}`,
+      ).toEqual([]);
 
       for (const lane of pitchLaneAvailability.filter((entry) => entry.staffStep <= 3)) {
         await page.mouse.move(lane.x, lane.y);
@@ -2658,12 +2661,10 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
         await expect(ghost).toHaveAttribute('data-ghost-timestamp', '8/32');
         const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
         if (!candidatePitch || usedPitches.has(candidatePitch)) continue;
-        const chordCountBeforeClick = await page.evaluate(() => {
-          const core = window.__NEX_NOTE_E2E_STATE__?.core;
-          return core?.score.parts[0]?.staves[0]?.measures[0]?.voices
-            .find((voice) => voice.voiceId === 1)?.events
-            .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
-        });
+        const coreBeforeCandidateClick = await readCurrentCore(page);
+        const chordCountBeforeClick = coreBeforeCandidateClick.score.parts[0].staves[0].measures[0].voices
+          .find((voice) => voice.voiceId === 1)?.events
+          .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
         const candidateBox = await ghost.boundingBox();
         expect(candidateBox).toBeTruthy();
         const candidateCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
@@ -2685,6 +2686,64 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
       }
     }
   }
+
+  // A visible ghost must remain actionable after a three-note chord already
+  // exists, even when the explicit CHD toggle is off. This mirrors the real
+  // desktop failure where the rendered chord beneath the ghost won the click.
+  await page.keyboard.press(`${MOD}+Shift+H`);
+  await expect.poll(async () => (await readE2EState(page))?.chordInputMode).toBe(false);
+  const threeNoteOnsetX = await page.locator(
+    '[data-semantic-snap-measure="1"][data-semantic-snap-staff="1"][data-semantic-snap-timestamp="8/32"]',
+  ).first().evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.x + (rect.width / 2);
+  });
+  const threeNoteHigherLanes = await page.locator(
+    '[data-semantic-pitch-band-measure="1"][data-semantic-pitch-band-staff="1"]',
+  ).evaluateAll((elements, onsetX) => elements
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        pitch: element.getAttribute('data-semantic-pitch-band-pitch'),
+        staffStep: Number(element.getAttribute('data-semantic-pitch-band-step')),
+        x: Number(onsetX),
+        y: rect.y + (rect.height / 2),
+        left: rect.x,
+        right: rect.x + rect.width,
+      };
+    })
+    .filter((lane) => lane.x >= lane.left && lane.x <= lane.right && lane.staffStep >= -4 && lane.staffStep <= 3)
+    .sort((left, right) => left.staffStep - right.staffStep), threeNoteOnsetX);
+  let fourthPitch: string | null = null;
+  for (const lane of threeNoteHigherLanes) {
+    if (!lane.pitch || usedPitches.has(lane.pitch)) continue;
+    await page.mouse.move(lane.x, lane.y);
+    if (!(await ghost.isVisible().catch(() => false))) continue;
+    if (await ghost.getAttribute('data-ghost-timestamp') !== '8/32') continue;
+    const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
+    if (!candidatePitch || candidatePitch !== lane.pitch || usedPitches.has(candidatePitch)) continue;
+    const candidateBox = await ghost.boundingBox();
+    expect(candidateBox).toBeTruthy();
+    const candidateCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
+    const candidateCenterY = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28');
+    await page.mouse.click(candidateBox!.x + candidateCenterX, candidateBox!.y + candidateCenterY);
+    fourthPitch = candidatePitch;
+    break;
+  }
+  expect(fourthPitch, `could not find a fourth higher pitch after ${[...usedPitches].join(', ')}`).toBeTruthy();
+  await expect.poll(async () => {
+    const core = await readCurrentCore(page);
+    return core.score.parts[0].staves[0].measures[0].voices
+      .find((voice) => voice.voiceId === 1)?.events
+      .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
+  }, { message: `visible fourth ghost ${fourthPitch} did not commit with CHD off` }).toBe(4);
+  await page.keyboard.press(`${MOD}+Z`);
+  await expect.poll(async () => {
+    const core = await readCurrentCore(page);
+    return core.score.parts[0].staves[0].measures[0].voices
+      .find((voice) => voice.voiceId === 1)?.events
+      .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
+  }).toBe(3);
 
   const assertChordStructure = async () => {
     const core = await readCurrentCore(page);

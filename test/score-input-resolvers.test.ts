@@ -850,7 +850,7 @@ test('same-onset same-pitch rendered notehead remains a direct selection target'
   }), false);
 });
 
-test('same-onset different-pitch rendered notehead remains selectable in overwrite mode', () => {
+test('same-onset different-pitch visible ghost wins over the rendered note beneath it', () => {
   const ghostTarget = {
     measureId: 'm1',
     corePartId: 'p1',
@@ -870,7 +870,7 @@ test('same-onset different-pitch rendered notehead remains selectable in overwri
     ghostTarget,
     renderedPathNote: { ...ghostTarget, step: 'B', isRest: false },
     clickedVisibleGhost: true,
-  }), false);
+  }), true);
 });
 
 test('shouldCommitPointerGhostOverDirectNote lets an insert ghost beat proximity note selection', () => {
@@ -1024,6 +1024,17 @@ test('shouldCommitPointerGhostOverDirectNote lets explicit ghost or modifier cli
     directNoteheadHit: true,
     clickedVisibleGhostAtPointer: true,
     chordInputIntent: true,
+    altKey: false,
+  }), true);
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget,
+    directNote,
+    directlyHitRendered: true,
+    clickedNoteheadPath: true,
+    directNoteheadHit: true,
+    clickedVisibleGhostAtPointer: true,
+    chordInputIntent: false,
     altKey: false,
   }), true);
 
