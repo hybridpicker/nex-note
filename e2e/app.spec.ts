@@ -3248,6 +3248,93 @@ test('direct notehead drag can transpose the existing note without toolbar mode 
   }).toEqual({ step: 'E', alter: 0, octave: 5, noteCount: 1 });
 });
 
+test('note-input replace drag keeps one chord tone active and repitches it in place', async ({ page }) => {
+  await bootWithScore(
+    page,
+    'chord-tone-replace-drag.musicxml',
+    buildChordDeleteFixtureXml(),
+    '/?debug=true&visual-debug=true',
+  );
+  await waitForRenderedScore(page);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await expect.poll(async () => (await readE2EState(page))?.noteInputMode ?? null).toBe(true);
+  await expect.poll(async () => (await readE2EState(page))?.chordInputMode ?? null).toBe(false);
+
+  const target = await page.evaluate(() => {
+    const markers = (window as typeof window & {
+      __NEX_NOTE_RENDERED_NOTES__?: Array<{
+        x: number;
+        y: number;
+        title: string;
+        coreEntityId: string | null;
+        timestamp: string;
+      }>;
+    }).__NEX_NOTE_RENDERED_NOTES__ ?? [];
+    return markers.find((marker) => (
+      marker.timestamp.startsWith('0/')
+      && marker.title.includes('pitch=E4')
+    )) ?? null;
+  });
+  expect(target, 'missing the rendered E4 chord-tone marker').toBeTruthy();
+  expect(target?.coreEntityId).toBeTruthy();
+
+  const canvas = await page.getByTestId('score-canvas').boundingBox();
+  if (!canvas || !target) throw new Error('missing score canvas or chord-tone marker');
+  const start = { x: canvas.x + target.x, y: canvas.y + target.y };
+
+  // A plain press/release on one chord tone mirrors MuseScore: only that
+  // semantic notehead becomes the active blue note, without changing the chord.
+  await page.mouse.click(start.x, start.y);
+  await expect.poll(async () => {
+    const state = await readE2EState(page);
+    return state?.selectedNote
+      ? {
+          selectionCount: state.selectionCount,
+          step: state.selectedNote.step,
+          octave: state.selectedNote.octave,
+        }
+      : null;
+  }).toEqual({ selectionCount: 1, step: 'E', octave: 4 });
+  await expect.poll(async () => page.evaluate(() => {
+    const markers = (window as typeof window & {
+      __NEX_NOTE_RENDERED_NOTES__?: Array<{ active: boolean }>;
+    }).__NEX_NOTE_RENDERED_NOTES__ ?? [];
+    return markers.filter((marker) => marker.active).length;
+  })).toBe(1);
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x, start.y - 14, { steps: 8 });
+
+  const ghost = page.getByTestId('ghost-note-preview');
+  await expect(ghost).toBeVisible();
+  await expect(ghost).toHaveAttribute('data-ghost-mode', 'replace');
+  const ghostPitch = await ghost.getAttribute('data-ghost-pitch');
+  expect(ghostPitch).toBeTruthy();
+  expect(ghostPitch).not.toBe('E4');
+
+  await page.mouse.up();
+
+  await expect.poll(async () => {
+    const voice = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0];
+    const notes = voice.events.filter((event) => event.kind === 'note');
+    const dragged = notes.find((event) => event.id === target.coreEntityId);
+    return {
+      noteCount: notes.length,
+      chordToneCount: notes.filter((event) => event.timestampNum === 0).length,
+      draggedPitch: dragged?.kind === 'note'
+        ? `${dragged.pitch.step}${dragged.pitch.alter === 1 ? '#' : dragged.pitch.alter === -1 ? 'b' : ''}${dragged.pitch.octave}`
+        : null,
+    };
+  }).toEqual({
+    noteCount: 3,
+    chordToneCount: 2,
+    draggedPitch: ghostPitch,
+  });
+});
+
 test('note input lets a near-notehead click activate beat 2 instead of placing a ghost note', async ({ page }) => {
   await bootWithScore(page, 'four-quarter-activation.musicxml', buildFourQuarterFixtureXml());
   await waitForRenderedScore(page);

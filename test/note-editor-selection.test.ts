@@ -384,6 +384,41 @@ test('repitch command changes the clicked chord tone only', () => {
   hook.unmount();
 });
 
+test('drag repitch changes the addressed chord tone without creating a note', () => {
+  const hook = renderHook(CHORD_TONE_XML);
+  const notes = makeNotesFrom(CHORD_TONE_XML).filter((note) => !note.isRest);
+  const lower = notes.find((note) => note.step === 'C');
+  const upper = notes.find((note) => note.step === 'E');
+
+  assert.ok(lower);
+  assert.ok(upper);
+
+  act(() => {
+    hook.current.handleNoteClick(upper!);
+  });
+  act(() => {
+    hook.current.commitDraggedPitch({
+      note: upper!,
+      step: 'G',
+      alter: 0,
+      octave: 4,
+    });
+  });
+  hook.rerender();
+
+  const core = importMusicXmlToCore(hook.xml);
+  const chordNotes = core.score.parts[0].staves[0].measures[0].voices[0].events
+    .filter((event) => event.kind === 'note');
+  assert.equal(chordNotes.length, 2);
+  const unchanged = chordNotes.find((event) => event.id === lower!.coreEntityId);
+  assert.equal(unchanged?.kind === 'note' ? unchanged.pitch.step : null, 'C');
+  const dragged = chordNotes.find((event) => event.id === upper!.coreEntityId);
+  assert.equal(dragged?.kind === 'note' ? dragged.pitch.step : null, 'G');
+  assert.equal(hook.current.selectedNote?.coreEntityId, upper!.coreEntityId);
+  assert.equal(hook.current.selectedNote?.step, 'G');
+  hook.unmount();
+});
+
 test('transposeSemitones changes the clicked chord tone only', () => {
   const hook = renderHook(CHORD_TONE_XML);
   const notes = makeNotesFrom(CHORD_TONE_XML).filter((note) => !note.isRest);

@@ -996,7 +996,7 @@ test('shouldCommitPointerGhostOverDirectNote keeps same-pitch notehead clicks se
   }), false);
 });
 
-test('shouldCommitPointerGhostOverDirectNote lets explicit ghost or modifier clicks commit over direct notes', () => {
+test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priority outside chord entry', () => {
   const directNote = {
     measureId: 'm1',
     measureNumber: 1,
@@ -1036,7 +1036,7 @@ test('shouldCommitPointerGhostOverDirectNote lets explicit ghost or modifier cli
     clickedVisibleGhostAtPointer: true,
     chordInputIntent: false,
     altKey: false,
-  }), true);
+  }), false);
 
   assert.equal(shouldCommitPointerGhostOverDirectNote({
     ghostTarget,

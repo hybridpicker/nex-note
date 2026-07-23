@@ -90,6 +90,20 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   if (input.altKey) return true;
   const directNoteSharesOnset = pointerEntryLocatorsShareOnset(ghostTarget, directNote);
   const directNoteSharesPitch = Boolean(directNote && pointerPitchesEqual(ghostTarget, directNote));
+  const hitPitchedNotehead = Boolean(
+    directNote
+    && !directNote.isRest
+    && (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath),
+  );
+
+  // MuseScore gives an existing notehead priority over the pointer-entry ghost:
+  // a press selects the exact chord tone and a subsequent move drags it. Dense
+  // chords can make the pointer-transparent ghost overlap a neighbouring
+  // notehead, so treating that overlap as an explicit replace click creates a
+  // new note before the drag session can start. Chord-entry mode deliberately
+  // keeps the inverse priority so users can still add a new chord tone.
+  if (hitPitchedNotehead && !input.chordInputIntent) return false;
+
   if (
     input.clickedVisibleGhostAtPointer
     && !(directNote && !directNote.isRest && directNoteSharesOnset && directNoteSharesPitch)

@@ -3544,6 +3544,9 @@ export function useNoteEditor(
     if (target.note.isRest) return;
     const command: ScoreCommand = {
       type: 'changeNotePitch',
+      coreEntityId: target.note.coreEntityId ?? undefined,
+      coreMeasureId: target.note.coreMeasureId ?? undefined,
+      corePartId: target.note.corePartId ?? undefined,
       measureNumber: target.note.measureNumber,
       staffIndex: target.note.staffIndex,
       voiceId: target.note.voiceId,
