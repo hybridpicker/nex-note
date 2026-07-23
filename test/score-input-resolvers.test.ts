@@ -1012,8 +1012,8 @@ test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priori
     ...directNote,
     step: 'B',
     octave: 4,
-    placementMode: 'insert' as const,
-    resolvedTarget: { mode: 'insert' as const },
+    placementMode: 'replace' as const,
+    resolvedTarget: { mode: 'replace' as const },
   };
 
   assert.equal(shouldCommitPointerGhostOverDirectNote({
@@ -1037,6 +1037,21 @@ test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priori
     chordInputIntent: false,
     altKey: false,
   }), false);
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget: {
+      ...ghostTarget,
+      placementMode: 'chord',
+      resolvedTarget: { mode: 'chord' },
+    },
+    directNote,
+    directlyHitRendered: true,
+    clickedNoteheadPath: true,
+    directNoteheadHit: true,
+    clickedVisibleGhostAtPointer: true,
+    chordInputIntent: false,
+    altKey: false,
+  }), true);
 
   assert.equal(shouldCommitPointerGhostOverDirectNote({
     ghostTarget,

@@ -102,7 +102,11 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   // notehead, so treating that overlap as an explicit replace click creates a
   // new note before the drag session can start. Chord-entry mode deliberately
   // keeps the inverse priority so users can still add a new chord tone.
-  if (hitPitchedNotehead && !input.chordInputIntent) return false;
+  if (
+    hitPitchedNotehead
+    && ghostTarget.placementMode === 'replace'
+    && !input.chordInputIntent
+  ) return false;
 
   if (
     input.clickedVisibleGhostAtPointer
