@@ -12265,7 +12265,6 @@ export default function ScoreEditor({
       renderedGhostGridRef.current,
     );
     const pointerInLeadingProtectionZone = !crossVoiceDirectNotehead && nextGhostResolved?.pointerX != null
-      && nextGhostResolved.placementMode === 'insert'
       && (
         // Forward-snapped ghosts only mark the leading area when they snap to
         // the measure's FIRST anchor (pointer in the leading whitespace).
@@ -12279,6 +12278,9 @@ export default function ScoreEditor({
           && nextGhostResolved.domCenter.x - nextGhostResolved.pointerX > 1
         )
         || firstSlotGhostPulledBehindPointer(nextGhostResolved)
+        // Hover and pointerdown must agree here. A blank measure resolves its
+        // full-measure rest as `replace`; exempting that mode displayed a ghost
+        // inside the leading buffer which the subsequent click always rejected.
         || pointerInLeadingFirstSlotBuffer(nextGhostResolved, overlayAtPoint, domPoint.x, measureLayoutOverlaysRef.current)
       );
     const pointerInBarlineGuard = pointerInMeasureBarlineGuard(overlayAtPoint, domPoint.x);
@@ -12313,9 +12315,17 @@ export default function ScoreEditor({
           staffDetailsByMeasureRef.current,
         )
       : null;
+    const restFallbackInLeadingFirstSlotBuffer = pointerInLeadingFirstSlotBuffer(
+      guardedRestFallback,
+      restFallbackOverlay,
+      domPoint.x,
+      measureLayoutOverlaysRef.current,
+    );
     const nextGhost = suppressGhostOnTabStaff(
       coreDocument,
-      ghostRejectedByGuards ? guardedRestFallback : (nextGhostResolved ?? guardedRestFallback),
+      ghostRejectedByGuards
+        ? (restFallbackInLeadingFirstSlotBuffer ? null : guardedRestFallback)
+        : (nextGhostResolved ?? guardedRestFallback),
     );
     visibleGhostPointerLockRef.current = nextGhost;
     lastGhostStaffIndexRef.current = nextGhost?.staffIndex ?? lastGhostStaffIndexRef.current;

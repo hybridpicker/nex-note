@@ -21,6 +21,23 @@ function buildBlankPrecisionXml() {
   });
 }
 
+function buildBlankGuitarTabXml() {
+  return createNewScoreXml({
+    instrumentIds: ['guitar-tab'],
+    title: 'Blank Guitar TAB Entry',
+    subtitle: '',
+    composer: '',
+    lyricist: '',
+    copyright: '',
+    keySignatureId: 'c-major',
+    timeBeats: 4,
+    timeBeatType: 4,
+    tempo: { bpm: 120, beatUnit: 'quarter', showMarking: true },
+    measureCount: 4,
+    pickup: { enabled: false, beats: 1, beatType: 4 },
+  });
+}
+
 async function installPlaybackStubs(page: Page) {
   await page.addInitScript(() => {
     (window as typeof window & {
@@ -204,6 +221,33 @@ async function findMeasureOneTreblePitchBeatOne(page: Page, pitch: string, near?
 
 test.beforeEach(async ({ page }) => {
   await installPlaybackStubs(page);
+});
+
+test('blank Guitar + TAB score accepts its first mouse-entered note', async ({ page }) => {
+  await bootWithScore(page, buildBlankGuitarTabXml());
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await page.keyboard.press('5');
+
+  const target = await findMeasureOneTreblePitchBeatOne(page, 'C4');
+  expect(target.ghost).toMatchObject({
+    measure: '1',
+    staff: '1',
+    pitch: 'C4',
+  });
+
+  await page.mouse.click(target.hover.x, target.hover.y);
+
+  await expect.poll(async () => {
+    const core = await readCurrentCore(page);
+    return core.score.parts[0].staves[0].measures[0].voices[0].events
+      .filter((event) => event.kind === 'note')
+      .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : '');
+  }, {
+    message: 'expected the first click in a blank Guitar + TAB score to create C4',
+    timeout: 2_500,
+    intervals: [100, 150, 250, 500],
+  }).toContain('C4');
 });
 
 test('mouse click commits the same measure, timestamp, and pitch as the visible E2 bass ghost', async ({ page }) => {
