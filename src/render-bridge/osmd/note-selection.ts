@@ -514,6 +514,94 @@ function findBestTintElement(container: HTMLElement, svgElement: SVGGElement | n
   return best ?? candidates[0] ?? svgElement;
 }
 
+function repairRenderedChordNoteheadGeometry(notes: RenderedNote[], container: HTMLElement) {
+  const chordGroups = new Map<string, RenderedNote[]>();
+  for (const note of notes) {
+    if (note.note.isRest) continue;
+    const key = [
+      note.note.corePartId ?? '',
+      note.note.coreMeasureId ?? '',
+      note.note.measureNumber,
+      note.note.staffIndex,
+      note.note.voiceId,
+      note.note.timestampNum,
+      note.note.timestampDen,
+    ].join(':');
+    const group = chordGroups.get(key) ?? [];
+    group.push(note);
+    chordGroups.set(key, group);
+  }
+
+  for (const group of chordGroups.values()) {
+    if (group.length < 2) continue;
+
+    const distinctNoteheads = new Set<SVGElement>();
+    for (const entry of group) {
+      findNoteheadCandidates(entry.svgElement)
+        .flatMap(noteheadInkCandidates)
+        .filter(hasRenderableClientRect)
+        .forEach((element) => distinctNoteheads.add(element));
+      const tintNotehead = entry.tintElement?.closest<SVGElement>('.vf-notehead') ?? null;
+      if (tintNotehead) {
+        noteheadInkCandidates(tintNotehead)
+          .filter(hasRenderableClientRect)
+          .forEach((element) => distinctNoteheads.add(element));
+      }
+    }
+    if (distinctNoteheads.size < group.length) continue;
+
+    const candidates = [...distinctNoteheads].map((element) => {
+      const rect = clientRectToContainer(container, element.getBoundingClientRect());
+      return {
+        element,
+        rect,
+        centerX: rect.x + rect.width / 2,
+        centerY: rect.y + rect.height / 2,
+      };
+    });
+    const groupCenterX = group.reduce((sum, entry) => sum + entry.domCenter.x, 0) / group.length;
+    const xClusters: typeof candidates[] = [];
+    for (const candidate of [...candidates].sort((a, b) => a.centerX - b.centerX)) {
+      const cluster = xClusters.find((entries) => (
+        Math.abs(entries.reduce((sum, entry) => sum + entry.centerX, 0) / entries.length - candidate.centerX) <= 20
+      ));
+      if (cluster) cluster.push(candidate);
+      else xClusters.push([candidate]);
+    }
+    const candidatePool = xClusters
+      .filter((entries) => entries.length >= group.length)
+      .sort((left, right) => (
+        Math.abs(left.length - group.length) - Math.abs(right.length - group.length)
+        || Math.abs((left.reduce((sum, entry) => sum + entry.centerX, 0) / left.length) - groupCenterX)
+          - Math.abs((right.reduce((sum, entry) => sum + entry.centerX, 0) / right.length) - groupCenterX)
+      ))[0];
+    if (!candidatePool) continue;
+
+    const orderedCandidates = [...candidatePool]
+      .sort((a, b) => (
+        Math.abs(a.centerX - groupCenterX) - Math.abs(b.centerX - groupCenterX)
+        || a.centerY - b.centerY
+      ))
+      .slice(0, group.length)
+      .sort((a, b) => a.centerY - b.centerY || a.centerX - b.centerX);
+    const orderedNotes = [...group].sort((a, b) => (
+      selectedNotePitchRank(b.note) - selectedNotePitchRank(a.note)
+      || a.id.localeCompare(b.id)
+    ));
+
+    orderedNotes.forEach((entry, index) => {
+      const candidate = orderedCandidates[index];
+      if (!candidate) return;
+      entry.tintElement = candidate.element;
+      entry.domRect = candidate.rect;
+      entry.domCenter = {
+        x: candidate.centerX,
+        y: candidate.centerY,
+      };
+    });
+  }
+}
+
 function describeSvgElement(element: SVGElement | null) {
   if (!element) return 'null';
   const className = 'className' in element ? String((element as SVGElement & { className?: { baseVal?: string } }).className?.baseVal ?? element.getAttribute('class') ?? '') : '';
@@ -1121,6 +1209,7 @@ export function collectRenderedNotes(osmd: any, container: HTMLElement, coreDocu
     repairRenderedRestPartIdentity(notes, coreDocument);
     repairRenderedNoteVisualOrder(notes, coreDocument);
     repairRenderedTabNotationNoteheadIdentity(notes, coreDocument);
+    repairRenderedChordNoteheadGeometry(notes, container);
   }
 
   const uniqueNotes = dedupeRenderedNotes(filterSuspiciousRenderedNotes(notes));
@@ -1193,7 +1282,6 @@ export function resolveSemanticMeasureClickTarget(
       for (const voice of measure.voices) {
         for (const event of voice.events) {
           if (graceIds.has(event.id)) continue;
-          if (event.isChord) continue;
           candidates.push({
             note: buildSelectedNoteFromEvent(event, coreDocument, {
               partId: part.id,

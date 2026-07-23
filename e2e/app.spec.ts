@@ -2019,6 +2019,7 @@ test('browser Delete removes only the selected chord tone', async ({ page }) => 
   await clickRenderedNotehead(page, 1);
   const selected = (await readE2EState(page))?.selectedNote ?? null;
   expect(selected?.step).toBe('E');
+  await expect.poll(async () => (await readE2EState(page))?.selectionCount).toBe(1);
   await expect.poll(async () => {
     const voice = (await readCurrentCore(page)).score.parts[0].staves[0]?.measures[0]?.voices
       .find((entry) => entry.voiceId === 1);
@@ -2672,10 +2673,19 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
         await page.mouse.click(candidateBox!.x + candidateCenterX, candidateBox!.y + candidateCenterY);
         await expect.poll(async () => {
           const core = await readCurrentCore(page);
-          return core.score.parts[0].staves[0].measures[0].voices
+          const chord = core.score.parts[0].staves[0].measures[0].voices
             .find((voice) => voice.voiceId === 1)?.events
-            .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
-        }, { message: `visible higher ghost ${candidatePitch} at staff step ${lane.staffStep} did not commit` }).toBe(chordCountBeforeClick + 1);
+            .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25) ?? [];
+          return {
+            count: chord.length,
+            pitches: chord.map((event) => event.kind === 'note'
+              ? `${event.pitch.step}${event.pitch.alter === 1 ? '#' : event.pitch.alter === -1 ? 'b' : ''}${event.pitch.octave}`
+              : ''),
+          };
+        }, { message: `visible higher ghost ${candidatePitch} at staff step ${lane.staffStep} did not commit with its displayed pitch` }).toEqual({
+          count: chordCountBeforeClick + 1,
+          pitches: expect.arrayContaining([candidatePitch]),
+        });
         await page.keyboard.press(`${MOD}+Z`);
         await expect.poll(async () => {
           const core = await readCurrentCore(page);

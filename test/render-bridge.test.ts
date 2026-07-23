@@ -341,6 +341,43 @@ test('resolveSemanticMeasureClickTarget maps stacked multi-voice noteheads by ho
   assert.equal(bottom?.voiceId, 2);
 });
 
+test('resolveSemanticMeasureClickTarget maps every notehead inside a chord', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+      </attributes>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><chord/><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const core = importMusicXmlToCore(xml);
+  const measureId = core.score.parts[0]!.staves[0]!.measures[0]!.id;
+  const rects = [
+    { x: 100, y: 40, width: 12, height: 10 },
+    { x: 100, y: 55, width: 12, height: 10 },
+    { x: 100, y: 70, width: 12, height: 10 },
+  ];
+
+  const top = resolveSemanticMeasureClickTarget(core, measureId, rects, { x: 106, y: 45 });
+  const middle = resolveSemanticMeasureClickTarget(core, measureId, rects, { x: 106, y: 60 });
+  const bottom = resolveSemanticMeasureClickTarget(core, measureId, rects, { x: 106, y: 75 });
+
+  assert.equal(`${top?.step}${top?.octave}`, 'E5');
+  assert.equal(`${middle?.step}${middle?.octave}`, 'B4');
+  assert.equal(`${bottom?.step}${bottom?.octave}`, 'G4');
+  assert.notEqual(top?.coreEntityId, middle?.coreEntityId);
+  assert.notEqual(middle?.coreEntityId, bottom?.coreEntityId);
+});
+
 test('resolveSemanticMeasureClickTarget ignores grace notes for single-anchor fallback', () => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">

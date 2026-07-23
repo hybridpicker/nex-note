@@ -3594,7 +3594,7 @@ test('clicked rest anchor does not override a primary pointer insert target at a
   assert.equal(resolved.commitGhostCandidate, primaryResolvedGhostTarget);
 });
 
-test('note-input commit refreshes clicked visible ghost pitch at the same snap point', () => {
+test('note-input commit locks the clicked visible ghost pitch over an underlying chord tone', () => {
   const visibleGhost = {
     measureId: 'm1',
     corePartId: 'p1',
@@ -3656,16 +3656,80 @@ test('note-input commit refreshes clicked visible ghost pitch at the same snap p
   const committed = resolveNoteInputCommitTarget(visibleGhost, currentPointerGhost);
 
   assert.ok(committed);
-  assert.equal(committed.step, 'E');
+  assert.equal(committed.step, 'C');
   assert.equal(committed.octave, 4);
-  assert.equal(committed.resolvedTarget?.step, 'E');
+  assert.equal(committed.resolvedTarget?.step, 'C');
   assert.equal(committed.resolvedTarget?.octave, 4);
   assert.equal(committed.timestampNum, 0);
   assert.equal(committed.resolvedTarget?.timestampNum, 0);
   assert.equal(committed.domCenter.x, 100);
-  assert.equal(committed.domCenter.y, 60);
-  assert.match(committed.resolvedTarget?.diagnostics.join(' ') ?? '', /visible-ghost-placement-locked/);
-  assert.match(committed.resolvedTarget?.diagnostics.join(' ') ?? '', /visible-ghost-pitch-refreshed/);
+  assert.equal(committed.domCenter.y, 80);
+  assert.match(committed.resolvedTarget?.diagnostics.join(' ') ?? '', /visible-ghost-commit-locked/);
+  assert.match(committed.resolvedTarget?.diagnostics.join(' ') ?? '', /visible-ghost-pitch-locked/);
+});
+
+test('plain arrow pitch edits mirror only the matching chord tone to paired guitar TAB', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Guitar + TAB</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <staff-details number="2"><staff-type>tab</staff-type><staff-lines>6</staff-lines></staff-details>
+        <clef number="2"><sign>TAB</sign><line>5</line></clef>
+      </attributes>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><chord/><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><rest/><duration>3</duration><voice>1</voice><type>half</type><dot/><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>3</string><fret>0</fret></technical></notations></note>
+      <note><chord/><pitch><step>B</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>2</string><fret>0</fret></technical></notations></note>
+      <note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff><notations><technical><string>1</string><fret>0</fret></technical></notations></note>
+      <note><rest/><duration>3</duration><voice>1</voice><type>half</type><dot/><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+  const hook = renderHook(xml);
+  const upperE = makeSelectedNotes(xml).find((note) => (
+    !note.isRest
+    && note.staffIndex === 1
+    && note.step === 'E'
+    && note.octave === 5
+  ));
+  assert.ok(upperE);
+
+  act(() => {
+    hook.current.handleNoteClick(upperE ?? null);
+    hook.current.handleKeyDown(makeKeyboardEvent('ArrowDown'));
+  });
+  hook.rerender();
+
+  const core = importMusicXmlToCore(hook.xml);
+  const notationChord = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events
+    .filter((event): event is Extract<TimedEvent, { kind: 'note' }> => event.kind === 'note' && event.timestampNum === 0);
+  const tabChord = core.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .filter((event): event is Extract<TimedEvent, { kind: 'note' }> => event.kind === 'note' && event.timestampNum === 0);
+
+  assert.deepEqual(
+    notationChord.map((event) => `${event.pitch.step}${event.pitch.alter === 1 ? '#' : ''}${event.pitch.octave}`),
+    ['G4', 'B4', 'D#5'],
+  );
+  assert.deepEqual(
+    tabChord.map((event) => `${event.pitch.step}${event.pitch.alter === 1 ? '#' : ''}${event.pitch.octave}`),
+    ['G3', 'B3', 'D#4'],
+  );
+  assert.ok(tabChord[2]?.guitar);
+  assert.equal(hook.current.selectedNotes.length, 1);
+  assert.equal(hook.current.selectedNote?.step, 'D');
+  assert.equal(hook.current.selectedNote?.alter, 1);
+  hook.unmount();
 });
 
 test('measure selections are visually suppressed while note input is active', () => {

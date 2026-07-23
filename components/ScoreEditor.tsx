@@ -128,19 +128,6 @@ function mouseEntryBottomStaffStep(lineCount: number) {
   return ((Math.max(lineCount, 1) - 1) * 2) + MOUSE_ENTRY_BOTTOM_LEDGER_STEPS;
 }
 
-export function shouldSelectOnlyClickedNoteOnCompactViewport(viewportWidth: number | null | undefined) {
-  return typeof viewportWidth === 'number' && viewportWidth > 0 && viewportWidth < 900;
-}
-
-function compactSelectionViewportWidth(viewport: HTMLElement | null) {
-  const widths = [
-    typeof window !== 'undefined' ? window.innerWidth : null,
-    typeof window !== 'undefined' ? window.visualViewport?.width ?? null : null,
-    viewport?.clientWidth ?? null,
-  ].filter((value): value is number => typeof value === 'number' && value > 0);
-  return widths.length > 0 ? Math.min(...widths) : null;
-}
-
 interface Props {
   xml: string;
   coreDocument: ScoreDocumentModel | null;
@@ -2578,62 +2565,10 @@ export function resolveNoteInputCommitTarget(
   };
 
   if (visibleGhostTarget?.resolvedTarget) {
-    if (visibleGhostTarget.resolvedTarget.diagnostics.includes('rest-only-quantized-internal-slot')) {
-      return alignVisibleCommitTarget(visibleGhostTarget);
-    }
-    if (
-      resolvedGhostTarget?.resolvedTarget
-      && visibleGhostTarget.measureId === resolvedGhostTarget.measureId
-      && visibleGhostTarget.corePartId === resolvedGhostTarget.corePartId
-      && visibleGhostTarget.measureNumber === resolvedGhostTarget.measureNumber
-      && visibleGhostTarget.staffIndex === resolvedGhostTarget.staffIndex
-      && visibleGhostTarget.voiceId === resolvedGhostTarget.voiceId
-      && timestampsEqual(
-        visibleGhostTarget.timestampNum,
-        visibleGhostTarget.timestampDen,
-        resolvedGhostTarget.timestampNum,
-        resolvedGhostTarget.timestampDen,
-      )
-    ) {
-      return alignVisibleCommitTarget({
-        ...visibleGhostTarget,
-        step: resolvedGhostTarget.step,
-        octave: resolvedGhostTarget.octave,
-        alter: resolvedGhostTarget.alter,
-        previewTop: resolvedGhostTarget.previewTop,
-        domCenter: {
-          ...visibleGhostTarget.domCenter,
-          y: resolvedGhostTarget.domCenter.y,
-        },
-        domRect: {
-          ...visibleGhostTarget.domRect,
-          y: resolvedGhostTarget.domRect.y,
-          height: resolvedGhostTarget.domRect.height,
-        },
-        resolvedTarget: {
-          ...visibleGhostTarget.resolvedTarget,
-          ...resolvedGhostTarget.resolvedTarget,
-          measureId: visibleGhostTarget.measureId,
-          corePartId: visibleGhostTarget.corePartId,
-          measureNumber: visibleGhostTarget.measureNumber,
-          staffIndex: visibleGhostTarget.staffIndex,
-          voiceId: visibleGhostTarget.voiceId,
-          timestampNum: visibleGhostTarget.timestampNum,
-          timestampDen: visibleGhostTarget.timestampDen,
-          ratio: visibleGhostTarget.timestampNum / Math.max(visibleGhostTarget.timestampDen, 1),
-          domX: visibleGhostTarget.domCenter.x,
-          step: resolvedGhostTarget.step,
-          octave: resolvedGhostTarget.octave,
-          alter: resolvedGhostTarget.alter,
-          diagnostics: [
-            ...visibleGhostTarget.resolvedTarget.diagnostics,
-            ...resolvedGhostTarget.resolvedTarget.diagnostics,
-            'visible-ghost-placement-locked',
-            'visible-ghost-pitch-refreshed',
-          ],
-        },
-      });
-    }
+    // Clicking the rendered preview is a WYSIWYG commit. Re-resolving the
+    // pointer over an existing chord can land on the notehead underneath the
+    // pointer-transparent ghost and silently replace the displayed pitch.
+    // Keep every visible semantic field locked to the DOM ghost instead.
     return alignVisibleCommitTarget({
       ...visibleGhostTarget,
       resolvedTarget: {
@@ -2653,6 +2588,7 @@ export function resolveNoteInputCommitTarget(
         diagnostics: [
           ...visibleGhostTarget.resolvedTarget.diagnostics,
           'visible-ghost-commit-locked',
+          'visible-ghost-pitch-locked',
         ],
       },
     });
@@ -12779,22 +12715,11 @@ export default function ScoreEditor({
         applyMeasureSelection([], null);
       }
       setVisualSelectionOnly(false);
-      const renderedDirectNote = guitarFretTextHit
-        ? null
-        : (directlyHitRendered ?? findRenderedSelectionTarget(directNote, renderedNotesRef.current, coreDocument));
-      const visualSelectionNotes = guitarFretTextHit
-        ? []
-        : resolveVisualSimultaneousNotes(renderedNotesRef.current, renderedDirectNote, coreDocument);
-      const compactPlainClick = shouldSelectOnlyClickedNoteOnCompactViewport(compactSelectionViewportWidth(viewportRef.current))
-        && !e.shiftKey
-        && !(e.metaKey || e.ctrlKey);
+      const plainNoteClick = !e.shiftKey && !(e.metaKey || e.ctrlKey);
       onNoteClick(directNote, {
         range: e.shiftKey,
         additive: !e.shiftKey && (e.metaKey || e.ctrlKey),
-        singleSelectionOnly: compactPlainClick || undefined,
-        selectionNotes: !compactPlainClick && !e.shiftKey && !(e.metaKey || e.ctrlKey) && visualSelectionNotes.length > 1
-          ? visualSelectionNotes
-          : undefined,
+        singleSelectionOnly: plainNoteClick || undefined,
         visualOnly: false,
         visualText,
         visualMeasureNumber: directNote.measureNumber,
@@ -13266,22 +13191,11 @@ export default function ScoreEditor({
         }
         setVisualSelectionOnly(directVisualOnly);
         dbg.score(`direct note hit → part=${directNote.corePartId ?? 'partless'} entity=${directNote.coreEntityId ?? 'none'} m.${directNote.measureNumber} staff=${directNote.staffIndex} voice=${directNote.voiceId} ts=${directNote.timestampNum}/${directNote.timestampDen} pitch=${debugPitchLabel(directNote)}`);
-        const renderedDirectNote = guitarFretTextHit || guitarTechniqueTextHit
-          ? null
-          : (directlyHitRendered ?? findRenderedSelectionTarget(directNote, renderedNotesRef.current, coreDocument));
-        const visualSelectionNotes = guitarFretTextHit || guitarTechniqueTextHit
-          ? []
-          : resolveVisualSimultaneousNotes(renderedNotesRef.current, renderedDirectNote, coreDocument);
-        const compactPlainClick = shouldSelectOnlyClickedNoteOnCompactViewport(compactSelectionViewportWidth(viewportRef.current))
-          && !e.shiftKey
-          && !(e.metaKey || e.ctrlKey);
+        const plainNoteClick = !e.shiftKey && !(e.metaKey || e.ctrlKey);
         onNoteClick(directNote, {
           range: e.shiftKey,
           additive: !e.shiftKey && (e.metaKey || e.ctrlKey),
-          singleSelectionOnly: compactPlainClick || undefined,
-          selectionNotes: !compactPlainClick && !e.shiftKey && !(e.metaKey || e.ctrlKey) && visualSelectionNotes.length > 1
-            ? visualSelectionNotes
-            : undefined,
+          singleSelectionOnly: plainNoteClick || undefined,
           visualOnly: directVisualOnly,
           visualText,
           visualMeasureNumber: directNote.measureNumber,

@@ -760,6 +760,7 @@ function findPairedTabNotationTimedEvent(
   voiceId: number,
   timestampNum: number,
   timestampDen: number,
+  sourceEvent?: TimedEvent | null,
 ) {
   const sourceIsTab = isTabStaff(part, sourceStaffIndex);
   const pairedStaves = part.staves
@@ -769,9 +770,24 @@ function findPairedTabNotationTimedEvent(
   for (const staff of pairedStaves) {
     const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
     const voice = measure?.voices.find((entry) => entry.voiceId === voiceId);
-    const event = voice?.events.find((entry) => (
+    const timestampEvents = voice?.events.filter((entry) => (
       timestampsEqual(entry.timestampNum, entry.timestampDen, timestampNum, timestampDen)
-    ));
+    )) ?? [];
+    const expectedPitch = sourceEvent?.kind === 'note'
+      ? pitchForPairedGuitarStaff(part, sourceStaffIndex, isTabStaff(part, staff.staffIndex), sourceEvent.pitch)
+      : null;
+    const exactPitchMatches = expectedPitch
+      ? timestampEvents.filter((entry) => (
+          entry.kind === 'note'
+          && entry.pitch.step === expectedPitch.step
+          && entry.pitch.alter === expectedPitch.alter
+          && entry.pitch.octave === expectedPitch.octave
+        ))
+      : [];
+    const event = exactPitchMatches.find((entry) => entry.isChord === sourceEvent?.isChord)
+      ?? exactPitchMatches[0]
+      ?? timestampEvents.find((entry) => entry.isChord === sourceEvent?.isChord)
+      ?? timestampEvents[0];
     if (measure && voice && event) {
       return { staff, measure, voice, event, isTab: isTabStaff(part, staff.staffIndex) };
     }
@@ -3548,12 +3564,23 @@ export function executeCoreCommands(
         })];
         if (event) {
           event.kind = 'note';
+          const noteEvent = event as Extract<TimedEvent, { kind: 'note' }>;
+          const paired = found
+            ? findPairedTabNotationTimedEvent(
+                found.part,
+                command.staffIndex,
+                command.measureNumber,
+                command.voiceId,
+                command.timestampNum,
+                command.timestampDen,
+                noteEvent,
+              )
+            : null;
           const nextPitch = {
             step: command.step,
             alter: command.alter,
             octave: command.octave,
           };
-          const noteEvent = event as Extract<TimedEvent, { kind: 'note' }>;
           const soundingPitchUnchanged = pitchMidiNumber(noteEvent.pitch) === pitchMidiNumber(nextPitch);
           noteEvent.pitch = nextPitch;
           noteEvent.writtenAccidental = command.writtenAccidental;
@@ -3575,15 +3602,6 @@ export function executeCoreCommands(
                 existing: noteEvent.guitar,
               });
             }
-
-            const paired = findPairedTabNotationTimedEvent(
-              found.part,
-              command.staffIndex,
-              command.measureNumber,
-              command.voiceId,
-              command.timestampNum,
-              command.timestampDen,
-            );
 
             if (paired?.event) {
               paired.event.kind = 'note';
@@ -3635,6 +3653,7 @@ export function executeCoreCommands(
               command.voiceId,
               command.timestampNum,
               command.timestampDen,
+              event,
             );
             if (paired?.event.kind === 'note' && paired.event.writtenAccidental) {
               paired.event.accidentalCautionary = command.cautionary || undefined;
@@ -4001,10 +4020,40 @@ export function executeCoreCommands(
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
         const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
         if (event?.kind === 'note') {
-          event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+          const paired = found
+            ? findPairedTabNotationTimedEvent(
+                found.part,
+                command.staffIndex,
+                command.measureNumber,
+                command.voiceId,
+                command.timestampNum,
+                command.timestampDen,
+                event,
+              )
+            : null;
+          const nextPitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+          event.pitch = nextPitch;
           event.writtenAccidental = undefined;
           event.accidentalCautionary = undefined;
           event.accidentalEnclosure = undefined;
+          if (found && paired?.event.kind === 'note') {
+            const pairedPitch = pitchForPairedGuitarStaff(
+              found.part,
+              command.staffIndex,
+              paired.isTab,
+              nextPitch,
+            );
+            paired.event.pitch = { ...pairedPitch };
+            paired.event.writtenAccidental = undefined;
+            paired.event.accidentalCautionary = undefined;
+            paired.event.accidentalEnclosure = undefined;
+            if (paired.isTab) {
+              paired.event.guitar = resolveSyncedGuitarFingering({
+                pitch: pairedPitch,
+                existing: paired.event.guitar,
+              });
+            }
+          }
         }
         break;
       }
