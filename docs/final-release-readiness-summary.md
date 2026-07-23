@@ -18,7 +18,7 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 - `npm run build`: passed on 2026-07-23; Next 16.2.11 compiled, TypeScript completed, and `postbuild` synced standalone assets
 - `npm run test:e2e:smoke`: passed on 2026-07-23 (`30` tests, `0` failed)
 - the complete Old Abbey mouse/chord stress workflow and the score transformation workflow passed on 2026-07-23; the corrected real-score fixture passed through the formerly blocked later-rest-anchor sequence
-- `npm run electron:build`: passed on 2026-07-09; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
+- `npm run electron:build`: passed on 2026-07-23 for version 0.0.2 and verified the packaged app against commit `6712b81`; produced unsigned macOS arm64 zip/DMG artifacts under `dist/macos`
 - MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0` completed on 2026-07-23 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; latest artifacts are under `.nex/musescore-roundtrip-smoke-2026-07-23T18-57-42-120Z`. Source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only step differences remain inconclusive.
 - `npm run test:coverage:check`: passed on 2026-07-23 (`85.59%` lines, `78.13%` branches, `86.74%` functions)
 - `npm audit --omit=dev`: passed on 2026-07-23 (`0` vulnerabilities)
