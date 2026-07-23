@@ -12347,16 +12347,26 @@ export default function ScoreEditor({
     const rect = container.getBoundingClientRect();
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const target = e.target as Node | null;
+    const targetElement = target instanceof Element ? target : null;
     const landedInsideContainer = isPointInsideRect(e.clientX, e.clientY, rect);
     const pathIncludesContainer = path.includes(container);
     const targetInsideContainer = !!target && container.contains(target);
+    const interactiveOverlayTarget = targetElement?.closest(
+      'button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="dialog"], [contenteditable="true"]',
+    );
     const eventPathNodes = path.filter((entry): entry is Node => entry instanceof Node);
     dbg.score(
       `pointerdown target=${target instanceof Element ? target.tagName.toLowerCase() : target?.nodeName ?? 'unknown'} `
       + `insideRect=${String(landedInsideContainer)} pathIncludesContainer=${String(pathIncludesContainer)} `
       + `targetInside=${String(targetInsideContainer)}`,
     );
-    if (!landedInsideContainer && !pathIncludesContainer && !targetInsideContainer) {
+    // Non-interactive score overlays can be siblings of the OSMD container, so
+    // geometry inside the score remains valid there. Controls and dialogs that
+    // happen to sit above the same rectangle must never become score clicks.
+    if (
+      (!landedInsideContainer && !pathIncludesContainer && !targetInsideContainer)
+      || (interactiveOverlayTarget && !container.contains(interactiveOverlayTarget))
+    ) {
       dbg.score('pointerdown ignored — outside score container');
       return;
     }

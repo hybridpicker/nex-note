@@ -20,6 +20,11 @@ type ExpectedEvent = {
   rest?: true;
 };
 
+type ActualEvent = ExpectedEvent & {
+  tieStart?: boolean;
+  tieStop?: boolean;
+};
+
 type StressStep = {
   label: string;
   measure: number;
@@ -666,7 +671,7 @@ async function findRealMousePoint(page: Page, step: StressStep) {
   );
 }
 
-function eventSummary(core: Awaited<ReturnType<typeof importMusicXmlToCore>>) {
+function eventSummary(core: Awaited<ReturnType<typeof importMusicXmlToCore>>): ActualEvent[] {
   return core.score.parts[0].staves.flatMap((staff, staffIndex) => (
     staff.measures.flatMap((measure) => (
       measure.voices.flatMap((voice) => (
@@ -680,14 +685,16 @@ function eventSummary(core: Awaited<ReturnType<typeof importMusicXmlToCore>>) {
             ? `${event.pitch.step}${event.pitch.alter === 1 ? '#' : event.pitch.alter === -1 ? 'b' : ''}${event.pitch.octave}`
             : undefined,
           rest: event.kind === 'rest' ? true as const : undefined,
+          tieStart: event.kind === 'note' ? event.tieStart : undefined,
+          tieStop: event.kind === 'note' ? event.tieStop : undefined,
         }))
       ))
     ))
   ));
 }
 
-function containsExpected(events: ExpectedEvent[], expected: ExpectedEvent) {
-  return events.some((event) => (
+function containsExpected(events: ActualEvent[], expected: ExpectedEvent) {
+  const exactMatch = events.some((event) => (
     event.measure === expected.measure
     && event.staff === expected.staff
     && event.voice === expected.voice
@@ -696,6 +703,40 @@ function containsExpected(events: ExpectedEvent[], expected: ExpectedEvent) {
     && event.pitch === expected.pitch
     && event.rest === expected.rest
   ));
+  if (exactMatch || !expected.pitch) return exactMatch;
+
+  const [expectedOffsetNum, expectedOffsetDen] = expected.offset.split('/').map(Number);
+  const expectedStart = expectedOffsetNum! / expectedOffsetDen!;
+  const expectedDuration = Number(expected.duration);
+  const tiedFragments = events
+    .filter((event) => (
+      event.measure === expected.measure
+      && event.staff === expected.staff
+      && event.voice === expected.voice
+      && event.pitch === expected.pitch
+    ))
+    .sort((left, right) => {
+      const [leftNum, leftDen] = left.offset.split('/').map(Number);
+      const [rightNum, rightDen] = right.offset.split('/').map(Number);
+      return (leftNum! / leftDen!) - (rightNum! / rightDen!);
+    });
+  const firstIndex = tiedFragments.findIndex((event) => (
+    normalizeTimestamp(event.offset) === normalizeTimestamp(expected.offset)
+  ));
+  if (firstIndex < 0 || !tiedFragments[firstIndex]?.tieStart) return false;
+
+  let duration = 0;
+  let nextOffset = expectedStart;
+  for (let index = firstIndex; index < tiedFragments.length; index += 1) {
+    const fragment = tiedFragments[index]!;
+    const [offsetNum, offsetDen] = fragment.offset.split('/').map(Number);
+    if (Math.abs((offsetNum! / offsetDen!) - nextOffset) > 1e-9) break;
+    duration += Number(fragment.duration);
+    nextOffset += Number(fragment.duration) / expectedOffsetDen!;
+    if (duration === expectedDuration) return true;
+    if (duration > expectedDuration || !fragment.tieStart) break;
+  }
+  return false;
 }
 
 async function writeStepFailure(page: Page, testInfo: TestInfo, index: number) {
@@ -759,7 +800,7 @@ test('Dunhill The Old Abbey chord mouse and keyboard stress', async ({ page }, t
     if (step.mode === 'chord') await page.keyboard.up('Alt');
 
     committed.push(...step.expected);
-    let actualEvents: ExpectedEvent[] = [];
+    let actualEvents: ActualEvent[] = [];
     let passed = false;
     try {
       await expect.poll(async () => {

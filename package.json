@@ -1,6 +1,6 @@
 {
   "name": "nex-note",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Downloadable music app for private scores, tabs, AI editing, and embeds.",
   "private": true,
   "license": "AGPL-3.0-or-later",
@@ -48,7 +48,7 @@
     "@tonejs/midi": "^2.0.28",
     "@xmldom/xmldom": "^0.9.10",
     "jszip": "^3.10.1",
-    "next": "16.2.6",
+    "next": "^16.2.11",
     "opensheetmusicdisplay": "^1.9.9",
     "pdf-lib": "^1.17.1",
     "react": "19.2.4",
@@ -69,7 +69,9 @@
     "typescript": "^5"
   },
   "overrides": {
-    "postcss": "8.5.14"
+    "esbuild": "0.28.1",
+    "postcss": "8.5.14",
+    "sharp": "0.35.0"
   },
   "build": {
     "appId": "app.nex-note.desktop",

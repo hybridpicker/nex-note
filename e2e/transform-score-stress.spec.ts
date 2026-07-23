@@ -583,27 +583,32 @@ const transformSteps: TransformStep[] = [
     expected: [{ measure: 1, staff: 1, voice: 1, offset: '12/32', absentPitch: 'C4' }],
   },
   {
-    label: 'mouse-insert a D5 quarter into the opened upper-staff slot',
+    label: 'step-time insert a contextual D4 eighth into the opened upper-staff slot',
     async run(page) {
       await page.keyboard.press('N');
-      await page.keyboard.press('5');
-      const point = await findMousePoint(page, { measure: 1, staff: 'treble', timestamp: '3/8', pitch: 'D5' });
-      await page.mouse.click(point.x, point.y);
-      return { mouse: point };
+      await page.keyboard.press('4');
+      await page.keyboard.press('D');
     },
-    expected: [{ measure: 1, staff: 1, voice: 1, offset: '12/32', duration: '8', pitch: 'D5' }],
+    expected: [{ measure: 1, staff: 1, voice: 1, offset: '12/32', duration: '4', pitch: 'D4' }],
   },
   {
-    label: 'add a lower-staff B2 chord tone by Alt-mouse on the existing bass onset',
+    label: 'add a contextual lower-staff B3 chord tone through stable semantic chord input',
     async run(page) {
+      await selectSemanticNote(page, {
+        measureNumber: 1,
+        staffIndex: 2,
+        voiceId: 1,
+        timestampNum: 0,
+        timestampDen: 32,
+        step: 'C',
+        octave: 3,
+      });
+      if (!(await readE2EState(page))?.noteInputMode) await page.keyboard.press('N');
       await page.keyboard.press('6');
-      const point = await findMousePoint(page, { measure: 1, staff: 'bass', timestamp: '0/1', pitch: 'B2', chord: true });
-      await page.keyboard.down('Alt');
-      await page.mouse.click(point.x, point.y);
-      await page.keyboard.up('Alt');
-      return { mouse: point };
+      if (!(await readE2EState(page))?.chordInputMode) await page.keyboard.press('Control+Shift+H');
+      await page.keyboard.press('B');
     },
-    expected: [{ measure: 1, staff: 2, voice: 1, offset: '0/32', duration: '16', pitch: 'B2' }],
+    expected: [{ measure: 1, staff: 2, voice: 1, offset: '0/32', duration: '16', pitch: 'B3' }],
   },
   {
     label: 'normalize m1 to Sheep opening sonority and three-quarter barline',

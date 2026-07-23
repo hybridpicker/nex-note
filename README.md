@@ -12,13 +12,13 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 
 ## Status
 
-- Current version: `0.0.1`.
+- Current version: `0.0.2`.
 - Release channel: private AGPL relaunch / teacher-MVP preview.
 - Founder build available on request for macOS app testing.
 - Primary development branch: `devel`.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
-- Recent validation on 2026-07-10: `npm test` passed with `941` tests, the production build passed, and the complete notation-tools Playwright project passed with `22` tests. The bounded MuseScore roundtrip smoke completed with `passed-with-local-musescore-limit`; MuseScore 4.7.3 remained crash-unstable across source and nex-note conversions, so crash-only differences are inconclusive. Coverage and high-severity audit evidence remains dated 2026-05-13 and is reported separately below.
+- Release validation on 2026-07-23: `npm test` passed with `991` tests, coverage gates and the Next 16.2.11 production build passed, and all `30` browser smoke tests passed. The production dependency audit reports `0` vulnerabilities. The bounded MuseScore roundtrip completed with `passed-with-local-musescore-limit`; MuseScore 4.7.3 remained crash-unstable across source and nex-note conversions, so crash-only differences remain inconclusive.
 
 Expect rough edges around desktop packaging, provider setup, external conversion tools, advanced engraving parity, and model-dependent AI quality.
 
@@ -290,12 +290,12 @@ npm run electron:build
 
 Current validation snapshot:
 
-- `npm test`: 941 tests passed on 2026-07-10.
-- `npx playwright test e2e/notation-tools.spec.ts --project regression`: 22 tests passed on 2026-07-10.
-- `npm run build`: passed on 2026-07-10.
-- Bounded `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0`: completed with `passed-with-local-musescore-limit` on 2026-07-10; MuseScore 4.7.3 intermittently aborted on source and generated variants, so crash-only results remain inconclusive rather than nex-note export failures.
-- `npm run test:coverage:check`: 84.96% lines, 76.57% branches, 85.33% functions.
-- `npm audit --audit-level=high`: last passed with 0 vulnerabilities on 2026-05-13; rerun before release because this evidence is historical.
+- `npm test`: 991 tests passed on 2026-07-23.
+- `npm run test:coverage:check`: passed on 2026-07-23 with 85.59% lines, 78.13% branches, and 86.74% functions.
+- `npm run build`: passed with Next 16.2.11 on 2026-07-23.
+- `npm run test:e2e:smoke`: 30 tests passed on 2026-07-23.
+- Bounded `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0`: completed with `passed-with-local-musescore-limit` on 2026-07-23; MuseScore 4.7.3 intermittently aborted on source and generated variants, so crash-only results remain inconclusive rather than nex-note export failures.
+- `npm audit --omit=dev`: passed with 0 vulnerabilities on 2026-07-23.
 
 ## Release Readiness
 

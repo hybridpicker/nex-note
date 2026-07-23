@@ -116,7 +116,7 @@ test('language setting persists, updates html lang, and changes visible labels',
     );
   });
 
-  assert.match(collectText(renderer!.root), /Willkommen bei nex-note/);
+  assert.match(collectText(renderer!.root), /Starte eine Partitur/);
   assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'de');
 
   const select = renderer!.root.findAllByProps({ id: 'nex-note-language' })[0];
@@ -126,7 +126,7 @@ test('language setting persists, updates html lang, and changes visible labels',
 
   assert.equal(storage.getItem(LOCALE_STORAGE_KEY), 'es');
   assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'es');
-  assert.match(collectText(renderer!.root), /Bienvenido a nex-note/);
+  assert.match(collectText(renderer!.root), /Crea una partitura/);
   assert.equal(renderer!.root.findAllByType('a')[0].props.href, '/docs/user-manual.es.md');
 
   await act(async () => {
@@ -154,7 +154,7 @@ test('i18n provider starts in English when no saved language exists', async () =
     );
   });
 
-  assert.match(collectText(renderer!.root), /Welcome to nex-note/);
+  assert.match(collectText(renderer!.root), /Start a score/);
   assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'en');
   assert.equal(storage.getItem(LOCALE_STORAGE_KEY), 'en');
 
@@ -187,7 +187,7 @@ test('locale query parameter overrides saved language for preview links', async 
     );
   });
 
-  assert.match(collectText(renderer!.root), /Welcome to nex-note/);
+  assert.match(collectText(renderer!.root), /Start a score/);
   assert.equal((globalThis.document as { documentElement: { lang: string } }).documentElement.lang, 'en');
   assert.equal(storage.getItem(LOCALE_STORAGE_KEY), 'en');
 

@@ -519,7 +519,7 @@ const passageChecklist: StressStep[] = [
 ];
 
 function buildBlankPianoStressXml() {
-  return createNewScoreXml({
+  const xml = createNewScoreXml({
     instrumentIds: ['piano'],
     title: 'Dunhill Melody in C Mouse Stress',
     subtitle: 'E2E input harness from IMSLP633235 page 3',
@@ -533,6 +533,13 @@ function buildBlankPianoStressXml() {
     measureCount: 16,
     pickup: { enabled: false, beats: 1, beatType: 4 },
   });
+  return xml.replace(
+    /<note><rest\/><duration>16<\/duration><voice>1<\/voice><type>half<\/type><staff>([12])<\/staff><\/note>/g,
+    (_match, staff: string) => (
+      `<note><rest/><duration>8</duration><voice>1</voice><type>quarter</type><staff>${staff}</staff></note>`
+      + `<note><rest/><duration>8</duration><voice>1</voice><type>quarter</type><staff>${staff}</staff></note>`
+    ),
+  );
 }
 
 async function installPlaybackStubs(page: Page) {

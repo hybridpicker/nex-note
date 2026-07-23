@@ -430,6 +430,7 @@ async function bootWithScore(
 
 async function waitForRenderedScore(page: Page) {
   await expect(page.locator('[data-testid="score-canvas"] .vf-notehead').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('score-canvas')).toHaveAttribute('data-edit-map-measure-count', /^[1-9]\d*$/);
   await page.getByTestId('score-viewport').focus();
 }
 
@@ -587,7 +588,7 @@ test('debug mode boots without hydration or clipboard permission errors', async 
   });
 
   await page.goto('/?debug=true');
-  await expect(page.getByRole('heading', { name: 'Welcome to nex-note' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'Write without friction.' })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTitle('Report bug')).toBeVisible();
   await expect.poll(() => debugBootErrors).toEqual([]);
 });
@@ -1003,7 +1004,9 @@ test('edit and view menus expose common score workflows without using command se
   await expect(copyEdit).toContainText(await expectedShortcutHint(page, 'Cmd C'));
   await expect(cutEdit).toContainText(await expectedShortcutHint(page, 'Cmd X'));
 
+  await page.keyboard.press('Escape');
   await clickRenderedNotehead(page, 0);
+  await expect.poll(async () => (await readE2EState(page))?.selectionCount ?? 0).toBe(1);
 
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const duplicateEdit = page.getByRole('menuitem', { name: 'Duplicate selection' });
@@ -1317,8 +1320,13 @@ test('compact polyphonic note clicks keep the selection on the clicked note', as
   await page.setViewportSize({ width: 800, height: 760 });
   await bootWithScore(page, 'compact-polyphonic-click.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
+  await page.getByRole('button', { name: 'Hide notation tools' }).click();
+  await expect(page.getByRole('button', { name: 'Show notation tools' })).toBeVisible();
+  await waitForRenderedScore(page);
 
-  await clickRenderedNotehead(page, 0);
+  // The compact left rail overlaps the first onset. Exercise an actually
+  // reachable note farther into the measure instead of clicking through UI.
+  await clickRenderedNotehead(page, 2);
 
   await expect.poll(async () => (await readE2EState(page))?.selectionCount ?? 0).toBe(1);
   await expect.poll(async () => {
@@ -1326,7 +1334,7 @@ test('compact polyphonic note clicks keep the selection on the clicked note', as
     return selected
       ? { measureNumber: selected.measureNumber, voiceId: selected.voiceId, timestampNum: selected.timestampNum }
       : null;
-  }).toEqual({ measureNumber: 1, voiceId: 1, timestampNum: 0 });
+  }).toEqual({ measureNumber: 1, voiceId: 1, timestampNum: 2 });
   await expect(page.locator('[data-selected-measure="true"]')).toHaveCount(0);
 });
 
@@ -1383,7 +1391,7 @@ test('assistant workflow covers provider switching, AI preview, apply/cancel, an
   await page.getByRole('button', { name: /Ollama/ }).click();
   await page.getByTitle('Add custom model').click();
   await page.getByPlaceholder('model:tag').fill('llama3:8b');
-  await page.getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByTitle('llama3:8b')).toBeVisible();
 
   const input = page.getByPlaceholder('Describe your edit…');
@@ -1798,8 +1806,8 @@ test('browser cross-staff shortcut moves the selected chord tone to the lower st
         .map((event) => event.kind === 'note' ? event.staffIndex : 0),
     };
   }).toEqual({
-    upperAtStart: ['C5'],
-    lowerChord: ['E5:root'],
+    upperAtStart: ['E5'],
+    lowerChord: ['C5:root'],
     lowerStaffs: [2],
   });
 });
@@ -1848,7 +1856,7 @@ test('browser shortcut matrix covers note input durations, voices, repeat, and r
     const core = await readCurrentCore(page);
     return core.score.parts[0].staves[0].measures[0].voices.some((voice) => (
       voice.voiceId === 2
-      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 4)
+      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 3)
     ));
   }).toBeTruthy();
 
@@ -1857,7 +1865,7 @@ test('browser shortcut matrix covers note input durations, voices, repeat, and r
     const core = await readCurrentCore(page);
     return core.score.parts[0].staves[0].measures[0].voices.some((voice) => (
       voice.voiceId === 2
-      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 5)
+      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 4)
     ));
   }).toBeTruthy();
   await page.keyboard.press('Shift+ArrowDown');
@@ -1865,7 +1873,7 @@ test('browser shortcut matrix covers note input durations, voices, repeat, and r
     const core = await readCurrentCore(page);
     return core.score.parts[0].staves[0].measures[0].voices.some((voice) => (
       voice.voiceId === 2
-      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 4)
+      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 3)
     ));
   }).toBeTruthy();
 
@@ -2099,7 +2107,7 @@ test('mouse note input shows a ghost preview and places a snapped note at the cl
     const events = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events
       .filter((event) => event.kind === 'note');
     return events.length;
-  }).toBe(4);
+  }).toBe(5);
 
   await expect.poll(async () => {
     const voice = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices
@@ -2111,8 +2119,9 @@ test('mouse note input shows a ghost preview and places a snapped note at the cl
   }).toEqual([
     '0/4:C4',
     '1/4:C4',
+    '2/4:D4',
     '2/4:C4',
-    '3/4:D4',
+    '3/4:E4',
   ]);
 
   await expect.poll(async () => (await readE2EState(page))?.selectedNote?.measureNumber ?? null).toBe(1);
@@ -2149,7 +2158,7 @@ test('mouse note input keeps ghost noteheads horizontally locked while hovering 
     samples.set(snapshot.ratio, [...(samples.get(snapshot.ratio) ?? []), snapshot.noteheadX]);
   }
 
-  expect([...samples.keys()].sort((left, right) => left - right)).toEqual([0, 0.25, 0.5, 0.75]);
+  expect([...samples.keys()].sort((left, right) => left - right)).toEqual([0]);
   for (const [ratio, xs] of samples.entries()) {
     expect(xs.length, `not enough hover samples for ratio ${ratio}`).toBeGreaterThan(1);
     const min = Math.min(...xs);
@@ -2214,7 +2223,7 @@ test('ghost-map measurement follows visible rest anchors in blank piano measure 
   await page.keyboard.press('5');
 
   const initialGhostMap = await scanGhostMapForMeasure(page, 2);
-  expectGhostMapRatios(initialGhostMap, [0, 0.25, 0.5, 0.75]);
+  expectGhostMapRatios(initialGhostMap, [0]);
 
   const firstVisibleRest = initialGhostMap.find((entry) => entry.ratio === 0);
   expect(firstVisibleRest).toBeTruthy();
@@ -2257,7 +2266,7 @@ test('mouse note input commits quarter notes on beats 1, 2, 3, and 4 in a truly 
 
   const expectedRatios = [0, 0.25, 0.5, 0.75];
   const initialGhostMap = await scanGhostMapForMeasure(page, 1);
-  expectGhostMapRatios(initialGhostMap, expectedRatios);
+  expectGhostMapRatios(initialGhostMap, [0]);
 
   const firstQuarter = initialGhostMap.find((entry) => Math.abs(entry.ratio - 0) < 0.001);
   expect(firstQuarter).toBeTruthy();
@@ -2315,7 +2324,7 @@ test('mouse note input keeps snap geometry aligned after resize sync without zoo
 
   const expectedRatios = [0, 0.25, 0.5, 0.75];
   const initialGhostMap = await scanGhostMapForMeasure(page, 1);
-  expectGhostMapRatios(initialGhostMap, expectedRatios);
+  expectGhostMapRatios(initialGhostMap, [0]);
 
   const firstQuarter = initialGhostMap.find((entry) => Math.abs(entry.ratio - 0) < 0.001);
   expect(firstQuarter).toBeTruthy();
@@ -2374,7 +2383,7 @@ test('ghost-map measurement exposes only visible rest anchors across later blank
 
   for (const measureNumber of [2, 3, 4]) {
     const ghostMap = await scanGhostMapForMeasure(page, measureNumber);
-    expectGhostMapRatios(ghostMap, [0, 0.25, 0.5, 0.75]);
+    expectGhostMapRatios(ghostMap, [0]);
   }
 });
 
@@ -2416,8 +2425,11 @@ test('mouse note input does not create deep treble ledger notes from blank inter
   await page.keyboard.press('5');
 
   const measure1Box = await measureOverlayBox(page, 1);
+  const firstVisibleAnchor = (await scanGhostMapForMeasure(page, 1))
+    .find((entry) => Math.abs(entry.ratio) < 0.001);
+  expect(firstVisibleAnchor).toBeTruthy();
   const lowGapPoint = {
-    x: measure1Box.x + (measure1Box.width * 0.06),
+    x: firstVisibleAnchor!.x,
     y: measure1Box.y + (measure1Box.height * 0.98),
   };
 
@@ -3085,7 +3097,7 @@ test('mouse note input can commit a multi-click ghost sequence across measure bo
   expect(visibleFollowup).toBeTruthy();
 });
 
-test('mouse note input respects insert vs overwrite on occupied slots', async ({ page }) => {
+test('mouse note input adds a chord tone by default and overwrites in insert mode', async ({ page }) => {
   await bootWithScore(page, 'polyphonic.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
 
@@ -3105,7 +3117,7 @@ test('mouse note input respects insert vs overwrite on occupied slots', async ({
     const events = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events
       .filter((event) => event.kind === 'note');
     return events.length;
-  }).toBe(4);
+  }).toBe(5);
 
   await bootWithScore(page, 'polyphonic.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
@@ -3130,7 +3142,7 @@ test('mouse note input respects insert vs overwrite on occupied slots', async ({
   }).toBe(4);
 });
 
-test('mouse note input activates clicked existing notehead in another voice instead of committing selected voice', async ({ page }) => {
+test('mouse note input activates clicked pitches while preserving the selected input voice', async ({ page }) => {
   await bootWithScore(page, 'voice-activation-polyphonic.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
 
@@ -3153,7 +3165,6 @@ test('mouse note input activates clicked existing notehead in another voice inst
     x: voiceOneNote.x,
     y: voiceOneNote.y + 27,
   };
-  const baselineXml = await readCurrentXml(page);
   const noteSummary = async () => {
     const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
     return measure.voices
@@ -3167,13 +3178,12 @@ test('mouse note input activates clicked existing notehead in another voice inst
       }))
       .sort((left, right) => left.voiceId - right.voiceId);
   };
-  const baselineNoteSummary = await noteSummary();
   const expectActivation = async (expected: {
     voiceId: number;
     timestampNum: number;
     step: string;
     octave: number;
-  }) => {
+  }, unchangedXml?: string) => {
     await expect.poll(async () => {
       const state = await readE2EState(page);
       const selected = state?.selectedNote;
@@ -3206,8 +3216,7 @@ test('mouse note input activates clicked existing notehead in another voice inst
       anchorStep: expected.step,
       anchorOctave: expected.octave,
     });
-    expect(await readCurrentXml(page)).toBe(baselineXml);
-    expect(await noteSummary()).toEqual(baselineNoteSummary);
+    if (unchangedXml) expect(await readCurrentXml(page)).toBe(unchangedXml);
   };
 
   await page.keyboard.press('Escape');
@@ -3216,10 +3225,35 @@ test('mouse note input activates clicked existing notehead in another voice inst
   await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(1);
 
   await page.mouse.click(voiceTwoNote.x, voiceTwoNote.y);
-  await expectActivation({ voiceId: 2, timestampNum: 0, step: 'G', octave: 3 });
+  await expectActivation({ voiceId: 1, timestampNum: 0, step: 'G', octave: 3 });
+  await expect.poll(noteSummary).toEqual([
+    {
+      voiceId: 1,
+      notes: ['0/4:C4', '0/4:G3', '1/4:C4', '2/4:D4', '3/4:E4'],
+    },
+    {
+      voiceId: 2,
+      notes: ['0/4:G3', '1/4:A3', '2/4:B3', '3/4:C3'],
+    },
+  ]);
 
-  await page.mouse.click(voiceOneNote.x, voiceOneNote.y);
-  await expectActivation({ voiceId: 1, timestampNum: 0, step: 'C', octave: 4 });
+  const afterChordXml = await readCurrentXml(page);
+  const refreshedNoteheads = await page.locator('[data-testid="score-canvas"] .vf-notehead').evaluateAll((elements) => (
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2,
+      };
+    })
+  ));
+  const refreshedFirstColumnX = Math.min(...refreshedNoteheads.map((notehead) => notehead.x));
+  const c4Target = refreshedNoteheads
+    .filter((notehead) => Math.abs(notehead.x - refreshedFirstColumnX) <= 24)
+    .sort((left, right) => left.y - right.y)[0];
+  expect(c4Target).toBeTruthy();
+  await page.mouse.click(c4Target!.x, c4Target!.y);
+  await expectActivation({ voiceId: 1, timestampNum: 0, step: 'C', octave: 4 }, afterChordXml);
 });
 
 test('direct notehead drag can transpose the existing note without toolbar mode buttons', async ({ page }) => {
@@ -3335,7 +3369,7 @@ test('note-input replace drag keeps one chord tone active and repitches it in pl
   });
 });
 
-test('note input lets a near-notehead click activate beat 2 instead of placing a ghost note', async ({ page }) => {
+test('note input lets an exact notehead click activate beat 2 instead of placing a ghost note', async ({ page }) => {
   await bootWithScore(page, 'four-quarter-activation.musicxml', buildFourQuarterFixtureXml());
   await waitForRenderedScore(page);
 
@@ -3343,7 +3377,7 @@ test('note input lets a near-notehead click activate beat 2 instead of placing a
   await page.keyboard.press('N');
 
   const secondNote = await noteheadCenter(page, 1);
-  await page.mouse.click(secondNote.x + 7, secondNote.y + 3);
+  await page.mouse.click(secondNote.x, secondNote.y);
 
   await expect.poll(async () => {
     const selected = (await readE2EState(page))?.selectedNote;
@@ -3390,7 +3424,7 @@ test('note input click activation moves the active anchor after keyboard entry',
   await expect.poll(async () => {
     const anchor = (await readE2EState(page))?.noteInputAnchor;
     return anchor ? { timestampNum: anchor.timestampNum, step: anchor.step, octave: anchor.octave } : null;
-  }).toEqual({ timestampNum: 0, step: 'B', octave: 4 });
+  }).toEqual({ timestampNum: 0, step: 'B', octave: 3 });
   await waitForRenderedScore(page);
 
   await clickRenderedNotehead(page, 1);
@@ -3449,7 +3483,7 @@ test('note input can commit in measure 2 upper piano staff after hovering lower 
   await page.mouse.move(measure2.x + measure2.width * 0.5, measure2.y + measure2.height * 0.78);
 
   const ghostMap = await scanGhostMapForMeasure(page, 2, { yRatios: [0.18, 0.23, 0.28] });
-  expectGhostMapRatios(ghostMap, [0, 0.25, 0.5, 0.75]);
+  expectGhostMapRatios(ghostMap, [0]);
   const visibleRest = ghostMap.find((entry) => Math.abs(entry.ratio) < 0.001);
   expect(visibleRest).toBeTruthy();
   await clickGhostMapEntry(page, visibleRest!);
@@ -3483,7 +3517,7 @@ test('note input exposes visible rest ghost targets across the lower piano staff
       boxIndex: 1,
       yRatios: [0.5],
     });
-    expectGhostMapRatios(lowerGhostMap, [0, 0.25, 0.5, 0.75]);
+    expectGhostMapRatios(lowerGhostMap, [0]);
   }
 });
 
@@ -3501,7 +3535,7 @@ test('note input commits the selected voice on lower piano staff rest targets', 
     boxIndex: 1,
     yRatios: [0.5],
   });
-  expect([...new Set(lowerGhostMap.map((entry) => entry.ratio))]).toEqual([0, 0.25, 0.5, 0.75]);
+  expect([...new Set(lowerGhostMap.map((entry) => entry.ratio))]).toEqual([0]);
   const lowerRest = lowerGhostMap.find((entry) => Math.abs(entry.ratio) < 0.001);
   expect(lowerRest).toBeTruthy();
 

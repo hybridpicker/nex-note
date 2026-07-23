@@ -317,8 +317,8 @@ test('tablature fret entry follows the same rhythmic anchors and mirrors notatio
   await page.keyboard.press('7');
 
   await expectStaff(page, 1, [
-    { start: 0, kind: 'note', pitch: 'C4', durationType: 'quarter', guitar: null },
-    { start: 0.25, kind: 'note', pitch: 'A3', durationType: 'quarter', guitar: null },
+    { start: 0, kind: 'note', pitch: 'C5', durationType: 'quarter', guitar: null },
+    { start: 0.25, kind: 'note', pitch: 'A4', durationType: 'quarter', guitar: null },
     { start: 0.5, kind: 'note', pitch: 'E4', durationType: 'quarter', guitar: null },
     { start: 0.75, kind: 'rest', pitch: null, durationType: 'quarter', guitar: null },
   ]);

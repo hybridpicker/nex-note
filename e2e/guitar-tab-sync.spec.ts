@@ -109,6 +109,7 @@ test('double-clicking a TAB fret number edits that digit and keeps notation in s
 
   await page.goto('/?debug=true&visual-debug=true');
   await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('score-canvas')).toHaveAttribute('data-edit-map-measure-count', /^[1-9]\d*$/);
 
   const fretText = page.locator('svg text').filter({ hasText: /^3$/ }).first();
   await expect(fretText).toBeVisible();
@@ -125,10 +126,10 @@ test('double-clicking a TAB fret number edits that digit and keeps notation in s
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
     const notes = Array.from(doc.getElementsByTagName('note'));
     return {
-      notationD3: notes.some((note) => (
+      notationD4: notes.some((note) => (
         note.getElementsByTagName('staff')[0]?.textContent === '1'
         && note.getElementsByTagName('step')[0]?.textContent === 'D'
-        && note.getElementsByTagName('octave')[0]?.textContent === '3'
+        && note.getElementsByTagName('octave')[0]?.textContent === '4'
       )),
       tabFret5: notes.some((note) => (
         note.getElementsByTagName('staff')[0]?.textContent === '2'
@@ -138,7 +139,7 @@ test('double-clicking a TAB fret number edits that digit and keeps notation in s
         && note.getElementsByTagName('fret')[0]?.textContent === '5'
       )),
     };
-  })).toEqual({ notationD3: true, tabFret5: true });
+  })).toEqual({ notationD4: true, tabFret5: true });
 });
 
 const SEPARATE_PARTS_TAB_XML = `<?xml version="1.0" encoding="UTF-8"?>
