@@ -1092,6 +1092,7 @@ interface DragTransposeSession {
   note: SelectedNote;
   startStaffStep: number;
   startDomPoint: PointLike;
+  pointerDownDomPoint: PointLike;
   currentStaffIndex: number;
   lastSemitoneDelta: number;
   lastPreviewStaffIndex: number;
@@ -1602,16 +1603,14 @@ function buildDragPreviewTarget(input: {
 
 function buildTabStringDragPreviewTarget(input: {
   measure: AugmentedMeasureLayout;
-  staff: StaffDetail;
   note: SelectedNote;
   domCenterX: number;
-  lineIndex: number;
+  snappedY: number;
   tabString: 1 | 2 | 3 | 4 | 5 | 6;
   tabFret: number;
   pulse: boolean;
 }): GhostNoteTarget {
-  const { measure, staff, note, domCenterX, lineIndex, tabString, tabFret, pulse } = input;
-  const snappedY = staff.topLineDomY + (lineIndex * staff.lineDistanceDom);
+  const { measure, note, domCenterX, snappedY, tabString, tabFret, pulse } = input;
   const previewMetrics = buildGhostPreviewMetrics(domCenterX, snappedY, 0, false, '4', 'up');
   return {
     measureId: measure.measureId,
@@ -12051,12 +12050,22 @@ export default function ScoreEditor({
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      if (!isPointInsideRect(e.clientX, e.clientY, rect)) return;
+      if (!isPointInsideRect(e.clientX, e.clientY, rect)) {
+        dragSession.lastResolvedPitch = null;
+        dragSession.lastResolvedGuitar = null;
+        setDragPreviewTarget(null);
+        return;
+      }
       const domPoint = {
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
       };
-      if (!dragSession.dragStarted && Math.abs(e.movementY) < 2 && Math.abs(e.movementX) < 2) return;
+      const dragDistance = Math.hypot(
+        domPoint.x - dragSession.pointerDownDomPoint.x,
+        domPoint.y - dragSession.pointerDownDomPoint.y,
+      );
+      if (!dragSession.dragStarted && dragDistance < 4) return;
+      dragSession.dragStarted = true;
 
       const rendered = findRenderedSelectionTarget(dragSession.note, renderedNotesRef.current, coreDocument);
 
@@ -12073,25 +12082,31 @@ export default function ScoreEditor({
           ?? tabContext?.staff
           ?? null;
         if (!staffDetail || staffDetail.lineCount < 4) return;
-        dragSession.dragStarted = dragSession.dragStarted || (Math.abs(e.movementY) + Math.abs(e.movementX) >= 2);
-        const lineIndex = clamp(
-          Math.round((domPoint.y - staffDetail.topLineDomY) / Math.max(staffDetail.lineDistanceDom, 1)),
-          0,
-          staffDetail.lineCount - 1,
+        const lineDistance = Math.max(staffDetail.lineDistanceDom, 1);
+        const stringDelta = Math.round(
+          (domPoint.y - dragSession.pointerDownDomPoint.y) / lineDistance,
         );
-        const targetString = (lineIndex + 1) as 1 | 2 | 3 | 4 | 5 | 6;
+        const targetString = clamp(
+          dragSession.note.guitar.string + stringDelta,
+          1,
+          Math.min(staffDetail.lineCount, 6),
+        ) as 1 | 2 | 3 | 4 | 5 | 6;
         const tuning = resolveGuitarTuning(dragSession.note.guitar.tuning);
         const noteMidi = notePitchToMidi(dragSession.note.step, dragSession.note.alter, dragSession.note.octave);
         const fret = fretForMidiOnString(noteMidi, targetString, tuning);
-        if (fret == null) return; // pitch not playable on that string — keep the last valid preview
+        if (fret == null) {
+          dragSession.lastResolvedGuitar = null;
+          setDragPreviewTarget(null);
+          return;
+        }
         const stringChanged = dragSession.lastResolvedGuitar?.string !== targetString;
         dragSession.lastResolvedGuitar = { string: targetString, fret };
         setDragPreviewTarget(buildTabStringDragPreviewTarget({
           measure,
-          staff: staffDetail,
           note: dragSession.note,
           domCenterX: rendered?.domCenter.x ?? dragSession.startDomPoint.x,
-          lineIndex,
+          snappedY: dragSession.pointerDownDomPoint.y
+            + ((targetString - dragSession.note.guitar.string) * lineDistance),
           tabString: targetString,
           tabFret: fret,
           pulse: stringChanged,
@@ -12107,7 +12122,6 @@ export default function ScoreEditor({
       });
       if (!context?.staff || context.staffStep == null) return;
 
-      dragSession.dragStarted = dragSession.dragStarted || (Math.abs(e.movementY) + Math.abs(e.movementX) >= 2);
       const nearestStaffDistance = computeNearestStaffDistance(context.measure.staffDetails, dragSession.currentStaffIndex, domPoint.y);
       const isNearEscape = nearestStaffDistance < (ghostStaffHysteresisPx(zoomPercent, true) * 2.5 * 1.2);
       const previousStaffIndex = dragSession.lastPreviewStaffIndex;
@@ -12349,11 +12363,16 @@ export default function ScoreEditor({
         hysteresisPx: ghostStaffHysteresisPx(zoomPercent, true) * 2.5,
       });
       const tabDrag = Boolean(directNote.guitar) && isTabStaffSelectedNote(coreDocument, directNote);
+      const pointerDownDomPoint = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
       dragSessionRef.current = startContext?.staffStep != null || tabDrag ? {
         pointerId: e.pointerId,
         note: directNote,
         startStaffStep: startContext?.staffStep ?? 0,
         startDomPoint: startPoint,
+        pointerDownDomPoint,
         currentStaffIndex: directNote.staffIndex,
         lastSemitoneDelta: 0,
         lastPreviewStaffIndex: directNote.staffIndex,
@@ -12363,6 +12382,14 @@ export default function ScoreEditor({
         dragStarted: false,
         pulseToken: 0,
       } : null;
+      if (dragSessionRef.current) {
+        try {
+          viewportRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          // Pointer capture is best-effort; the window pointer-up fallback still
+          // finalizes the drag in browsers that reject capture here.
+        }
+      }
     };
 
     const domPoint = {
@@ -14229,6 +14256,9 @@ export default function ScoreEditor({
     const handlePointerUp = (event: PointerEvent) => {
       const dragSession = dragSessionRef.current;
       if (!dragSession || event.pointerId !== dragSession.pointerId) return;
+      if (viewportRef.current?.hasPointerCapture(event.pointerId)) {
+        viewportRef.current.releasePointerCapture(event.pointerId);
+      }
       const resolvedPitch = dragSession.lastResolvedPitch;
       dragSessionRef.current = null;
       setDragPreviewTarget(null);
@@ -14260,8 +14290,23 @@ export default function ScoreEditor({
       }
     };
 
+    const handlePointerCancel = (event: PointerEvent) => {
+      const dragSession = dragSessionRef.current;
+      if (!dragSession || event.pointerId !== dragSession.pointerId) return;
+      if (viewportRef.current?.hasPointerCapture(event.pointerId)) {
+        viewportRef.current.releasePointerCapture(event.pointerId);
+      }
+      dragSessionRef.current = null;
+      setDragPreviewTarget(null);
+      lastGhostStaffIndexRef.current = null;
+    };
+
     window.addEventListener('pointerup', handlePointerUp, true);
-    return () => window.removeEventListener('pointerup', handlePointerUp, true);
+    window.addEventListener('pointercancel', handlePointerCancel, true);
+    return () => {
+      window.removeEventListener('pointerup', handlePointerUp, true);
+      window.removeEventListener('pointercancel', handlePointerCancel, true);
+    };
   }, [dragTransposeMode, onDragTransposeCommit, onDragStringCommit]);
 
   useEffect(() => {

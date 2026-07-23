@@ -840,6 +840,7 @@ function resolveSyncedGuitarFingering(input: {
   pitch: { step: string; alter?: number; octave: number };
   requested?: CoreGuitarMetadata | CommandGuitarMetadata;
   existing?: CoreGuitarMetadata;
+  preferredFret?: number;
 }): CoreGuitarMetadata | undefined {
   if (input.requested) {
     const requested: CoreGuitarMetadata = {
@@ -851,7 +852,12 @@ function resolveSyncedGuitarFingering(input: {
     return requested;
   }
   const tuning = resolveGuitarTuning(input.existing?.tuning);
-  const generated = chooseGuitarFingeringForPitch(input.pitch, tuning, input.existing?.string);
+  const generated = chooseGuitarFingeringForPitch(
+    input.pitch,
+    tuning,
+    input.existing?.string,
+    input.preferredFret,
+  );
   if (!generated) return undefined;
   const resolved: CoreGuitarMetadata = {
     string: generated.string,
@@ -860,6 +866,22 @@ function resolveSyncedGuitarFingering(input: {
   if (input.existing?.tuning) resolved.tuning = input.existing.tuning;
   if (input.existing?.techniques) resolved.techniques = [...input.existing.techniques];
   return resolved;
+}
+
+function findPreviousGuitarHandPosition(voice: VoiceNode, insertionOffset: number) {
+  const priorNotes = voice.events.filter((event): event is Extract<TimedEvent, { kind: 'note' }> => (
+    event.kind === 'note'
+    && event.timestampNum < insertionOffset
+    && event.guitar != null
+  ));
+  if (priorNotes.length === 0) return undefined;
+  const latestOffset = Math.max(...priorNotes.map((event) => event.timestampNum));
+  const latestFrets = priorNotes
+    .filter((event) => event.timestampNum === latestOffset)
+    .map((event) => event.guitar!.fret)
+    .sort((left, right) => left - right);
+  if (latestFrets.length === 0) return undefined;
+  return latestFrets[Math.floor((latestFrets.length - 1) / 2)];
 }
 
 function findSimultaneousEventIndices(voice: VoiceNode, timestampNum: number, timestampDen: number) {
@@ -1610,11 +1632,15 @@ function mirrorGuitarInsertionToPairedStaff(input: {
     input.sourceInserted.timestampNum,
     input.sourceInserted.timestampDen,
   );
+  const preferredFret = paired.isTab
+    ? findPreviousGuitarHandPosition(paired.voice, pairedInsertionOffset)
+    : undefined;
 
   let guitar = paired.isTab
     ? resolveSyncedGuitarFingering({
       pitch: pairedPitch,
       requested: 'guitar' in input.command ? input.command.guitar : undefined,
+      preferredFret,
     })
     : undefined;
 
@@ -1628,6 +1654,7 @@ function mirrorGuitarInsertionToPairedStaff(input: {
       [...existingChordNotes.map((event) => event.pitch), pairedPitch],
       tuning,
       [...existingChordNotes.map((event) => event.guitar?.string), undefined],
+      preferredFret,
     );
     if (!fingerings) return;
     existingChordNotes.forEach((event, index) => {

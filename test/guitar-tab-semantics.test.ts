@@ -453,6 +453,40 @@ test('standard notation chord insertion mirrors TAB members and round-trips befo
   assertChord(importMusicXmlToCore(exported));
 });
 
+test('standard notation chord insertion keeps TAB voicing near the preceding fret position', () => {
+  const commands = [
+    { step: 'G', octave: 4, asChord: false },
+    { step: 'B', octave: 4, asChord: true },
+    { step: 'E', octave: 5, asChord: true },
+  ].map((pitch) => ({
+    type: 'insertNoteAt' as const,
+    corePartId: 'part:P1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 1,
+    timestampDen: 4,
+    step: pitch.step,
+    octave: pitch.octave,
+    alter: 0,
+    durationType: 'quarter',
+    isDotted: false,
+    asChord: pitch.asChord,
+  }));
+  const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), commands as any);
+  const tabChord = next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events
+    .filter((event) => event.kind === 'note' && event.timestampNum === 1);
+
+  assert.deepEqual(
+    tabChord.map((event) => event.kind === 'note' ? event.guitar : null),
+    [
+      { string: 4, fret: 5 },
+      { string: 3, fret: 4 },
+      { string: 2, fret: 5 },
+    ],
+  );
+});
+
 test('standard notation changeNotePitch updates paired TAB pitch and fingering', () => {
   const next = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_XML), [{
     type: 'changeNotePitch',

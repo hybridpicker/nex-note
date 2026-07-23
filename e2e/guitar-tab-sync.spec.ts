@@ -205,7 +205,9 @@ test('dragging a TAB fret to another string keeps the pitch and recomputes the f
   // Drag B4 from the high E string (fret 7) one string down onto the B string.
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.mouse.move(start.x, start.y + lineDistance * 1.5, { steps: 4 });
+  // Many sub-pixel/small mouse events must still activate once their total
+  // displacement crosses the drag threshold.
+  await page.mouse.move(start.x, start.y + lineDistance * 1.5, { steps: 24 });
 
   const ghost = page.locator('[data-testid="ghost-note-preview"]');
   await expect(ghost).toHaveAttribute('data-ghost-tab-fret', '12');

@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { chooseGuitarFingeringForPitch, fretForMidiOnString, resolveGuitarFretPitch, resolveGuitarTuning } from '../src/score-input/guitar-fretboard.ts';
+import {
+  chooseDistinctGuitarFingeringsForPitches,
+  chooseGuitarFingeringForPitch,
+  fretForMidiOnString,
+  resolveGuitarFretPitch,
+  resolveGuitarTuning,
+} from '../src/score-input/guitar-fretboard.ts';
 
 test('resolveGuitarFretPitch maps standard guitar strings and frets to score pitches', () => {
   assert.deepEqual(
@@ -67,5 +73,25 @@ test('chooseGuitarFingeringForPitch falls back to a low playable fret', () => {
   assert.deepEqual(
     chooseGuitarFingeringForPitch({ step: 'G', alter: 0, octave: 2 }, undefined, 5),
     { string: 6, fret: 3 },
+  );
+});
+
+test('contextual guitar fingering stays near the current hand position', () => {
+  assert.deepEqual(
+    chooseDistinctGuitarFingeringsForPitches(
+      [
+        { step: 'G', alter: 0, octave: 3 },
+        { step: 'B', alter: 0, octave: 3 },
+        { step: 'E', alter: 0, octave: 4 },
+      ],
+      undefined,
+      [3, 2, 1],
+      3,
+    ),
+    [
+      { string: 4, fret: 5 },
+      { string: 3, fret: 4 },
+      { string: 2, fret: 5 },
+    ],
   );
 });

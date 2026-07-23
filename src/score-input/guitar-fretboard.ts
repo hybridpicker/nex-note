@@ -132,9 +132,10 @@ export function chooseGuitarFingeringForPitch(
   pitch: { step: string; alter?: number; octave: number },
   tuning: GuitarStringTuning[] | GuitarTuningPreset = STANDARD_GUITAR_TUNING,
   preferredString?: 1 | 2 | 3 | 4 | 5 | 6,
+  preferredFret?: number,
 ): { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number } | null {
   const midi = pitchToMidi(pitch);
-  if (preferredString) {
+  if (preferredString && preferredFret == null) {
     const fret = fretForMidiOnString(midi, preferredString, tuning);
     if (fret != null) return { string: preferredString, fret };
   }
@@ -150,9 +151,23 @@ export function chooseGuitarFingeringForPitch(
   if (candidates.length === 0) return null;
 
   return candidates.sort((left, right) => (
-    left.fret - right.fret
+    (preferredFret == null
+      ? left.fret - right.fret
+      : contextualFingeringScore(left, preferredString, preferredFret)
+        - contextualFingeringScore(right, preferredString, preferredFret))
     || left.string - right.string
   ))[0] ?? null;
+}
+
+function contextualFingeringScore(
+  candidate: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number },
+  preferredString: 1 | 2 | 3 | 4 | 5 | 6 | undefined,
+  preferredFret: number,
+) {
+  const distanceFromHandPosition = Math.abs(candidate.fret - preferredFret) * 8;
+  const openStringPenalty = preferredFret > 0 && candidate.fret === 0 ? 4 : 0;
+  const existingStringBonus = preferredString === candidate.string ? -1.5 : 0;
+  return distanceFromHandPosition + openStringPenalty + (candidate.fret * 0.1) + existingStringBonus;
 }
 
 /**
@@ -165,6 +180,7 @@ export function chooseDistinctGuitarFingeringsForPitches(
   pitches: Array<{ step: string; alter?: number; octave: number }>,
   tuning: GuitarStringTuning[] | GuitarTuningPreset = STANDARD_GUITAR_TUNING,
   preferredStrings: Array<1 | 2 | 3 | 4 | 5 | 6 | undefined> = [],
+  preferredFret?: number,
 ): Array<{ string: 1 | 2 | 3 | 4 | 5 | 6; fret: number }> | null {
   if (pitches.length === 0) return [];
   if (pitches.length > 6) return null;
@@ -177,7 +193,13 @@ export function chooseDistinctGuitarFingeringsForPitches(
       return {
         string: stringTuning.string,
         fret,
-        score: fret + (preferred === stringTuning.string ? -8 : 0),
+        score: preferredFret == null
+          ? fret + (preferred === stringTuning.string ? -8 : 0)
+          : contextualFingeringScore(
+              { string: stringTuning.string, fret },
+              preferred,
+              preferredFret,
+            ),
       };
     })
     .filter((candidate): candidate is { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; score: number } => candidate != null)
