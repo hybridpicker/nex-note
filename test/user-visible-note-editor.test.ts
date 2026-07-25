@@ -6050,12 +6050,9 @@ test('input by duration prepares a rest and commits it only when a duration is c
 
 test('duration-first pitch cursor arrows and Backspace correct the prepared chord without editing the score', () => {
   const hook = renderHook(SAMPLE_XML);
-  const first = makeSelectedNotes(SAMPLE_XML).find((note) => note.measureNumber === 1 && note.timestampNum === 0);
-  assert.ok(first);
   const before = hook.xml;
 
   act(() => {
-    hook.current.handleNoteClick(first ?? null);
     hook.current.handleKeyDown(makeKeyboardEvent('M'));
     hook.current.handleKeyDown(makeKeyboardEvent('E', { shiftKey: true }));
     hook.current.handleKeyDown(makeKeyboardEvent('G', { shiftKey: true }));
@@ -6135,6 +6132,46 @@ test('note input arrow keys repitch an activated existing note even while durati
   assert.equal(downHook.appliedCommands.length, 1);
   upHook.unmount();
   downHook.unmount();
+});
+
+test('re-entering note input activates the current selection instead of a stale prior input note', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+  const priorInput = notes.find((note) => note.timestampNum === 0 && note.timestampDen === 4);
+  const target = notes.find((note) => note.timestampNum === 2 && note.timestampDen === 4);
+  assert.ok(priorInput);
+  assert.ok(target);
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('N')); });
+  hook.rerender();
+  act(() => { hook.current.handleNoteClick(priorInput ?? null); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('N')); });
+  hook.rerender();
+  act(() => { hook.current.handleNoteClick(target ?? null); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('N')); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp')); });
+  hook.rerender();
+
+  const editedNotes = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.kind === 'note' && event.measureNumber === 1 && event.voiceId === 1
+  ));
+  const unchangedPrior = editedNotes.find((event) => event.timestampNum === 0 && event.timestampDen === 4);
+  const raisedTarget = editedNotes.find((event) => event.timestampNum === 2 && event.timestampDen === 4);
+  assert.deepEqual(
+    unchangedPrior?.kind === 'note' ? unchangedPrior.pitch : null,
+    { step: 'C', alter: 0, octave: 4 },
+  );
+  assert.deepEqual(
+    raisedTarget?.kind === 'note' ? raisedTarget.pitch : null,
+    { step: 'D', alter: 1, octave: 4 },
+  );
+  assert.equal(hook.current.noteInputAnchor?.timestampNum, 2);
+  assert.equal(hook.current.noteInputAnchor?.alter, 1);
+  assert.equal(hook.appliedCommands.length, 1);
+  hook.unmount();
 });
 
 test('duration-first three-note entry stays atomic and isolated in voice 2', () => {

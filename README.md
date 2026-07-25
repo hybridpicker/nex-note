@@ -12,7 +12,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 
 ## Status
 
-- Current version: `0.0.3`.
+- Current version: `0.0.4`.
 - Release channel: private AGPL relaunch / teacher-MVP preview.
 - Founder build available on request for macOS app testing.
 - Primary development branch: `devel`.

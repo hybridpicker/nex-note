@@ -2953,6 +2953,8 @@ export function useNoteEditor(
   const toggleNoteInput = useCallback(() => {
     const next = !noteInputModeRef.current;
     if (next) {
+      const activeSelection = selectedNoteRef.current ?? selectedNote;
+      lastNoteInputRef.current = activeSelection;
       ensureNoteInputAnchor();
       setSelectedAccidentalLive(null);
     }
@@ -2964,11 +2966,14 @@ export function useNoteEditor(
       setGuitarInputModeLive(false);
     }
     setNoteInputModeLive(next);
-  }, [ensureNoteInputAnchor, setGuitarInputModeLive, setInputByDurationModeLive, setNoteInputModeLive, setSelectedAccidentalLive, setStepInputKeyboardModeLive]);
+  }, [ensureNoteInputAnchor, selectedNote, setGuitarInputModeLive, setInputByDurationModeLive, setNoteInputModeLive, setSelectedAccidentalLive, setStepInputKeyboardModeLive]);
 
   const toggleInputByDurationMode = useCallback(() => {
     const next = !inputByDurationModeRef.current;
     if (next) {
+      const enteringNoteInput = !noteInputModeRef.current;
+      const activeSelection = enteringNoteInput ? (selectedNoteRef.current ?? selectedNote) : null;
+      if (enteringNoteInput) lastNoteInputRef.current = activeSelection;
       ensureNoteInputAnchor();
       setNoteInputModeLive(true);
       setStepInputKeyboardModeLive(false);
@@ -2987,12 +2992,15 @@ export function useNoteEditor(
   const toggleStepInputKeyboardMode = useCallback(() => {
     const next = !stepInputKeyboardModeRef.current;
     if (next) {
+      const enteringNoteInput = !noteInputModeRef.current;
+      const activeSelection = enteringNoteInput ? (selectedNoteRef.current ?? selectedNote) : null;
+      if (enteringNoteInput) lastNoteInputRef.current = activeSelection;
       ensureNoteInputAnchor();
       setNoteInputModeLive(true);
       setInputByDurationModeLive(false);
     }
     setStepInputKeyboardModeLive(next);
-  }, [ensureNoteInputAnchor, setInputByDurationModeLive, setNoteInputModeLive, setStepInputKeyboardModeLive]);
+  }, [ensureNoteInputAnchor, selectedNote, setInputByDurationModeLive, setNoteInputModeLive, setStepInputKeyboardModeLive]);
 
   const toggleArticulation = useCallback((articulation: ArticulationKind) => {
     const targets = selectedTargets(selectedNote, selectedNotes);

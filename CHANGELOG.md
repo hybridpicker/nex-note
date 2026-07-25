@@ -2,6 +2,17 @@
 
 All notable changes to nex-note are documented here.
 
+## 0.0.4 - 2026-07-25
+
+### Fixed
+
+- Re-entering Note Input now promotes the currently selected existing note to the active input note, so Arrow Up and Arrow Down repitch that note instead of a stale note from an earlier input session.
+- Local app launch verification now distinguishes the packaged Nex Note build from a stale Electron development wrapper registered under the same display name.
+
+### Validation
+
+- Added unit, browser, and packaged Electron coverage for selecting a different note between Note Input sessions and repitching it chromatically.
+
 ## 0.0.3 - 2026-07-25
 
 ### Fixed

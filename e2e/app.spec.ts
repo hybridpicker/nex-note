@@ -3472,6 +3472,39 @@ test('note input click activation moves the active anchor after keyboard entry',
   }).toEqual({ eventStep: 'D', eventAlter: 1, eventOctave: 4, anchorStep: 'D', anchorAlter: 1, anchorOctave: 4, noteCount: 4 });
 });
 
+test('re-entering note input repitches the newly selected note instead of the prior input anchor', async ({ page }) => {
+  await bootWithScore(page, 'four-quarter-reentry-activation.musicxml', buildFourQuarterFixtureXml());
+  await waitForRenderedScore(page);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('N');
+  await clickRenderedNotehead(page, 1);
+  await page.keyboard.press('N');
+
+  await expect.poll(async () => {
+    const state = await readE2EState(page);
+    return state?.noteInputAnchor
+      ? { timestampNum: state.noteInputAnchor.timestampNum, step: state.noteInputAnchor.step }
+      : null;
+  }).toEqual({ timestampNum: 1, step: 'D' });
+
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(async () => {
+    const events = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events
+      .filter((event) => event.kind === 'note');
+    return events.map((event) => event.kind === 'note'
+      ? { step: event.pitch.step, alter: event.pitch.alter, octave: event.pitch.octave }
+      : null);
+  }).toEqual([
+    { step: 'C', alter: 0, octave: 4 },
+    { step: 'D', alter: 1, octave: 4 },
+    { step: 'E', alter: 0, octave: 4 },
+    { step: 'F', alter: 0, octave: 4 },
+  ]);
+});
+
 test('note input can commit in measure 2 upper piano staff after hovering lower staff', async ({ page }) => {
   await bootWithScore(page, 'blank-piano-measure-2-upper-after-lower.musicxml', buildBlankPianoFixtureXml(2));
   await waitForRenderedLayout(page);
