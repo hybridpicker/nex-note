@@ -2,6 +2,17 @@
 
 All notable changes to nex-note are documented here.
 
+## 0.0.7 - 2026-07-25
+
+### Changed
+
+- Plain Arrow Up and Arrow Down now always move pitch chromatically by exactly one semitone throughout Note Input.
+- The duration-first prepared-pitch cursor now uses the same chromatic behavior as active existing notes and chord tones instead of moving by diatonic staff steps.
+
+### Validation
+
+- Added hook and browser regressions for the prepared cursor sequence C4 → C-sharp4 → D4 → C-sharp4 without committing score content.
+
 ## 0.0.6 - 2026-07-25
 
 ### Fixed

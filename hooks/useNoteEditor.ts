@@ -3747,25 +3747,20 @@ export function useNoteEditor(
       ?? prepareDurationPitch(anchor.isRest
         ? { step: 'C', octave: 4, alter: 0 }
         : { step: anchor.step, octave: anchor.octave, alter: anchor.alter });
-    const nextDiatonic = pitchFromDiatonicIndex(Math.max(0, Math.min(
-      diatonicPitchIndex('B', 9),
-      diatonicPitchIndex(active.step, active.octave) + direction,
-    )));
-    const alter = resolveMeasureAccidentalAlter(coreDocument, {
-      corePartId: anchor.corePartId,
-      measureNumber: anchor.measureNumber,
-      staffIndex: anchor.staffIndex,
-      timestampNum: anchor.timestampNum,
-      timestampDen: anchor.timestampDen,
-      step: nextDiatonic.step,
-      octave: nextDiatonic.octave,
-    });
-    const moved = prepareDurationPitch({ ...nextDiatonic, alter });
+    const semitones = (active.midi === 0 && direction < 0) || (active.midi === 127 && direction > 0)
+      ? 0
+      : direction;
+    const movedPitch = transposeSelectedPitch({
+      ...anchor,
+      ...active,
+      isRest: false,
+    }, semitones);
+    const moved = prepareDurationPitch(movedPitch);
     const next = current.length > 0 ? [...current.slice(0, -1), moved] : [moved];
     setPreparedDurationRestLive(false);
     setPreparedDurationPitchesLive([...new Map(next.map((pitch) => [pitch.midi, pitch])).values()]
       .sort((left, right) => left.midi - right.midi));
-  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
+  }, [selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
 
   const removeLastPreparedDurationTone = useCallback(() => {
     if (preparedDurationRestRef.current) {

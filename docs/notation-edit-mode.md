@@ -24,7 +24,7 @@ While Notation Edit Mode is active, press `M` or click `DUR`:
 3. Confirm the active pitch on the score cursor and the complete prepared chord in the toolbar, for example `DUR C4+E4+G4`.
 4. Press `1`–`9` or click a duration button to commit the complete onset once.
 
-Press `0` or click the rest control to prepare `DUR REST`; the rest is not committed until a duration is chosen. `ArrowUp`/`ArrowDown` moves the active prepared pitch by one staff step, `Ctrl/Cmd+ArrowUp`/`ArrowDown` moves it by an octave, and `Backspace` removes the last prepared chord tone before it touches score content.
+Press `0` or click the rest control to prepare `DUR REST`; the rest is not committed until a duration is chosen. `ArrowUp`/`ArrowDown` moves the active prepared pitch chromatically by one semitone, `Ctrl/Cmd+ArrowUp`/`ArrowDown` moves it by an octave, and `Backspace` removes the last prepared chord tone before it touches score content.
 
 Clicking a notehead in duration-first mode moves the score anchor without committing. Clicking blank score space is selection-only; it cannot use a hidden mouse ghost. Leave duration-first mode with `M` when you want ordinary hover-and-click placement.
 

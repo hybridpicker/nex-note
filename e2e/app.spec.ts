@@ -3597,6 +3597,24 @@ test('note input arrows repitch the active tone in a newly entered chord', async
   });
 });
 
+test('duration-first cursor arrows move chromatically when no existing note is active', async ({ page }) => {
+  await bootWithScore(page, 'duration-first-chromatic-cursor.musicxml', buildFourQuarterFixtureXml());
+  await waitForRenderedScore(page);
+  const before = (await readE2EState(page))?.xml;
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('M');
+  await expect(page.getByText(/DUR C4$/).first()).toBeVisible();
+
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByText(/DUR C♯4$/).first()).toBeVisible();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByText(/DUR D4$/).first()).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByText(/DUR C♯4$/).first()).toBeVisible();
+  expect((await readE2EState(page))?.xml).toBe(before);
+});
+
 test('note input can commit in measure 2 upper piano staff after hovering lower staff', async ({ page }) => {
   await bootWithScore(page, 'blank-piano-measure-2-upper-after-lower.musicxml', buildBlankPianoFixtureXml(2));
   await waitForRenderedLayout(page);

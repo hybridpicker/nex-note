@@ -93,7 +93,7 @@ The migration risk is much larger than adapting the proven input-state rules. A 
 - Prepared pitch/chord state is visible in the toolbar.
 - A voice-colored, non-committing pitch cursor is rendered at the active score anchor and cannot be mistaken for a mouse commit ghost.
 - Prepared rests remain non-destructive until a duration is selected.
-- Arrow keys move the prepared pitch cursor; Ctrl/Cmd+Arrow moves it by an octave; Backspace removes the latest prepared chord tone.
+- Arrow keys move the prepared pitch cursor chromatically by one semitone; Ctrl/Cmd+Arrow moves it by an octave; Backspace removes the latest prepared chord tone.
 - Plain `A`–`G` or a pitch-button click replaces the prepared pitch; `Shift+A`–`G` or a Shift-click builds an ordered chord above it.
 - A duration shortcut or mouse click commits the chord as one semantic transaction and advances once.
 - Matching-duration existing chords are extended; already-present pitches are removed from the pending commit.

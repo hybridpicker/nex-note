@@ -6085,6 +6085,30 @@ test('duration-first pitch cursor arrows and Backspace correct the prepared chor
   hook.unmount();
 });
 
+test('duration-first cursor arrows always move chromatically by one semitone', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const before = hook.xml;
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('M')); });
+  hook.rerender();
+  assert.equal(hook.current.preparedDurationPitchLabel, 'C4');
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp')); });
+  hook.rerender();
+  assert.equal(hook.current.preparedDurationPitchLabel, 'C♯4');
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp')); });
+  hook.rerender();
+  assert.equal(hook.current.preparedDurationPitchLabel, 'D4');
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowDown')); });
+  hook.rerender();
+  assert.equal(hook.current.preparedDurationPitchLabel, 'C♯4');
+  assert.equal(hook.xml, before);
+  assert.equal(hook.appliedCommands.length, 0);
+  hook.unmount();
+});
+
 test('note input arrow keys repitch an activated existing note even while duration-first input is armed', () => {
   const upHook = renderHook(SAMPLE_XML);
   const downHook = renderHook(SAMPLE_XML);
