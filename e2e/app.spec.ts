@@ -3369,12 +3369,13 @@ test('note-input replace drag keeps one chord tone active and repitches it in pl
   });
 });
 
-test('note input lets an exact notehead click activate beat 2 instead of placing a ghost note', async ({ page }) => {
+test('note input lets an exact notehead click activate and repitch beat 2 while duration-first input is armed', async ({ page }) => {
   await bootWithScore(page, 'four-quarter-activation.musicxml', buildFourQuarterFixtureXml());
   await waitForRenderedScore(page);
 
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');
+  await page.keyboard.press('M');
 
   const secondNote = await noteheadCenter(page, 1);
   await page.mouse.click(secondNote.x, secondNote.y);

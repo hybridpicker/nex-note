@@ -6088,6 +6088,55 @@ test('duration-first pitch cursor arrows and Backspace correct the prepared chor
   hook.unmount();
 });
 
+test('note input arrow keys repitch an activated existing note even while duration-first input is armed', () => {
+  const upHook = renderHook(SAMPLE_XML);
+  const downHook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+  const target = notes.find((note) => note.timestampNum === 2 && note.timestampDen === 4);
+  assert.ok(target);
+
+  act(() => {
+    upHook.current.handleKeyDown(makeKeyboardEvent('M'));
+    upHook.current.handleNoteClick(target ?? null);
+    upHook.current.handleKeyDown(makeKeyboardEvent('ArrowUp'));
+  });
+  upHook.rerender();
+
+  act(() => {
+    downHook.current.handleKeyDown(makeKeyboardEvent('M'));
+    downHook.current.handleNoteClick(target ?? null);
+    downHook.current.handleKeyDown(makeKeyboardEvent('ArrowDown'));
+  });
+  downHook.rerender();
+
+  const findEditedPitch = (xml: string) => flattenVoiceEvents(xml).find((event) => (
+    event.kind === 'note'
+    && event.measureNumber === 1
+    && event.voiceId === 1
+    && event.timestampNum === 2
+    && event.timestampDen === 4
+  ));
+  const raised = findEditedPitch(upHook.xml);
+  const lowered = findEditedPitch(downHook.xml);
+  assert.deepEqual(
+    raised?.kind === 'note' ? raised.pitch : null,
+    { step: 'D', alter: 1, octave: 4 },
+  );
+  assert.deepEqual(
+    lowered?.kind === 'note' ? lowered.pitch : null,
+    { step: 'C', alter: 1, octave: 4 },
+  );
+  assert.equal(upHook.current.noteInputAnchor?.alter, 1);
+  assert.equal(downHook.current.noteInputAnchor?.step, 'C');
+  assert.equal(downHook.current.noteInputAnchor?.alter, 1);
+  assert.equal(upHook.current.preparedDurationPitchLabel, 'C4');
+  assert.equal(downHook.current.preparedDurationPitchLabel, 'C4');
+  assert.equal(upHook.appliedCommands.length, 1);
+  assert.equal(downHook.appliedCommands.length, 1);
+  upHook.unmount();
+  downHook.unmount();
+});
+
 test('duration-first three-note entry stays atomic and isolated in voice 2', () => {
   const xml = MULTI_VOICE_CLICK_XML.replace(
     '<note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>',

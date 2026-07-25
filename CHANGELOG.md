@@ -2,6 +2,17 @@
 
 All notable changes to nex-note are documented here.
 
+## 0.0.3 - 2026-07-25
+
+### Fixed
+
+- Arrow Up and Arrow Down now repitch the active existing note by one chromatic semitone per press in Note Input, even when input-by-duration is armed, while preserving prepared-pitch navigation when no existing pitched note is active.
+
+### Validation
+
+- All 992 unit and integration tests pass.
+- The focused browser regression and the Next.js production build pass.
+
 ## 0.0.2 - 2026-07-23
 
 ### Changed

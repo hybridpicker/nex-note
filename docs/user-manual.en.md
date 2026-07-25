@@ -101,7 +101,7 @@ String, fret, tuning, and guitar techniques are stored as semantic note data. Mu
 
 ## Pitch, Accidentals, and Duration
 
-Select a note and use `A` to `G`, the active-note buttons, arrow-key transposition, or the Edit Palette. `ArrowUp/Down` transposes chromatically. `Q/W` halve or double duration; `Shift+Q/W` do the dotted-aware versions. Accidentals can be selected in the toolbar, with `-` for flat, `=` for natural, `+` for sharp, `Alt/Option+-` for double-flat, and `Alt/Option+=` for double-sharp.
+Select a note and use `A` to `G`, the active-note buttons, arrow-key transposition, or the Edit Palette. `ArrowUp/Down` transposes the active existing note chromatically by one semitone per press, including while Note Input and input-by-duration are active. When input-by-duration has no active existing pitched note, the same arrows continue to move its prepared pitch cursor. `Q/W` halve or double duration; `Shift+Q/W` do the dotted-aware versions. Accidentals can be selected in the toolbar, with `-` for flat, `=` for natural, `+` for sharp, `Alt/Option+-` for double-flat, and `Alt/Option+=` for double-sharp.
 
 In Note Input, an armed accidental is consumed only after the next successful pitched commit. Its sounding alteration then carries to the same letter and octave on that staff until the barline, including across voices; another octave and the next measure have independent context. The explicit written glyph is stored separately from sounding pitch and survives MusicXML, Copy/Paste, paired notation/TAB edits, and Undo/Redo.
 

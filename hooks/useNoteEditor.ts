@@ -3395,9 +3395,13 @@ export function useNoteEditor(
   }, [coreDocument, handleNoteClick, options]);
 
   const transposeSelectedBySemitone = useCallback((semitones: 1 | -1) => {
-    const targetNote = selectedNoteRef.current ?? selectedNote;
+    const targetNote = noteInputModeRef.current
+      ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
+      : (selectedNoteRef.current ?? selectedNote);
     if (!targetNote || targetNote.isRest) return;
-    const selectionTargets = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
+    const selectionTargets = noteInputModeRef.current
+      ? [targetNote]
+      : (selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes);
     const targets = selectedTargets(targetNote, selectionTargets).filter((entry) => !entry.isRest);
     if (targets.length > 1) {
       const range = selectionRange(targets);
@@ -4118,7 +4122,13 @@ export function useNoteEditor(
       return;
     }
 
-    if (inputByDurationModeRef.current && !e.altKey && !e.shiftKey) {
+    const activeNoteInputTarget = noteInputModeRef.current ? lastNoteInputRef.current : null;
+    if (
+      inputByDurationModeRef.current
+      && (!activeNoteInputTarget || activeNoteInputTarget.isRest)
+      && !e.altKey
+      && !e.shiftKey
+    ) {
       if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && metaKey) {
         e.preventDefault();
         changeInputByDurationOctave(e.key === 'ArrowUp' ? 1 : -1);
