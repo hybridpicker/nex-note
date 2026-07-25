@@ -3536,6 +3536,42 @@ test('note input chromatic arrows transpose an active multi-note selection toget
   });
 });
 
+test('note input arrows repitch the active tone in a newly entered chord', async ({ page }) => {
+  await bootWithScore(page, 'new-chord-active-tone-arrow.musicxml', buildFourQuarterFixtureXml());
+  await waitForRenderedScore(page);
+
+  await page.keyboard.press('Escape');
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('N');
+  await page.keyboard.press('Alt+3');
+  await page.keyboard.press('Alt+3');
+
+  await expect.poll(async () => {
+    const anchor = (await readE2EState(page))?.noteInputAnchor;
+    return anchor ? { step: anchor.step, alter: anchor.alter, octave: anchor.octave } : null;
+  }).toEqual({ step: 'G', alter: 0, octave: 4 });
+
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(async () => {
+    const events = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events
+      .filter((event) => event.kind === 'note' && event.timestampNum === 0);
+    const anchor = (await readE2EState(page))?.noteInputAnchor;
+    return {
+      pitches: events.map((event) => event.kind === 'note'
+        ? { step: event.pitch.step, alter: event.pitch.alter, octave: event.pitch.octave }
+        : null),
+      anchor: anchor ? { step: anchor.step, alter: anchor.alter, octave: anchor.octave } : null,
+    };
+  }).toEqual({
+    pitches: [
+      { step: 'C', alter: 0, octave: 4 },
+      { step: 'E', alter: 0, octave: 4 },
+      { step: 'G', alter: 1, octave: 4 },
+    ],
+    anchor: { step: 'G', alter: 1, octave: 4 },
+  });
+});
+
 test('note input can commit in measure 2 upper piano staff after hovering lower staff', async ({ page }) => {
   await bootWithScore(page, 'blank-piano-measure-2-upper-after-lower.musicxml', buildBlankPianoFixtureXml(2));
   await waitForRenderedLayout(page);

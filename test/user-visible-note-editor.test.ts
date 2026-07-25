@@ -6207,6 +6207,42 @@ test('note input arrow keys transpose every note in an active multi-note selecti
   hook.unmount();
 });
 
+test('note input arrows repitch the active tone after newly entered chord tones regenerate entity ids', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const first = makeSelectedNotes(SAMPLE_XML)
+    .find((note) => !note.isRest && note.measureNumber === 1 && note.timestampNum === 0);
+  assert.ok(first);
+
+  act(() => { hook.current.handleNoteClick(first ?? null); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('N')); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('3', { altKey: true, code: 'Digit3' })); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('3', { altKey: true, code: 'Digit3' })); });
+  hook.rerender();
+
+  assert.equal(hook.current.noteInputAnchor?.step, 'G');
+  const staleActiveEntityId = hook.current.noteInputAnchor?.coreEntityId;
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp')); });
+  hook.rerender();
+
+  const chordPitches = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.kind === 'note' && event.measureNumber === 1 && event.timestampNum === 0)
+    .map((event) => event.kind === 'note' ? event.pitch : null);
+  assert.deepEqual(chordPitches, [
+    { step: 'C', alter: 0, octave: 4 },
+    { step: 'E', alter: 0, octave: 4 },
+    { step: 'G', alter: 1, octave: 4 },
+  ]);
+  assert.equal(hook.current.noteInputAnchor?.step, 'G');
+  assert.equal(hook.current.noteInputAnchor?.alter, 1);
+  assert.equal(hook.current.noteInputAnchor?.coreEntityId, staleActiveEntityId);
+  assert.equal(hook.appliedCommands.at(-1)?.[0]?.type, 'transposeChromatic');
+  hook.unmount();
+});
+
 test('duration-first three-note entry stays atomic and isolated in voice 2', () => {
   const xml = MULTI_VOICE_CLICK_XML.replace(
     '<note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>',

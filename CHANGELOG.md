@@ -2,6 +2,17 @@
 
 All notable changes to nex-note are documented here.
 
+## 0.0.6 - 2026-07-25
+
+### Fixed
+
+- Arrow Up and Arrow Down now repitch the active individual tone in a chord created during the current Note Input session.
+- Chromatic transpose commands carry pitch identity as a fallback when subsequent chord insertion has regenerated the active tone's semantic entity ID.
+
+### Validation
+
+- Added hook and browser regressions that build a C–E–G chord through the visible interval-entry workflow and repitch only the active G to G-sharp.
+
 ## 0.0.5 - 2026-07-25
 
 ### Fixed

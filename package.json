@@ -1,6 +1,6 @@
 {
   "name": "nex-note",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Downloadable music app for private scores, tabs, AI editing, and embeds.",
   "private": true,
   "license": "AGPL-3.0-or-later",
