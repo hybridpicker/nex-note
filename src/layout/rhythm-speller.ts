@@ -103,9 +103,12 @@ function splitEventAtMetricBoundaries(input: {
 }): RhythmSpellingFragmentWithEvent[] {
   const start = eventStartDivisions(input.event, input.divisions);
   const end = start + Math.max(input.event.durationDivisions, 0);
-  const metricPoints = input.metricSplitPoints
-    .filter((boundary) => boundary.strength === 'hard' || start % Math.max(boundary.gridDivisions, 1) !== 0)
-    .map((boundary) => boundary.point);
+  const spansFullMeasure = start === 0 && end === input.measureDurationDivisions;
+  const metricPoints = spansFullMeasure
+    ? []
+    : input.metricSplitPoints
+      .filter((boundary) => boundary.strength === 'hard' || start % Math.max(boundary.gridDivisions, 1) !== 0)
+      .map((boundary) => boundary.point);
   const splitPoints = normalizeSplitPoints([
     ...metricPoints,
     ...(input.hints?.forceSplitAt ?? []),

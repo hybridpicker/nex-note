@@ -22,6 +22,49 @@ const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
+const WHOLE_REST_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+      </attributes>
+      <note><rest measure="yes"/><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+test('insertNoteAt preserves a requested whole note as one full-measure event', () => {
+  const result = applyDocumentCommands({ xml: WHOLE_REST_XML, coreDocument: null }, [{
+    type: 'insertNoteAt',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 4,
+    step: 'C',
+    octave: 4,
+    alter: 0,
+    durationType: 'whole',
+    isDotted: false,
+    preserveOverflow: false,
+  }]);
+
+  const events = result.coreDocument?.score.parts[0]?.staves[0]?.measures[0]?.voices[0]?.events ?? [];
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.kind, 'note');
+  assert.equal(events[0]?.durationDivisions, 4);
+  assert.equal(events[0]?.durationType, 'whole');
+  assert.equal(Boolean(events[0]?.tieStart), false);
+  assert.equal((result.xml.match(/<note>/g) ?? []).length, 1);
+  assert.match(result.xml, /<duration>4<\/duration>[\s\S]*?<type>whole<\/type>/);
+  assert.doesNotMatch(result.xml, /<tie type=/);
+});
+
 test('changeNoteDuration expands a note by consuming the following rhythmic slot', () => {
   const result = applyDocumentCommands({ xml: SAMPLE_XML, coreDocument: null }, [{
     type: 'changeNoteDuration',

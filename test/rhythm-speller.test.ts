@@ -113,6 +113,33 @@ test('rhythm speller splits a logical half note crossing the 4/4 half-bar', () =
   ]);
 });
 
+test('rhythm speller preserves a full-measure whole note as one glyph event', () => {
+  const document = buildHalfNoteOnBeatTwoDocument();
+  const event = document.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
+  event.timestampNum = 0;
+  event.timestampDen = 4;
+  event.durationDivisions = 4;
+  event.durationType = 'whole';
+
+  const projection = buildRhythmSpellingProjection(document);
+  const fragments = projection.voices[0]?.fragments ?? [];
+
+  assert.equal(fragments.length, 1);
+  assert.deepEqual(fragments.map((fragment) => ({
+    start: fragment.startDivisions,
+    duration: fragment.durationDivisions,
+    type: fragment.durationType,
+    tieStart: Boolean(fragment.tieStart),
+    tieStop: Boolean(fragment.tieStop),
+  })), [{
+    start: 0,
+    duration: 4,
+    type: 'whole',
+    tieStart: false,
+    tieStop: false,
+  }]);
+});
+
 test('rhythm speller preserves a core tie start on the final projected fragment', () => {
   const projection = buildRhythmSpellingProjection(buildHalfNoteOnBeatTwoDocument({ tieStart: true }));
   const voice = projection.voices[0];
