@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { NoteDuration } from '@/hooks/useNoteEditor';
+import { EngravedNoteGlyph } from '@/components/EngravedNoteGlyph';
 
 export type NotationAccidental = 'double-flat' | 'flat' | 'natural' | 'sharp' | 'double-sharp';
 export type NotationBarline = 'regular' | 'double' | 'final' | 'repeat-start' | 'repeat-end';
@@ -19,7 +20,7 @@ export function NoteDurationGlyph({
   const flags = !isBreve && !isLong && durationNum >= 64 ? 4 : durationNum >= 32 ? 3 : durationNum >= 16 ? 2 : durationNum >= 8 ? 1 : 0;
   const hasStem = (durationNum > 1 && !isBreve && !isLong) || isLong;
 
-  return (
+  const fallback = (
     <svg className={className} viewBox="0 0 28 34" fill="none" aria-hidden>
       {isBreve || isLong ? (
         <>
@@ -56,6 +57,14 @@ export function NoteDurationGlyph({
         );
       })}
     </svg>
+  );
+
+  return (
+    <EngravedNoteGlyph
+      duration={duration}
+      className={className}
+      fallback={fallback}
+    />
   );
 }
 

@@ -832,6 +832,7 @@ test('NotationToolbar exposes MuseScore 1-9 duration buttons including breve and
 
   const root = renderer!.root;
   const titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
+  assert.equal(root.findAllByProps({ 'data-engraving-source': 'vexflow' }).length, 9);
   assert.ok(titles.some((title) => (
     typeof title === 'string'
     && title.startsWith('Breve: 8')
@@ -1334,6 +1335,7 @@ test('ScoreInputOverlay keeps standard note entry focused on the notation glyph'
   const root = renderer!.root;
   const preview = root.findAll((node: ReactTestInstance) => node.props['data-testid'] === 'ghost-note-preview')[0];
   assert.equal(preview.props['data-ghost-stem'], 'down');
+  assert.equal(root.findAllByProps({ 'data-engraving-source': 'vexflow' }).length, 1);
   assert.equal(root.findAll((node) => node.props['data-testid'] === 'ghost-piano-roll').length, 0);
   assert.equal(
     root.findAll((node) => node.props.style?.transform === 'translateX(12px)').length,

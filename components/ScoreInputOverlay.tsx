@@ -1,14 +1,11 @@
 import type { ReactElement } from 'react';
+import type { NoteDuration } from '@/hooks/useNoteEditor';
 import {
-  renderAccidental,
-  renderAugmentationDot,
-  renderFlags,
-  renderNoteHead,
-  renderStem,
   renderTupletBadge,
   type AccidentalAlter,
   type GhostStemDirection,
 } from '@/src/render-bridge/utils/svg-helpers';
+import { EngravedNoteGlyph } from '@/components/EngravedNoteGlyph';
 import type { GhostPlacementMode } from '@/src/score-input/smart-ghost-note';
 import type { DragTransposeMode } from '@/src/score-input/transpose-logic';
 import { useI18n } from '@/lib/i18n';
@@ -263,6 +260,7 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       )}
       <div
         style={{
+          position: 'relative',
           animation: target.dragPulse ? 'nex-note-ghost-jump 180ms ease-out' : undefined,
           filter: target.transposeMode ? palette.glow : 'drop-shadow(0 0 1px rgba(15, 23, 42, 0.16))',
           transition: 'filter 160ms ease, opacity 160ms ease',
@@ -309,25 +307,21 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
             </text>
           ) : (
             <>
-              {renderAccidental({ alter, color: palette.accidental })}
-              {renderNoteHead({ noteheadCenterX: target.noteheadCenterX, duration, color: palette.notehead })}
-              {renderStem({
-                noteheadCenterX: target.noteheadCenterX,
-                duration,
-                direction: target.stemDirection,
-                color: palette.stem,
-              })}
-              {renderFlags({
-                noteheadCenterX: target.noteheadCenterX,
-                duration,
-                direction: target.stemDirection,
-                color: palette.stem,
-              })}
-              {isDotted && renderAugmentationDot({ noteheadCenterX: target.noteheadCenterX, color: palette.stem })}
               {target.isTuplet && renderTupletBadge({ width: target.previewWidth, label: target.tupletLabel ?? '3', color: palette.stem })}
             </>
           )}
         </svg>
+        {!isTabPreview && (
+          <EngravedNoteGlyph
+            duration={duration as NoteDuration}
+            dotted={isDotted}
+            stemDirection={target.stemDirection}
+            accidentalAlter={alter}
+            noteheadCenterX={target.noteheadCenterX}
+            noteheadCenterY={28}
+            color={palette.notehead}
+          />
+        )}
       </div>
       {showPianoRoll && (
         <div
