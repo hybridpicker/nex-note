@@ -3477,17 +3477,28 @@ export function useNoteEditor(
       warnNoOpEdit('transposeSelectedBySemitone', command);
       return;
     }
-    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(targetNote, selectionTargets) });
-    const updated = { ...targetNote, ...nextPitch };
-    if (lastNoteInputRef.current && selectedNotesEqual(lastNoteInputRef.current, targetNote)) {
-      lastNoteInputRef.current = updated;
-    }
+    const updated = resolveRecentInputFromDocument(next.coreDocument, {
+      coreMeasureId: targetNote.coreMeasureId ?? null,
+      corePartId: targetNote.corePartId ?? null,
+      measureNumber: targetNote.measureNumber,
+      staffIndex: targetNote.staffIndex,
+      voiceId: targetNote.voiceId,
+      timestampNum: targetNote.timestampNum,
+      timestampDen: targetNote.timestampDen,
+    }, {
+      isRest: false,
+      step: nextPitch.step,
+      octave: nextPitch.octave,
+      alter: nextPitch.alter,
+    }) ?? { ...targetNote, ...nextPitch };
+    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(updated, [updated]) });
+    if (noteInputModeRef.current) lastNoteInputRef.current = updated;
     setSelectedNoteLive(updated);
     selectedNotesRef.current = [updated];
     setSelectedNotes([updated]);
     lastSelectedRef.current = updated;
     options?.onActiveNotePreview?.(updated);
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, options, setSelectedNoteLive, warnNoOpEdit, xml]);
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, options, resolveRecentInputFromDocument, setSelectedNoteLive, warnNoOpEdit, xml]);
 
   const moveSelectedNoteToAdjacentStaff = useCallback((direction: 'up' | 'down') => {
     const current = selectedNoteRef.current ?? selectedNote;

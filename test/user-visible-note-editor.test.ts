@@ -6238,8 +6238,23 @@ test('note input arrows repitch the active tone after newly entered chord tones 
   ]);
   assert.equal(hook.current.noteInputAnchor?.step, 'G');
   assert.equal(hook.current.noteInputAnchor?.alter, 1);
-  assert.equal(hook.current.noteInputAnchor?.coreEntityId, staleActiveEntityId);
+  assert.notEqual(hook.current.noteInputAnchor?.coreEntityId, staleActiveEntityId);
+  assert.equal(hook.current.selectedNotes.length, 1);
   assert.equal(hook.appliedCommands.at(-1)?.[0]?.type, 'transposeChromatic');
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowDown')); });
+  hook.rerender();
+  const restoredChordPitches = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.kind === 'note' && event.measureNumber === 1 && event.timestampNum === 0)
+    .map((event) => event.kind === 'note' ? event.pitch : null);
+  assert.deepEqual(restoredChordPitches, [
+    { step: 'C', alter: 0, octave: 4 },
+    { step: 'E', alter: 0, octave: 4 },
+    { step: 'G', alter: 0, octave: 4 },
+  ]);
+  assert.equal(hook.current.selectedNotes.length, 1);
+  assert.equal(hook.current.noteInputAnchor?.step, 'G');
+  assert.equal(hook.current.noteInputAnchor?.alter, 0);
   hook.unmount();
 });
 

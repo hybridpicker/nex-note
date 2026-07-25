@@ -3570,6 +3570,31 @@ test('note input arrows repitch the active tone in a newly entered chord', async
     ],
     anchor: { step: 'G', alter: 1, octave: 4 },
   });
+
+  await expect.poll(async () => (await readE2EState(page))?.selectionCount).toBe(1);
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(async () => {
+    const events = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events
+      .filter((event) => event.kind === 'note' && event.timestampNum === 0);
+    const state = await readE2EState(page);
+    return {
+      pitches: events.map((event) => event.kind === 'note'
+        ? { step: event.pitch.step, alter: event.pitch.alter, octave: event.pitch.octave }
+        : null),
+      anchor: state?.noteInputAnchor
+        ? { step: state.noteInputAnchor.step, alter: state.noteInputAnchor.alter, octave: state.noteInputAnchor.octave }
+        : null,
+      selectionCount: state?.selectionCount,
+    };
+  }).toEqual({
+    pitches: [
+      { step: 'C', alter: 0, octave: 4 },
+      { step: 'E', alter: 0, octave: 4 },
+      { step: 'G', alter: 0, octave: 4 },
+    ],
+    anchor: { step: 'G', alter: 0, octave: 4 },
+    selectionCount: 1,
+  });
 });
 
 test('note input can commit in measure 2 upper piano staff after hovering lower staff', async ({ page }) => {
