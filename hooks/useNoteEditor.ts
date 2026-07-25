@@ -3403,12 +3403,17 @@ export function useNoteEditor(
   }, [coreDocument, handleNoteClick, options]);
 
   const transposeSelectedBySemitone = useCallback((semitones: 1 | -1) => {
+    const explicitMultiSelection = selectedNotesRef.current.length > 1
+      ? selectedNotesRef.current
+      : null;
     const targetNote = noteInputModeRef.current
-      ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
+      ? (explicitMultiSelection
+        ? (selectedNoteRef.current ?? selectedNote ?? explicitMultiSelection[explicitMultiSelection.length - 1]!)
+        : (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote))
       : (selectedNoteRef.current ?? selectedNote);
     if (!targetNote || targetNote.isRest) return;
     const selectionTargets = noteInputModeRef.current
-      ? [targetNote]
+      ? (explicitMultiSelection ?? [targetNote])
       : (selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes);
     const targets = selectedTargets(targetNote, selectionTargets).filter((entry) => !entry.isRest);
     if (targets.length > 1) {
@@ -3440,6 +3445,7 @@ export function useNoteEditor(
       selectedNotesRef.current = movedTargets;
       setSelectedNotes(movedTargets);
       lastSelectedRef.current = movedCurrent;
+      if (noteInputModeRef.current) lastNoteInputRef.current = movedCurrent;
       options?.onActiveNotePreview?.(movedCurrent);
       return;
     }

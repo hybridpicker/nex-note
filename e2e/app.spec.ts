@@ -3505,6 +3505,37 @@ test('re-entering note input repitches the newly selected note instead of the pr
   ]);
 });
 
+test('note input chromatic arrows transpose an active multi-note selection together', async ({ page }) => {
+  await bootWithScore(page, 'four-quarter-multi-note-arrow.musicxml', buildFourQuarterFixtureXml());
+  await waitForRenderedScore(page);
+
+  await page.keyboard.press('Escape');
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(async () => (await readE2EState(page))?.selectionCount).toBe(2);
+  await page.keyboard.press('N');
+  await page.keyboard.press('ArrowUp');
+
+  await expect.poll(async () => {
+    const events = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events
+      .filter((event) => event.kind === 'note');
+    return {
+      pitches: events.map((event) => event.kind === 'note'
+        ? { step: event.pitch.step, alter: event.pitch.alter, octave: event.pitch.octave }
+        : null),
+      selectionCount: (await readE2EState(page))?.selectionCount,
+    };
+  }).toEqual({
+    pitches: [
+      { step: 'C', alter: 1, octave: 4 },
+      { step: 'D', alter: 1, octave: 4 },
+      { step: 'E', alter: 0, octave: 4 },
+      { step: 'F', alter: 0, octave: 4 },
+    ],
+    selectionCount: 2,
+  });
+});
+
 test('note input can commit in measure 2 upper piano staff after hovering lower staff', async ({ page }) => {
   await bootWithScore(page, 'blank-piano-measure-2-upper-after-lower.musicxml', buildBlankPianoFixtureXml(2));
   await waitForRenderedLayout(page);

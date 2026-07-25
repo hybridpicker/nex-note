@@ -2,6 +2,17 @@
 
 All notable changes to nex-note are documented here.
 
+## 0.0.5 - 2026-07-25
+
+### Fixed
+
+- Arrow Up and Arrow Down in Note Input now transpose every pitched note in an explicit multi-note or chord selection together instead of collapsing the edit to one active tone.
+- Repeated chromatic-arrow presses keep the complete moved selection active.
+
+### Validation
+
+- Added hook and browser regressions for multi-note Note Input transposition, including repeated keypresses and selection preservation.
+
 ## 0.0.4 - 2026-07-25
 
 ### Fixed

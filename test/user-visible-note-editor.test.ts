@@ -6174,6 +6174,39 @@ test('re-entering note input activates the current selection instead of a stale 
   hook.unmount();
 });
 
+test('note input arrow keys transpose every note in an active multi-note selection', () => {
+  const hook = renderHook(CHORD_DELETE_XML);
+  const chordNotes = makeSelectedNotes(CHORD_DELETE_XML)
+    .filter((note) => !note.isRest && note.timestampNum === 0);
+  assert.equal(chordNotes.length, 2);
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('N')); });
+  hook.rerender();
+  act(() => {
+    hook.current.handleNoteClick(chordNotes[1] ?? null, { selectionNotes: chordNotes });
+  });
+  hook.rerender();
+  assert.equal(hook.current.selectedNotes.length, 2);
+
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp')); });
+  hook.rerender();
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowUp')); });
+  hook.rerender();
+
+  const movedChord = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.kind === 'note' && event.timestampNum === 0)
+    .map((event) => event.kind === 'note' ? event.pitch : null);
+  assert.deepEqual(movedChord, [
+    { step: 'D', alter: 0, octave: 4 },
+    { step: 'F', alter: 1, octave: 4 },
+  ]);
+  assert.equal(hook.current.selectedNotes.length, 2);
+  assert.equal(hook.current.noteInputAnchor?.step, 'F');
+  assert.equal(hook.current.noteInputAnchor?.alter, 1);
+  assert.equal(hook.appliedCommands.length, 2);
+  hook.unmount();
+});
+
 test('duration-first three-note entry stays atomic and isolated in voice 2', () => {
   const xml = MULTI_VOICE_CLICK_XML.replace(
     '<note><pitch><step>G</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>quarter</type><staff>1</staff></note>',
