@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applySwingToMidiNotes, buildMeasureBeatRanges, buildPlaybackMeasureBeatRanges, normalizeMidiNotes, resolveFullPlaybackDurationSeconds, resolvePlaybackQuarterBeatSeconds, resolvePlaybackSoundfontInstrument, resolvePlaybackTempoChangeOrigin, resolvePlaybackTempoScale, resolveStartScoreSeconds, resolveVisiblePlayheadSeconds, scoreSecondsToCursorTarget, scoreSecondsToCursorTargetForDocument } from '../hooks/usePlayback.ts';
+import { applySwingToMidiNotes, buildMeasureBeatRanges, buildPlaybackMeasureBeatRanges, normalizeMidiNotes, resolveFullPlaybackDurationSeconds, resolvePlaybackQuarterBeatSeconds, resolvePlaybackSoundfontInstrument, resolvePlaybackTempoChangeOrigin, resolvePlaybackTempoScale, resolveStartScoreSeconds, resolveVisiblePlayheadSeconds, scoreSecondsToCursorTarget, scoreSecondsToCursorTargetForDocument, shouldPublishPlaybackPosition } from '../hooks/usePlayback.ts';
 import { resolveReachedPlaybackOnset } from '../lib/playback-highlight.ts';
 import type { ScoreDocumentModel } from '../src/score-core/model/types.ts';
 
@@ -346,6 +346,37 @@ test('resolveStartScoreSeconds falls back to time zero when the project just ope
     coreDocument: null,
     justOpened: false,
   }), 0);
+});
+
+test('playback UI publishing is throttled during playback but never delays structural changes', () => {
+  assert.equal(shouldPublishPlaybackPosition({
+    isPlaying: true,
+    previousTimeMs: 1_000,
+    nextTimeMs: 1_032,
+    measureChanged: false,
+    hasPublishedPlayhead: true,
+  }), false);
+  assert.equal(shouldPublishPlaybackPosition({
+    isPlaying: true,
+    previousTimeMs: 1_000,
+    nextTimeMs: 1_064,
+    measureChanged: false,
+    hasPublishedPlayhead: true,
+  }), true);
+  assert.equal(shouldPublishPlaybackPosition({
+    isPlaying: true,
+    previousTimeMs: 1_000,
+    nextTimeMs: 1_010,
+    measureChanged: true,
+    hasPublishedPlayhead: true,
+  }), true);
+  assert.equal(shouldPublishPlaybackPosition({
+    isPlaying: false,
+    previousTimeMs: 1_000,
+    nextTimeMs: 1_001,
+    measureChanged: false,
+    hasPublishedPlayhead: true,
+  }), true);
 });
 
 test('resolveVisiblePlayheadSeconds stays aligned with audible score time during playback', () => {
