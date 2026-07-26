@@ -134,6 +134,8 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     microphoneInputStatus: 'idle',
     microphoneDetectedPitchLabel: '',
     microphoneSignalLevelDb: -120,
+    microphoneInputDevices: [],
+    microphoneSelectedDeviceId: '',
     leadsheetMode: false,
     guitarInputMode: false,
     selectedGuitarString: 1,
@@ -155,6 +157,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleInputByDurationMode() {},
     onToggleMidiInput() {},
     onToggleMicrophoneInput() {},
+    onSelectMicrophoneInput() {},
     onToggleLeadsheetMode() {},
     onToggleGuitarInputMode() {},
     onInsertGuitarFret() {},
@@ -743,6 +746,11 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
       microphoneInputStatus: 'listening',
       microphoneDetectedPitchLabel: 'C4+E4+G4',
       microphoneSignalLevelDb: -28,
+      microphoneInputDevices: [
+        { deviceId: 'external', label: 'External Microphone' },
+        { deviceId: 'built-in', label: 'MacBook Pro Microphone' },
+      ],
+      microphoneSelectedDeviceId: 'built-in',
       midiInputEnabled: true,
       midiInputStatus: 'connected',
       midiInputDevices: ['Acme Stage 88'],
@@ -759,8 +767,11 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   assert.equal(prominentRecordButton.props['aria-pressed'], true);
   assert.match(prominentRecordButton.props.title, /Listening to the microphone/);
   assert.match(prominentRecordButton.props.title, /Detected: C4\+E4\+G4/);
+  assert.match(prominentRecordButton.props.title, /Input level: -28 dB/);
   assert.match(nodeText(prominentRecordButton), /REC C4\+E4\+G4/);
   assert.match(prominentRecordButton.props.className, /bg-red-500/);
+  const microphonePicker = renderer!.root.findAllByProps({ 'aria-label': 'Microphone input' })[0]!;
+  assert.equal(microphonePicker.props.value, 'built-in');
 
   const midiButton = renderer!.root.findAll((node) => (
     node.type === 'button'

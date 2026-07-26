@@ -7,7 +7,10 @@ import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, Artic
 import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { MidiInputStatus } from '@/hooks/useMidiInput';
-import type { MicrophoneInputStatus } from '@/hooks/useMicrophonePitchInput';
+import type {
+  MicrophoneInputDevice,
+  MicrophoneInputStatus,
+} from '@/hooks/useMicrophonePitchInput';
 import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 interface Props {
@@ -41,6 +44,8 @@ interface Props {
   microphoneInputStatus: MicrophoneInputStatus;
   microphoneDetectedPitchLabel: string;
   microphoneSignalLevelDb: number;
+  microphoneInputDevices: MicrophoneInputDevice[];
+  microphoneSelectedDeviceId: string;
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -63,6 +68,7 @@ interface Props {
   onToggleInputByDurationMode: () => void;
   onToggleMidiInput: () => void;
   onToggleMicrophoneInput: () => void;
+  onSelectMicrophoneInput: (deviceId: string) => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -250,9 +256,9 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneSignalLevelDb, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneSignalLevelDb, microphoneInputDevices, microphoneSelectedDeviceId, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onSelectMicrophoneInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -398,7 +404,8 @@ export default function NotationToolbar({
             microphoneInputStatus === 'unsupported' ? 'Microphone input is not supported in this environment' : null,
             microphoneInputStatus === 'error' ? 'Microphone input could not be started; click to retry' : null,
             microphoneDetectedPitchLabel ? `Detected: ${microphoneDetectedPitchLabel}` : null,
-            microphoneInputEnabled && microphoneSignalLevelDb <= -90 ? 'No pitched signal detected yet' : null,
+            microphoneInputEnabled ? `Input level: ${Math.round(microphoneSignalLevelDb)} dB` : null,
+            microphoneInputEnabled && microphoneSignalLevelDb <= -85 ? 'No microphone signal detected' : null,
           ].filter(Boolean).join('\n')}
           className={`h-8 flex items-center gap-1.5 rounded-md border px-3 text-xs font-semibold tracking-wide transition-colors shrink-0 ${
             microphoneInputEnabled
@@ -416,8 +423,23 @@ export default function NotationToolbar({
           />
           {microphoneInputEnabled && microphoneDetectedPitchLabel
             ? `REC ${microphoneDetectedPitchLabel}`
-            : 'MIC REC'}
+            : microphoneInputEnabled
+              ? `REC ${Math.round(microphoneSignalLevelDb)} dB`
+              : 'MIC REC'}
         </button>
+        {microphoneInputEnabled && microphoneInputDevices.length > 1 ? (
+          <select
+            aria-label="Microphone input"
+            title="Choose the microphone used for Instrument Record"
+            value={microphoneSelectedDeviceId}
+            onChange={(event) => onSelectMicrophoneInput(event.target.value)}
+            className="h-8 max-w-40 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+          >
+            {microphoneInputDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+            ))}
+          </select>
+        ) : null}
         <button
           onClick={onToggleLeadsheetMode}
           title={leadsheetMode ? t('toolbar.leadOn') : t('toolbar.leadOff')}

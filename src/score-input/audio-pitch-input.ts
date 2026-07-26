@@ -77,9 +77,9 @@ export function detectPitchesFromSpectrum(
     fftSize,
     minMidi = 36,
     maxMidi = 96,
-    maxPitches = 6,
-    minimumLevelDb = -72,
-    minimumSignalAboveNoiseDb = 12,
+    maxPitches = 4,
+    minimumLevelDb = -92,
+    minimumSignalAboveNoiseDb = 9,
   } = options;
   if (
     spectrumDb.length === 0
@@ -109,7 +109,7 @@ export function detectPitchesFromSpectrum(
     if (
       fundamental.levelDb < minimumLevelDb
       || fundamentalStrength < minimumSignalAboveNoiseDb
-      || fundamental.localContrastDb < 2
+      || fundamental.localContrastDb < 3
     ) continue;
 
     let salience = fundamentalStrength * 1.5;
@@ -146,7 +146,7 @@ export function detectPitchesFromSpectrum(
   }
 
   const strongestSalience = Math.max(0, ...fundamentals.map((candidate) => candidate.salience));
-  const relativeThreshold = strongestSalience * 0.24;
+  const relativeThreshold = strongestSalience * 0.42;
   return fundamentals
     .filter((candidate) => candidate.salience >= relativeThreshold)
     .sort((left, right) => right.salience - left.salience)
@@ -168,21 +168,23 @@ export interface MicrophoneNoteGateOptions {
 export class MicrophoneNoteGate {
   private readonly settleMs: number;
   private readonly releaseMs: number;
-  private candidateSignature = '';
-  private candidateSinceMs = 0;
-  private candidateNotes: number[] = [];
+  private readonly frameGapMs: number;
+  private attackSinceMs: number | null = null;
+  private firstSeenByNote = new Map<number, number>();
+  private lastSeenByNote = new Map<number, number>();
   private emittedNotes = new Set<number>();
   private silenceSinceMs: number | null = null;
 
   constructor(options: MicrophoneNoteGateOptions = {}) {
     this.settleMs = Math.max(40, options.settleMs ?? 140);
     this.releaseMs = Math.max(80, options.releaseMs ?? 180);
+    this.frameGapMs = Math.max(140, this.settleMs);
   }
 
   reset() {
-    this.candidateSignature = '';
-    this.candidateSinceMs = 0;
-    this.candidateNotes = [];
+    this.attackSinceMs = null;
+    this.firstSeenByNote.clear();
+    this.lastSeenByNote.clear();
     this.emittedNotes.clear();
     this.silenceSinceMs = null;
   }
@@ -205,24 +207,38 @@ export class MicrophoneNoteGate {
       this.emittedNotes.size > 0
       && notes.every((note) => this.emittedNotes.has(note))
     ) {
-      this.candidateSignature = '';
-      this.candidateNotes = [];
       return null;
     }
 
-    const signature = notes.join(',');
-    if (signature !== this.candidateSignature) {
-      this.candidateSignature = signature;
-      this.candidateSinceMs = nowMs;
-      this.candidateNotes = notes;
-      return null;
-    }
-    if (nowMs - this.candidateSinceMs < this.settleMs) return null;
+    if (this.emittedNotes.size > 0) return null;
+    if (this.attackSinceMs == null) this.attackSinceMs = nowMs;
 
-    this.emittedNotes = new Set(this.candidateNotes);
-    const emitted = [...this.candidateNotes];
-    this.candidateSignature = '';
-    this.candidateNotes = [];
+    for (const note of notes) {
+      const previousSeenMs = this.lastSeenByNote.get(note);
+      if (previousSeenMs == null || nowMs - previousSeenMs > this.frameGapMs) {
+        this.firstSeenByNote.set(note, nowMs);
+      }
+      this.lastSeenByNote.set(note, nowMs);
+    }
+    for (const [note, lastSeenMs] of this.lastSeenByNote) {
+      if (nowMs - lastSeenMs > this.frameGapMs) {
+        this.lastSeenByNote.delete(note);
+        this.firstSeenByNote.delete(note);
+      }
+    }
+
+    if (nowMs - this.attackSinceMs < this.settleMs) return null;
+    const minimumPresenceMs = Math.max(40, this.settleMs * 0.55);
+    const emitted = notes.filter((note) => (
+      nowMs - (this.firstSeenByNote.get(note) ?? nowMs) >= minimumPresenceMs
+      && nowMs - (this.lastSeenByNote.get(note) ?? 0) <= this.frameGapMs
+    ));
+    if (emitted.length === 0) return null;
+
+    this.emittedNotes = new Set(emitted);
+    this.attackSinceMs = null;
+    this.firstSeenByNote.clear();
+    this.lastSeenByNote.clear();
     return emitted;
   }
 }

@@ -47,10 +47,18 @@ test('microphone spectrum detection resolves a simultaneous triad as ordered pit
 
 test('microphone spectrum detection ignores background below the notation threshold', () => {
   const detected = detectPitchesFromSpectrum(
-    syntheticSpectrum([{ midi: 69, levelDb: -82 }]),
+    syntheticSpectrum([{ midi: 69, levelDb: -98 }]),
     { sampleRate: SAMPLE_RATE, fftSize: FFT_SIZE },
   );
   assert.deepEqual(detected, []);
+});
+
+test('microphone spectrum detection accepts a quiet instrument tone above its local noise floor', () => {
+  const detected = detectPitchesFromSpectrum(
+    syntheticSpectrum([{ midi: 57, levelDb: -80 }]),
+    { sampleRate: SAMPLE_RATE, fftSize: FFT_SIZE },
+  );
+  assert.deepEqual(detected.map((pitch) => pitch.midi), [57]);
 });
 
 test('microphone note gate emits a stable attack once and rearms after silence', () => {
@@ -68,9 +76,17 @@ test('microphone note gate emits a stable attack once and rearms after silence',
 test('microphone note gate waits for a stable chord and ignores chord releases', () => {
   const gate = new MicrophoneNoteGate({ settleMs: 100 });
   assert.equal(gate.push([60], 0), null);
-  assert.equal(gate.push([60, 64], 60), null);
-  assert.equal(gate.push([60, 64, 67], 120), null);
-  assert.deepEqual(gate.push([67, 60, 64], 230), [60, 64, 67]);
+  assert.equal(gate.push([60, 64, 67], 60), null);
+  assert.deepEqual(gate.push([60, 64, 67], 120), [60, 64, 67]);
+  assert.equal(gate.push([67, 60, 64], 230), null);
   assert.equal(gate.push([60, 64], 360), null);
   assert.equal(gate.push([60], 470), null);
+});
+
+test('microphone note gate keeps stable tones when weak spectral candidates fluctuate', () => {
+  const gate = new MicrophoneNoteGate({ settleMs: 120 });
+  assert.equal(gate.push([60, 71], 0), null);
+  assert.equal(gate.push([60, 67], 50), null);
+  assert.equal(gate.push([60, 64], 100), null);
+  assert.deepEqual(gate.push([60, 64], 140), [60]);
 });

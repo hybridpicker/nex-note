@@ -15,6 +15,11 @@ export type MicrophoneInputStatus =
   | 'denied'
   | 'error';
 
+export interface MicrophoneInputDevice {
+  deviceId: string;
+  label: string;
+}
+
 interface UseMicrophonePitchInputOptions {
   onChord: (pitches: MidiPitch[]) => void;
   preferFlats?: boolean;
@@ -41,12 +46,16 @@ export function useMicrophonePitchInput({
   const [status, setStatus] = useState<MicrophoneInputStatus>('idle');
   const [detectedPitchLabel, setDetectedPitchLabel] = useState('');
   const [signalLevelDb, setSignalLevelDb] = useState(-120);
+  const [inputDevices, setInputDevices] = useState<MicrophoneInputDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const lastAnalysisAtRef = useRef(0);
+  const lastLevelUpdateAtRef = useRef(0);
   const lastDisplaySignatureRef = useRef('');
+  const selectedDeviceIdRef = useRef('');
   const gateRef = useRef(new MicrophoneNoteGate());
   const onChordRef = useRef(onChord);
   const preferFlatsRef = useRef(preferFlats);
@@ -76,7 +85,7 @@ export function useMicrophonePitchInput({
     setStatus('idle');
   }, [stopAudio]);
 
-  const enable = useCallback(async () => {
+  const enable = useCallback(async (requestedDeviceId?: string) => {
     if (
       typeof navigator === 'undefined'
       || typeof navigator.mediaDevices?.getUserMedia !== 'function'
@@ -106,13 +115,26 @@ export function useMicrophonePitchInput({
       await activeAudioContext.resume();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          autoGainControl: false,
+          autoGainControl: true,
           echoCancellation: false,
           noiseSuppression: false,
           channelCount: 1,
+          ...(requestedDeviceId ? { deviceId: { exact: requestedDeviceId } } : {}),
         },
         video: false,
       });
+      const availableDevices = (await navigator.mediaDevices.enumerateDevices())
+        .filter((device) => device.kind === 'audioinput')
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Microphone ${index + 1}`,
+        }));
+      const activeDeviceId = stream.getAudioTracks()[0]?.getSettings().deviceId
+        ?? requestedDeviceId
+        ?? '';
+      selectedDeviceIdRef.current = activeDeviceId;
+      setSelectedDeviceId(activeDeviceId);
+      setInputDevices(availableDevices);
       const analyser = activeAudioContext.createAnalyser();
       analyser.fftSize = 16384;
       analyser.minDecibels = -110;
@@ -126,12 +148,18 @@ export function useMicrophonePitchInput({
       analyserRef.current = analyser;
       gateRef.current.reset();
       const spectrum = new Float32Array(analyser.frequencyBinCount);
+      const timeDomain = new Float32Array(analyser.fftSize);
 
       const analyze = (nowMs: number) => {
         if (analyserRef.current !== analyser) return;
         animationFrameRef.current = requestAnimationFrame(analyze);
         if (nowMs - lastAnalysisAtRef.current < analysisIntervalMs) return;
         lastAnalysisAtRef.current = nowMs;
+        analyser.getFloatTimeDomainData(timeDomain);
+        let squareSum = 0;
+        for (const sample of timeDomain) squareSum += sample * sample;
+        const rms = Math.sqrt(squareSum / timeDomain.length);
+        const rawSignalLevelDb = rms > 0 ? 20 * Math.log10(rms) : -120;
         analyser.getFloatFrequencyData(spectrum);
         const detected = detectPitchesFromSpectrum(spectrum, {
           sampleRate: activeAudioContext.sampleRate,
@@ -143,9 +171,10 @@ export function useMicrophonePitchInput({
         if (displaySignature !== lastDisplaySignatureRef.current) {
           lastDisplaySignatureRef.current = displaySignature;
           setDetectedPitchLabel(formatPitchLabel(displayPitches));
-          setSignalLevelDb(detected.length > 0
-            ? Math.max(...detected.map((pitch) => pitch.levelDb))
-            : -120);
+        }
+        if (nowMs - lastLevelUpdateAtRef.current >= 220) {
+          lastLevelUpdateAtRef.current = nowMs;
+          setSignalLevelDb(Math.max(-120, rawSignalLevelDb));
         }
         const emitted = gateRef.current.push(midis, nowMs);
         if (emitted) {
@@ -172,8 +201,16 @@ export function useMicrophonePitchInput({
       disable();
       return;
     }
-    await enable();
+    await enable(selectedDeviceIdRef.current || undefined);
   }, [disable, enable, enabled]);
+
+  const selectDevice = useCallback(async (deviceId: string) => {
+    selectedDeviceIdRef.current = deviceId;
+    setSelectedDeviceId(deviceId);
+    if (!enabled) return;
+    stopAudio();
+    await enable(deviceId);
+  }, [enable, enabled, stopAudio]);
 
   useEffect(() => () => stopAudio(), [stopAudio]);
 
@@ -182,8 +219,11 @@ export function useMicrophonePitchInput({
     status,
     detectedPitchLabel,
     signalLevelDb,
+    inputDevices,
+    selectedDeviceId,
     enable,
     disable,
     toggle,
+    selectDevice,
   };
 }
