@@ -9,6 +9,7 @@ import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { MidiInputStatus } from '@/hooks/useMidiInput';
 import type {
   MicrophoneDetectionMode,
+  MicrophoneInstrumentMode,
   MicrophoneInputDevice,
   MicrophoneInputStatus,
   MicrophoneSignalQuality,
@@ -45,11 +46,13 @@ interface Props {
   microphoneInputEnabled: boolean;
   microphoneInputStatus: MicrophoneInputStatus;
   microphoneDetectedPitchLabel: string;
+  microphoneDetectedSoundingPitchLabel: string;
   microphoneSignalLevelDb: number;
   microphoneSignalQuality: MicrophoneSignalQuality;
   microphoneInputDevices: MicrophoneInputDevice[];
   microphoneSelectedDeviceId: string;
   microphoneDetectionMode: MicrophoneDetectionMode;
+  microphoneInstrumentMode: MicrophoneInstrumentMode;
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -74,6 +77,7 @@ interface Props {
   onToggleMicrophoneInput: () => void;
   onSelectMicrophoneInput: (deviceId: string) => void;
   onSelectMicrophoneDetectionMode: (mode: MicrophoneDetectionMode) => void;
+  onSelectMicrophoneInstrumentMode: (mode: MicrophoneInstrumentMode) => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -261,9 +265,9 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onSelectMicrophoneInstrumentMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -415,14 +419,18 @@ export default function NotationToolbar({
           aria-pressed={microphoneInputEnabled}
           title={[
             microphoneInputEnabled ? 'Stop microphone Instrument Record' : 'Start microphone Instrument Record',
-            'Choose a note value with 1–9, then play one pitch or a chord',
-            'Stable simultaneous pitches are notated as one chord',
+            microphoneDetectionMode === 'single'
+              ? 'Choose a note value with 1–9; every played pitch advances automatically'
+              : 'Play chord tones one by one at the same position; press Right Arrow to advance',
             microphoneInputStatus === 'requesting' ? 'Requesting microphone access…' : null,
             microphoneInputStatus === 'listening' ? 'Listening to the microphone' : null,
             microphoneInputStatus === 'denied' ? 'Microphone access was denied; click to retry' : null,
             microphoneInputStatus === 'unsupported' ? 'Microphone input is not supported in this environment' : null,
             microphoneInputStatus === 'error' ? 'Microphone input could not be started; click to retry' : null,
-            microphoneDetectedPitchLabel ? `Detected: ${microphoneDetectedPitchLabel}` : null,
+            microphoneDetectedPitchLabel ? `Written: ${microphoneDetectedPitchLabel}` : null,
+            microphoneInstrumentMode === 'guitar' && microphoneDetectedSoundingPitchLabel
+              ? `Sounding: ${microphoneDetectedSoundingPitchLabel}`
+              : null,
             microphoneInputEnabled ? `Input level: ${Math.round(microphoneSignalLevelDb)} dB` : null,
             microphoneInputEnabled ? microphoneSignalLabel : null,
           ].filter(Boolean).join('\n')}
@@ -462,13 +470,23 @@ export default function NotationToolbar({
             </span>
             <select
               aria-label="Pitch recognition mode"
-              title="Choose reliable single-note recognition or experimental chord recognition"
+              title="Single notes advance automatically; Build chord collects individually played tones until Right Arrow"
               value={microphoneDetectionMode}
               onChange={(event) => onSelectMicrophoneDetectionMode(event.target.value as MicrophoneDetectionMode)}
               className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
             >
-              <option value="single">Single notes</option>
-              <option value="chord">Chords (experimental)</option>
+              <option value="single">Single notes · auto →</option>
+              <option value="chord">Build chord · manual →</option>
+            </select>
+            <select
+              aria-label="Instrument transposition"
+              title="Guitar mode writes every sounding pitch one octave higher"
+              value={microphoneInstrumentMode}
+              onChange={(event) => onSelectMicrophoneInstrumentMode(event.target.value as MicrophoneInstrumentMode)}
+              className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+            >
+              <option value="concert">Concert pitch</option>
+              <option value="guitar">Guitar · written +8va</option>
             </select>
           </>
         ) : null}

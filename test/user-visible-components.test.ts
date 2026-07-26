@@ -133,11 +133,13 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     microphoneInputEnabled: false,
     microphoneInputStatus: 'idle',
     microphoneDetectedPitchLabel: '',
+    microphoneDetectedSoundingPitchLabel: '',
     microphoneSignalLevelDb: -120,
     microphoneSignalQuality: 'silent',
     microphoneInputDevices: [],
     microphoneSelectedDeviceId: '',
     microphoneDetectionMode: 'single',
+    microphoneInstrumentMode: 'concert',
     leadsheetMode: false,
     guitarInputMode: false,
     selectedGuitarString: 1,
@@ -161,6 +163,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleMicrophoneInput() {},
     onSelectMicrophoneInput() {},
     onSelectMicrophoneDetectionMode() {},
+    onSelectMicrophoneInstrumentMode() {},
     onToggleLeadsheetMode() {},
     onToggleGuitarInputMode() {},
     onInsertGuitarFret() {},
@@ -748,6 +751,7 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
       microphoneInputEnabled: true,
       microphoneInputStatus: 'listening',
       microphoneDetectedPitchLabel: 'C4+E4+G4',
+      microphoneDetectedSoundingPitchLabel: 'C3+E3+G3',
       microphoneSignalLevelDb: -28,
       microphoneSignalQuality: 'good',
       microphoneInputDevices: [
@@ -756,6 +760,7 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
       ],
       microphoneSelectedDeviceId: 'built-in',
       microphoneDetectionMode: 'chord',
+      microphoneInstrumentMode: 'guitar',
       midiInputEnabled: true,
       midiInputStatus: 'connected',
       midiInputDevices: ['Acme Stage 88'],
@@ -771,7 +776,8 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   const prominentRecordButton = renderer!.root.findAllByProps({ 'data-testid': 'instrument-record-toggle' })[0]!;
   assert.equal(prominentRecordButton.props['aria-pressed'], true);
   assert.match(prominentRecordButton.props.title, /Listening to the microphone/);
-  assert.match(prominentRecordButton.props.title, /Detected: C4\+E4\+G4/);
+  assert.match(prominentRecordButton.props.title, /Written: C4\+E4\+G4/);
+  assert.match(prominentRecordButton.props.title, /Sounding: C3\+E3\+G3/);
   assert.match(prominentRecordButton.props.title, /Input level: -28 dB/);
   assert.match(nodeText(prominentRecordButton), /REC C4\+E4\+G4/);
   assert.match(prominentRecordButton.props.className, /bg-red-500/);
@@ -779,6 +785,8 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   assert.equal(microphonePicker.props.value, 'built-in');
   const recognitionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Pitch recognition mode' })[0]!;
   assert.equal(recognitionPicker.props.value, 'chord');
+  const transpositionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Instrument transposition' })[0]!;
+  assert.equal(transpositionPicker.props.value, 'guitar');
   assert.match(nodeText(renderer!.root.findByProps({ 'data-testid': 'microphone-signal-status' })), /Signal good.*-28 dB/);
 
   const midiButton = renderer!.root.findAll((node) => (

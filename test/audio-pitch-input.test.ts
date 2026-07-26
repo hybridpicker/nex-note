@@ -5,7 +5,10 @@ import {
   detectPitchesFromSpectrum,
   MicrophoneNoteGate,
 } from '@/src/score-input/audio-pitch-input';
-import { classifyMicrophoneSignalLevel } from '@/hooks/useMicrophonePitchInput';
+import {
+  classifyMicrophoneSignalLevel,
+  notationMidisForInstrument,
+} from '@/hooks/useMicrophonePitchInput';
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 16_384;
@@ -72,6 +75,11 @@ test('microphone input levels map to actionable user-facing quality states', () 
   assert.equal(classifyMicrophoneSignalLevel(-67), 'too-low');
   assert.equal(classifyMicrophoneSignalLevel(-32), 'good');
   assert.equal(classifyMicrophoneSignalLevel(-3), 'too-high');
+});
+
+test('guitar microphone mode writes sounding pitches one octave higher', () => {
+  assert.deepEqual(notationMidisForInstrument([48, 53, 52], 'concert'), [48, 53, 52]);
+  assert.deepEqual(notationMidisForInstrument([48, 53, 52], 'guitar'), [60, 65, 64]);
 });
 
 test('microphone spectrum detection resolves one played pitch without writing its overtones', () => {

@@ -51,7 +51,10 @@ import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-reco
 import { usePlayback } from '@/hooks/usePlayback';
 import type { PlaybackSampleBank } from '@/lib/playback-sample-bank';
 import { useMidiInput } from '@/hooks/useMidiInput';
-import { useMicrophonePitchInput } from '@/hooks/useMicrophonePitchInput';
+import {
+  useMicrophonePitchInput,
+  type MicrophoneDetectionMode,
+} from '@/hooks/useMicrophonePitchInput';
 import { useNoteEditor, type ArticulationKind, type BarlineKind, type DynamicKind, type SelectedNote } from '@/hooks/useNoteEditor';
 import { useScoreDocument, type ScoreDocumentSelectionAnchor } from '@/hooks/useScoreDocument';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
@@ -1073,20 +1076,38 @@ export default function Home({ searchParams }: HomeProps) {
     preferFlats: preferFlatsForMidiInput,
   });
 
+  const handleMicrophonePitches = useCallback((
+    pitches: Parameters<typeof insertMidiChord>[0],
+    mode: MicrophoneDetectionMode,
+  ) => {
+    if (mode === 'chord') {
+      insertMidiChord(pitches, {
+        addToMatchingChord: true,
+        insertAtCursor: true,
+        advanceCursor: false,
+      });
+      return;
+    }
+    insertMidiChord(pitches, { advanceCursor: true });
+  }, [insertMidiChord]);
+
   const {
     enabled: microphoneInputEnabled,
     status: microphoneInputStatus,
     detectedPitchLabel: microphoneDetectedPitchLabel,
+    detectedSoundingPitchLabel: microphoneDetectedSoundingPitchLabel,
     signalLevelDb: microphoneSignalLevelDb,
     signalQuality: microphoneSignalQuality,
     inputDevices: microphoneInputDevices,
     selectedDeviceId: microphoneSelectedDeviceId,
     detectionMode: microphoneDetectionMode,
+    instrumentMode: microphoneInstrumentMode,
     toggle: toggleMicrophoneInput,
     selectDevice: selectMicrophoneInput,
     selectDetectionMode: selectMicrophoneDetectionMode,
+    selectInstrumentMode: selectMicrophoneInstrumentMode,
   } = useMicrophonePitchInput({
-    onChord: insertMidiChord,
+    onChord: handleMicrophonePitches,
     preferFlats: preferFlatsForMidiInput,
   });
 
@@ -4910,11 +4931,13 @@ export default function Home({ searchParams }: HomeProps) {
                     microphoneInputEnabled={microphoneInputEnabled}
                     microphoneInputStatus={microphoneInputStatus}
                     microphoneDetectedPitchLabel={microphoneDetectedPitchLabel}
+                    microphoneDetectedSoundingPitchLabel={microphoneDetectedSoundingPitchLabel}
                     microphoneSignalLevelDb={microphoneSignalLevelDb}
                     microphoneSignalQuality={microphoneSignalQuality}
                     microphoneInputDevices={microphoneInputDevices}
                     microphoneSelectedDeviceId={microphoneSelectedDeviceId}
                     microphoneDetectionMode={microphoneDetectionMode}
+                    microphoneInstrumentMode={microphoneInstrumentMode}
                     leadsheetMode={leadsheetMode}
                     guitarInputMode={guitarInputMode}
                     selectedGuitarString={selectedGuitarString}
@@ -4939,6 +4962,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onToggleMicrophoneInput={handleToggleMicrophoneInput}
                     onSelectMicrophoneInput={(deviceId) => { void selectMicrophoneInput(deviceId); }}
                     onSelectMicrophoneDetectionMode={selectMicrophoneDetectionMode}
+                    onSelectMicrophoneInstrumentMode={selectMicrophoneInstrumentMode}
                     onToggleLeadsheetMode={toggleLeadsheetMode}
                     onToggleGuitarInputMode={toggleGuitarInputMode}
                     onInsertGuitarFret={insertGuitarFret}

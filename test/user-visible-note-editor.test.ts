@@ -712,6 +712,97 @@ test('Instrument Record uses the selected number-key duration and commits simult
   hook.unmount();
 });
 
+test('Instrument Record advances the rhythmic cursor after each melodic pitch', () => {
+  const hook = renderHook(FULL_REST_XML);
+  const melody = [
+    { midi: 60, step: 'C', octave: 4, alter: 0 },
+    { midi: 65, step: 'F', octave: 4, alter: 0 },
+    { midi: 64, step: 'E', octave: 4, alter: 0 },
+    { midi: 60, step: 'C', octave: 4, alter: 0 },
+  ];
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('N'));
+    hook.current.handleKeyDown(makeKeyboardEvent('4'));
+  });
+  for (const pitch of melody) {
+    act(() => {
+      hook.current.insertMidiChord([pitch]);
+    });
+    hook.rerender();
+  }
+
+  const recorded = flattenVoiceEvents(hook.xml)
+    .filter((event): event is TimedEvent & { kind: 'note' } => (
+      event.kind === 'note'
+      && event.measureNumber === 1
+    ))
+    .sort((left, right) => (
+      (left.timestampNum / left.timestampDen) - (right.timestampNum / right.timestampDen)
+    ))
+    .slice(0, 4)
+    .map((event) => ({
+      pitch: `${event.pitch.step}${event.pitch.octave}`,
+      timestamp: event.timestampNum / event.timestampDen,
+    }));
+
+  assert.deepEqual(recorded, [
+    { pitch: 'C4', timestamp: 0 },
+    { pitch: 'F4', timestamp: 1 / 8 },
+    { pitch: 'E4', timestamp: 2 / 8 },
+    { pitch: 'C4', timestamp: 3 / 8 },
+  ]);
+  hook.unmount();
+});
+
+test('Instrument Record builds chord tones at one onset until Right Arrow advances', () => {
+  const hook = renderHook(FULL_REST_XML);
+  const chord = [
+    { midi: 60, step: 'C', octave: 4, alter: 0 },
+    { midi: 64, step: 'E', octave: 4, alter: 0 },
+    { midi: 67, step: 'G', octave: 4, alter: 0 },
+  ];
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('N'));
+    hook.current.handleKeyDown(makeKeyboardEvent('5'));
+  });
+  for (const pitch of chord) {
+    act(() => {
+      hook.current.insertMidiChord([pitch], {
+        addToMatchingChord: true,
+        insertAtCursor: true,
+        advanceCursor: false,
+      });
+    });
+    hook.rerender();
+  }
+
+  const firstChord = flattenVoiceEvents(hook.xml)
+    .filter((event): event is TimedEvent & { kind: 'note' } => (
+      event.kind === 'note'
+      && event.measureNumber === 1
+      && event.timestampNum / event.timestampDen === 0
+    ))
+    .map((event) => `${event.pitch.step}${event.pitch.octave}`)
+    .sort();
+  assert.deepEqual(firstChord, ['C4', 'E4', 'G4']);
+  assert.equal(
+    (hook.current.selectedNote?.timestampNum ?? -1) / (hook.current.selectedNote?.timestampDen ?? 1),
+    0,
+  );
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('ArrowRight'));
+  });
+  hook.rerender();
+  assert.equal(
+    (hook.current.selectedNote?.timestampNum ?? -1) / (hook.current.selectedNote?.timestampDen ?? 1),
+    1 / 4,
+  );
+  hook.unmount();
+});
+
 test('P toggles the QWERTY step keyboard and routes QWERTY piano keys through semantic note entry', () => {
   const hook = renderHook(SAMPLE_XML);
   const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);

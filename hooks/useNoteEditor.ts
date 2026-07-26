@@ -1858,6 +1858,7 @@ export function useNoteEditor(
     },
     behavior?: {
       advanceCursor?: boolean;
+      useAdvancedSelectionAsInputAnchor?: boolean;
     },
   ) => {
     setEditorError(null);
@@ -1908,6 +1909,9 @@ export function useNoteEditor(
       }
     }
     if (nextSelection) {
+      if (behavior?.useAdvancedSelectionAsInputAnchor) {
+        lastNoteInputRef.current = nextSelection;
+      }
       selectSingleNote(nextSelection, { visualOnly: false, text: null, measureNumber: nextSelection.measureNumber, staffIndex: nextSelection.staffIndex });
       return;
     }
@@ -2272,6 +2276,7 @@ export function useNoteEditor(
     dotted?: boolean;
     addToMatchingChord?: boolean;
     insertAtCursor?: boolean;
+    advanceCursor?: boolean;
   }) => {
     if (!noteInputModeRef.current) return false;
     let pitches = [...new Map(inputPitches.map((pitch) => [pitch.midi, pitch])).values()]
@@ -2430,6 +2435,10 @@ export function useNoteEditor(
         step: firstPitch.step,
         octave: firstPitch.octave,
         alter: firstPitch.alter,
+      },
+      {
+        advanceCursor: inputOptions?.advanceCursor !== false,
+        useAdvancedSelectionAsInputAnchor: inputOptions?.advanceCursor !== false,
       },
     );
     return true;
