@@ -752,6 +752,9 @@ test('NotationToolbar exposes Instrument Record workflow, polyphony, device stat
   assert.match(midiButton.props.title, /Choose a note value with 1–9/);
   assert.match(midiButton.props.title, /within 35 ms.*one chord/);
   assert.ok(midiButton.findAll((node) => node.children?.includes?.('REC')).length > 0);
+  const prominentRecordButton = renderer!.root.findAllByProps({ 'data-testid': 'instrument-record-toggle' })[0]!;
+  assert.equal(prominentRecordButton.props['aria-pressed'], true);
+  assert.match(prominentRecordButton.props.className, /bg-red-500/);
 
   act(() => midiButton.props.onClick());
   assert.equal(toggled, 1);

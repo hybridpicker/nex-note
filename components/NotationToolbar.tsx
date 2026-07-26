@@ -377,6 +377,39 @@ export default function NotationToolbar({
           {t('toolbar.noteInput')}
         </button>
         <button
+          type="button"
+          data-testid="instrument-record-toggle"
+          onClick={onToggleMidiInput}
+          disabled={midiInputStatus === 'requesting' || midiInputStatus === 'unsupported'}
+          aria-pressed={midiInputEnabled}
+          title={[
+            midiInputEnabled ? 'Stop Instrument Record' : 'Start Instrument Record (MIDI)',
+            'Choose a note value with 1–9, then play one pitch or a chord',
+            'Notes arriving within 35 ms are notated as one chord',
+            midiInputStatus === 'requesting' ? 'Requesting MIDI access…' : null,
+            midiInputStatus === 'waiting' ? 'Waiting for a MIDI input device' : null,
+            midiInputStatus === 'denied' ? 'MIDI access was denied; click to retry' : null,
+            midiInputStatus === 'unsupported' ? 'Web MIDI is not supported in this browser' : null,
+            midiInputStatus === 'error' ? 'MIDI input could not be started; click to retry' : null,
+            midiInputDevices.length > 0 ? midiInputDevices.join(', ') : null,
+          ].filter(Boolean).join('\n')}
+          className={`h-8 flex items-center gap-1.5 rounded-md border px-3 text-xs font-semibold tracking-wide transition-colors shrink-0 ${
+            midiInputEnabled
+              ? 'border-red-500 bg-red-500 text-white shadow-[0_0_0_2px_rgba(239,68,68,0.12)]'
+              : midiInputStatus === 'requesting' || midiInputStatus === 'unsupported'
+                ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                : 'border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100'
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`h-2 w-2 rounded-full ${
+              midiInputEnabled ? 'bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]' : 'bg-red-500'
+            }`}
+          />
+          REC
+        </button>
+        <button
           onClick={onToggleLeadsheetMode}
           title={leadsheetMode ? t('toolbar.leadOn') : t('toolbar.leadOff')}
           className={`h-8 flex items-center gap-1.5 px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
