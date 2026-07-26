@@ -5433,6 +5433,18 @@ test('MuseScore duration shortcuts mutate the last entered note through a reusab
       expectedType: 'eighth',
       expectedDotted: false,
     },
+    {
+      name: 'Command+Q remains reserved for the macOS quit action',
+      keys: [makeKeyboardEvent('Q', { metaKey: true })],
+      expectedType: 'quarter',
+      expectedDotted: false,
+    },
+    {
+      name: 'Control+Q remains reserved for the Windows and Linux quit action',
+      keys: [makeKeyboardEvent('Q', { ctrlKey: true })],
+      expectedType: 'quarter',
+      expectedDotted: false,
+    },
   ] as const;
 
   for (const scenario of scenarios) {

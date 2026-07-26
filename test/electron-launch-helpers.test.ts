@@ -38,6 +38,15 @@ test('the packaged app opens before scheduling a background update', () => {
   assert.doesNotMatch(mainSource, /ensurePackagedBuildMatchesLocalHead/);
 });
 
+test('the Electron application menu exposes the platform quit accelerator', () => {
+  const mainSource = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
+  const quitItems = [...mainSource.matchAll(
+    /role: 'quit',[\s\S]*?accelerator: 'CommandOrControl\+Q'/g,
+  )];
+
+  assert.equal(quitItems.length, 2);
+});
+
 test('the packaged Next server runs as Node and automatically restarts after an unexpected exit', () => {
   const mainSource = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
 

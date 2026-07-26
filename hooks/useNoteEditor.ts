@@ -3800,6 +3800,10 @@ export function useNoteEditor(
     const key = e.key.toUpperCase();
     const metaKey = e.metaKey || e.ctrlKey;
 
+    // Electron owns the platform quit accelerator. Never let Cmd/Ctrl+Q fall
+    // through to the bare Q notation action if the renderer receives it.
+    if (metaKey && key === 'Q') return;
+
     if (metaKey && key === 'D' && !(noteInputModeRef.current && e.shiftKey)) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();

@@ -859,6 +859,39 @@ test('NotationToolbar exposes MuseScore 1-9 duration buttons including breve and
   });
 });
 
+test('Notes palette optically balances long-duration and accidental glyphs without shrinking hit targets', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NoteInputToolbar, noteInputToolbarProps({
+      placement: 'sidebar',
+      noteInputMode: true,
+    })));
+  });
+
+  const root = renderer!.root;
+  const buttonByTitle = (prefix: string) => root.findAllByType('button').find((button) => (
+    typeof button.props.title === 'string' && button.props.title.startsWith(prefix)
+  ));
+  const wholeButton = buttonByTitle('Whole note: 7')!;
+  const breveButton = buttonByTitle('Breve: 8')!;
+  const flatButton = buttonByTitle('Flat (')!;
+  const doubleSharpButton = buttonByTitle('Double sharp (')!;
+
+  assert.match(wholeButton.props.className, /\bw-8\b/);
+  assert.match(wholeButton.props.className, /\bh-8\b/);
+  assert.equal(wholeButton.findByProps({ 'data-engraving-source': 'vexflow' }).props.className, 'h-5 w-5');
+  assert.equal(breveButton.findByProps({ 'data-engraving-source': 'vexflow' }).props.className, 'h-[18px] w-[18px]');
+  assert.equal(flatButton.findByType('svg').props.className, 'h-[18px] w-[18px]');
+  assert.equal(doubleSharpButton.findByType('svg').props.className, 'h-4 w-4');
+  assert.match(flatButton.props.className, /\bw-8\b/);
+  assert.match(flatButton.props.className, /\bh-8\b/);
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
 test('NotationToolbar explains selection-required disabled edit buttons', () => {
   let renderer: ReturnType<typeof create> | null = null;
 

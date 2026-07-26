@@ -12,14 +12,14 @@ import type { MidiInputStatus } from '@/hooks/useMidiInput';
 import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 const NOTE_ICONS: Record<NoteDuration, React.ReactNode> = {
-  '1': <NoteDurationGlyph duration="1" />,
+  '1': <NoteDurationGlyph duration="1" className="h-5 w-5" />,
   '2': <NoteDurationGlyph duration="2" />,
   '4': <NoteDurationGlyph duration="4" />,
   '8': <NoteDurationGlyph duration="8" />,
   '16': <NoteDurationGlyph duration="16" />,
   '32': <NoteDurationGlyph duration="32" />,
   '64': <NoteDurationGlyph duration="64" />,
-  breve: <NoteDurationGlyph duration="breve" />,
+  breve: <NoteDurationGlyph duration="breve" className="h-[18px] w-[18px]" />,
   long: <NoteDurationGlyph duration="long" />,
 };
 
@@ -54,11 +54,11 @@ const ACCIDENTALS: {
   icon: React.ReactNode;
   title: string;
 }[] = [
-  { value: 'double-flat',  icon: <AccidentalGlyph accidental="double-flat" className="h-5 w-5" />,  title: 'Double flat'  },
-  { value: 'flat',         icon: <AccidentalGlyph accidental="flat" className="h-5 w-5" />,         title: 'Flat'         },
-  { value: 'natural',      icon: <AccidentalGlyph accidental="natural" className="h-5 w-5" />,      title: 'Natural'      },
-  { value: 'sharp',        icon: <AccidentalGlyph accidental="sharp" className="h-5 w-5" />,        title: 'Sharp'        },
-  { value: 'double-sharp', icon: <AccidentalGlyph accidental="double-sharp" className="h-[18px] w-[18px]" />, title: 'Double sharp' },
+  { value: 'double-flat',  icon: <AccidentalGlyph accidental="double-flat" className="h-[18px] w-[18px]" />, title: 'Double flat' },
+  { value: 'flat',         icon: <AccidentalGlyph accidental="flat" className="h-[18px] w-[18px]" />,        title: 'Flat'        },
+  { value: 'natural',      icon: <AccidentalGlyph accidental="natural" className="h-[18px] w-[18px]" />,     title: 'Natural'     },
+  { value: 'sharp',        icon: <AccidentalGlyph accidental="sharp" className="h-[18px] w-[18px]" />,       title: 'Sharp'       },
+  { value: 'double-sharp', icon: <AccidentalGlyph accidental="double-sharp" className="h-4 w-4" />,              title: 'Double sharp' },
 ];
 
 // ─── Articulation glyphs ──────────────────────────────────────────────────────

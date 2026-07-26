@@ -7,6 +7,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | Shortcut | Aktion | Kontext |
 | --- | --- | --- |
 | `Cmd/Ctrl+K` | Command Center öffnen | global |
+| `Cmd+Q` (macOS) / `Ctrl+Q` (Windows/Linux) | Nex Note beenden | Desktop-App, global |
 | `Cmd/Ctrl+N` | New-Score-Dialog öffnen | global |
 | `Cmd/Ctrl+O` | Datei öffnen | global |
 | `Cmd/Ctrl+S` | aktuelle Partitur in der lokalen Library speichern | globale Partituransicht |

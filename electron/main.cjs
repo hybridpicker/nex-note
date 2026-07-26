@@ -354,7 +354,11 @@ function buildApplicationMenuTemplate() {
       { type: 'separator' },
       scoreMenuCommand('file:closeScore', { label: 'Close Score' }),
       { role: 'close', label: 'Close Window' },
-      ...(isMac ? [] : [{ type: 'separator' }, { role: 'quit', label: 'Quit' }]),
+      ...(isMac ? [] : [{ type: 'separator' }, {
+        role: 'quit',
+        label: 'Quit',
+        accelerator: 'CommandOrControl+Q',
+      }]),
     ],
   };
 
@@ -434,7 +438,11 @@ function buildApplicationMenuTemplate() {
             { role: 'hideOthers', label: 'Hide Others' },
             { role: 'unhide', label: 'Show All' },
             { type: 'separator' },
-            { role: 'quit', label: `Quit ${APP_NAME}` },
+            {
+              role: 'quit',
+              label: `Quit ${APP_NAME}`,
+              accelerator: 'CommandOrControl+Q',
+            },
           ],
         }]
       : []),
