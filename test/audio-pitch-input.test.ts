@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  detectPitchFromTimeDomain,
   detectPitchesFromSpectrum,
   MicrophoneNoteGate,
 } from '@/src/score-input/audio-pitch-input';
+import { classifyMicrophoneSignalLevel } from '@/hooks/useMicrophonePitchInput';
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 16_384;
@@ -28,6 +30,49 @@ function syntheticSpectrum(notes: Array<{ midi: number; levelDb?: number }>) {
   }
   return spectrum;
 }
+
+function syntheticGuitarTone(midi: number, amplitude = 0.28) {
+  const samples = new Float32Array(8192);
+  const fundamental = midiToFrequency(midi);
+  for (let index = 0; index < samples.length; index += 1) {
+    const phase = (2 * Math.PI * fundamental * index) / SAMPLE_RATE;
+    samples[index] = amplitude * (
+      Math.sin(phase)
+      + (0.46 * Math.sin(phase * 2))
+      + (0.27 * Math.sin(phase * 3))
+      + (0.14 * Math.sin(phase * 4))
+    );
+  }
+  return samples;
+}
+
+test('monophonic guitar detection follows C-F-E-C fundamentals instead of their overtones', () => {
+  const playedMidis = [48, 53, 52, 48];
+  const detectedMidis = playedMidis.map((midi) => (
+    detectPitchFromTimeDomain(
+      syntheticGuitarTone(midi),
+      { sampleRate: SAMPLE_RATE, minMidi: 40, maxMidi: 88 },
+    )?.midi
+  ));
+  assert.deepEqual(detectedMidis, playedMidis);
+});
+
+test('monophonic detection rejects an input signal that is too quiet', () => {
+  assert.equal(
+    detectPitchFromTimeDomain(
+      syntheticGuitarTone(48, 0.00005),
+      { sampleRate: SAMPLE_RATE },
+    ),
+    null,
+  );
+});
+
+test('microphone input levels map to actionable user-facing quality states', () => {
+  assert.equal(classifyMicrophoneSignalLevel(-120), 'silent');
+  assert.equal(classifyMicrophoneSignalLevel(-67), 'too-low');
+  assert.equal(classifyMicrophoneSignalLevel(-32), 'good');
+  assert.equal(classifyMicrophoneSignalLevel(-3), 'too-high');
+});
 
 test('microphone spectrum detection resolves one played pitch without writing its overtones', () => {
   const detected = detectPitchesFromSpectrum(

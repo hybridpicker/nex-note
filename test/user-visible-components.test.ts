@@ -134,8 +134,10 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     microphoneInputStatus: 'idle',
     microphoneDetectedPitchLabel: '',
     microphoneSignalLevelDb: -120,
+    microphoneSignalQuality: 'silent',
     microphoneInputDevices: [],
     microphoneSelectedDeviceId: '',
+    microphoneDetectionMode: 'single',
     leadsheetMode: false,
     guitarInputMode: false,
     selectedGuitarString: 1,
@@ -158,6 +160,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleMidiInput() {},
     onToggleMicrophoneInput() {},
     onSelectMicrophoneInput() {},
+    onSelectMicrophoneDetectionMode() {},
     onToggleLeadsheetMode() {},
     onToggleGuitarInputMode() {},
     onInsertGuitarFret() {},
@@ -746,11 +749,13 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
       microphoneInputStatus: 'listening',
       microphoneDetectedPitchLabel: 'C4+E4+G4',
       microphoneSignalLevelDb: -28,
+      microphoneSignalQuality: 'good',
       microphoneInputDevices: [
         { deviceId: 'external', label: 'External Microphone' },
         { deviceId: 'built-in', label: 'MacBook Pro Microphone' },
       ],
       microphoneSelectedDeviceId: 'built-in',
+      microphoneDetectionMode: 'chord',
       midiInputEnabled: true,
       midiInputStatus: 'connected',
       midiInputDevices: ['Acme Stage 88'],
@@ -772,6 +777,9 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   assert.match(prominentRecordButton.props.className, /bg-red-500/);
   const microphonePicker = renderer!.root.findAllByProps({ 'aria-label': 'Microphone input' })[0]!;
   assert.equal(microphonePicker.props.value, 'built-in');
+  const recognitionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Pitch recognition mode' })[0]!;
+  assert.equal(recognitionPicker.props.value, 'chord');
+  assert.match(nodeText(renderer!.root.findByProps({ 'data-testid': 'microphone-signal-status' })), /Signal good.*-28 dB/);
 
   const midiButton = renderer!.root.findAll((node) => (
     node.type === 'button'
@@ -787,6 +795,29 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   act(() => midiButton.props.onClick());
   assert.equal(microphoneToggled, 1);
   assert.equal(midiToggled, 1);
+  act(() => renderer?.unmount());
+});
+
+test('NotationToolbar writes a clear warning when the microphone input is too low', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+  act(() => {
+    renderer = create(React.createElement(NotationToolbar, toolbarProps({
+      microphoneInputEnabled: true,
+      microphoneInputStatus: 'listening',
+      microphoneSignalLevelDb: -67,
+      microphoneSignalQuality: 'too-low',
+      microphoneDetectionMode: 'single',
+    })));
+  });
+
+  const recordButton = renderer!.root.findByProps({ 'data-testid': 'instrument-record-toggle' });
+  assert.match(nodeText(recordButton), /INPUT LOW/);
+  assert.match(recordButton.props.title, /Input too low/);
+  assert.match(
+    nodeText(renderer!.root.findByProps({ 'data-testid': 'microphone-signal-status' })),
+    /Input too low.*-67 dB/,
+  );
+
   act(() => renderer?.unmount());
 });
 

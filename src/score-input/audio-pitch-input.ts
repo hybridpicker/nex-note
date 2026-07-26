@@ -15,6 +15,14 @@ export interface AudioPitchDetectionOptions {
   minimumSignalAboveNoiseDb?: number;
 }
 
+export interface TimeDomainPitchDetectionOptions {
+  sampleRate: number;
+  minMidi?: number;
+  maxMidi?: number;
+  minimumLevelDb?: number;
+  yinThreshold?: number;
+}
+
 function midiToFrequency(midi: number) {
   return 440 * (2 ** ((midi - 69) / 12));
 }
@@ -25,6 +33,118 @@ function frequencyToMidi(frequency: number) {
 
 function finiteDb(value: number) {
   return Number.isFinite(value) ? value : -120;
+}
+
+/**
+ * Detects one fundamental with the YIN cumulative mean normalized difference
+ * method. This is the reliable path for melodic guitar and other monophonic
+ * entry because it follows the waveform period instead of its loud overtones.
+ */
+export function detectPitchFromTimeDomain(
+  samples: ArrayLike<number>,
+  options: TimeDomainPitchDetectionOptions,
+): DetectedAudioPitch | null {
+  const {
+    sampleRate,
+    minMidi = 36,
+    maxMidi = 96,
+    minimumLevelDb = -75,
+    yinThreshold = 0.2,
+  } = options;
+  if (
+    samples.length < 512
+    || !Number.isFinite(sampleRate)
+    || sampleRate <= 0
+  ) return null;
+
+  const sampleCount = Math.min(samples.length, 4096);
+  let mean = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    mean += Number(samples[index]) || 0;
+  }
+  mean /= sampleCount;
+
+  let squareSum = 0;
+  const centered = new Float32Array(sampleCount);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = (Number(samples[index]) || 0) - mean;
+    centered[index] = sample;
+    squareSum += sample * sample;
+  }
+  const rms = Math.sqrt(squareSum / sampleCount);
+  const levelDb = rms > 0 ? 20 * Math.log10(rms) : -120;
+  if (levelDb < minimumLevelDb) return null;
+
+  const minimumFrequency = midiToFrequency(minMidi);
+  const maximumFrequency = midiToFrequency(maxMidi);
+  const minimumLag = Math.max(2, Math.floor(sampleRate / maximumFrequency));
+  const maximumLag = Math.min(
+    sampleCount - 2,
+    Math.ceil(sampleRate / minimumFrequency),
+  );
+  if (maximumLag <= minimumLag) return null;
+
+  const difference = new Float32Array(maximumLag + 1);
+  const normalized = new Float32Array(maximumLag + 1);
+  let cumulativeDifference = 0;
+  normalized[0] = 1;
+  for (let lag = 1; lag <= maximumLag; lag += 1) {
+    let sum = 0;
+    const limit = sampleCount - lag;
+    for (let index = 0; index < limit; index += 1) {
+      const delta = centered[index]! - centered[index + lag]!;
+      sum += delta * delta;
+    }
+    difference[lag] = sum;
+    cumulativeDifference += sum;
+    normalized[lag] = cumulativeDifference > 0
+      ? (sum * lag) / cumulativeDifference
+      : 1;
+  }
+
+  let selectedLag = -1;
+  for (let lag = minimumLag; lag < maximumLag; lag += 1) {
+    if (normalized[lag]! >= yinThreshold) continue;
+    while (
+      lag + 1 <= maximumLag
+      && normalized[lag + 1]! < normalized[lag]!
+    ) lag += 1;
+    selectedLag = lag;
+    break;
+  }
+  if (selectedLag < 0) {
+    let bestValue = 1;
+    for (let lag = minimumLag; lag <= maximumLag; lag += 1) {
+      if (normalized[lag]! < bestValue) {
+        bestValue = normalized[lag]!;
+        selectedLag = lag;
+      }
+    }
+    if (selectedLag < 0 || bestValue > 0.35) return null;
+  }
+
+  const left = normalized[Math.max(minimumLag, selectedLag - 1)]!;
+  const center = normalized[selectedLag]!;
+  const right = normalized[Math.min(maximumLag, selectedLag + 1)]!;
+  const denominator = left - (2 * center) + right;
+  const interpolatedLag = Math.abs(denominator) > 1e-9
+    ? selectedLag + (0.5 * (left - right)) / denominator
+    : selectedLag;
+  const frequency = sampleRate / interpolatedLag;
+  const exactMidi = frequencyToMidi(frequency);
+  const midi = Math.round(exactMidi);
+  if (
+    midi < minMidi
+    || midi > maxMidi
+    || Math.abs(exactMidi - midi) > 0.48
+  ) return null;
+
+  return {
+    midi,
+    frequency,
+    levelDb,
+    salience: Math.max(0, 1 - center),
+  };
 }
 
 function percentile(values: number[], ratio: number) {

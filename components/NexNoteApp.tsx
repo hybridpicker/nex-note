@@ -1078,10 +1078,13 @@ export default function Home({ searchParams }: HomeProps) {
     status: microphoneInputStatus,
     detectedPitchLabel: microphoneDetectedPitchLabel,
     signalLevelDb: microphoneSignalLevelDb,
+    signalQuality: microphoneSignalQuality,
     inputDevices: microphoneInputDevices,
     selectedDeviceId: microphoneSelectedDeviceId,
+    detectionMode: microphoneDetectionMode,
     toggle: toggleMicrophoneInput,
     selectDevice: selectMicrophoneInput,
+    selectDetectionMode: selectMicrophoneDetectionMode,
   } = useMicrophonePitchInput({
     onChord: insertMidiChord,
     preferFlats: preferFlatsForMidiInput,
@@ -4908,8 +4911,10 @@ export default function Home({ searchParams }: HomeProps) {
                     microphoneInputStatus={microphoneInputStatus}
                     microphoneDetectedPitchLabel={microphoneDetectedPitchLabel}
                     microphoneSignalLevelDb={microphoneSignalLevelDb}
+                    microphoneSignalQuality={microphoneSignalQuality}
                     microphoneInputDevices={microphoneInputDevices}
                     microphoneSelectedDeviceId={microphoneSelectedDeviceId}
+                    microphoneDetectionMode={microphoneDetectionMode}
                     leadsheetMode={leadsheetMode}
                     guitarInputMode={guitarInputMode}
                     selectedGuitarString={selectedGuitarString}
@@ -4933,6 +4938,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onToggleMidiInput={handleToggleMidiInput}
                     onToggleMicrophoneInput={handleToggleMicrophoneInput}
                     onSelectMicrophoneInput={(deviceId) => { void selectMicrophoneInput(deviceId); }}
+                    onSelectMicrophoneDetectionMode={selectMicrophoneDetectionMode}
                     onToggleLeadsheetMode={toggleLeadsheetMode}
                     onToggleGuitarInputMode={toggleGuitarInputMode}
                     onInsertGuitarFret={insertGuitarFret}

@@ -8,8 +8,10 @@ import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { MidiInputStatus } from '@/hooks/useMidiInput';
 import type {
+  MicrophoneDetectionMode,
   MicrophoneInputDevice,
   MicrophoneInputStatus,
+  MicrophoneSignalQuality,
 } from '@/hooks/useMicrophonePitchInput';
 import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
@@ -44,8 +46,10 @@ interface Props {
   microphoneInputStatus: MicrophoneInputStatus;
   microphoneDetectedPitchLabel: string;
   microphoneSignalLevelDb: number;
+  microphoneSignalQuality: MicrophoneSignalQuality;
   microphoneInputDevices: MicrophoneInputDevice[];
   microphoneSelectedDeviceId: string;
+  microphoneDetectionMode: MicrophoneDetectionMode;
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -69,6 +73,7 @@ interface Props {
   onToggleMidiInput: () => void;
   onToggleMicrophoneInput: () => void;
   onSelectMicrophoneInput: (deviceId: string) => void;
+  onSelectMicrophoneDetectionMode: (mode: MicrophoneDetectionMode) => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -256,9 +261,9 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneSignalLevelDb, microphoneInputDevices, microphoneSelectedDeviceId, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onSelectMicrophoneInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -287,6 +292,20 @@ export default function NotationToolbar({
     : playRestartsSelection || !isPlaying
       ? t('toolbar.play')
       : t('toolbar.pause');
+  const microphoneSignalLabel = microphoneSignalQuality === 'silent'
+    ? 'No input signal'
+    : microphoneSignalQuality === 'too-low'
+      ? 'Input too low'
+      : microphoneSignalQuality === 'too-high'
+        ? 'Input too high'
+        : 'Signal good';
+  const microphoneIdleLabel = microphoneSignalQuality === 'silent'
+    ? 'NO INPUT'
+    : microphoneSignalQuality === 'too-low'
+      ? 'INPUT LOW'
+      : microphoneSignalQuality === 'too-high'
+        ? 'INPUT HIGH'
+        : `REC ${Math.round(microphoneSignalLevelDb)} dB`;
 
   return (
     <div className="nex-brand-toolbar shrink-0 select-none border-b px-3 py-2" data-testid="notation-toolbar">
@@ -405,7 +424,7 @@ export default function NotationToolbar({
             microphoneInputStatus === 'error' ? 'Microphone input could not be started; click to retry' : null,
             microphoneDetectedPitchLabel ? `Detected: ${microphoneDetectedPitchLabel}` : null,
             microphoneInputEnabled ? `Input level: ${Math.round(microphoneSignalLevelDb)} dB` : null,
-            microphoneInputEnabled && microphoneSignalLevelDb <= -85 ? 'No microphone signal detected' : null,
+            microphoneInputEnabled ? microphoneSignalLabel : null,
           ].filter(Boolean).join('\n')}
           className={`h-8 flex items-center gap-1.5 rounded-md border px-3 text-xs font-semibold tracking-wide transition-colors shrink-0 ${
             microphoneInputEnabled
@@ -424,9 +443,35 @@ export default function NotationToolbar({
           {microphoneInputEnabled && microphoneDetectedPitchLabel
             ? `REC ${microphoneDetectedPitchLabel}`
             : microphoneInputEnabled
-              ? `REC ${Math.round(microphoneSignalLevelDb)} dB`
+              ? microphoneIdleLabel
               : 'MIC REC'}
         </button>
+        {microphoneInputEnabled ? (
+          <>
+            <span
+              data-testid="microphone-signal-status"
+              className={`whitespace-nowrap text-[11px] font-medium ${
+                microphoneSignalQuality === 'good'
+                  ? 'text-emerald-700'
+                  : microphoneSignalQuality === 'too-low' || microphoneSignalQuality === 'too-high'
+                    ? 'text-amber-700'
+                    : 'text-red-700'
+              }`}
+            >
+              {microphoneSignalLabel} · {Math.round(microphoneSignalLevelDb)} dB
+            </span>
+            <select
+              aria-label="Pitch recognition mode"
+              title="Choose reliable single-note recognition or experimental chord recognition"
+              value={microphoneDetectionMode}
+              onChange={(event) => onSelectMicrophoneDetectionMode(event.target.value as MicrophoneDetectionMode)}
+              className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+            >
+              <option value="single">Single notes</option>
+              <option value="chord">Chords (experimental)</option>
+            </select>
+          </>
+        ) : null}
         {microphoneInputEnabled && microphoneInputDevices.length > 1 ? (
           <select
             aria-label="Microphone input"

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  detectPitchFromTimeDomain,
   detectPitchesFromSpectrum,
   MicrophoneNoteGate,
 } from '@/src/score-input/audio-pitch-input';
@@ -18,6 +19,16 @@ export type MicrophoneInputStatus =
 export interface MicrophoneInputDevice {
   deviceId: string;
   label: string;
+}
+
+export type MicrophoneDetectionMode = 'single' | 'chord';
+export type MicrophoneSignalQuality = 'silent' | 'too-low' | 'good' | 'too-high';
+
+export function classifyMicrophoneSignalLevel(levelDb: number): MicrophoneSignalQuality {
+  if (!Number.isFinite(levelDb) || levelDb <= -90) return 'silent';
+  if (levelDb < -58) return 'too-low';
+  if (levelDb > -6) return 'too-high';
+  return 'good';
 }
 
 interface UseMicrophonePitchInputOptions {
@@ -48,6 +59,7 @@ export function useMicrophonePitchInput({
   const [signalLevelDb, setSignalLevelDb] = useState(-120);
   const [inputDevices, setInputDevices] = useState<MicrophoneInputDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [detectionMode, setDetectionMode] = useState<MicrophoneDetectionMode>('single');
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -56,6 +68,7 @@ export function useMicrophonePitchInput({
   const lastLevelUpdateAtRef = useRef(0);
   const lastDisplaySignatureRef = useRef('');
   const selectedDeviceIdRef = useRef('');
+  const detectionModeRef = useRef<MicrophoneDetectionMode>('single');
   const gateRef = useRef(new MicrophoneNoteGate());
   const onChordRef = useRef(onChord);
   const preferFlatsRef = useRef(preferFlats);
@@ -161,10 +174,19 @@ export function useMicrophonePitchInput({
         const rms = Math.sqrt(squareSum / timeDomain.length);
         const rawSignalLevelDb = rms > 0 ? 20 * Math.log10(rms) : -120;
         analyser.getFloatFrequencyData(spectrum);
-        const detected = detectPitchesFromSpectrum(spectrum, {
-          sampleRate: activeAudioContext.sampleRate,
-          fftSize: analyser.fftSize,
-        });
+        const monophonicPitch = detectionModeRef.current === 'single'
+          ? detectPitchFromTimeDomain(timeDomain, {
+              sampleRate: activeAudioContext.sampleRate,
+              minMidi: 40,
+              maxMidi: 88,
+            })
+          : null;
+        const detected = detectionModeRef.current === 'single'
+          ? (monophonicPitch ? [monophonicPitch] : [])
+          : detectPitchesFromSpectrum(spectrum, {
+              sampleRate: activeAudioContext.sampleRate,
+              fftSize: analyser.fftSize,
+            });
         const midis = detected.map((pitch) => pitch.midi);
         const displayPitches = normalizeMidiChord(midis, preferFlatsRef.current);
         const displaySignature = midis.join(',');
@@ -212,6 +234,14 @@ export function useMicrophonePitchInput({
     await enable(deviceId);
   }, [enable, enabled, stopAudio]);
 
+  const selectDetectionMode = useCallback((mode: MicrophoneDetectionMode) => {
+    detectionModeRef.current = mode;
+    setDetectionMode(mode);
+    gateRef.current.reset();
+    lastDisplaySignatureRef.current = '';
+    setDetectedPitchLabel('');
+  }, []);
+
   useEffect(() => () => stopAudio(), [stopAudio]);
 
   return {
@@ -219,11 +249,14 @@ export function useMicrophonePitchInput({
     status,
     detectedPitchLabel,
     signalLevelDb,
+    signalQuality: classifyMicrophoneSignalLevel(signalLevelDb),
     inputDevices,
     selectedDeviceId,
+    detectionMode,
     enable,
     disable,
     toggle,
     selectDevice,
+    selectDetectionMode,
   };
 }
