@@ -1073,9 +1073,28 @@ export default function Home({ searchParams }: HomeProps) {
   });
 
   const handleToggleMidiInput = useCallback(() => {
-    if (!midiInputEnabled && !noteInputMode) toggleNoteInput();
+    if (!midiInputEnabled) {
+      // Instrument Record has one deliberately narrow keyboard contract:
+      // 1-9 select the duration, then the next MIDI note/chord commits it.
+      // Disable modes that otherwise consume those digits or defer the commit.
+      if (inputByDurationMode) toggleInputByDurationMode();
+      if (stepInputKeyboardMode) toggleStepInputKeyboardMode();
+      if (guitarInputMode) toggleGuitarInputMode();
+      if (!noteInputMode) toggleNoteInput();
+    }
     void toggleMidiInput();
-  }, [midiInputEnabled, noteInputMode, toggleMidiInput, toggleNoteInput]);
+  }, [
+    guitarInputMode,
+    inputByDurationMode,
+    midiInputEnabled,
+    noteInputMode,
+    stepInputKeyboardMode,
+    toggleGuitarInputMode,
+    toggleInputByDurationMode,
+    toggleMidiInput,
+    toggleNoteInput,
+    toggleStepInputKeyboardMode,
+  ]);
 
   useLayoutEffect(() => {
     playbackSelectedNoteRef.current = activePlaybackNote;

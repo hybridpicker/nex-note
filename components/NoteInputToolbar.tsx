@@ -482,7 +482,7 @@ export default function NoteInputToolbar({
     chordInputMode ? 'CHD' : null,
     stepInputKeyboardMode ? 'STEP' : null,
     inputByDurationMode ? `DUR ${preparedDurationPitchLabel || '—'}` : null,
-    midiInputEnabled ? 'MIDI' : null,
+    midiInputEnabled ? 'REC' : null,
     leadsheetMode ? 'LEAD' : null,
     guitarInputMode ? 'TAB' : null,
   ].filter(Boolean).join(' · ');
@@ -766,7 +766,9 @@ export default function NoteInputToolbar({
       <TBtn
         onClick={onToggleMidiInput}
         title={[
-          midiInputEnabled ? 'Disable live MIDI input' : 'Enable live MIDI input',
+          midiInputEnabled ? 'Stop Instrument Record' : 'Start Instrument Record (MIDI)',
+          'Choose a note value with 1–9, then play one pitch or a chord',
+          'Notes arriving within 35 ms are notated as one chord',
           midiInputStatus === 'requesting' ? 'Requesting MIDI access…' : null,
           midiInputStatus === 'waiting' ? 'Waiting for a MIDI input device' : null,
           midiInputStatus === 'denied' ? 'MIDI access was denied; click to retry' : null,
@@ -779,7 +781,15 @@ export default function NoteInputToolbar({
         disabledReason={midiInputStatus === 'unsupported' ? 'Web MIDI is unavailable' : undefined}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">MIDI</span>
+        <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wider">
+          <span
+            aria-hidden
+            className={`h-1.5 w-1.5 rounded-full ${
+              midiInputEnabled ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-current opacity-45'
+            }`}
+          />
+          REC
+        </span>
       </TBtn>
       <TBtn
         onClick={onToggleLeadsheetMode}

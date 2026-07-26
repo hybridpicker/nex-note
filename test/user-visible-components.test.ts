@@ -726,7 +726,7 @@ test('NotationToolbar exposes duration-first chord preparation inside Notation E
   });
 });
 
-test('NotationToolbar exposes live MIDI device state and toggle', () => {
+test('NotationToolbar exposes Instrument Record workflow, polyphony, device state, and toggle', () => {
   let toggled = 0;
   let renderer: ReturnType<typeof create> | null = null;
 
@@ -748,7 +748,10 @@ test('NotationToolbar exposes live MIDI device state and toggle', () => {
     && node.props.title.includes('Acme Stage 88')
   ))[0];
   assert.ok(midiButton);
-  assert.match(midiButton.props.title, /Disable live MIDI input/);
+  assert.match(midiButton.props.title, /Stop Instrument Record/);
+  assert.match(midiButton.props.title, /Choose a note value with 1–9/);
+  assert.match(midiButton.props.title, /within 35 ms.*one chord/);
+  assert.ok(midiButton.findAll((node) => node.children?.includes?.('REC')).length > 0);
 
   act(() => midiButton.props.onClick());
   assert.equal(toggled, 1);

@@ -682,11 +682,12 @@ test('keyboard shortcuts toggle note-input, duration, dotted state, and entry mo
   hook.unmount();
 });
 
-test('live MIDI step input commits simultaneous notes as one chord transaction', () => {
+test('Instrument Record uses the selected number-key duration and commits simultaneous notes as one chord transaction', () => {
   const hook = renderHook(SAMPLE_XML);
 
   act(() => {
     hook.current.handleKeyDown(makeKeyboardEvent('N'));
+    hook.current.handleKeyDown(makeKeyboardEvent('4'));
     hook.current.insertMidiChord([
       { midi: 67, step: 'G', octave: 4, alter: 0 },
       { midi: 60, step: 'C', octave: 4, alter: 0 },
@@ -700,6 +701,11 @@ test('live MIDI step input commits simultaneous notes as one chord transaction',
     .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : '')
     .sort();
   assert.deepEqual(firstOnset, ['C4', 'E4', 'G4']);
+  const firstOnsetDurations = flattenVoiceEvents(hook.xml)
+    .filter((event) => event.kind === 'note' && event.measureNumber === 1 && event.timestampNum === 0)
+    .map((event) => event.durationType);
+  assert.deepEqual(firstOnsetDurations, ['eighth', 'eighth', 'eighth']);
+  assert.equal(hook.current.selectedDuration, '8');
   assert.equal(hook.appliedCommands.length, 1);
   assert.equal(hook.appliedCommands[0]!.filter((command) => command.type === 'insertNoteAt').length, 2);
   assert.equal(hook.current.selectedNote?.timestampNum, 1);

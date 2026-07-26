@@ -101,12 +101,12 @@ Turn note input on with the toolbar button or `N`.
 | Cursor insert | `Cmd/Ctrl+Shift+A...G` inserts explicitly at the cursor. |
 | Octaves | `Shift+ArrowUp/Down` or `Cmd/Ctrl+ArrowUp/Down`. |
 | Step keyboard | `P` toggles a compact QWERTY step keyboard and enables Note Input if needed. |
-| Live MIDI | Click `MIDI`, grant device access, and play a connected controller while Note Input is active. Simultaneous keys create one chord and one undo step. |
+| Instrument Record | Click `REC`, grant MIDI device access, choose the note value with `1` to `9`, then play one pitch or a chord. The played pitches are committed immediately at the rhythmic cursor. |
 
 During mouse entry, the ghost note shows where the next note will be placed. `Shift` prefers insert placement; `Alt/Option` prefers chord placement.
 While the step keyboard is active, `Z S X D C V G B H N J M` enter `C4` through `B4`, and `Q 2 W 3 E R 5 T 6 Y 7 U` enter `C5` through `B5`, all through the same semantic note-insert path as normal pitch entry. Press `P` again or `Escape` to leave that mode.
 
-Live MIDI uses the selected duration, voice, and rhythmic cursor. The device button reports connected device names or waits for a controller to be connected. Chromatic pitches prefer flats in flat key signatures and sharps otherwise. System-exclusive messages, real-time performance capture, sustain-pedal interpretation, percussion maps, and custom MIDI action mappings are not yet supported.
+Instrument Record uses the selected duration, voice, and rhythmic cursor. Starting it disables duration-first, QWERTY step-keyboard, and guitar-fret modes so that `1` to `9` always select the duration. MIDI notes arriving within 35 ms are grouped, sorted, and committed as one chord and one undo step. The device button reports connected device names or waits for a controller to be connected. Chromatic pitches prefer flats in flat key signatures and sharps otherwise. This first experiment requires a MIDI-capable instrument or audio-to-MIDI interface; microphone pitch detection, system-exclusive messages, sustain-pedal interpretation, percussion maps, and real-time performance capture are not yet supported.
 
 ## Guitar TAB Input
 
