@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import type { ProviderName } from '@/lib/ai-provider-config';
 import type { AiProviderRequestSettings } from '@/lib/ai-model-settings';
 
@@ -22,6 +23,39 @@ function formatProviderError(providerLabel: string, err: unknown, timeoutMs?: nu
   }
   return String(err);
 }
+
+function formatOpenAiError(err: unknown, timeoutMs: number) {
+  const status = typeof err === 'object' && err !== null && 'status' in err
+    ? Number((err as { status?: unknown }).status)
+    : null;
+  const name = err instanceof Error ? err.name : '';
+  const message = err instanceof Error ? err.message : String(err);
+  if (name === 'AbortError' || name === 'APIConnectionTimeoutError' || /timeout|timed out|aborted/i.test(message)) {
+    return `OpenAI did not respond within ${Math.round(timeoutMs / 1000)}s. Retry or choose a faster model.`;
+  }
+  if (status === 401 || status === 403) return 'OpenAI authentication failed. Check the API key and project access.';
+  if (status === 429) return 'OpenAI rate limit reached. Wait briefly and retry, or check project usage limits.';
+  if (status === 404 || /model.*(not found|does not exist|unavailable)/i.test(message)) {
+    return 'The selected OpenAI model is unavailable to this project. Check the model ID or choose another model.';
+  }
+  return 'OpenAI could not complete the request. Check the model, project access, and provider status, then retry.';
+}
+
+const OPENAI_INTENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    commands: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+    explanation: { type: 'string' },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+    ambiguities: { type: 'array', items: { type: 'string' } },
+    plan: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['commands', 'explanation', 'confidence', 'ambiguities', 'plan'],
+  additionalProperties: true,
+} as const;
 
 function resolveOllamaConnection(settings?: AiProviderRequestSettings) {
   const apiKey = settings?.apiKeys?.ollama?.trim() || process.env.OLLAMA_API_KEY || '';
@@ -106,6 +140,53 @@ export async function askClaude(prompt: string, settings?: AiProviderRequestSett
   }
 }
 
+export async function askOpenAI(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
+  const start = Date.now();
+  const model = process.env.OPENAI_MODEL?.trim() || settings?.models?.openai?.trim() || 'gpt-5.6-sol';
+  const apiKey = settings?.apiKeys?.openai?.trim() || process.env.OPENAI_API_KEY?.trim() || '';
+  const timeoutMs = 120000;
+  if (!apiKey) {
+    return {
+      provider: 'openai',
+      model,
+      text: '',
+      latencyMs: 0,
+      error: 'OPENAI_API_KEY not set. Add it in AI settings or the server environment.',
+    };
+  }
+  try {
+    const client = new OpenAI({ apiKey, timeout: timeoutMs });
+    const response = await client.responses.create({
+      model,
+      input: prompt,
+      store: false,
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'nex_note_score_intent',
+          strict: false,
+          schema: OPENAI_INTENT_SCHEMA,
+        },
+      },
+    });
+    const actualModel = typeof response.model === 'string' && response.model ? response.model : model;
+    return {
+      provider: 'openai',
+      model: actualModel,
+      text: response.output_text ?? '',
+      latencyMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      provider: 'openai',
+      model,
+      text: '',
+      latencyMs: Date.now() - start,
+      error: formatOpenAiError(err, timeoutMs),
+    };
+  }
+}
+
 export async function askGemini(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
   const start = Date.now();
   const model = settings?.models?.gemini || 'gemini-2.5-flash';
@@ -132,19 +213,23 @@ export async function askProvider(
 ): Promise<AIResponse> {
   switch (provider) {
     case 'ollama': return askOllama(prompt, settings?.models?.ollama ?? ollamaModel ?? 'gemma4:31b', settings);
+    case 'openai': return askOpenAI(prompt, settings);
     case 'claude': return askClaude(prompt, settings);
     case 'gemini': return askGemini(prompt, settings);
   }
+  throw new Error(`Unsupported AI provider: ${String(provider)}`);
 }
 
 export async function askAllProviders(prompt: string, ollamaModel?: string, settings?: AiProviderRequestSettings): Promise<AIResponse[]> {
+  const providers: ProviderName[] = ['ollama', 'openai', 'claude', 'gemini'];
   const results = await Promise.allSettled([
     askOllama(prompt, settings?.models?.ollama ?? ollamaModel ?? 'gemma4:31b', settings),
+    askOpenAI(prompt, settings),
     askClaude(prompt, settings),
     askGemini(prompt, settings),
   ]);
-  return results.map((r) => (r.status === 'fulfilled' ? r.value : {
-    provider: 'ollama' as ProviderName,
+  return results.map((r, index) => (r.status === 'fulfilled' ? r.value : {
+    provider: providers[index],
     model: '?',
     text: '',
     latencyMs: 0,

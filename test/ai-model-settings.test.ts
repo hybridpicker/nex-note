@@ -60,6 +60,7 @@ test('AI model settings normalize model lists and selected defaults', () => {
   const allDisabled = normalizeAiModelSettings({
     providers: {
       ollama: { enabled: false },
+      openai: { enabled: false },
       claude: { enabled: false },
       gemini: { enabled: false },
     },
@@ -76,6 +77,12 @@ test('AI model settings persist locally and build sanitized request settings', (
         selectedModel: 'gemma4:31b',
         models: [{ id: 'gemma4:31b', label: 'Gemma' }],
         baseUrl: ' http://localhost:11434/ ',
+      },
+      openai: {
+        enabled: false,
+        apiKey: 'openai-key',
+        selectedModel: 'gpt-5.6-sol',
+        models: [{ id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' }],
       },
       claude: {
         enabled: false,
@@ -100,10 +107,12 @@ test('AI model settings persist locally and build sanitized request settings', (
   assert.deepEqual(request.enabledProviders, ['ollama', 'gemini']);
   assert.deepEqual(request.apiKeys, {
     ollama: 'ollama-key',
+    openai: 'openai-key',
     claude: 'anthropic-key',
   });
   assert.deepEqual(request.models, {
     ollama: 'gemma4:31b',
+    openai: 'gpt-5.6-sol',
     claude: 'claude-custom',
     gemini: 'gemini-2.5-pro',
   });

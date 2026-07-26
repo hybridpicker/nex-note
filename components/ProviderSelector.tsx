@@ -19,6 +19,7 @@ interface Props {
 
 const LABELS: Record<string, string> = {
   ollama: 'Ollama',
+  openai: 'OpenAI',
   claude: 'Claude',
   gemini: 'Gemini',
   benchmark: 'Benchmark',
@@ -26,6 +27,7 @@ const LABELS: Record<string, string> = {
 
 const PROVIDER_COLORS: Record<string, string> = {
   ollama: 'text-nex-accent bg-nex-accent-muted',
+  openai: 'text-nex-ink bg-nex-surface',
   claude: 'text-nex-ink bg-nex-surface',
   gemini: 'text-nex-ink bg-nex-surface',
   benchmark: 'text-nex-ink bg-nex-surface',
@@ -48,7 +50,7 @@ export default function ProviderSelector({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const visibleProviders = providerOptions?.length ? providerOptions : (['claude', 'gemini', 'ollama', 'benchmark'] as const);
+  const visibleProviders = providerOptions?.length ? providerOptions : (['openai', 'claude', 'gemini', 'ollama', 'benchmark'] as const);
 
   useEffect(() => {
     if (ollamaModels) return;

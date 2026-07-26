@@ -1,5 +1,28 @@
 # nex-note User Manual
 
+## OpenAI setup
+
+Open AI settings, enable **OpenAI**, paste an API key, and choose a model. The recommended default is `gpt-5.6-sol`; custom OpenAI model IDs are supported. Maintainers can instead set `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in `.env.local`, then restart nex-note.
+
+nex-note sends the current instruction plus compact semantic score, selection, and recent conversation context to OpenAI. The key is not written to scores or exports. OpenAI returns structured intent, not an XML patch. nex-note treats it as untrusted, validates or repairs commands, reports affected measures and validator findings, and preserves preview/confirmation.
+
+## Local Codex/agent interface
+
+This release contains an opt-in localhost HTTP tool-service foundation, not a finished MCP server. Set `NEX_NOTE_ENABLE_LOCAL_AGENT=true` and a long random `NEX_NOTE_AGENT_SECRET` in `.env.local`. Calls to `/api/local-agent` require `Authorization: Bearer <secret>`, a live `scoreKey`, a supported `tool`, and tool `arguments`.
+
+- `get_score_summary`: identity/revision, metadata, parts/measures, diagnostics, capabilities, and selection summary.
+- `get_selection`: compact semantic selection.
+- `validate_score`: validator findings without mutation.
+- `plan_score_commands`: natural-language planning through the existing AI pipeline; never applies.
+- `preview_score_commands`: validates/repairs typed commands and returns before/after metadata; never applies.
+- `apply_score_preview`: applies one unexpired preview after revision and confirmation checks.
+- `discard_score_preview`: invalidates a preview.
+- `export_score`: exports MusicXML or MXL into `.nex/agent-exports` using a safe filename.
+
+There is no arbitrary filesystem, shell, URL-fetch, raw XML patch, or unrestricted export-path operation. Preview IDs expire after five minutes and cannot be replayed. Workflow: inspect score → inspect selection → plan → preview → user confirms → apply → validate → export.
+
+Current limitation: agent apply updates the server score session and server undo availability, but does not yet push the change or undo entry into an already-open browser tab. MCP transport and browser synchronization remain follow-up work.
+
 Updated: 2026-07-09. This manual covers the current user-facing features in nex-note. Keyboard and mouse shortcuts are documented separately in [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 Languages: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md).

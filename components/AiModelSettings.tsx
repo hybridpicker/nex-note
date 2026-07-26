@@ -12,6 +12,7 @@ import {
 
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   ollama: 'Ollama',
+  openai: 'OpenAI',
   claude: 'Claude',
   gemini: 'Gemini',
 };
@@ -43,6 +44,7 @@ export default function AiModelSettingsPanel({
   const [open, setOpen] = useState(false);
   const [newModelInputs, setNewModelInputs] = useState<Record<ProviderName, string>>({
     ollama: '',
+    openai: '',
     claude: '',
     gemini: '',
   });

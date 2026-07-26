@@ -46,6 +46,7 @@ import {
 } from '@/lib/nxn-project-directory';
 import { buildBugReportBundle, exportBugReportBundle, type BugReportChatMessage } from '@/lib/bug-report-export';
 import { isDebugEnabled } from '@/lib/debug';
+import { serializeEditorSelection } from '@/lib/chat-selection';
 import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-recorder';
 import { usePlayback } from '@/hooks/usePlayback';
 import type { PlaybackSampleBank } from '@/lib/playback-sample-bank';
@@ -2633,6 +2634,7 @@ export default function Home({ searchParams }: HomeProps) {
           scoreKey: chatScoreKey,
           revision: scoreRevision,
           xml,
+          selection: serializeEditorSelection(selection),
         }),
       })
         .then((res) => res.ok ? res.json() : null)
@@ -2647,7 +2649,7 @@ export default function Home({ searchParams }: HomeProps) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [chatScoreKey, scoreRevision, xml]);
+  }, [chatScoreKey, scoreRevision, selection, xml]);
 
   useEffect(() => {
     if (!supportsBugReportDirectoryExport()) return;

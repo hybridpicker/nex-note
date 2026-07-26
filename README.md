@@ -52,7 +52,7 @@ The core value is:
 - Insert zero-time grace-note entities before selected anchors—including at irregular-meter barlines—without converting or displacing the main note; paired notation/TAB and MusicXML roundtrip stay synchronized.
 - Divide one selected note, chord, or rest into an exact 2:3 through 9:8 tuplet with editable rest units, identity-preserving anchors, automatic integer-division rescaling, paired notation/TAB, and explicit rejection of unsafe ranges or tied/nested sources.
 - Use selection ranges, transpose tools, dynamics, articulations with placement controls, ties/slurs with placement controls, repeats, endings, lyrics, text, part metadata, and cascading staff/collision layout controls.
-- Use an AI assistant with Ollama, Claude, Gemini, or benchmark mode.
+- Use an AI assistant with OpenAI, Ollama, Claude, Gemini, or benchmark mode.
 - Preview and confirm risky AI edits before applying them.
 - Run validator-guided repair when AI output introduces notation diagnostics.
 - Save local `.nxn` project working copies and reopen recent/library scores.
@@ -133,16 +133,32 @@ Copy `.env.local.example` to `.env.local` and fill only the providers you use.
 | Variable | Purpose |
 | --- | --- |
 | `OLLAMA_API_KEY` | Optional Ollama Cloud key; leave empty for local Ollama at `http://localhost:11434`. |
+| `OPENAI_API_KEY` | OpenAI API key, consumed only by the server-side provider adapter. |
+| `OPENAI_MODEL` | Optional server-side OpenAI model override; defaults to `gpt-5.6-sol`. |
 | `ANTHROPIC_API_KEY` | Claude provider key. |
 | `CLAUDE_MODEL` | Claude model override. |
 | `GEMINI_API_KEY` | Gemini provider key. |
 | `PDF_TO_MUSESCORE_SCRIPT` | Custom PDF-to-MuseScore conversion script path. |
 | `MUSESCORE_CLI` | Custom MuseScore CLI path. |
 | `NEXT_PUBLIC_NEX_NOTE_EMBED_DATA_ENDPOINT` | Optional same-origin embed data endpoint. Supports `{entry}` or `{entryId}` placeholders. |
+| `NEX_NOTE_ENABLE_LOCAL_AGENT` | Set to `true` to enable the localhost-only semantic agent interface. |
+| `NEX_NOTE_AGENT_SECRET` | Long per-session bearer secret required by the local agent interface. |
 
 Restart the dev server after editing `.env.local`; Next.js reads env vars at startup.
 
 The app opening screen includes an AI readiness panel. It checks local Ollama model discovery, shows whether Claude or Gemini keys are saved in local AI settings, and keeps local helper workflows visible even when no provider is connected.
+
+OpenAI uses the official JavaScript/TypeScript SDK and Responses API. The model is configurable in AI settings, including custom model IDs; `OPENAI_MODEL` is an optional server-side override. The current instruction, compact score/selection context, and recent assistant context are sent to the provider. Output is still untrusted: nex-note repairs and validates it as `ScoreCommand` data and preserves its normal preview, confirmation, validator, semantic-execution, and undo workflow. OpenAI has no raw MusicXML mutation route.
+
+## Local Codex/Agent Interface
+
+The current foundation is an authenticated localhost HTTP tool service at `/api/local-agent`; it is not yet a production-ready MCP server. Enable it locally with `NEX_NOTE_ENABLE_LOCAL_AGENT=true` and a long random `NEX_NOTE_AGENT_SECRET`.
+
+Calls use `Authorization: Bearer <secret>` and JSON containing `tool`, the live `scoreKey`, and tool `arguments`. Tools are `get_score_summary`, `get_selection`, `validate_score`, `plan_score_commands`, `preview_score_commands`, `apply_score_preview`, `discard_score_preview`, and `export_score`.
+
+The interface is disabled unless explicitly enabled, accepts only localhost hostnames, uses five-minute one-use preview IDs, rejects stale revisions, and permits exports only to `.nex/agent-exports` with safe basenames. It exposes no shell, URL fetch, arbitrary read/write, XML patch, or unrestricted path tool. Workflow: inspect score → inspect selection → plan → preview → user confirms → apply → validate → export.
+
+Known limitation: agent apply currently updates the server-side live score session and its server undo availability, but does not push that update into an already-open browser tab's React undo stack. MCP transport and browser/desktop event synchronization remain follow-up work.
 
 ## Iframe Embedding
 

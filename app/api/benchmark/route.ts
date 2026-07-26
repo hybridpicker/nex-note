@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ProviderName } from '@/lib/ai-provider-config';
-import { askClaude, askGemini, askOllama, type AIResponse } from '@/lib/ai-providers';
+import { askClaude, askGemini, askOllama, askOpenAI, type AIResponse } from '@/lib/ai-providers';
 import { normalizeAiProviderRequestSettings } from '@/lib/ai-model-settings';
 import { INTENT_SYSTEM_PROMPT } from '@/lib/prompts';
 import { applyDocumentCommands, buildDocumentState } from '@/src/score-core/commands/apply-document-commands';
@@ -46,13 +46,14 @@ export async function POST(req: NextRequest) {
     if (!message || !effectiveXml) return NextResponse.json({ error: 'message and score xml required' }, { status: 400 });
 
     const prompt = `${INTENT_SYSTEM_PROMPT}\n\nUser instruction: ${message}`;
-    const selectedProviders = (providers?.length ? providers : ['ollama', 'claude', 'gemini'])
-      .filter((provider): provider is ProviderName => ['ollama', 'claude', 'gemini'].includes(provider))
+    const selectedProviders = (providers?.length ? providers : ['ollama', 'openai', 'claude', 'gemini'])
+      .filter((provider): provider is ProviderName => ['ollama', 'openai', 'claude', 'gemini'].includes(provider))
       .filter((provider) => !providerSettings.enabledProviders || providerSettings.enabledProviders.includes(provider));
 
     const raw = await Promise.allSettled(selectedProviders.map((provider) => {
       switch (provider) {
         case 'ollama': return askOllama(prompt, providerSettings.models?.ollama ?? ollamaModel, providerSettings);
+        case 'openai': return askOpenAI(prompt, providerSettings);
         case 'claude': return askClaude(prompt, providerSettings);
         case 'gemini': return askGemini(prompt, providerSettings);
       }

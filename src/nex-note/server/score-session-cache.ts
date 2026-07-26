@@ -2,6 +2,8 @@ interface ScoreSessionEntry {
   key: string;
   revision: number;
   xml: string;
+  selection?: unknown;
+  undoXml: string[];
   updatedAt: number;
 }
 
@@ -29,13 +31,16 @@ function pruneStore(store: Map<string, ScoreSessionEntry>) {
   });
 }
 
-export function storeScoreSession(params: { scoreKey: string; revision: number; xml: string }) {
-  const { scoreKey, revision, xml } = params;
+export function storeScoreSession(params: { scoreKey: string; revision: number; xml: string; selection?: unknown }) {
+  const { scoreKey, revision, xml, selection } = params;
   const store = getStore();
+  const previous = store.get(scoreKey);
   store.set(scoreKey, {
     key: scoreKey,
     revision,
     xml,
+    selection,
+    undoXml: previous?.undoXml ?? [],
     updatedAt: Date.now(),
   });
   pruneStore(store);
@@ -44,6 +49,35 @@ export function storeScoreSession(params: { scoreKey: string; revision: number; 
     revision,
     bytes: Buffer.byteLength(xml, 'utf8'),
   };
+}
+
+export function getScoreSession(scoreKey?: string | null) {
+  if (!scoreKey) return null;
+  const entry = getStore().get(scoreKey);
+  if (!entry) return null;
+  entry.updatedAt = Date.now();
+  return {
+    scoreKey: entry.key,
+    revision: entry.revision,
+    xml: entry.xml,
+    selection: entry.selection,
+    canUndo: entry.undoXml.length > 0,
+  };
+}
+
+export function applyScoreSessionMutation(params: {
+  scoreKey: string;
+  expectedRevision: number;
+  xml: string;
+  revision: number;
+}) {
+  const entry = getStore().get(params.scoreKey);
+  if (!entry || entry.revision !== params.expectedRevision) return null;
+  entry.undoXml = [...entry.undoXml, entry.xml].slice(-50);
+  entry.xml = params.xml;
+  entry.revision = params.revision;
+  entry.updatedAt = Date.now();
+  return { scoreKey: entry.key, revision: entry.revision, canUndo: true };
 }
 
 export function resolveScoreSessionXml(scoreKey?: string | null, minimumRevision?: number | null) {

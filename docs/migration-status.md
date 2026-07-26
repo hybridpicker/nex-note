@@ -1,5 +1,13 @@
 # Migration Status
 
+## 2026-07-26 — OpenAI provider and local agent foundation
+
+- Added OpenAI provider typing, ordering, settings persistence/normalization, readiness UI, selector and benchmark routing, and the existing AI pipeline path.
+- Added the official OpenAI SDK Responses integration with schema-constrained intent output, custom model IDs, `OPENAI_API_KEY`, optional `OPENAI_MODEL`, actual-model reporting, and sanitized failures.
+- Preserved repair, `ScoreCommand` validation, affected measures, validator findings, confirmation, and semantic execution; no raw provider-to-MusicXML route was added.
+- Added an opt-in, authenticated, localhost-only semantic agent HTTP service with eight initial tools, five-minute one-use previews, stale-revision protection, confirmation enforcement, and managed exports.
+- Remaining: MCP transport, open-browser event synchronization, browser undo-stack integration for agent edits, and a user-facing confirmation handoff.
+
 ## Core Execution Support
 
 Currently executed through the core-model path:

@@ -23,7 +23,11 @@ export interface AiProviderRequestSettings {
 }
 
 export const AI_MODEL_SETTINGS_STORAGE_KEY = 'nex-note:ai-model-settings';
-export const AI_PROVIDER_ORDER: ProviderName[] = ['ollama', 'claude', 'gemini'];
+export const AI_PROVIDER_ORDER: ProviderName[] = ['ollama', 'openai', 'claude', 'gemini'];
+
+export const OPENAI_MODELS: AiModelOption[] = [
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol (Recommended)' },
+];
 
 export const CLAUDE_MODELS: AiModelOption[] = [
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
@@ -43,6 +47,12 @@ export const DEFAULT_AI_MODEL_SETTINGS: AiModelSettings = {
       selectedModel: OLLAMA_MODELS[0]?.id ?? 'gemma4:31b',
       models: OLLAMA_MODELS,
       baseUrl: '',
+    },
+    openai: {
+      enabled: true,
+      apiKey: '',
+      selectedModel: OPENAI_MODELS[0].id,
+      models: OPENAI_MODELS,
     },
     claude: {
       enabled: true,
@@ -112,6 +122,7 @@ export function normalizeAiModelSettings(value: unknown): AiModelSettings {
     : {};
   const normalizedProviders = {
     ollama: normalizeProviderSettings(providers.ollama, DEFAULT_AI_MODEL_SETTINGS.providers.ollama),
+    openai: normalizeProviderSettings(providers.openai, DEFAULT_AI_MODEL_SETTINGS.providers.openai),
     claude: normalizeProviderSettings(providers.claude, DEFAULT_AI_MODEL_SETTINGS.providers.claude),
     gemini: normalizeProviderSettings(providers.gemini, DEFAULT_AI_MODEL_SETTINGS.providers.gemini),
   };

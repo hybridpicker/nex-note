@@ -3,10 +3,11 @@ import { storeScoreSession } from '@/src/nex-note/server/score-session-cache';
 
 export async function POST(req: NextRequest) {
   try {
-    const { scoreKey, revision, xml } = await req.json() as {
+    const { scoreKey, revision, xml, selection } = await req.json() as {
       scoreKey?: string;
       revision?: number;
       xml?: string;
+      selection?: unknown;
     };
 
     if (!scoreKey || typeof scoreKey !== 'string' || !xml || typeof xml !== 'string') {
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
       scoreKey,
       revision: typeof revision === 'number' ? revision : 0,
       xml,
+      selection,
     });
 
     return NextResponse.json({ ok: true, session });

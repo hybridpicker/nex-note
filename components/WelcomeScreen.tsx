@@ -29,6 +29,7 @@ type WelcomeScreenProps = {
 
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   ollama: 'Ollama',
+  openai: 'OpenAI',
   claude: 'Claude',
   gemini: 'Gemini',
 };

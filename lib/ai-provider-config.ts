@@ -1,4 +1,4 @@
-export type ProviderName = 'ollama' | 'claude' | 'gemini';
+export type ProviderName = 'ollama' | 'openai' | 'claude' | 'gemini';
 
 export const OLLAMA_MODELS = [
   { id: 'gemma4:31b', label: 'Gemma 4 31B (Recommended)' },

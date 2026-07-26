@@ -14,6 +14,18 @@ A tagged binary release now has macOS packaging build evidence, but still needs 
 
 ## Validated State
 
+OpenAI and local-agent evidence produced on 2026-07-26:
+
+- targeted provider/pipeline/agent suite passed (`79/79`)
+- full automated suite passed (`1010/1010`)
+- Next.js 16.2.11 production build passed and includes `/api/local-agent`
+- browser smoke passed (`30/30`)
+- coverage gates passed (`85.61%` lines, `78.13%` branches, `86.77%` functions)
+- `npm audit --omit=dev` reports `0` vulnerabilities after the PostCSS override moved to `8.5.18`
+- bounded MuseScore 4.7.3 round-trip returned `passed-with-local-musescore-limit`; source baselines also crashed or timed out, so crash-only differences remain inconclusive
+- OpenAI tests used mocked HTTP responses; no real API key or network model request was used
+- the local agent surface is foundation-only, not production-ready MCP; browser synchronization, browser undo integration, and MCP transport remain open
+
 - `npm test`: passed on 2026-07-23 (`991` tests, `0` failed)
 - `npm run build`: passed on 2026-07-23; Next 16.2.11 compiled, TypeScript completed, and `postbuild` synced standalone assets
 - `npm run test:e2e:smoke`: passed on 2026-07-23 (`30` tests, `0` failed)

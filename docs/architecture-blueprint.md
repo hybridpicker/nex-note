@@ -28,12 +28,20 @@ Today the key seams are:
 - note-level XML edits live in `lib/note-editor.ts`
 - XML application endpoint lives in `app/api/apply-operations/route.ts`
 - AI command generation lives in `app/api/chat/route.ts` and `lib/prompts.ts`
+- hosted-provider adapters, including OpenAI Responses, live in `lib/ai-providers.ts`
+- the opt-in localhost agent boundary lives in `app/api/local-agent/route.ts` and `src/nex-note/agent/local-agent-service.ts`
 - document history lives in `hooks/useScoreDocument.ts`
 - rendered selection is coupled to OSMD in `components/ScoreEditor.tsx`
 
 That gives us a strong starting point, because there is already a command vocabulary and a document workflow. The main issue is no longer the absence of a semantic core, but the coexistence of semantic execution and compatibility layers while the migration is still in flight.
 
 ## Migration Snapshot
+
+### OpenAI and local-agent boundary
+
+OpenAI is a peer provider, not a second editing pipeline. Schema-constrained Responses output enters `runAiCommandPipeline`, then passes through intent parsing, `ScoreCommand` normalization/repair, affected-measure assessment, validation, preview/confirmation, semantic execution, and history like other providers. The server-side adapter owns the API key, reports the actual returned model, and gives the model no XML-patching authority.
+
+The local agent foundation is also command-oriented. Read tools inspect shared score-session state; preview tools create short-lived opaque previews without mutation; apply checks authorization, score revision, confirmation, validation, and replay state before semantic execution. Export is format- and destination-constrained. The adapter is intentionally documented as an authenticated local HTTP foundation, not a finished MCP server, until desktop/browser state synchronization and MCP transport exist.
 
 The repository has already crossed several important seams toward the target state:
 
