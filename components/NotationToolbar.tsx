@@ -7,6 +7,7 @@ import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, Artic
 import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import type { MidiInputStatus } from '@/hooks/useMidiInput';
+import type { MicrophoneInputStatus } from '@/hooks/useMicrophonePitchInput';
 import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
 interface Props {
@@ -36,6 +37,10 @@ interface Props {
   midiInputEnabled: boolean;
   midiInputStatus: MidiInputStatus;
   midiInputDevices: string[];
+  microphoneInputEnabled: boolean;
+  microphoneInputStatus: MicrophoneInputStatus;
+  microphoneDetectedPitchLabel: string;
+  microphoneSignalLevelDb: number;
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -57,6 +62,7 @@ interface Props {
   onToggleStepInputKeyboardMode: () => void;
   onToggleInputByDurationMode: () => void;
   onToggleMidiInput: () => void;
+  onToggleMicrophoneInput: () => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -244,9 +250,9 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneSignalLevelDb, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -379,24 +385,25 @@ export default function NotationToolbar({
         <button
           type="button"
           data-testid="instrument-record-toggle"
-          onClick={onToggleMidiInput}
-          disabled={midiInputStatus === 'requesting' || midiInputStatus === 'unsupported'}
-          aria-pressed={midiInputEnabled}
+          onClick={onToggleMicrophoneInput}
+          disabled={microphoneInputStatus === 'requesting' || microphoneInputStatus === 'unsupported'}
+          aria-pressed={microphoneInputEnabled}
           title={[
-            midiInputEnabled ? 'Stop Instrument Record' : 'Start Instrument Record (MIDI)',
+            microphoneInputEnabled ? 'Stop microphone Instrument Record' : 'Start microphone Instrument Record',
             'Choose a note value with 1–9, then play one pitch or a chord',
-            'Notes arriving within 35 ms are notated as one chord',
-            midiInputStatus === 'requesting' ? 'Requesting MIDI access…' : null,
-            midiInputStatus === 'waiting' ? 'Waiting for a MIDI input device' : null,
-            midiInputStatus === 'denied' ? 'MIDI access was denied; click to retry' : null,
-            midiInputStatus === 'unsupported' ? 'Web MIDI is not supported in this browser' : null,
-            midiInputStatus === 'error' ? 'MIDI input could not be started; click to retry' : null,
-            midiInputDevices.length > 0 ? midiInputDevices.join(', ') : null,
+            'Stable simultaneous pitches are notated as one chord',
+            microphoneInputStatus === 'requesting' ? 'Requesting microphone access…' : null,
+            microphoneInputStatus === 'listening' ? 'Listening to the microphone' : null,
+            microphoneInputStatus === 'denied' ? 'Microphone access was denied; click to retry' : null,
+            microphoneInputStatus === 'unsupported' ? 'Microphone input is not supported in this environment' : null,
+            microphoneInputStatus === 'error' ? 'Microphone input could not be started; click to retry' : null,
+            microphoneDetectedPitchLabel ? `Detected: ${microphoneDetectedPitchLabel}` : null,
+            microphoneInputEnabled && microphoneSignalLevelDb <= -90 ? 'No pitched signal detected yet' : null,
           ].filter(Boolean).join('\n')}
           className={`h-8 flex items-center gap-1.5 rounded-md border px-3 text-xs font-semibold tracking-wide transition-colors shrink-0 ${
-            midiInputEnabled
+            microphoneInputEnabled
               ? 'border-red-500 bg-red-500 text-white shadow-[0_0_0_2px_rgba(239,68,68,0.12)]'
-              : midiInputStatus === 'requesting' || midiInputStatus === 'unsupported'
+              : microphoneInputStatus === 'requesting' || microphoneInputStatus === 'unsupported'
                 ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                 : 'border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100'
           }`}
@@ -404,10 +411,12 @@ export default function NotationToolbar({
           <span
             aria-hidden
             className={`h-2 w-2 rounded-full ${
-              midiInputEnabled ? 'bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]' : 'bg-red-500'
+              microphoneInputEnabled ? 'bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]' : 'bg-red-500'
             }`}
           />
-          REC
+          {microphoneInputEnabled && microphoneDetectedPitchLabel
+            ? `REC ${microphoneDetectedPitchLabel}`
+            : 'MIC REC'}
         </button>
         <button
           onClick={onToggleLeadsheetMode}

@@ -90,6 +90,9 @@
       "category": "public.app-category.music",
       "icon": "assets/Icon-nexnote.icns",
       "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Nex Note uses the microphone to detect played pitches and enter notes into your score."
+      },
       "target": [
         "dmg",
         "zip"

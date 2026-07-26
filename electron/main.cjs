@@ -791,10 +791,10 @@ async function createWindow() {
 
   const rendererSession = mainWindow.webContents.session;
   rendererSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => (
-    isAllowedRendererPermission(permission, details?.requestingUrl || requestingOrigin, url)
+    isAllowedRendererPermission(permission, details?.requestingUrl || requestingOrigin, url, details)
   ));
   rendererSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    callback(isAllowedRendererPermission(permission, details?.requestingUrl || webContents.getURL(), url));
+    callback(isAllowedRendererPermission(permission, details?.requestingUrl || webContents.getURL(), url, details));
   });
 
   mainWindow.on('page-title-updated', (event) => {

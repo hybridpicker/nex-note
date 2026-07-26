@@ -51,6 +51,7 @@ import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-reco
 import { usePlayback } from '@/hooks/usePlayback';
 import type { PlaybackSampleBank } from '@/lib/playback-sample-bank';
 import { useMidiInput } from '@/hooks/useMidiInput';
+import { useMicrophonePitchInput } from '@/hooks/useMicrophonePitchInput';
 import { useNoteEditor, type ArticulationKind, type BarlineKind, type DynamicKind, type SelectedNote } from '@/hooks/useNoteEditor';
 import { useScoreDocument, type ScoreDocumentSelectionAnchor } from '@/hooks/useScoreDocument';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
@@ -1072,29 +1073,45 @@ export default function Home({ searchParams }: HomeProps) {
     preferFlats: preferFlatsForMidiInput,
   });
 
-  const handleToggleMidiInput = useCallback(() => {
-    if (!midiInputEnabled) {
-      // Instrument Record has one deliberately narrow keyboard contract:
-      // 1-9 select the duration, then the next MIDI note/chord commits it.
-      // Disable modes that otherwise consume those digits or defer the commit.
-      if (inputByDurationMode) toggleInputByDurationMode();
-      if (stepInputKeyboardMode) toggleStepInputKeyboardMode();
-      if (guitarInputMode) toggleGuitarInputMode();
-      if (!noteInputMode) toggleNoteInput();
-    }
-    void toggleMidiInput();
+  const {
+    enabled: microphoneInputEnabled,
+    status: microphoneInputStatus,
+    detectedPitchLabel: microphoneDetectedPitchLabel,
+    signalLevelDb: microphoneSignalLevelDb,
+    toggle: toggleMicrophoneInput,
+  } = useMicrophonePitchInput({
+    onChord: insertMidiChord,
+    preferFlats: preferFlatsForMidiInput,
+  });
+
+  const prepareInstrumentRecordMode = useCallback(() => {
+    // Instrument Record has one deliberately narrow keyboard contract:
+    // 1-9 select the duration, then the next detected note/chord commits it.
+    // Disable modes that otherwise consume those digits or defer the commit.
+    if (inputByDurationMode) toggleInputByDurationMode();
+    if (stepInputKeyboardMode) toggleStepInputKeyboardMode();
+    if (guitarInputMode) toggleGuitarInputMode();
+    if (!noteInputMode) toggleNoteInput();
   }, [
     guitarInputMode,
     inputByDurationMode,
-    midiInputEnabled,
     noteInputMode,
     stepInputKeyboardMode,
     toggleGuitarInputMode,
     toggleInputByDurationMode,
-    toggleMidiInput,
     toggleNoteInput,
     toggleStepInputKeyboardMode,
   ]);
+
+  const handleToggleMidiInput = useCallback(() => {
+    if (!midiInputEnabled) prepareInstrumentRecordMode();
+    void toggleMidiInput();
+  }, [midiInputEnabled, prepareInstrumentRecordMode, toggleMidiInput]);
+
+  const handleToggleMicrophoneInput = useCallback(() => {
+    if (!microphoneInputEnabled) prepareInstrumentRecordMode();
+    void toggleMicrophoneInput();
+  }, [microphoneInputEnabled, prepareInstrumentRecordMode, toggleMicrophoneInput]);
 
   useLayoutEffect(() => {
     playbackSelectedNoteRef.current = activePlaybackNote;
@@ -4884,6 +4901,10 @@ export default function Home({ searchParams }: HomeProps) {
                     midiInputEnabled={midiInputEnabled}
                     midiInputStatus={midiInputStatus}
                     midiInputDevices={midiInputDevices}
+                    microphoneInputEnabled={microphoneInputEnabled}
+                    microphoneInputStatus={microphoneInputStatus}
+                    microphoneDetectedPitchLabel={microphoneDetectedPitchLabel}
+                    microphoneSignalLevelDb={microphoneSignalLevelDb}
                     leadsheetMode={leadsheetMode}
                     guitarInputMode={guitarInputMode}
                     selectedGuitarString={selectedGuitarString}
@@ -4905,6 +4926,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
                     onToggleInputByDurationMode={toggleInputByDurationMode}
                     onToggleMidiInput={handleToggleMidiInput}
+                    onToggleMicrophoneInput={handleToggleMicrophoneInput}
                     onToggleLeadsheetMode={toggleLeadsheetMode}
                     onToggleGuitarInputMode={toggleGuitarInputMode}
                     onInsertGuitarFret={insertGuitarFret}

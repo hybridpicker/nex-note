@@ -110,12 +110,15 @@ Note Input wird mit dem Button `Note Input` oder `N` aktiviert. Die Eingabe ist 
 | Cursor Insert | `Cmd/Ctrl+Shift+A...G` fuegt explizit am Cursor ein. |
 | Oktaven | `Shift+Arrow Up/Down` oder `Cmd/Ctrl+Arrow Up/Down`. |
 | Step Keyboard | `P` blendet ein kompaktes QWERTY-Step-Keyboard ein oder aus und aktiviert bei Bedarf Note Input. |
-| Instrument Record | `REC` aktiviert die MIDI-Instrumenteneingabe. Waehle zuerst mit `1` bis `9` den Notenwert und spiele danach einen Ton oder mehrere Toene als Akkord. |
+| Microphone Instrument Record | `MIC REC` aktiviert die Mikrofon-Tonhoehenerkennung. Waehle zuerst mit `1` bis `9` den Notenwert und spiele danach einen Ton oder mehrere Toene als Akkord. |
+| Live MIDI | `MIDI` unter Entry Modes verwendet alternativ ein angeschlossenes MIDI-Instrument. |
 
 Bei Maus-Eingabe zeigt der Ghost-Note-Cursor an, wo die naechste Note landen wird. `Shift` bevorzugt Insert-Platzierung, `Alt/Option` bevorzugt Chord-Platzierung.
 Wenn das Step Keyboard aktiv ist, laufen `Z S X D C V G B H N J M` als `C4` bis `B4` und `Q 2 W 3 E R 5 T 6 Y 7 U` als `C5` bis `B5` durch denselben semantischen Note-Insert-Pfad wie die normale A-G-Eingabe. `P` oder `Escape` verlassen diesen Modus wieder.
 
-Instrument Record verwendet den gewaehlten Notenwert, die aktive Stimme und den rhythmischen Cursor. Beim Start werden Duration-first-, QWERTY-Step- und Gitarrenbund-Eingabe deaktiviert, damit `1` bis `9` eindeutig den Notenwert waehlen. MIDI-Toene innerhalb von 35 ms werden gesammelt, sortiert und gemeinsam als ein Akkord in einer Undo-Transaktion notiert. Der erste Experimentstand benoetigt ein MIDI-faehiges Instrument oder ein Audio-zu-MIDI-Interface; Mikrofon-Tonhoehenerkennung ist noch nicht enthalten.
+Microphone Instrument Record verwendet den gewaehlten Notenwert, die aktive Stimme und den rhythmischen Cursor. Beim Start werden Duration-first-, QWERTY-Step- und Gitarrenbund-Eingabe deaktiviert, damit `1` bis `9` eindeutig den Notenwert waehlen. Ein kurzes Stabilitaetsfenster sammelt gleichzeitig erkannte spektrale Grundtoene und notiert sie gemeinsam als Akkord in einer Undo-Transaktion. Gehaltene Toene werden nur einmal geschrieben; nach einer kurzen Stille wird die Erkennung wieder scharf. Der rote Button zeigt den aktuell erkannten Ton oder Akkord. Die Erkennung filtert Obertoene bewusst konservativ, daher helfen bei schwachen inneren Akkordtoenen ein klarer gemeinsamer Anschlag, geringerer Mikrofonabstand und wenig Umgebungsgeraeusch.
+
+Der separate MIDI-Button zeigt verbundene Geraete oder wartet auf einen Controller. MIDI-Toene innerhalb von 35 ms werden als ein Akkord notiert. Eine durchgehende rhythmische Echtzeit-Transkription ist in beiden Modi noch nicht enthalten.
 
 ## Guitar TAB Input
 

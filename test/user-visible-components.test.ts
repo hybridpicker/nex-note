@@ -130,6 +130,10 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     midiInputEnabled: false,
     midiInputStatus: 'idle',
     midiInputDevices: [],
+    microphoneInputEnabled: false,
+    microphoneInputStatus: 'idle',
+    microphoneDetectedPitchLabel: '',
+    microphoneSignalLevelDb: -120,
     leadsheetMode: false,
     guitarInputMode: false,
     selectedGuitarString: 1,
@@ -150,6 +154,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleStepInputKeyboardMode() {},
     onToggleInputByDurationMode() {},
     onToggleMidiInput() {},
+    onToggleMicrophoneInput() {},
     onToggleLeadsheetMode() {},
     onToggleGuitarInputMode() {},
     onInsertGuitarFret() {},
@@ -726,21 +731,36 @@ test('NotationToolbar exposes duration-first chord preparation inside Notation E
   });
 });
 
-test('NotationToolbar exposes Instrument Record workflow, polyphony, device state, and toggle', () => {
-  let toggled = 0;
+test('NotationToolbar exposes microphone Instrument Record detection and keeps MIDI input separate', () => {
+  let microphoneToggled = 0;
+  let midiToggled = 0;
   let renderer: ReturnType<typeof create> | null = null;
 
   act(() => {
     renderer = create(React.createElement(NotationToolbar, toolbarProps({
       noteInputMode: true,
+      microphoneInputEnabled: true,
+      microphoneInputStatus: 'listening',
+      microphoneDetectedPitchLabel: 'C4+E4+G4',
+      microphoneSignalLevelDb: -28,
       midiInputEnabled: true,
       midiInputStatus: 'connected',
       midiInputDevices: ['Acme Stage 88'],
+      onToggleMicrophoneInput() {
+        microphoneToggled += 1;
+      },
       onToggleMidiInput() {
-        toggled += 1;
+        midiToggled += 1;
       },
     })));
   });
+
+  const prominentRecordButton = renderer!.root.findAllByProps({ 'data-testid': 'instrument-record-toggle' })[0]!;
+  assert.equal(prominentRecordButton.props['aria-pressed'], true);
+  assert.match(prominentRecordButton.props.title, /Listening to the microphone/);
+  assert.match(prominentRecordButton.props.title, /Detected: C4\+E4\+G4/);
+  assert.match(nodeText(prominentRecordButton), /REC C4\+E4\+G4/);
+  assert.match(prominentRecordButton.props.className, /bg-red-500/);
 
   const midiButton = renderer!.root.findAll((node) => (
     node.type === 'button'
@@ -748,16 +768,14 @@ test('NotationToolbar exposes Instrument Record workflow, polyphony, device stat
     && node.props.title.includes('Acme Stage 88')
   ))[0];
   assert.ok(midiButton);
-  assert.match(midiButton.props.title, /Stop Instrument Record/);
-  assert.match(midiButton.props.title, /Choose a note value with 1–9/);
+  assert.match(midiButton.props.title, /Disable MIDI note input/);
   assert.match(midiButton.props.title, /within 35 ms.*one chord/);
-  assert.ok(midiButton.findAll((node) => node.children?.includes?.('REC')).length > 0);
-  const prominentRecordButton = renderer!.root.findAllByProps({ 'data-testid': 'instrument-record-toggle' })[0]!;
-  assert.equal(prominentRecordButton.props['aria-pressed'], true);
-  assert.match(prominentRecordButton.props.className, /bg-red-500/);
+  assert.match(nodeText(midiButton), /MIDI/);
 
+  act(() => prominentRecordButton.props.onClick());
   act(() => midiButton.props.onClick());
-  assert.equal(toggled, 1);
+  assert.equal(microphoneToggled, 1);
+  assert.equal(midiToggled, 1);
   act(() => renderer?.unmount());
 });
 

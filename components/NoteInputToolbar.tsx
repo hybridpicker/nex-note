@@ -482,7 +482,7 @@ export default function NoteInputToolbar({
     chordInputMode ? 'CHD' : null,
     stepInputKeyboardMode ? 'STEP' : null,
     inputByDurationMode ? `DUR ${preparedDurationPitchLabel || '—'}` : null,
-    midiInputEnabled ? 'REC' : null,
+    midiInputEnabled ? 'MIDI' : null,
     leadsheetMode ? 'LEAD' : null,
     guitarInputMode ? 'TAB' : null,
   ].filter(Boolean).join(' · ');
@@ -766,8 +766,8 @@ export default function NoteInputToolbar({
       <TBtn
         onClick={onToggleMidiInput}
         title={[
-          midiInputEnabled ? 'Stop Instrument Record' : 'Start Instrument Record (MIDI)',
-          'Choose a note value with 1–9, then play one pitch or a chord',
+          midiInputEnabled ? 'Disable MIDI note input' : 'Enable MIDI note input',
+          'Choose a note value with 1–9, then play one MIDI pitch or chord',
           'Notes arriving within 35 ms are notated as one chord',
           midiInputStatus === 'requesting' ? 'Requesting MIDI access…' : null,
           midiInputStatus === 'waiting' ? 'Waiting for a MIDI input device' : null,
@@ -788,7 +788,7 @@ export default function NoteInputToolbar({
               midiInputEnabled ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' : 'bg-current opacity-45'
             }`}
           />
-          REC
+          MIDI
         </span>
       </TBtn>
       <TBtn

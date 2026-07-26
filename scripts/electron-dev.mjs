@@ -21,6 +21,14 @@ async function setPlistValue(plistPath, key, value) {
   await execFileAsync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plistPath]);
 }
 
+async function setPlistString(plistPath, key, value) {
+  try {
+    await setPlistValue(plistPath, key, value);
+  } catch {
+    await execFileAsync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} string ${value}`, plistPath]);
+  }
+}
+
 async function prepareMacDevElectronApp() {
   const sourceApp = path.resolve('node_modules/electron/dist/Electron.app');
   const targetRoot = path.resolve('.nex/electron-dev');
@@ -34,7 +42,7 @@ async function prepareMacDevElectronApp() {
     appName: APP_NAME,
     bundleId: APP_BUNDLE_ID,
     electronVersion,
-    copyMode: 'verbatim-symlinks',
+    copyMode: 'verbatim-symlinks-microphone',
     executableName: APP_NAME,
   }, null, 2);
 
@@ -49,6 +57,11 @@ async function prepareMacDevElectronApp() {
     await setPlistValue(targetPlist, 'CFBundleExecutable', APP_NAME);
     await setPlistValue(targetPlist, 'CFBundleIdentifier', APP_BUNDLE_ID);
     await setPlistValue(targetPlist, 'LSApplicationCategoryType', 'public.app-category.music');
+    await setPlistString(
+      targetPlist,
+      'NSMicrophoneUsageDescription',
+      'Nex Note uses the microphone to detect played pitches and enter notes into your score.',
+    );
     await fs.writeFile(stampPath, stamp);
   }
 

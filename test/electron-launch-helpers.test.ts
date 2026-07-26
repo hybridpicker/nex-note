@@ -100,11 +100,15 @@ test('uniquePathDirectories removes empty and duplicate PATH entries', () => {
   );
 });
 
-test('Electron permissions allow MIDI only from the local renderer origin', () => {
+test('Electron permissions allow MIDI and microphone-only media from the local renderer origin', () => {
   const rendererUrl = 'http://127.0.0.1:43123/nex-note-app';
   assert.equal(isAllowedRendererPermission('midi', 'http://127.0.0.1:43123/nex-note-app', rendererUrl), true);
   assert.equal(isAllowedRendererPermission('midiSysex', 'http://127.0.0.1:43123/nex-note-app', rendererUrl), true);
+  assert.equal(isAllowedRendererPermission('media', 'http://127.0.0.1:43123/nex-note-app', rendererUrl, { mediaTypes: ['audio'] }), true);
+  assert.equal(isAllowedRendererPermission('media', 'http://127.0.0.1:43123/nex-note-app', rendererUrl, { mediaTypes: ['video'] }), false);
+  assert.equal(isAllowedRendererPermission('media', 'http://127.0.0.1:43123/nex-note-app', rendererUrl, { mediaTypes: ['audio', 'video'] }), false);
   assert.equal(isAllowedRendererPermission('midi', 'http://127.0.0.1:43124/nex-note-app', rendererUrl), false);
+  assert.equal(isAllowedRendererPermission('media', 'https://example.com', rendererUrl, { mediaTypes: ['audio'] }), false);
   assert.equal(isAllowedRendererPermission('midi', 'https://example.com', rendererUrl), false);
   assert.equal(isAllowedRendererPermission('geolocation', 'http://127.0.0.1:43123', rendererUrl), false);
 });

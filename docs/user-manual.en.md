@@ -101,12 +101,15 @@ Turn note input on with the toolbar button or `N`.
 | Cursor insert | `Cmd/Ctrl+Shift+A...G` inserts explicitly at the cursor. |
 | Octaves | `Shift+ArrowUp/Down` or `Cmd/Ctrl+ArrowUp/Down`. |
 | Step keyboard | `P` toggles a compact QWERTY step keyboard and enables Note Input if needed. |
-| Instrument Record | Click `REC`, grant MIDI device access, choose the note value with `1` to `9`, then play one pitch or a chord. The played pitches are committed immediately at the rhythmic cursor. |
+| Microphone Instrument Record | Click `MIC REC`, grant microphone access, choose the note value with `1` to `9`, then play one pitch or a chord. Stable detected pitches are committed at the rhythmic cursor. |
+| Live MIDI | Click `MIDI` in Entry Modes to use a connected MIDI controller instead of the microphone. |
 
 During mouse entry, the ghost note shows where the next note will be placed. `Shift` prefers insert placement; `Alt/Option` prefers chord placement.
 While the step keyboard is active, `Z S X D C V G B H N J M` enter `C4` through `B4`, and `Q 2 W 3 E R 5 T 6 Y 7 U` enter `C5` through `B5`, all through the same semantic note-insert path as normal pitch entry. Press `P` again or `Escape` to leave that mode.
 
-Instrument Record uses the selected duration, voice, and rhythmic cursor. Starting it disables duration-first, QWERTY step-keyboard, and guitar-fret modes so that `1` to `9` always select the duration. MIDI notes arriving within 35 ms are grouped, sorted, and committed as one chord and one undo step. The device button reports connected device names or waits for a controller to be connected. Chromatic pitches prefer flats in flat key signatures and sharps otherwise. This first experiment requires a MIDI-capable instrument or audio-to-MIDI interface; microphone pitch detection, system-exclusive messages, sustain-pedal interpretation, percussion maps, and real-time performance capture are not yet supported.
+Microphone Instrument Record uses the selected duration, voice, and rhythmic cursor. Starting it disables duration-first, QWERTY step-keyboard, and guitar-fret modes so that `1` to `9` always select the duration. A short stability window groups simultaneous spectral fundamentals into one chord and one undo step; held tones are written only once and the detector rearms after silence. The red button shows the currently detected pitch or chord. The detector deliberately favors avoiding false overtone notes, so weak inner chord tones may need a cleaner attack, closer microphone placement, or a lower-noise room.
+
+The separate MIDI button reports connected device names or waits for a controller. MIDI pitches arriving within 35 ms form one chord. For both sources, chromatic pitches prefer flats in flat key signatures and sharps otherwise. System-exclusive messages, sustain-pedal interpretation, percussion maps, and continuous real-time rhythm transcription are not yet supported.
 
 ## Guitar TAB Input
 

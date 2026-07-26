@@ -112,11 +112,16 @@ function decidePackagedBuildFreshness({ buildCommit, buildDirty, latestDevelComm
   return { action: 'run', reason: 'fresh-build' };
 }
 
-function isAllowedRendererPermission(permission, requestingUrl, rendererUrl) {
+function isAllowedRendererPermission(permission, requestingUrl, rendererUrl, details = {}) {
   // Chromium performs both MIDI permission checks even when the renderer asks
   // for non-SysEx access. The renderer still requests `sysex: false`, so the
   // Web MIDI API does not expose system-exclusive access to the app.
-  if (!['midi', 'midiSysex', 'clipboard-sanitized-write', 'fullscreen'].includes(permission)) return false;
+  if (!['midi', 'midiSysex', 'media', 'clipboard-sanitized-write', 'fullscreen'].includes(permission)) return false;
+  if (
+    permission === 'media'
+    && Array.isArray(details.mediaTypes)
+    && details.mediaTypes.some((mediaType) => mediaType !== 'audio')
+  ) return false;
   try {
     const requesting = new URL(requestingUrl);
     const renderer = new URL(rendererUrl);
