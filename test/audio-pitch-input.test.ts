@@ -7,6 +7,7 @@ import {
 } from '@/src/score-input/audio-pitch-input';
 import {
   classifyMicrophoneSignalLevel,
+  MICROPHONE_DETECTION_MINIMUM_LEVEL_DB,
   notationMidisForInstrument,
 } from '@/hooks/useMicrophonePitchInput';
 
@@ -70,9 +71,23 @@ test('monophonic detection rejects an input signal that is too quiet', () => {
   );
 });
 
+test('microphone detection accepts a quieter guitar tone at the recording threshold', () => {
+  assert.equal(
+    detectPitchFromTimeDomain(
+      syntheticGuitarTone(48, 0.0001),
+      {
+        sampleRate: SAMPLE_RATE,
+        minimumLevelDb: MICROPHONE_DETECTION_MINIMUM_LEVEL_DB,
+      },
+    )?.midi,
+    48,
+  );
+});
+
 test('microphone input levels map to actionable user-facing quality states', () => {
   assert.equal(classifyMicrophoneSignalLevel(-120), 'silent');
   assert.equal(classifyMicrophoneSignalLevel(-67), 'too-low');
+  assert.equal(classifyMicrophoneSignalLevel(-61), 'good');
   assert.equal(classifyMicrophoneSignalLevel(-32), 'good');
   assert.equal(classifyMicrophoneSignalLevel(-3), 'too-high');
 });
@@ -124,6 +139,30 @@ test('microphone note gate emits a stable attack once and rearms after silence',
   assert.equal(gate.push([], 460), null);
   assert.equal(gate.push([60], 470), null);
   assert.deepEqual(gate.push([60], 580), [60]);
+});
+
+test('microphone note gate follows a stable new pitch without requiring silence', () => {
+  const gate = new MicrophoneNoteGate({
+    settleMs: 100,
+    transitionSettleMs: 70,
+    releaseMs: 150,
+  });
+  assert.equal(gate.push([60], 0), null);
+  assert.deepEqual(gate.push([60], 110), [60]);
+  assert.equal(gate.push([62], 145), null);
+  assert.equal(gate.push([62], 190), null);
+  assert.deepEqual(gate.push([62], 220), [62]);
+  assert.equal(gate.push([64], 250), null);
+  assert.deepEqual(gate.push([64], 325), [64]);
+});
+
+test('microphone note gate ignores a brief unstable pitch transition', () => {
+  const gate = new MicrophoneNoteGate({ settleMs: 80, transitionSettleMs: 70 });
+  assert.equal(gate.push([60], 0), null);
+  assert.deepEqual(gate.push([60], 90), [60]);
+  assert.equal(gate.push([61], 120), null);
+  assert.equal(gate.push([60], 155), null);
+  assert.equal(gate.push([60], 240), null);
 });
 
 test('microphone note gate waits for a stable chord and ignores chord releases', () => {

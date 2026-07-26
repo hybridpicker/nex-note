@@ -23,10 +23,11 @@ export interface MicrophoneInputDevice {
 export type MicrophoneDetectionMode = 'single' | 'chord';
 export type MicrophoneInstrumentMode = 'concert' | 'guitar';
 export type MicrophoneSignalQuality = 'silent' | 'too-low' | 'good' | 'too-high';
+export const MICROPHONE_DETECTION_MINIMUM_LEVEL_DB = -82;
 
 export function classifyMicrophoneSignalLevel(levelDb: number): MicrophoneSignalQuality {
   if (!Number.isFinite(levelDb) || levelDb <= -90) return 'silent';
-  if (levelDb < -58) return 'too-low';
+  if (levelDb < -64) return 'too-low';
   if (levelDb > -6) return 'too-high';
   return 'good';
 }
@@ -80,7 +81,11 @@ export function useMicrophonePitchInput({
   const selectedDeviceIdRef = useRef('');
   const detectionModeRef = useRef<MicrophoneDetectionMode>('single');
   const instrumentModeRef = useRef<MicrophoneInstrumentMode>('concert');
-  const gateRef = useRef(new MicrophoneNoteGate());
+  const gateRef = useRef(new MicrophoneNoteGate({
+    settleMs: 100,
+    transitionSettleMs: 70,
+    releaseMs: 120,
+  }));
   const onChordRef = useRef(onChord);
   const preferFlatsRef = useRef(preferFlats);
 
@@ -188,6 +193,7 @@ export function useMicrophonePitchInput({
           sampleRate: activeAudioContext.sampleRate,
           minMidi: 40,
           maxMidi: 88,
+          minimumLevelDb: MICROPHONE_DETECTION_MINIMUM_LEVEL_DB,
         });
         const soundingMidis = monophonicPitch ? [monophonicPitch.midi] : [];
         const writtenMidis = notationMidisForInstrument(soundingMidis, instrumentModeRef.current);

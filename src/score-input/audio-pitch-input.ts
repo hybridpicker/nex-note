@@ -277,6 +277,7 @@ export function detectPitchesFromSpectrum(
 
 export interface MicrophoneNoteGateOptions {
   settleMs?: number;
+  transitionSettleMs?: number;
   releaseMs?: number;
 }
 
@@ -287,6 +288,7 @@ export interface MicrophoneNoteGateOptions {
  */
 export class MicrophoneNoteGate {
   private readonly settleMs: number;
+  private readonly transitionSettleMs: number;
   private readonly releaseMs: number;
   private readonly frameGapMs: number;
   private attackSinceMs: number | null = null;
@@ -294,9 +296,12 @@ export class MicrophoneNoteGate {
   private lastSeenByNote = new Map<number, number>();
   private emittedNotes = new Set<number>();
   private silenceSinceMs: number | null = null;
+  private transitionSinceMs: number | null = null;
+  private transitionSignature = '';
 
   constructor(options: MicrophoneNoteGateOptions = {}) {
     this.settleMs = Math.max(40, options.settleMs ?? 140);
+    this.transitionSettleMs = Math.max(40, options.transitionSettleMs ?? 75);
     this.releaseMs = Math.max(80, options.releaseMs ?? 180);
     this.frameGapMs = Math.max(140, this.settleMs);
   }
@@ -307,6 +312,8 @@ export class MicrophoneNoteGate {
     this.lastSeenByNote.clear();
     this.emittedNotes.clear();
     this.silenceSinceMs = null;
+    this.transitionSinceMs = null;
+    this.transitionSignature = '';
   }
 
   push(inputNotes: Iterable<number>, nowMs: number): number[] | null {
@@ -327,10 +334,31 @@ export class MicrophoneNoteGate {
       this.emittedNotes.size > 0
       && notes.every((note) => this.emittedNotes.has(note))
     ) {
+      this.transitionSinceMs = null;
+      this.transitionSignature = '';
       return null;
     }
 
-    if (this.emittedNotes.size > 0) return null;
+    if (this.emittedNotes.size > 0) {
+      const newNotes = notes.filter((note) => !this.emittedNotes.has(note));
+      const transitionSignature = newNotes.join(',');
+      if (transitionSignature !== this.transitionSignature) {
+        this.transitionSignature = transitionSignature;
+        this.transitionSinceMs = nowMs;
+        return null;
+      }
+      if (
+        this.transitionSinceMs == null
+        || nowMs - this.transitionSinceMs < this.transitionSettleMs
+      ) return null;
+
+      // A stable new pitch is itself the next musical attack. Requiring a
+      // silent gap here makes melodic instrument entry unnecessarily stilted.
+      this.emittedNotes = new Set(notes);
+      this.transitionSinceMs = null;
+      this.transitionSignature = '';
+      return newNotes;
+    }
     if (this.attackSinceMs == null) this.attackSinceMs = nowMs;
 
     for (const note of notes) {

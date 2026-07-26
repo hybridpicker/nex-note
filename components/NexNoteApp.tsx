@@ -1289,6 +1289,26 @@ export default function Home({ searchParams }: HomeProps) {
       const isKeyK = normalizedKey === 'k' || e.code === 'KeyK';
       const isKeyT = normalizedKey === 't' || e.code === 'KeyT';
       const isKeyM = normalizedKey === 'm' || e.code === 'KeyM';
+      const isKeyC = normalizedKey === 'c' || e.code === 'KeyC';
+      const target = e.target as HTMLElement | null;
+      const isTextEntry = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || Boolean(target?.isContentEditable);
+      if (
+        microphoneInputEnabled
+        && e.altKey
+        && !metaKey
+        && !e.shiftKey
+        && isKeyC
+        && !isTextEntry
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        selectMicrophoneDetectionMode(
+          microphoneDetectionMode === 'single' ? 'chord' : 'single',
+        );
+        return;
+      }
       if (metaKey && isKeyK) {
         e.preventDefault();
         e.stopPropagation();
@@ -1362,7 +1382,22 @@ export default function Home({ searchParams }: HomeProps) {
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [ensureMidiLoaded, focusInspectorTarget, handleKeyDown, markMidiReady, pause, play, playbackState, prewarm, redo, undo, xml]);
+  }, [
+    ensureMidiLoaded,
+    focusInspectorTarget,
+    handleKeyDown,
+    markMidiReady,
+    microphoneDetectionMode,
+    microphoneInputEnabled,
+    pause,
+    play,
+    playbackState,
+    prewarm,
+    redo,
+    selectMicrophoneDetectionMode,
+    undo,
+    xml,
+  ]);
 
   const handleXmlFileLoaded = useCallback((newXml: string, name: string, options: { cacheNativeProject?: boolean } = {}) => {
     const deferred = shouldDeferImportPipeline(newXml);

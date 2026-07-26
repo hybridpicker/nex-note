@@ -470,13 +470,13 @@ export default function NotationToolbar({
             </span>
             <select
               aria-label="Pitch recognition mode"
-              title="Single notes advance automatically; Build chord collects individually played tones until Right Arrow"
+              title="Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Alt/Option+C switches modes"
               value={microphoneDetectionMode}
               onChange={(event) => onSelectMicrophoneDetectionMode(event.target.value as MicrophoneDetectionMode)}
               className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
             >
-              <option value="single">Single notes · auto →</option>
-              <option value="chord">Build chord · manual →</option>
+              <option value="single">Single notes · auto → · ⌥C</option>
+              <option value="chord">Build chord · manual → · ⌥C</option>
             </select>
             <select
               aria-label="Instrument transposition"
