@@ -2,25 +2,20 @@
 
 import { use, useState, useCallback, useEffect, useLayoutEffect, useRef, startTransition, useMemo, useDeferredValue, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import ChatPanel from '@/components/ChatPanel';
 import ProviderSelector from '@/components/ProviderSelector';
 import AiModelSettingsPanel from '@/components/AiModelSettings';
-import BenchmarkPanel from '@/components/BenchmarkPanel';
-import NewScoreDialog, { type DialogTab } from '@/components/NewScoreDialog';
-import EditLibrary from '@/components/EditLibrary';
-import EditPalette, { type EditPaletteSectionId } from '@/components/EditPalette';
+import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/BenchmarkPanel';
+import type { DialogTab } from '@/components/NewScoreDialog';
+import type { EditPaletteSectionId } from '@/components/EditPalette';
 import LeftNotationSidebar from '@/components/LeftNotationSidebar';
 import NoteInputToolbar from '@/components/NoteInputToolbar';
 import NotationToolbar from '@/components/NotationToolbar';
 import ScoreInspector from '@/components/ScoreInspector';
-import ScoreLibrary from '@/components/ScoreLibrary';
-import BugReportDialog from '@/components/BugReportDialog';
-import CommandCenter, { type CommandCenterAction } from '@/components/CommandCenter';
+import type { CommandCenterAction } from '@/components/CommandCenter';
 import FileMenu, { type FileMenuItem } from '@/components/FileMenu';
 import NexNoteBrand from '@/components/NexNoteBrand';
-import WelcomeScreen, { type AiConnectionState } from '@/components/WelcomeScreen';
+import type { AiConnectionState } from '@/components/WelcomeScreen';
 import LanguageSettings from '@/components/LanguageSettings';
-import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/BenchmarkPanel';
 import type { ProviderName } from '@/lib/ai-provider-config';
 import { BENCHMARK_SUITE, OLLAMA_MODEL_SUITE } from '@/lib/benchmark-suite';
 import { OLLAMA_MODELS } from '@/lib/ai-provider-config';
@@ -94,6 +89,15 @@ import { preferFlatsForKeySignature } from '@/src/score-input/midi-input';
 
 const ScoreEditor = dynamic(() => import('@/components/ScoreEditor'), { ssr: false });
 const ScorePreview = dynamic(() => import('@/components/ScorePreview'), { ssr: false });
+const ChatPanel = dynamic(() => import('@/components/ChatPanel'), { ssr: false });
+const BenchmarkPanel = dynamic(() => import('@/components/BenchmarkPanel'), { ssr: false });
+const NewScoreDialog = dynamic(() => import('@/components/NewScoreDialog'), { ssr: false });
+const EditLibrary = dynamic(() => import('@/components/EditLibrary'), { ssr: false });
+const EditPalette = dynamic(() => import('@/components/EditPalette'), { ssr: false });
+const ScoreLibrary = dynamic(() => import('@/components/ScoreLibrary'), { ssr: false });
+const BugReportDialog = dynamic(() => import('@/components/BugReportDialog'), { ssr: false });
+const CommandCenter = dynamic(() => import('@/components/CommandCenter'), { ssr: false });
+const WelcomeScreen = dynamic(() => import('@/components/WelcomeScreen'), { ssr: false });
 
 const IMPORT_FILE_ACCEPT = '.nxn,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif,.mxl,.xml,.musicxml,.mscz,.mid,.midi,.gp,.gp4,.gp5,.gp6,.gpx';
 const DEFERRED_IMPORT_XML_BYTES = 96 * 1024;
@@ -1139,18 +1143,6 @@ export default function Home({ searchParams }: HomeProps) {
     setBarline(barline, selectedBarlineMeasureNumber);
   }, [selectedBarlineMeasureNumber, setBarline]);
 
-  // Pre-warm soundfont on first user interaction so it's ready before play is pressed
-  useEffect(() => {
-    if (!xml) return;
-    const once = () => { prewarm(); };
-    window.addEventListener('pointerdown', once, { once: true });
-    window.addEventListener('keydown', once, { once: true });
-    return () => {
-      window.removeEventListener('pointerdown', once);
-      window.removeEventListener('keydown', once);
-    };
-  }, [xml, prewarm]);
-
   useEffect(() => {
     if (commandCenterOpen || newScoreDialogOpen || bugReportDialogOpen) return;
     if (typeof document === 'undefined') return;
@@ -1169,13 +1161,37 @@ export default function Home({ searchParams }: HomeProps) {
   useEffect(() => {
     if (embedConfig.enabled || !xml || playbackState !== 'stopped' || noteInputMode) return;
     if (importLifecycle.deferred && !['debugGridReady', 'midiReady'].includes(importLifecycle.phase)) return;
-    const timeout = window.setTimeout(() => {
+    let idleCallback: number | null = null;
+    let cancelled = false;
+    const cancelForInteraction = () => {
+      cancelled = true;
+      if (idleCallback !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleCallback);
+      }
+    };
+    const preload = () => {
+      if (cancelled) return;
       void preloadMidi(xml).then((ready) => {
-        if (ready) markMidiReady(xml);
+        if (ready && !cancelled) markMidiReady(xml);
       });
-    }, 300);
+    };
+    const timeout = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === 'function') {
+        idleCallback = window.requestIdleCallback(preload, { timeout: 2_000 });
+      } else {
+        preload();
+      }
+    }, 1_200);
+    window.addEventListener('pointerdown', cancelForInteraction, { once: true, passive: true });
+    window.addEventListener('keydown', cancelForInteraction, { once: true });
     return () => {
+      cancelled = true;
       window.clearTimeout(timeout);
+      if (idleCallback !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleCallback);
+      }
+      window.removeEventListener('pointerdown', cancelForInteraction);
+      window.removeEventListener('keydown', cancelForInteraction);
     };
   }, [embedConfig.enabled, importLifecycle.deferred, importLifecycle.phase, markMidiReady, noteInputMode, playbackState, preloadMidi, xml]);
 
