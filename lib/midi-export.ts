@@ -3,7 +3,7 @@ import { Midi } from '@tonejs/midi';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import type { DirectionNode, MeasureNode, PartNode, StaffNode, TimedEvent } from '@/src/score-core/model/types';
-import { cleanMuseScoreStderr } from './musescore-cli';
+import { cleanMuseScoreStderr } from './musescore-stderr';
 import {
   musicXmlProgramToToneProgram,
   resolveInstrumentIdFromName,
@@ -365,7 +365,7 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
   }
 
   return {
-    data: Buffer.from(midi.toArray()),
+    data: midi.toArray(),
     noteCount,
     trackCount: midi.tracks.length,
   };

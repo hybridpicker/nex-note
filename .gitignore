@@ -54,6 +54,7 @@ next-env.d.ts
 # generated local artifacts
 artifacts/**/*.log
 artifacts/**/*.omr
+/.native-ipad/
 
 # private founder/tester score fixtures
 /private-fixtures/

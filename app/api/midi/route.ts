@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       dbg.warn('midi', 'MuseScore MIDI export failed; using internal fallback renderer:', museScoreErr);
       const fallback = buildFallbackMidiFromMusicXml(sanitized.xml);
       dbg.midi(`response midiBytes=${fallback.data.length} renderer=internal-fallback tracks=${fallback.trackCount} notes=${fallback.noteCount} totalMs=${Date.now() - startedAt}`);
-      return midiResponse(fallback.data, 'internal-fallback');
+      return midiResponse(Buffer.from(fallback.data), 'internal-fallback');
     }
   } catch (err) {
     dbg.error('midi', `export failed after ${Date.now() - startedAt}ms`, err);

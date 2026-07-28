@@ -95,6 +95,64 @@ const PLAYHEAD_PROGRESS_EPSILON = 0.002;
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const MIDI_TIME_EPSILON_S = 0.001;
 
+export async function activatePlaybackAudioContext(
+  audioContext: Pick<AudioContext, 'resume' | 'state'>,
+) {
+  if (audioContext.state === 'closed') {
+    throw new Error('The audio output is closed. Tap Play again.');
+  }
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+}
+
+type PlaybackMidiResponse = Pick<Response, 'arrayBuffer' | 'json' | 'ok'>;
+
+export async function loadPlaybackMidiBuffer(
+  xml: string,
+  fetchImpl: (input: string, init: RequestInit) => Promise<PlaybackMidiResponse> = fetch,
+) {
+  let serverError: unknown = null;
+  try {
+    const response = await fetchImpl('/api/midi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xml }),
+    });
+    if (response.ok) {
+      return {
+        buffer: await response.arrayBuffer(),
+        renderer: 'server' as const,
+      };
+    }
+    serverError = await response.json().catch(() => ({ error: 'MIDI export failed.' }));
+  } catch (error) {
+    serverError = error;
+  }
+
+  try {
+    const { buildFallbackMidiFromMusicXml } = await import('@/lib/midi-export');
+    const fallback = buildFallbackMidiFromMusicXml(xml);
+    return {
+      buffer: Uint8Array.from(fallback.data).buffer,
+      renderer: 'client-fallback' as const,
+    };
+  } catch (fallbackError) {
+    const fallbackMessage = fallbackError instanceof Error
+      ? fallbackError.message
+      : 'Client MIDI fallback failed.';
+    const serverMessage = serverError
+      && typeof serverError === 'object'
+      && 'error' in serverError
+      && typeof serverError.error === 'string'
+      ? serverError.error
+      : serverError instanceof Error
+        ? serverError.message
+        : '';
+    throw new Error([serverMessage, fallbackMessage].filter(Boolean).join(' '));
+  }
+}
+
 export function resolvePlaybackSoundfontInstrument(
   coreDocument: ScoreDocumentModel | null | undefined,
   partId?: string | null,
@@ -1432,6 +1490,8 @@ export function usePlayback(options?: {
   // Pre-warm the active sample or soundfont so it is ready before playback.
   // Must be called from a user-gesture context (click/keydown) to satisfy AudioContext policy.
   const prewarm = useCallback(async () => {
+    const ac = getAc();
+    await activatePlaybackAudioContext(ac);
     const selectedNote = options?.selectedNoteRef?.current ?? options?.selectedNote;
     const sampleBank = sampleBankRef.current;
     if (sampleBank) {
@@ -1495,27 +1555,11 @@ export function usePlayback(options?: {
     const promise = (async () => {
       if (!loadOptions?.silent) setPlaybackError(null);
       try {
-        const res = await fetch('/api/midi', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ xml }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          if (loadOptions?.silent) {
-            dbg.warn('playback', 'Silent MIDI preload export failed:', err);
-          } else {
-            dbg.error('playback', 'MIDI export failed:', err);
-          }
-          if (!loadOptions?.silent && requestId === latestMidiRequestIdRef.current) {
-            parsedMidiRef.current = null;
-            setHasMidi(false);
-            setPlaybackError(typeof err.error === 'string' ? err.error : 'MIDI export failed.');
-          }
-          return false;
+        const midiPayload = await loadPlaybackMidiBuffer(xml);
+        const buf = midiPayload.buffer;
+        if (midiPayload.renderer === 'client-fallback') {
+          dbg.info('playback', 'Using client-side MIDI fallback because the Mac server is unavailable.');
         }
-
-        const buf = await res.arrayBuffer();
         const { Midi } = await import('@tonejs/midi');
         const midi = new Midi(buf);
 
@@ -1658,7 +1702,7 @@ export function usePlayback(options?: {
     const playRequestId = ++playRequestIdRef.current;
     try {
       const ac = getAc();
-      if (ac.state === 'suspended') { await ac.resume(); }
+      await activatePlaybackAudioContext(ac);
 
       // Load every track's own soundfont before starting the scheduler.
       await ensurePlaybackPlayers(parsed);
@@ -1855,7 +1899,7 @@ export function usePlayback(options?: {
     const sampleBank = sampleBankRef.current;
     try {
       const ac = getAc();
-      if (ac.state === 'suspended') await ac.resume();
+      await activatePlaybackAudioContext(ac);
       if (sampleBank) {
         const filename = resolvePlaybackSampleFilename(sampleBank, coreDocumentRef.current, note.corePartId, midi);
         if (!filename) return;
@@ -1888,7 +1932,7 @@ export function usePlayback(options?: {
     stopHandleSet(previewSampleHandlesRef.current);
     try {
       const ac = getAc();
-      if (ac.state === 'suspended') await ac.resume();
+      await activatePlaybackAudioContext(ac);
       const sampleBank = sampleBankRef.current;
       if (sampleBank) {
         const sampleNotes = playableNotes.map((note) => ({

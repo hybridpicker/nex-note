@@ -259,25 +259,26 @@ change matrix, validation levels, AI-secret rules, and handoff checklist.
 ## Private iPad App
 
 Nex Note includes a native Capacitor iPad shell for private physical-device
-testing. It is not a PWA. During development, the native app connects to the
-Next.js server on the Mac, so server-backed features remain available and saved
-web-code changes arrive through Fast Refresh.
+testing. It is not a PWA. A normal iPad sync bundles the shared editor into the
+native app, so score editing, touch deletion, file import, and playback launch
+without the Mac or a LAN connection. Server-backed AI and conversion tools stay
+on the Mac and are available in the optional live-development mode.
 
-After installing full Xcode and putting the Mac and iPad on the same Wi-Fi:
+After installing full Xcode:
 
 ```bash
 npm install
 npm run ipad:doctor
-npm run ipad:dev
+npm run ipad:sync
+npm run ipad:open
 ```
 
-The last command detects the Mac's LAN address, synchronizes the native debug
-configuration, starts the development server, and opens Xcode. Select the
-connected iPad, choose the personal signing team, and press Run. Keep the
-terminal open while testing. If the app opens before the server is ready, its
-native connection screen automatically retries the configured Mac URL. Selected
-notes and rests expose a persistent touch-sized **Delete note** action, so iPad
-editing does not require a hardware Delete key.
+Select the connected iPad, choose the personal signing team, and press Run. The
+installed standalone build does not need a terminal to remain open. Use
+`npm run ipad:dev` instead when Fast Refresh and Mac-hosted routes are required;
+that explicit mode starts the LAN server and opens Xcode. Selected notes and
+rests expose a persistent touch-sized **Delete note** action, and playback
+activates the native iOS audio session plus a client-side MIDI fallback.
 
 See [Private iPad Testing](./docs/ipad-private-testing.md) for the one-time Xcode,
 signing, Developer Mode, local-network, and troubleshooting steps.

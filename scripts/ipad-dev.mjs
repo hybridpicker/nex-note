@@ -17,6 +17,7 @@ const capBin = path.join(root, 'node_modules', '.bin', 'cap');
 const nextBin = path.join(root, 'node_modules', '.bin', 'next');
 const syncOnly = process.argv.includes('--sync-only');
 const noOpen = process.argv.includes('--no-open');
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -73,11 +74,37 @@ async function main() {
     throw new Error('The iOS project is missing. Run `npm run ipad:init` first.');
   }
 
+  const xcodeDeveloperDir = resolveXcodeDeveloperDir();
+
+  if (syncOnly) {
+    console.log('Building the standalone iPad app bundle.');
+    ensureSuccess(run(npmCommand, ['run', 'build']), 'Next.js production build');
+    ensureSuccess(
+      run(process.execPath, [path.join(root, 'scripts', 'prepare-ipad-web.mjs'), '--bundle']),
+      'Standalone iPad web bundle',
+    );
+    ensureSuccess(
+      run(capBin, ['sync', 'ios'], {
+        env: {
+          ...process.env,
+          NEX_NOTE_IPAD_SERVER_URL: '',
+          ...(xcodeDeveloperDir ? { DEVELOPER_DIR: xcodeDeveloperDir } : {}),
+        },
+      }),
+      'Capacitor sync',
+    );
+    ensureSuccess(
+      run(process.execPath, [path.join(root, 'scripts', 'configure-ipad-project.mjs')]),
+      'iPad project configuration',
+    );
+    console.log('Standalone native project sync complete. The installed app does not require the Mac server.');
+    return;
+  }
+
   const host = resolveLanAddress();
   const port = resolveIpadPort();
   const origin = buildIpadServerOrigin(host, port);
   const appUrl = buildIpadAppUrl(origin);
-  const xcodeDeveloperDir = resolveXcodeDeveloperDir();
   const liveReloadEnv = {
     ...process.env,
     NEX_NOTE_IPAD_SERVER_URL: origin,
@@ -85,16 +112,15 @@ async function main() {
   };
 
   console.log(`Preparing the native iPad app for ${appUrl}`);
+  ensureSuccess(
+    run(process.execPath, [path.join(root, 'scripts', 'prepare-ipad-web.mjs'), '--live']),
+    'iPad live-development shell',
+  );
   ensureSuccess(run(capBin, ['sync', 'ios'], { env: liveReloadEnv }), 'Capacitor sync');
   ensureSuccess(
     run(process.execPath, [path.join(root, 'scripts', 'configure-ipad-project.mjs')]),
     'iPad project configuration',
   );
-
-  if (syncOnly) {
-    console.log('Native project sync complete.');
-    return;
-  }
 
   if (!hasFullXcode()) {
     throw new Error(

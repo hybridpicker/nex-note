@@ -3,17 +3,18 @@
 Nex Note has a native iPad test shell powered by Capacitor. It is not a PWA and
 does not need App Store or TestFlight distribution for private development.
 
-The native app connects to the Next.js development server on the Mac. This is
-intentional: server-side AI, MIDI generation, and conversion routes keep running
-on the Mac, while the iPad provides the native touch interface. Next.js Fast
-Refresh sends saved code changes to the running iPad app.
+The normal signed build contains the shared Nex Note editor. It opens from
+`capacitor://localhost` and does not require the Mac, a development server, or
+the same Wi-Fi network. Core score editing, touch deletion, file import, and
+playback are available in this standalone mode. Playback generates fallback
+MIDI on the iPad when `/api/midi` is absent, resumes Web Audio from the original
+Play tap, and uses the native iOS playback audio session.
 
-The editor therefore needs the Mac server during private development, but it can
-recover without force-quitting the iPad app. If the app opens before the server
-is ready, its connection screen retries the exact generated LAN URL
-automatically and provides a **Try again now** button. The Mac workflow also
-checks `/api/native-health` before reusing a process, so an unrelated service on
-the configured port is never mistaken for Nex Note.
+`npm run ipad:dev` remains available as a separate live-development mode. It
+connects to the Next.js server on the Mac so server-side AI, MuseScore
+conversion, and other routes are available while saved code changes arrive
+through Fast Refresh. If a live build opens before that server is ready, its
+connection screen retries the exact generated LAN URL automatically.
 
 ## One-time Mac preparation
 
@@ -37,32 +38,45 @@ the configured port is never mistaken for Nex Note.
    npm run ipad:doctor
    ```
 
-## First physical iPad connection
+## First standalone installation
 
-1. Put the Mac and iPad on the same Wi-Fi network.
-2. Connect the iPad to the Mac with a USB cable.
-3. On the iPad, tap **Trust** if asked and enter the device passcode.
-4. Start live development:
+1. Connect the iPad to the Mac with a USB cable.
+2. On the iPad, tap **Trust** if asked and enter the device passcode.
+3. Build and synchronize the standalone editor:
 
    ```bash
-   npm run ipad:dev
+   npm run ipad:sync
+   npm run ipad:open
    ```
 
-   The command detects the Mac's LAN address, writes it only into the generated
-   native debug configuration, synchronizes the iOS project, starts Next.js on
-   `0.0.0.0`, and opens Xcode.
+   `ipad:sync` runs the production build, generates the static `/ipad` entry,
+   copies its chunks and public assets into the native payload, and writes a
+   Capacitor configuration without `server.url`.
 
-5. In Xcode, select the blue **App** project, then the **App** target, and open
+4. In Xcode, select the blue **App** project, then the **App** target, and open
    **Signing & Capabilities**.
-6. Keep **Automatically manage signing** enabled and choose the personal team
+5. Keep **Automatically manage signing** enabled and choose the personal team
    for the Apple Account.
-7. Select the connected iPad as the run destination in the Xcode toolbar.
-8. Press the Run button.
-9. If iPadOS asks for Developer Mode, open **Settings > Privacy & Security >
+6. Select the connected iPad as the run destination in the Xcode toolbar.
+7. Press the Run button.
+8. If iPadOS asks for Developer Mode, open **Settings > Privacy & Security >
    Developer Mode**, enable it, restart, and confirm. Run again from Xcode.
-10. Accept the local-network permission when Nex Note asks for it.
+9. Stop any Mac Nex Note server and relaunch the installed app. The editor must
+   still open directly.
 
-## Normal daily loop
+## Standalone daily loop
+
+After shared code changes, refresh the native payload and press Run in Xcode:
+
+```bash
+npm run ipad:sync
+npm run ipad:open
+```
+
+The resulting installed build runs independently. The Mac can sleep or leave
+the network after installation.
+
+## Optional live-development loop
 
 Run this command and keep the terminal open:
 
@@ -73,6 +87,10 @@ npm run ipad:dev
 Then launch Nex Note on the iPad. Saved React, CSS, and server changes appear
 through Fast Refresh. A native project rebuild is only needed when native
 configuration, Capacitor packages, the app icon, or Swift code changes.
+
+Live mode detects the Mac's LAN address, writes it only into the generated debug
+configuration, starts Next.js on `0.0.0.0`, and opens Xcode. The Mac and iPad
+must be on the same non-isolated Wi-Fi network for this mode.
 
 The native shell shows the normal iPadOS status bar and applies safe-area
 spacing around the Nex Note header. Touch devices receive larger notation-tool
@@ -90,9 +108,9 @@ Useful commands:
 
 | Command | Purpose |
 | --- | --- |
-| `npm run ipad:doctor` | Check Xcode, disk space, LAN address, packages, and server reachability. |
-| `npm run ipad:dev` | Synchronize, start live reload, and open Xcode. |
-| `npm run ipad:sync` | Refresh native configuration without starting the server. |
+| `npm run ipad:doctor` | Check Xcode, disk space, packages, LAN address, and optional live-server reachability. |
+| `npm run ipad:sync` | Build and synchronize the standalone native editor with no Mac server dependency. |
+| `npm run ipad:dev` | Prepare the separate Mac-backed live configuration, start Fast Refresh, and open Xcode. |
 | `npm run ipad:open` | Open the generated Xcode project. |
 
 ## Shared app development
@@ -124,25 +142,25 @@ available.
 ## Ollama and provider keys
 
 Provider keys stay on the Mac development server. They are not copied into the
-iPad bundle or committed native configuration. Native requests use the
-`NexNoteNative/<version>` user-agent so the private iPad app can access the same
-server-side provider routes over the LAN while generic LAN/public browser
-requests remain disabled.
+iPad bundle or committed native configuration. AI and Mac-only conversions are
+therefore unavailable in the standalone build. Use the explicit live mode for
+those workflows. Native live requests use the `NexNoteNative/<version>`
+user-agent so the private iPad app can access the same server-side provider
+routes while generic LAN/public browser requests remain disabled.
 
 When this access path changes, verify native model discovery or authentication
 and separately verify that a generic LAN browser is still rejected.
 
-If the Mac's IP address changes after switching Wi-Fi networks, run
-`npm run ipad:dev` again and press Run once in Xcode. The app contains a local
-connection-error screen for the case where the Mac server is not reachable.
+If the Mac's IP address changes during live development, run `npm run ipad:dev`
+again and press Run once in Xcode. This does not affect a standalone build.
 
 ## Current private-test boundaries
 
-- The Mac must be awake, Nex Note's development server must be running, and both
-  devices must be on the same LAN.
+- Server-backed AI, MuseScore conversion, server export routes, and Fast Refresh
+  require live mode. The standalone editor and its client MIDI playback do not.
 - The debug build deliberately permits unencrypted local-network HTTP. This
-  exception is only for private live development and must be removed before any
-  public distribution.
+  exception is used only when `npm run ipad:dev` generates a live configuration
+  and must be removed before any public distribution.
 - Browser-based import through the iPad Files picker is available. Native
   document export/share behavior and microphone pitch entry should be verified
   on the physical iPad before treating them as complete.
@@ -153,6 +171,11 @@ connection-error screen for the case where the Mac server is not reachable.
 
 ### The app says that the Mac server is unreachable
 
+- This message means the installed binary is a live-development build. A
+  standalone build never has a `server.url` and opens its bundled editor.
+- To replace it with a standalone build, run `npm run ipad:sync`, open Xcode,
+  and press Run on the connected iPad.
+- To keep using live development instead, follow the remaining checks:
 - Confirm the two devices are on the same Wi-Fi and not on an isolated guest
   network.
 - Keep `npm run ipad:dev` running.
@@ -165,6 +188,18 @@ connection-error screen for the case where the Mac server is not reachable.
 - If another program owns the configured port, stop it or choose another port,
   for example `NEX_NOTE_IPAD_PORT=3100 npm run ipad:dev`. Nex Note validates the
   server identity before it reuses a running process.
+
+### Playback moves but no sound is audible
+
+- Install a build synchronized after the native audio-session and offline MIDI
+  changes.
+- Tap Play directly once; iPadOS requires Web Audio activation from a user
+  gesture.
+- Raise the iPad media volume. The native app uses the playback audio category,
+  so the silent setting does not suppress score playback.
+- The standalone build first creates MIDI on-device. Instrument soundfonts may
+  load over the internet; if they are unavailable, Nex Note falls back to its
+  built-in oscillator player.
 
 ### Xcode reports a signing error
 

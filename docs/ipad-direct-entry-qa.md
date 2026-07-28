@@ -1,6 +1,6 @@
 # Physical iPad Direct-Entry QA
 
-Updated: 2026-07-27
+Updated: 2026-07-28
 
 ## Purpose
 
@@ -18,7 +18,7 @@ and include the overlay's `data-ghost-snap-trace` value when possible.
 | --- | --- | --- |
 | Hover-capable iPad + compatible Apple Pencil | Not run in this workspace | Confirm `pointerType="pen"` hover moves arrive with `buttons=0` before contact. |
 | iPad + Apple Pencil without hover | Not run in this workspace | Confirm contact immediately shows the shadow note and loupe fallback. |
-| Finger-only iPad entry | Not run in this workspace | Confirm a tap previews on down and commits once on release. |
+| Finger-only iPad entry | Partially run on iPad Air 13-inch (M2) | Standalone native launch passed; complete the entry gesture and audible-playback rows manually after unlocking the device. |
 
 Do not mark the hardware pass complete until all available rows have an exact
 device and OS version plus pass/fail evidence. If hover events do not arrive in
@@ -69,15 +69,17 @@ For every case:
     pitch must be removed through the normal semantic/history path, a rhythmic
     rest must remain when required, and one Undo must restore the note.
 
-## Connection recovery check
+## Standalone launch and optional live-mode checks
 
-1. Launch the installed app while `npm run ipad:dev` is stopped.
-2. Confirm the native connection screen appears.
-3. Start `npm run ipad:dev` on the Mac without force-quitting the iPad app.
-4. Confirm the iPad reconnects automatically within a few seconds.
-5. Stop the server, relaunch the app, restart the server, and tap
-   **Try again now**. Confirm the button navigates to Nex Note rather than
-   reloading the local error page.
+1. Run `npm run ipad:sync`, build in Xcode, and install that build.
+2. Stop every Nex Note server on the Mac and launch the installed app.
+3. Confirm the editor opens directly and never shows the Mac-server connection
+   screen.
+4. Import a MusicXML file, tap Play, and confirm playback starts without
+   `/api/midi`; the client-side MIDI fallback must drive the score.
+5. For the separate live-development configuration, run `npm run ipad:dev`,
+   build in Xcode, stop the server, and confirm the connection screen retries
+   the generated URL. Restart the server and confirm it reconnects.
 
 ## Automated evidence available before hardware QA
 
@@ -95,16 +97,26 @@ above.
 
 ## Local validation record
 
-Recorded on 2026-07-27:
+Recorded on 2026-07-28:
 
-- `npm test`: 1,059 passed, 0 failed.
+- `npm test`: 1,069 passed, 0 failed.
 - `npm run build`: production build and TypeScript validation passed.
 - `npx playwright test e2e/tablet-entry.spec.ts --project regression`: 5 passed.
+- `npx playwright test e2e/ipad-native.spec.ts --project smoke`: 2 passed.
+- Standalone bundle smoke: the editor loaded with no Next server and client-side
+  MIDI playback scheduled notes after `/api/midi` was unavailable.
 - `npm run electron:refresh`: packaged Electron app rebuilt and verified.
-- `npm run ipad:sync`: Capacitor assets and the native iPad project synchronized.
+- `npm run ipad:sync`: generated and synchronized the standalone editor payload;
+  generated `capacitor.config.json` contained no `server` section.
 - `npm run ipad:doctor`: Xcode 26.6, Capacitor dependencies, LAN configuration,
   native project, and available disk checks passed.
+- Physical iPad Air 13-inch (M2): signed device build and installation passed.
+  A standalone build launched with Mac servers stopped and loaded
+  `capacitor://localhost`. The final audio-enabled build was installed; its
+  automated post-install launch was blocked only because the device had locked.
 - `git diff --check`: passed.
 
-No physical iPad was connected for this record. The device rows above therefore
-remain open and are the only outstanding direct-entry release evidence.
+Apple Pencil hover/contact behavior, hands-on finger entry, audible speaker
+output, and the final touch deletion gesture still require a manual unlocked
+device pass. Automated touch coverage and the signed device build do not replace
+those hardware observations.

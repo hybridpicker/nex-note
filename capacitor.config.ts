@@ -13,7 +13,7 @@ const packageVersion = JSON.parse(
 const config: CapacitorConfig = {
   appId: 'app.nexnote.ipad',
   appName: 'Nex Note',
-  webDir: 'native-shell',
+  webDir: '.native-ipad',
   appendUserAgent: ` NexNoteNative/${packageVersion}`,
   backgroundColor: '#f7f8fa',
   loggingBehavior: 'debug',

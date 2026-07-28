@@ -10,7 +10,7 @@ surface is considered and the appropriate validation has been run.
 | --- | --- | --- | --- |
 | Next.js | Shared UI, product core, and server routes | `npm run dev` | Fast Refresh |
 | Electron macOS | Existing local packaged Mac app | `npm run app` | Verified rebuild from the current local `devel` worktree |
-| Native iPad | Private signed iPad test app | `npm run ipad:dev` | Fast Refresh for shared code; Xcode rebuild for native changes |
+| Native iPad | Private signed standalone iPad app | `npm run ipad:sync`; optional `npm run ipad:dev` | Bundled editor for normal installs; Fast Refresh in explicit live mode |
 | Xcode macOS | Planned private native Mac test app | See `macos-xcode-private-testing-prompt.md` | Must adopt the same Fast Refresh plus native rebuild split |
 
 The native apps are not PWAs. Shared code should remain shared rather than being
@@ -91,8 +91,9 @@ npm run ipad:doctor
 
 Then perform an Xcode command-line/device build and a physical-device smoke test
 when the paired device and signing identity are available. Shared React/CSS code
-does not need a native rebuild while `npm run ipad:dev` is running; Capacitor
-packages, plist/configuration, icons, signing, and Swift changes do.
+is included in the standalone payload by `npm run ipad:sync`. It does not need a
+native rebuild while `npm run ipad:dev` is running; Capacitor packages,
+plist/configuration, icons, signing, and Swift changes do.
 
 ### Xcode macOS change
 
@@ -105,10 +106,11 @@ detect it as active rather than planned.
 ## AI and secret handling
 
 Ollama and cloud-provider keys stay in the Mac development server environment
-or ignored local configuration. Native apps call the same server-side provider
-routes and identify themselves with the `NexNoteNative/<version>` user-agent.
-Do not duplicate a key into native local storage merely to make an app shell
-work.
+or ignored local configuration. The standalone iPad editor works without these
+routes; AI and conversion features require the explicit Mac-backed live mode.
+Native live requests identify themselves with the
+`NexNoteNative/<version>` user-agent. Do not duplicate a key into native local
+storage merely to make an app shell work.
 
 For native AI changes, verify all three properties:
 
