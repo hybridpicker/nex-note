@@ -8,6 +8,8 @@ import {
 import { EngravedNoteGlyph } from '@/components/EngravedNoteGlyph';
 import type { GhostPlacementMode } from '@/src/score-input/smart-ghost-note';
 import type { DragTransposeMode } from '@/src/score-input/transpose-logic';
+import type { TabletEntryPhase, TabletEntryPoint } from '@/src/score-input/tablet-entry-session';
+import { formatPitchLabel } from '@/src/score-input/staff-pitch';
 import { useI18n } from '@/lib/i18n';
 
 /**
@@ -76,7 +78,17 @@ export interface ScoreInputOverlayProps {
   enabled: boolean;
   duration: string | number;
   isDotted: boolean;
+  showNaturalAccidental?: boolean;
   leadingGuardRightX?: number | null;
+  tabletEntryPhase?: TabletEntryPhase;
+  previewPointerType?: string | null;
+  contactPoint?: TabletEntryPoint | null;
+  viewportBounds?: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null;
 }
 
 function voicePreviewPalette(voiceId: number) {
@@ -145,17 +157,20 @@ const STEP_TO_SEMITONE: Record<string, number> = {
   B: 11,
 };
 
+const DURATION_I18N_KEYS = {
+  '64': 'note.duration.64',
+  '32': 'note.duration.32',
+  '16': 'note.duration.16',
+  '8': 'note.duration.8',
+  '4': 'note.duration.4',
+  '2': 'note.duration.2',
+  '1': 'note.duration.1',
+  breve: 'note.duration.breve',
+  long: 'note.duration.long',
+} as const;
+
 function midiNumber(step: string, alter: number, octave: number) {
   return ((octave + 1) * 12) + (STEP_TO_SEMITONE[step] ?? 0) + alter;
-}
-
-function formatPitch(step: string, alter: number, octave: number): string {
-  const accidental = alter === 1 ? '#'
-    : alter === -1 ? 'b'
-      : alter === 2 ? 'x'
-        : alter === -2 ? 'bb'
-          : '';
-  return `${step}${accidental}${octave}`;
 }
 
 function clampAlter(alter: number): AccidentalAlter {
@@ -173,7 +188,18 @@ function placementLabel(
 }
 
 export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement | null {
-  const { target, enabled, duration, isDotted, leadingGuardRightX = null } = props;
+  const {
+    target,
+    enabled,
+    duration,
+    isDotted,
+    showNaturalAccidental = false,
+    leadingGuardRightX = null,
+    tabletEntryPhase = 'idle',
+    previewPointerType = null,
+    contactPoint = null,
+    viewportBounds = null,
+  } = props;
   const { t } = useI18n();
   if (!enabled || !target) return null;
   if (
@@ -185,7 +211,9 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
   }
 
   const alter = clampAlter(target.alter);
-  const pitch = formatPitch(target.step, target.alter, target.octave);
+  const pitch = formatPitchLabel(target.step, target.alter, target.octave, {
+    showNatural: showNaturalAccidental && target.alter === 0,
+  });
   const palette = transposePreviewPalette(target.transposeMode, target.voiceId);
   const midi = midiNumber(target.step, target.alter, target.octave);
   const pianoRollLanes = Array.from({ length: 13 }, (_, index) => midi + 6 - index);
@@ -195,17 +223,40 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       : null;
   const isTabPreview = target.tabFret != null;
   const showPianoRoll = Boolean(target.transposeMode) && !isTabPreview;
-  const showPlacementBadge = !target.cursorOnly
-    && (Boolean(target.transposeMode) || target.isGraceTarget || target.placementMode !== 'insert');
+  const showPlacementBadge = !target.cursorOnly;
+  const contactPreviewActive = tabletEntryPhase === 'contact-preview' || tabletEntryPhase === 'refining';
+  const showLoupe = contactPreviewActive && (previewPointerType === 'touch' || previewPointerType === 'pen');
+  const noteheadCanvasX = target.previewLeft + target.noteheadCenterX;
+  const chipOnLeft = viewportBounds
+    ? noteheadCanvasX > viewportBounds.left + viewportBounds.width - 104
+    : false;
+  const loupeWidth = 156;
+  const loupeHeight = 112;
+  const loupePoint = contactPoint ?? {
+    x: noteheadCanvasX,
+    y: target.previewTop + 28,
+  };
+  const loupeOnLeft = viewportBounds
+    ? loupePoint.x > viewportBounds.left + viewportBounds.width - loupeWidth - 44
+    : false;
+  const loupeBelow = viewportBounds
+    ? loupePoint.y - loupeHeight - 48 < viewportBounds.top
+    : false;
+  const loupeLeft = loupePoint.x - target.previewLeft + (loupeOnLeft ? -loupeWidth - 36 : 36);
+  const loupeTop = loupePoint.y - target.previewTop + (loupeBelow ? 44 : -loupeHeight - 44);
   const placementLabels = {
     replace: t('note.placementReplace'),
     insert: t('note.placementInsert'),
     multiVoice: t('note.placementMultiVoice'),
   };
+  const durationKey = DURATION_I18N_KEYS[String(duration) as keyof typeof DURATION_I18N_KEYS]
+    ?? 'note.duration.4';
+  const durationLabel = t(durationKey).replace(/\s*\([^)]*\)\s*$/, '');
+  const dottedLabel = t('note.dotted').replace(/\s*\([^)]*\)\s*$/, '');
 
   return (
     <div
-      className="pointer-events-none absolute z-[5] overflow-visible"
+      className="nex-score-input-preview pointer-events-none absolute z-[5] overflow-visible"
       data-testid={target.cursorOnly ? 'duration-input-pitch-cursor' : 'ghost-note-preview'}
       data-duration-input-cursor={target.cursorOnly ? 'true' : undefined}
       data-ghost-measure-id={target.measureId ?? ''}
@@ -235,6 +286,13 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       data-ghost-notehead-center-y={28}
       data-ghost-tab-fret={target.tabFret ?? ''}
       data-ghost-tab-string={target.tabString ?? ''}
+      data-tablet-entry-phase={tabletEntryPhase}
+      data-preview-pointer-type={previewPointerType ?? ''}
+      data-preview-stable-pitch={pitch}
+      data-preview-stable-staff={target.staffIndex}
+      data-preview-stable-timestamp={`${target.timestampNum}/${target.timestampDen}`}
+      data-preview-voice={target.voiceId}
+      data-preview-placement={target.placementMode ?? 'insert'}
       style={{
         left: `${target.previewLeft}px`,
         top: `${target.previewTop}px`,
@@ -243,6 +301,36 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
         opacity: 1,
       }}
     >
+      {!target.cursorOnly && (
+        <>
+          <div
+            aria-hidden
+            data-testid="pitch-lane-indicator"
+            className="absolute rounded-full"
+            style={{
+              left: `${target.noteheadCenterX - 34}px`,
+              top: '26px',
+              width: '68px',
+              height: '4px',
+              background: palette.notehead,
+              opacity: 0.16,
+              boxShadow: `0 0 0 1px ${palette.stem}`,
+            }}
+          />
+          <div
+            aria-hidden
+            data-testid="onset-caret"
+            className="absolute"
+            style={{
+              left: `${target.noteheadCenterX}px`,
+              top: '-14px',
+              height: `${target.previewHeight + 28}px`,
+              borderLeft: `1px solid ${palette.stem}`,
+              opacity: 0.38,
+            }}
+          />
+        </>
+      )}
       {target.dragLockLine && (
         <div
           className="absolute"
@@ -323,6 +411,21 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
           />
         )}
       </div>
+      {!target.cursorOnly && (
+        <div
+          data-testid="pitch-chip"
+          aria-label={t('note.pitchPreview', { pitch })}
+          className="absolute whitespace-nowrap rounded-full border border-slate-200/90 bg-white/95 px-2.5 py-1 text-[13px] font-bold tracking-[0.02em] text-slate-900 shadow-md"
+          style={{
+            left: chipOnLeft
+              ? `${Math.max(target.noteheadCenterX - 68, -16)}px`
+              : `${Math.max(target.noteheadCenterX + 14, 12)}px`,
+            top: '-28px',
+          }}
+        >
+          {pitch}
+        </div>
+      )}
       {showPianoRoll && (
         <div
           className="absolute rounded-md border border-slate-200/80 bg-white/90 shadow-sm"
@@ -383,7 +486,7 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       )}
       {showPlacementBadge && (
         <div
-          className="absolute rounded-full border border-slate-200/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
+          className="absolute flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200/80 px-2 py-0.5 text-[10px] font-semibold tracking-[0.04em]"
           style={{
             left: `${Math.max(target.noteheadCenterX + 18, target.previewWidth + 6)}px`,
             top: `${target.previewHeight + 8}px`,
@@ -391,9 +494,63 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
             color: palette.badgeText,
           }}
         >
+          <span
+            aria-hidden
+            className="inline-block h-2 w-2 rounded-full border border-white/80"
+            style={{ backgroundColor: palette.notehead }}
+          />
           {target.isGraceTarget
             ? t('note.placementGrace', { mode: placementLabel(target.placementMode, placementLabels) })
             : placementLabel(target.placementMode, placementLabels)}
+          <span aria-hidden>·</span>
+          <span>{t('note.voice')} {target.voiceId}</span>
+          <span aria-hidden>·</span>
+          <span>{durationLabel}{isDotted ? ` · ${dottedLabel}` : ''}</span>
+        </div>
+      )}
+      {showLoupe && (
+        <div
+          data-testid="pitch-loupe"
+          aria-label={t('note.pitchPreview', { pitch })}
+          data-loupe-placement={`${loupeBelow ? 'below' : 'above'}-${loupeOnLeft ? 'left' : 'right'}`}
+          className="absolute overflow-hidden rounded-2xl border border-slate-300/90 bg-white/97 shadow-[0_16px_44px_-14px_rgba(15,23,42,0.45)]"
+          style={{
+            left: `${loupeLeft}px`,
+            top: `${loupeTop}px`,
+            width: `${loupeWidth}px`,
+            height: `${loupeHeight}px`,
+          }}
+        >
+          <div className="absolute left-3 top-2 rounded-full bg-slate-900 px-2 py-0.5 text-xs font-bold text-white">
+            {pitch}
+          </div>
+          <div className="absolute left-0 right-0 top-[42px] h-[48px]" aria-hidden>
+            {[0, 1, 2, 3, 4].map((line) => (
+              <div
+                key={`loupe-staff:${line}`}
+                className="absolute left-4 right-4 h-px bg-slate-500/65"
+                style={{ top: `${line * 9}px` }}
+              />
+            ))}
+            <div
+              className="absolute left-1/2 top-[18px] -translate-x-1/2"
+              style={{ transform: 'translateX(-50%) scale(1.45)' }}
+            >
+              <EngravedNoteGlyph
+                duration={duration as NoteDuration}
+                dotted={isDotted}
+                stemDirection={target.stemDirection}
+                accidentalAlter={alter}
+                noteheadCenterX={target.noteheadCenterX}
+                noteheadCenterY={28}
+                color={palette.notehead}
+              />
+            </div>
+          </div>
+          <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-[10px] font-semibold text-slate-500">
+            <span>{placementLabel(target.placementMode, placementLabels)}</span>
+            <span>{t('note.voice')} {target.voiceId}</span>
+          </div>
         </div>
       )}
     </div>

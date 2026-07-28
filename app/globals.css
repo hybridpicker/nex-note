@@ -43,6 +43,93 @@ body {
   font-family: var(--font-geist-sans);
 }
 
+html.nex-note-native,
+html.nex-note-native body {
+  width: 100%;
+  height: 100%;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+html.nex-note-native {
+  background: #f7f8fa;
+}
+
+.nex-note-native .nex-app-shell,
+.nex-note-native .nex-score-only-embed {
+  height: 100dvh;
+}
+
+.nex-note-native .nex-app-shell > header {
+  height: calc(3.5rem + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  padding-right: max(1.25rem, env(safe-area-inset-right));
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+}
+
+.nex-note-native .nex-brand-toolbar [role="menubar"],
+.nex-note-native .nex-brand-toolbar #nex-note-language + a,
+.nex-note-native .nex-brand-toolbar [data-testid="provider-selector"] span {
+  display: none;
+}
+
+.nex-note-native .nex-brand-toolbar > span[title] {
+  max-width: 8rem;
+}
+
+.nex-note-native button,
+.nex-note-native [role="button"],
+.nex-note-native select,
+.nex-note-native input {
+  touch-action: manipulation;
+}
+
+.nex-note-native [data-testid="score-viewport"] {
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nex-note-native input,
+.nex-note-native select,
+.nex-note-native textarea {
+  font-size: max(1rem, 16px);
+}
+
+.nex-note-native .nex-app-shell > :last-child {
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+
+@media (pointer: coarse) {
+  .nex-note-native .nex-note-input-tools button,
+  .nex-note-native .nex-note-input-tools [role="button"],
+  .nex-note-native [data-testid="notation-toolbar"] button,
+  .nex-note-native .nex-left-tools-toggle {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .nex-note-native .nex-note-input-tools button:active,
+  .nex-note-native [data-testid="notation-toolbar"] button:active,
+  .nex-note-native .nex-left-tools-toggle:active {
+    transform: scale(0.96);
+  }
+
+  .nex-note-native .nex-note-sidebar-section-toggle {
+    min-height: 3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nex-score-input-preview,
+  .nex-score-input-preview * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
 .nex-welcome-stage {
   position: relative;
   isolation: isolate;
@@ -298,6 +385,69 @@ html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
   letter-spacing: 0;
 }
 
+.nex-ipad-selection-actions {
+  display: none;
+}
+
+.nex-note-native .nex-score-stage {
+  position: relative;
+}
+
+@media (pointer: coarse) {
+  .nex-note-native .nex-ipad-selection-actions {
+    position: absolute;
+    z-index: 26;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    display: flex;
+    min-height: 3.5rem;
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid rgb(203 213 225 / 0.9);
+    border-radius: 1rem;
+    background: rgb(255 255 255 / 0.96);
+    padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+    box-shadow: 0 16px 44px -24px rgb(15 23 42 / 0.65);
+    backdrop-filter: blur(16px);
+  }
+
+  .nex-note-native .nex-ipad-selection-label {
+    max-width: 10rem;
+    overflow: hidden;
+    color: #475569;
+    font-size: 0.8125rem;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nex-note-native .nex-ipad-delete-note {
+    display: inline-flex;
+    min-width: 8.5rem;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    background: #fff1f2;
+    padding: 0 1rem;
+    color: #be123c;
+    font-size: 0.875rem;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+
+  .nex-note-native .nex-ipad-delete-note:active {
+    transform: scale(0.97);
+    background: #ffe4e6;
+  }
+
+  .nex-note-native .nex-ipad-delete-note svg {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+}
+
 @media print {
   html,
   body {
@@ -314,6 +464,7 @@ html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
   .nex-app-shell > header,
   .nex-workspace-panel,
   .nex-left-tools-shell,
+  .nex-ipad-selection-actions,
   .nex-edit-palette,
   .nex-print-view .nex-score-column > :first-child {
     display: none !important;
@@ -347,6 +498,44 @@ html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
 }
 
 @media (max-width: 900px) {
+  .nex-note-native .nex-brand-toolbar {
+    gap: 0.4rem;
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+  }
+
+  .nex-note-native .nex-brand-toolbar .nex-header-action-label,
+  .nex-note-native .nex-header-command-center kbd {
+    display: none;
+  }
+
+  .nex-note-native .nex-brand-toolbar [data-testid="provider-selector"] {
+    flex-shrink: 0;
+  }
+
+  .nex-note-native .nex-header-command-center {
+    width: 2rem;
+    flex: 0 0 2rem;
+    justify-content: center;
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .nex-note-native .nex-editor-workspace {
+    position: relative;
+  }
+
+  .nex-note-native .nex-workspace-panel {
+    position: absolute;
+    z-index: 30;
+    inset: 0 0 0 auto;
+    width: min(22rem, calc(100vw - 3rem));
+    min-width: 0;
+    box-shadow: -18px 0 48px -34px rgb(11 15 20 / 0.55);
+  }
+
   .nex-score-stage {
     position: relative;
   }

@@ -136,6 +136,27 @@ export function resolveStaffStepPitch(
   return { step, octave, diatonicIndex };
 }
 
+const MUSICAL_ACCIDENTALS: Record<number, string> = {
+  [-2]: '𝄫',
+  [-1]: '♭',
+  0: '',
+  1: '♯',
+  2: '𝄪',
+};
+
+export function formatPitchLabel(
+  step: string,
+  alter: number,
+  octave: number,
+  options?: { showNatural?: boolean },
+) {
+  const normalizedStep = step.trim().toUpperCase();
+  const accidental = alter === 0 && options?.showNatural
+    ? '♮'
+    : MUSICAL_ACCIDENTALS[Math.trunc(alter)] ?? '';
+  return `${normalizedStep}${accidental}${Math.trunc(octave)}`;
+}
+
 const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'] as const;
 const FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'] as const;
 

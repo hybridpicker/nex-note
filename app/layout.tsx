@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { NativePlatformBootstrap } from "@/components/NativePlatformBootstrap";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
@@ -12,6 +13,13 @@ export const metadata: Metadata = {
     ],
     apple: "/brand/nex-note-icon.png",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#f7f8fa",
 };
 
 export default function RootLayout({
@@ -30,6 +38,7 @@ export default function RootLayout({
       data-git-branch={gitBranch}
     >
       <body className="min-h-full flex flex-col">
+        <NativePlatformBootstrap />
         <Providers>{children}</Providers>
       </body>
     </html>

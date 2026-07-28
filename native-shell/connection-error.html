@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Nex Note — Mac not reachable</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f8fa;
+        color: #0b0f14;
+      }
+
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: max(2rem, env(safe-area-inset-top))
+          max(2rem, env(safe-area-inset-right))
+          max(2rem, env(safe-area-inset-bottom))
+          max(2rem, env(safe-area-inset-left));
+        box-sizing: border-box;
+        background:
+          radial-gradient(circle at 78% 12%, rgb(79 70 255 / 0.14), transparent 28rem),
+          linear-gradient(145deg, #f8f8f5, #eef0ff);
+      }
+
+      main {
+        width: min(40rem, 100%);
+        padding: 2rem;
+        border: 1px solid #e6e9ef;
+        border-radius: 1.25rem;
+        background: rgb(255 255 255 / 0.96);
+        box-shadow: 0 24px 70px -44px rgb(11 15 20 / 0.55);
+      }
+
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.65rem, 4vw, 2.4rem);
+      }
+
+      p,
+      li {
+        color: #596174;
+        line-height: 1.55;
+      }
+
+      #connection-status {
+        min-height: 1.55em;
+        margin-bottom: 0;
+        font-weight: 600;
+        color: #3f38e8;
+      }
+
+      ol {
+        padding-left: 1.35rem;
+      }
+
+      code {
+        border-radius: 0.35rem;
+        background: #ecebff;
+        padding: 0.12rem 0.4rem;
+        color: #3f38e8;
+      }
+
+      button {
+        min-height: 3rem;
+        margin-top: 0.75rem;
+        border: 0;
+        border-radius: 0.75rem;
+        padding: 0 1.1rem;
+        background: linear-gradient(135deg, #4f46ff, #7c3aed);
+        color: white;
+        font: inherit;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>The Mac server is not reachable</h1>
+      <ol>
+        <li>Keep the Mac and iPad on the same Wi-Fi network.</li>
+        <li>Run <code>npm run ipad:dev</code> in the Nex Note folder.</li>
+        <li>Leave that terminal window open while testing.</li>
+      </ol>
+      <p>If the Mac changed networks, run the command again and rebuild once from Xcode.</p>
+      <p id="connection-status" role="status" aria-live="polite">Waiting for the Mac server…</p>
+      <button id="retry-button" type="button">Try again now</button>
+    </main>
+    <script>
+      const configuredServerUrl = __NEX_NOTE_IPAD_SERVER_URL_JSON__;
+      const retryButton = document.getElementById('retry-button');
+      const connectionStatus = document.getElementById('connection-status');
+      let retryTimer = 0;
+
+      function reconnect() {
+        window.clearTimeout(retryTimer);
+        connectionStatus.textContent = 'Connecting to the Mac server…';
+        retryButton.disabled = true;
+        window.location.replace(configuredServerUrl);
+      }
+
+      retryButton.addEventListener('click', reconnect);
+      retryTimer = window.setTimeout(reconnect, 2500);
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reconnect();
+      });
+    </script>
+  </body>
+</html>

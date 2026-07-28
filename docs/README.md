@@ -9,6 +9,9 @@ This directory mixes current status docs, architecture docs, validation material
 - Language/i18n developer note: [i18n.md](./i18n.md)
 - Keyboard shortcuts: [keyboard-shortcuts.md](./keyboard-shortcuts.md)
 - Contributor workflow: [CONTRIBUTING.md](../CONTRIBUTING.md)
+- Multi-app development flow: [multi-app-development-flow.md](./multi-app-development-flow.md)
+- Private iPad testing: [ipad-private-testing.md](./ipad-private-testing.md)
+- Native macOS Xcode implementation prompt: [macos-xcode-private-testing-prompt.md](./macos-xcode-private-testing-prompt.md)
 - Founder test file intake: [founder-test-file-intake.md](./founder-test-file-intake.md)
 
 ## Current Source Of Truth

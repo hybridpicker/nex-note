@@ -1,6 +1,7 @@
 'use client';
 
 import { buildNxnFilename, type NxnFileV1 } from '@/lib/nxn-file';
+import { createRandomId } from '@/lib/random-id';
 
 export interface LibraryScore {
   id: string;
@@ -135,7 +136,7 @@ export function saveLibraryScore(input: SaveLibraryScoreInput): LibraryScore {
   const summary = summarizeNativeProject(nativeProjectForSummary, input.xml);
 
   const next: LibraryScore = {
-    id: existing?.id ?? crypto.randomUUID(),
+    id: existing?.id ?? createRandomId(),
     name: input.name,
     nativeName: hasNativeProject ? (input.nativeName ?? existing?.nativeName ?? buildNxnFilename(input.name)) : undefined,
     xml: hasNativeProject || input.persistXml === false ? '' : input.xml,

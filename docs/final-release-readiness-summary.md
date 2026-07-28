@@ -1,6 +1,6 @@
 # Release Readiness Summary
 
-Updated: 2026-07-23
+Updated: 2026-07-26
 
 This file is the short executive summary; the detailed progress log is maintained privately.
 
@@ -34,6 +34,7 @@ OpenAI and local-agent evidence produced on 2026-07-26:
 - MuseScore CLI roundtrip harness: `npm run smoke:musescore-roundtrip -- --timeout-ms=15000 --retries=0` completed on 2026-07-23 with exit `0` and verdict `passed-with-local-musescore-limit` using `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 4.7.3; latest artifacts are under `.nex/musescore-roundtrip-smoke-2026-07-23T18-57-42-120Z`. Source and nex-note conversions both showed intermittent SIGABRT instability, so crash-only step differences remain inconclusive.
 - `npm run test:coverage:check`: passed on 2026-07-23 (`85.59%` lines, `78.13%` branches, `86.74%` functions)
 - `npm audit --omit=dev`: passed on 2026-07-23 (`0` vulnerabilities)
+- packaged macOS startup was revalidated on 2026-07-26 after moving the embedded Next.js server to an Electron utility process: the targeted launch suite passed (`12` tests, `0` failed), the rebuilt repo-local app returned HTTP `200`, Launch Services registered only `Nex Note`, and no separate generic `exec` application remained
 - release validation remained on the core-first command path; no parallel direct-XML edit route was introduced to work around the runtime issues
 - tie placement for selected tie starts and articulation/fermata placement for selected notes now run through the semantic command path, are visible in the Inspector, and roundtrip through MusicXML
 - core MusicXML export now keeps root-level metadata elements in MusicXML order and no longer appends an empty trailing `<identification/>` after `<part>`
@@ -76,7 +77,7 @@ OpenAI and local-agent evidence produced on 2026-07-26:
 
 ## Before Final Release
 
-- verify the built macOS app manually after `npm run electron:build`
+- verify the built macOS app manually after `npm run electron:build`, including that the embedded server does not create a second `exec` Dock item
 - complete signing/notarization and final app icon validation
 - run a manual smoke pass covering import, note input, playback, AI preview/apply, `.mxl` export, and a MuseScore round-trip
 - rerun `npm run smoke:musescore-roundtrip` on a stable MuseScore CLI install before treating MSCZ compatibility as release-quality evidence

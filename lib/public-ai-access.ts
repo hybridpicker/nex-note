@@ -15,12 +15,18 @@ export function isLocalAiRequest(req: NextRequest) {
   return LOCAL_HOSTNAMES.has(requestHostname(req));
 }
 
+export function isNativeAiRequest(req: NextRequest) {
+  return /\bNexNoteNative\/\d+(?:\.\d+){1,3}\b/.test(
+    req.headers.get('user-agent') ?? '',
+  );
+}
+
 export function isPublicAiEnabled() {
   return process.env.NEX_NOTE_ENABLE_PUBLIC_AI === 'true';
 }
 
 export function isAiEnabledForRequest(req: NextRequest) {
-  return isPublicAiEnabled() || isLocalAiRequest(req);
+  return isPublicAiEnabled() || isLocalAiRequest(req) || isNativeAiRequest(req);
 }
 
 export function publicAiDisabledResponse() {

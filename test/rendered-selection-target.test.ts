@@ -127,6 +127,31 @@ test('selection confidence keeps TAB string and fret on the clicked fret glyph',
   assert.deepEqual(hit.report.selectedTarget?.guitar, { string: 5, fret: 3 });
 });
 
+test('touch selection can use a larger explicit hit tolerance without changing mouse defaults', () => {
+  const rendered = makeRenderedNote(
+    makeSelectedNote({ coreEntityId: 'event:touch-target' }),
+    100,
+    100,
+  );
+  const domPoint = { x: 134, y: 100 };
+
+  const mouseHit = resolveRenderedGlyphHit({
+    renderedNotes: [rendered],
+    eventPathNodes: [],
+    domPoint,
+  });
+  const touchHit = resolveRenderedGlyphHit({
+    renderedNotes: [rendered],
+    eventPathNodes: [],
+    domPoint,
+    hitTolerancePx: 32,
+  });
+
+  assert.equal(mouseHit.rendered, null);
+  assert.equal(touchHit.rendered?.note.coreEntityId, 'event:touch-target');
+  assert.equal(touchHit.report.fallback, true);
+});
+
 test('selection confidence resolves same-timestamp voices by visible glyph instead of selected voice', () => {
   const voiceOne = makeSelectedNote({ coreEntityId: 'event:voice:1', voiceId: 1, step: 'E', octave: 4 });
   const voiceTwo = makeSelectedNote({ coreEntityId: 'event:voice:2', voiceId: 2, coreVoiceId: 'voice:2', step: 'A', octave: 4 });

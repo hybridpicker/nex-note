@@ -199,6 +199,7 @@ interface Props {
   midiInputEnabled: boolean;
   midiInputStatus: MidiInputStatus;
   midiInputDevices: string[];
+  inputAuditionEnabled: boolean;
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -219,6 +220,7 @@ interface Props {
   onToggleStepInputKeyboardMode: () => void;
   onToggleInputByDurationMode: () => void;
   onToggleMidiInput: () => void;
+  onToggleInputAudition: () => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -413,10 +415,10 @@ function stripShortcutSuffix(label: string) {
 export default function NoteInputToolbar({
   placement = 'toolbar',
   coreDocument,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
   selectedDuration, selectedAccidental, isDotted, selectedVoice,
   entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave,
-  onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique,
+  onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleInputAudition, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique,
   onDurationChange, onAccidentalChange, onToggleDotted,
   onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
@@ -744,6 +746,14 @@ export default function NoteInputToolbar({
         wide
       >
         <span className="text-[10px] font-semibold tracking-wider">CHD</span>
+      </TBtn>
+      <TBtn
+        onClick={onToggleInputAudition}
+        title={t('note.inputAudition')}
+        active={inputAuditionEnabled}
+        wide
+      >
+        <span aria-hidden className="text-sm">{inputAuditionEnabled ? '♪' : '♩'}</span>
       </TBtn>
       <TBtn
         onClick={onToggleStepInputKeyboardMode}

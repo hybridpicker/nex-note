@@ -491,7 +491,7 @@ async function measureOverlayBox(page: Page, measureNumber: number) {
 
 function parseGhostPitch(value: string | null) {
   if (!value) return null;
-  const match = /^([A-G])(?:#|b|x|bb)?(\d+)$/.exec(value);
+  const match = /^([A-G])(?:bb|#|b|x|♯|♭|♮|𝄪|𝄫)?(\d+)$/.exec(value);
   if (!match) return null;
   return { step: match[1], octave: Number.parseInt(match[2] ?? '0', 10) };
 }

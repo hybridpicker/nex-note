@@ -74,6 +74,19 @@ import {
   type Clef,
 } from '@/src/score-input/staff-pitch';
 import {
+  bindTabletEntryPreview,
+  cancelTabletEntrySession,
+  commitTabletEntrySession,
+  refineTabletEntrySession,
+  markTabletPitchAuditioned,
+  shouldAuditionTabletPitch,
+  startTabletEntrySession,
+  tabletEntryStaffId,
+  type TabletEntryPhase,
+  type TabletEntrySession,
+  type TabletEntryStaffGeometry,
+} from '@/src/score-input/tablet-entry-session';
+import {
   detectActiveRhythmicSegment,
   fractionToNumber,
   getEffectiveDuration,
@@ -174,6 +187,7 @@ interface Props {
     mode: DragTransposeMode;
   }) => void;
   onDragPitchPreview?: (note: SelectedNote | null) => void;
+  onDirectEntryPitchPreview?: (note: SelectedNote) => void;
   onDragStringCommit?: (target: {
     note: SelectedNote;
     string: 1 | 2 | 3 | 4 | 5 | 6;
@@ -234,6 +248,17 @@ interface GhostSnapResolutionTrace {
   slotDuration?: number | null;
   segmentStartRatio?: number | null;
   maxStartRatio?: number | null;
+  yResolution?: {
+    rawY: number;
+    topLineY: number;
+    halfStepPx: number;
+    rawStaffStep: number;
+    stableStaffStep: number;
+    clef: string;
+    staffId: string;
+    pitch: string;
+    hysteresisHeld: boolean;
+  };
   gridSnap?: GhostSnapTraceCandidate | null;
   renderedOnsetSnap?: GhostSnapTraceCandidate | null;
   preferredSnap?: GhostSnapTraceCandidate | null;
@@ -386,6 +411,14 @@ interface GhostNoteTarget {
   }>;
   resolvedTarget?: ResolvedEditTarget;
   snapResolution?: GhostSnapResolutionTrace;
+}
+
+type ActiveTabletEntrySession = TabletEntrySession<GhostNoteTarget, ResolvedEditTarget>;
+
+interface TabletEntryVisualState {
+  phase: TabletEntryPhase;
+  pointerType: string | null;
+  point: PointLike | null;
 }
 
 interface OverlayLayerOffset {
@@ -3856,7 +3889,10 @@ function quantizeStaffStepFromStaffGeometry(
   staff: NonNullable<DetailedContext['staff']>,
   y: number,
 ) {
-  return Math.round((y - staff.topLineDomY) / Math.max(staff.lineDistanceDom / 2, 1));
+  const halfStepPx = staff.lineDistanceDom / 2;
+  return halfStepPx > 0
+    ? Math.round((y - staff.topLineDomY) / halfStepPx)
+    : 0;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4397,6 +4433,52 @@ function staffDetailCenterY(detail: StaffDetail): number {
   return (detail.topLineDomY + detail.bottomLineDomY) / 2;
 }
 
+function buildTabletStaffGeometry(
+  detail: StaffDetail,
+  scope: { corePartId?: string | null; systemIndex?: number | null },
+): TabletEntryStaffGeometry {
+  const capturePadding = Math.max(detail.lineDistanceDom * 2, 12);
+  return {
+    id: tabletEntryStaffId({
+      corePartId: detail.corePartId ?? scope.corePartId,
+      systemIndex: scope.systemIndex,
+      staffIndex: detail.staffIndex,
+    }),
+    staffIndex: detail.staffIndex,
+    topLineY: detail.topLineDomY,
+    bottomLineY: detail.bottomLineDomY,
+    lineDistancePx: detail.lineDistanceDom,
+    captureTop: detail.topLineDomY - capturePadding,
+    captureBottom: detail.bottomLineDomY + capturePadding,
+  };
+}
+
+function resolvedTargetSlotKey(target: ResolvedEditTarget) {
+  return [
+    target.measureId,
+    target.corePartId ?? 'partless',
+    target.staffIndex,
+    target.voiceId,
+    target.timestampNum,
+    target.timestampDen,
+    target.mode,
+  ].join(':');
+}
+
+function estimateTabletSlotSpacing(
+  grid: RenderedGhostGrid,
+  target: GhostNoteTarget,
+) {
+  const xs = getRenderedGhostStaffPoints(grid, target.measureId, target.staffIndex, { includeSynthetic: true })
+    .map((point) => point.domX)
+    .filter((x, index, all) => Number.isFinite(x) && (index === 0 || Math.abs(x - all[index - 1]!) > 0.5))
+    .sort((left, right) => left - right);
+  const gaps = xs.slice(1)
+    .map((x, index) => x - xs[index]!)
+    .filter((gap) => gap > 1);
+  return median(gaps) ?? Math.max(target.previewWidth * 1.5, 24);
+}
+
 function findNearestStaffDetail(
   details: StaffDetail[],
   staffIndex: number | null | undefined,
@@ -4754,8 +4836,18 @@ function buildSelectionConfidenceCandidate(input: {
   domPoint: PointLike;
   selectedVoice?: number | null;
   selectedPartId?: string | null;
+  hitTolerancePx?: number;
 }): SelectionConfidenceCandidate | null {
-  const { rendered, renderedIndex, container, eventPathNodes, domPoint, selectedVoice, selectedPartId } = input;
+  const {
+    rendered,
+    renderedIndex,
+    container,
+    eventPathNodes,
+    domPoint,
+    selectedVoice,
+    selectedPartId,
+    hitTolerancePx = 24,
+  } = input;
   const glyph = renderedGlyphRect(container, rendered);
   const directPathHit = eventPathContainsElement(rendered.svgElement, eventPathNodes);
   const tintPathHit = eventPathContainsElement(rendered.tintElement, eventPathNodes);
@@ -4764,7 +4856,7 @@ function buildSelectionConfidenceCandidate(input: {
   const rectDistance = distanceFromPointToRect(domPoint, glyph.rect ?? rendered.domRect);
   const centerDistance = renderedNoteDistanceFromPoint(rendered, domPoint);
   const distancePx = Math.min(rectDistance, centerDistance);
-  const nearEnoughFallback = distancePx <= 24;
+  const nearEnoughFallback = distancePx <= hitTolerancePx;
   if (!directPathHit && !tintPathHit && !glyphRectHit && !bboxHit && !nearEnoughFallback) return null;
 
   const sourceRank = tintPathHit
@@ -4845,6 +4937,7 @@ export function resolveRenderedGlyphHit(input: {
   domPoint: PointLike;
   selectedVoice?: number | null;
   selectedPartId?: string | null;
+  hitTolerancePx?: number;
 }): { rendered: RenderedNote | null; report: SelectionConfidenceReport } {
   const renderedById = new Map(input.renderedNotes.map((rendered) => [rendered.id, rendered]));
   const candidates = input.renderedNotes
@@ -4856,6 +4949,7 @@ export function resolveRenderedGlyphHit(input: {
       domPoint: input.domPoint,
       selectedVoice: input.selectedVoice,
       selectedPartId: input.selectedPartId,
+      hitTolerancePx: input.hitTolerancePx,
     }))
     .filter((candidate): candidate is SelectionConfidenceCandidate => Boolean(candidate))
     .sort((a, b) => {
@@ -4881,7 +4975,7 @@ export function resolveRenderedGlyphHit(input: {
       winnerReason: winner?.reason ?? null,
       fallback: winner?.reason === 'nearest-visible-glyph',
       fallbackReason: winner?.reason === 'nearest-visible-glyph'
-        ? 'no direct glyph or bounding-box hit; nearest visible glyph within 24px'
+        ? `no direct glyph or bounding-box hit; nearest visible glyph within ${input.hitTolerancePx ?? 24}px`
         : null,
       candidates,
     },
@@ -9699,9 +9793,10 @@ function resolveGhostNoteTargetLegacy(
       clef,
       fallbackStaffStep,
       fallbackSnappedY,
-      samples: pitchedInMeasure.length > 0
-        ? buildGhostPitchCalibrationSamples(pitchReferenceNotes, containerRect)
-        : [],
+      // Staff geometry is the runtime pitch-lane source of truth. Rendered
+      // notes may validate layout construction, but measure contents must not
+      // change the pitch produced for the same staff/Y coordinate.
+      samples: [],
     }),
     clef,
     fallbackStaffStep,
@@ -10147,6 +10242,21 @@ function resolveSemanticAnchorGhostTarget(
     slotDuration: roundTraceNumber(slotDuration),
     segmentStartRatio: roundTraceNumber(segmentStartRatio),
     maxStartRatio: roundTraceNumber(maxStartRatio),
+    yResolution: {
+      rawY: roundTraceNumber(domPoint.y) ?? domPoint.y,
+      topLineY: roundTraceNumber(staff.topLineDomY) ?? staff.topLineDomY,
+      halfStepPx: roundTraceNumber(staff.lineDistanceDom / 2) ?? (staff.lineDistanceDom / 2),
+      rawStaffStep: Math.round((domPoint.y - staff.topLineDomY) / (staff.lineDistanceDom / 2)),
+      stableStaffStep: pitchResolution.staffStep,
+      clef: `${clef.sign}${clef.line}`,
+      staffId: tabletEntryStaffId({
+        corePartId: preferredPartId,
+        systemIndex: overlay.systemIndex,
+        staffIndex: targetStaffIndex,
+      }),
+      pitch: `${targetPitch.step}${targetPitch.octave}`,
+      hysteresisHeld: false,
+    },
     gridSnap: traceSnapCandidate(renderedSnapPoint, {
       source: 'rendered-ghost-grid',
       pointerX: domPoint.x,
@@ -10407,16 +10517,14 @@ function mapProxyContextToGhostTarget(
   if (!isMouseEntryStaffStepVisible(staffStep, staff.lineCount) && !insideStaffCapture) return null;
   const fallbackStaffStep = clampMouseEntryStaffStep(staffStep);
   const fallbackSnappedY = staff.topLineDomY + (fallbackStaffStep * (staff.lineDistanceDom / 2));
-  const pitchCalibrationSamples = pitchedInMeasure.length > 0
-    ? buildGhostPitchCalibrationSamples(pitchReferenceNotes, containerRect)
-    : [];
   let pitchResolution = constrainMouseEntryPitchResolution({
     resolution: resolveGhostPitchFromCalibration({
       pointerY: domPoint.y,
       clef,
       fallbackStaffStep,
       fallbackSnappedY,
-      samples: pitchCalibrationSamples,
+      // Canonical staff geometry, not notehead samples, owns direct-entry Y.
+      samples: [],
     }),
     clef,
     fallbackStaffStep,
@@ -10614,6 +10722,21 @@ function mapProxyContextToGhostTarget(
     slotDuration: roundTraceNumber(slotDuration),
     segmentStartRatio: roundTraceNumber(segmentStartRatio),
     maxStartRatio: roundTraceNumber(maxStartRatio),
+    yResolution: {
+      rawY: roundTraceNumber(domPoint.y) ?? domPoint.y,
+      topLineY: roundTraceNumber(staff.topLineDomY) ?? staff.topLineDomY,
+      halfStepPx: roundTraceNumber(staff.lineDistanceDom / 2) ?? (staff.lineDistanceDom / 2),
+      rawStaffStep: Math.round((domPoint.y - staff.topLineDomY) / (staff.lineDistanceDom / 2)),
+      stableStaffStep: pitchResolution.staffStep,
+      clef: `${clef.sign}${clef.line}`,
+      staffId: tabletEntryStaffId({
+        corePartId: preferredPartId,
+        systemIndex: overlay.systemIndex,
+        staffIndex: targetStaffIndex,
+      }),
+      pitch: `${targetPitch.step}${targetPitch.octave}`,
+      hysteresisHeld: false,
+    },
     gridSnap: traceSnapCandidate(snappedPoint, {
       source: 'rendered-ghost-grid',
       pointerX: safePointer.clampedX,
@@ -11577,6 +11700,7 @@ export default function ScoreEditor({
   dragTransposeMode = 'chromatic',
   onDragTransposeCommit,
   onDragPitchPreview,
+  onDirectEntryPitchPreview,
   onDragStringCommit,
   onMeasureSelectionChange,
   clearMeasureSelectionSignal = 0,
@@ -11603,6 +11727,15 @@ export default function ScoreEditor({
   const [visualSelectionOnly, setVisualSelectionOnly] = useState(false);
   const [ghostNoteTarget, setGhostNoteTarget] = useState<GhostNoteTarget | null>(null);
   const ghostNoteTargetRef = useRef<GhostNoteTarget | null>(null);
+  const tabletEntrySessionRef = useRef<ActiveTabletEntrySession | null>(null);
+  const pendingTabletPointerMoveRef = useRef<React.PointerEvent<HTMLDivElement> | null>(null);
+  const tabletPointerMoveFrameRef = useRef<number | null>(null);
+  const lastTabletStaffSwitchPulseRef = useRef(0);
+  const [tabletEntryVisual, setTabletEntryVisual] = useState<TabletEntryVisualState>({
+    phase: 'idle',
+    pointerType: null,
+    point: null,
+  });
   const previousGhostNoteTargetRef = useRef<GhostNoteTarget | null>(null);
   const visibleGhostPointerLockRef = useRef<GhostNoteTarget | null>(null);
   const recentGhostNoteTargetsRef = useRef<GhostNoteTarget[]>([]);
@@ -12043,7 +12176,7 @@ export default function ScoreEditor({
     return osmd;
   }, [initializeOsmd]);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     lastPointerClientRef.current = { x: e.clientX, y: e.clientY };
     const dragSession = dragSessionRef.current;
     if (dragSession) {
@@ -12177,6 +12310,17 @@ export default function ScoreEditor({
       }
       return;
     }
+    const activeTabletSession = tabletEntrySessionRef.current;
+    if (activeTabletSession && e.pointerId !== activeTabletSession.pointerId) {
+      tabletEntrySessionRef.current = cancelTabletEntrySession(activeTabletSession);
+      setTabletEntryVisual({
+        phase: 'cancelled',
+        pointerType: activeTabletSession.pointerType,
+        point: activeTabletSession.latestPoint,
+      });
+      setGhostNoteTarget(null);
+      return;
+    }
     if (!noteInputMode || inputByDurationMode) {
       if (ghostNoteTarget) setGhostNoteTarget(null);
       return;
@@ -12185,15 +12329,62 @@ export default function ScoreEditor({
     if (!container) return;
     const rect = container.getBoundingClientRect();
     if (!isPointInsideRect(e.clientX, e.clientY, rect)) {
+      const tabletSession = tabletEntrySessionRef.current;
+      if (tabletSession && e.pointerId === tabletSession.pointerId) {
+        const cancelled = cancelTabletEntrySession(tabletSession);
+        tabletEntrySessionRef.current = null;
+        setTabletEntryVisual({
+          phase: cancelled.phase,
+          pointerType: cancelled.pointerType,
+          point: cancelled.latestPoint,
+        });
+        visibleGhostPointerLockRef.current = null;
+        lastGhostStaffIndexRef.current = null;
+      }
       if (ghostNoteTarget) setGhostNoteTarget(null);
       return;
     }
     lastAdvancedGhostAnchorRef.current = null;
 
-    const domPoint = {
+    let domPoint = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
+    if (activeTabletSession && e.pointerId === activeTabletSession.pointerId) {
+      const coalesced = typeof e.nativeEvent.getCoalescedEvents === 'function'
+        ? e.nativeEvent.getCoalescedEvents()
+        : [];
+      const latestSample = coalesced[coalesced.length - 1] ?? e.nativeEvent;
+      const rawPoint = {
+        x: latestSample.clientX - rect.left,
+        y: latestSample.clientY - rect.top,
+      };
+      const staffDetails = staffDetailsByMeasureRef.current.get(
+        activeTabletSession.lastValidatedPreview.measureNumber,
+      ) ?? [];
+      const candidateDetail = findNearestStaffDetail(
+        staffDetails,
+        null,
+        rawPoint.y,
+        activeTabletSession.lastValidatedPreview.corePartId,
+      );
+      const candidateStaff = candidateDetail
+        ? buildTabletStaffGeometry(candidateDetail, {
+            corePartId: activeTabletSession.lastValidatedPreview.corePartId,
+            systemIndex: activeTabletSession.lastValidatedPreview.systemIndex,
+          })
+        : null;
+      const refinedSession = refineTabletEntrySession(activeTabletSession, {
+        point: rawPoint,
+        slotSpacingPx: estimateTabletSlotSpacing(
+          renderedGhostGridRef.current,
+          activeTabletSession.lastValidatedPreview,
+        ),
+        candidateStaff,
+      });
+      tabletEntrySessionRef.current = refinedSession;
+      domPoint = refinedSession.effectivePoint;
+    }
     const pointerPath = typeof e.nativeEvent.composedPath === 'function' ? e.nativeEvent.composedPath() : [];
     const pointerPathNodes = pointerPath.filter((entry): entry is Node => entry instanceof Node);
     const directlyHoveredRendered = findDirectRenderedNoteHit(renderedNotesRef.current, pointerPathNodes)
@@ -12329,11 +12520,134 @@ export default function ScoreEditor({
     );
     visibleGhostPointerLockRef.current = nextGhost;
     lastGhostStaffIndexRef.current = nextGhost?.staffIndex ?? lastGhostStaffIndexRef.current;
+    const liveTabletSession = tabletEntrySessionRef.current;
+    if (
+      liveTabletSession
+      && liveTabletSession.pointerId === e.pointerId
+      && nextGhost?.resolvedTarget
+    ) {
+      const yResolution = nextGhost.snapResolution?.yResolution;
+      if (yResolution) {
+        yResolution.rawY = liveTabletSession.latestPoint.y;
+        yResolution.stableStaffStep = liveTabletSession.stableStaffStep;
+        yResolution.hysteresisHeld = Math.round(
+          (liveTabletSession.latestPoint.y - liveTabletSession.stableStaff.topLineY)
+          / Math.max(liveTabletSession.stableStaff.lineDistancePx / 2, Number.EPSILON),
+        ) !== liveTabletSession.stableStaffStep;
+      }
+      let boundSession = bindTabletEntryPreview(
+        liveTabletSession,
+        nextGhost,
+        nextGhost.resolvedTarget,
+      );
+      if (boundSession.staffSwitchPulse > lastTabletStaffSwitchPulseRef.current) {
+        nextGhost.dragPulse = true;
+        lastTabletStaffSwitchPulseRef.current = boundSession.staffSwitchPulse;
+      }
+      const soundingPitchKey = `${nextGhost.step}:${nextGhost.alter}:${nextGhost.octave}`;
+      const previewNow = performance.now();
+      if (
+        onDirectEntryPitchPreview
+        && shouldAuditionTabletPitch(boundSession, soundingPitchKey, previewNow)
+      ) {
+        onDirectEntryPitchPreview({
+          coreMeasureId: nextGhost.measureId,
+          corePartId: nextGhost.corePartId,
+          measureNumber: nextGhost.measureNumber,
+          staffIndex: nextGhost.staffIndex,
+          voiceId: nextGhost.voiceId,
+          timestampNum: nextGhost.timestampNum,
+          timestampDen: nextGhost.timestampDen,
+          step: nextGhost.step,
+          octave: nextGhost.octave,
+          alter: nextGhost.alter,
+          isRest: false,
+          durationType: INPUT_DURATION_TO_TYPE[String(selectedDuration)] ?? String(selectedDuration),
+          isDotted,
+          graphicalNote: null,
+        });
+        boundSession = markTabletPitchAuditioned(
+          boundSession,
+          soundingPitchKey,
+          previewNow,
+        );
+      }
+      tabletEntrySessionRef.current = boundSession;
+      setTabletEntryVisual({
+        phase: boundSession.phase,
+        pointerType: boundSession.pointerType,
+        point: boundSession.latestPoint,
+      });
+      setGhostNoteTarget((current) => (
+        ghostTargetsEqual(current, boundSession.lastValidatedPreview)
+          ? current
+          : boundSession.lastValidatedPreview
+      ));
+      return;
+    }
+    if (liveTabletSession && liveTabletSession.pointerId === e.pointerId) {
+      // An invalid refinement sample holds the last stable semantic preview.
+      setGhostNoteTarget(liveTabletSession.lastValidatedPreview);
+      setTabletEntryVisual({
+        phase: liveTabletSession.phase,
+        pointerType: liveTabletSession.pointerType,
+        point: liveTabletSession.latestPoint,
+      });
+      return;
+    }
+    if (e.pointerType === 'pen' && e.buttons === 0 && nextGhost) {
+      setTabletEntryVisual({
+        phase: 'hovering',
+        pointerType: 'pen',
+        point: domPoint,
+      });
+    } else if (e.pointerType !== 'pen') {
+      setTabletEntryVisual((current) => (
+        current.phase === 'idle' ? current : { phase: 'idle', pointerType: null, point: null }
+      ));
+    }
     setGhostNoteTarget((current) => {
       if (ghostTargetsEqual(current, nextGhost)) return current;
       return nextGhost;
     });
-  }, [chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
+  }, [chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
+
+  const discardPendingTabletPointerMove = useCallback(() => {
+    if (tabletPointerMoveFrameRef.current != null) {
+      window.cancelAnimationFrame(tabletPointerMoveFrameRef.current);
+      tabletPointerMoveFrameRef.current = null;
+    }
+    pendingTabletPointerMoveRef.current = null;
+  }, []);
+
+  const flushPendingTabletPointerMove = useCallback(() => {
+    if (tabletPointerMoveFrameRef.current != null) {
+      window.cancelAnimationFrame(tabletPointerMoveFrameRef.current);
+      tabletPointerMoveFrameRef.current = null;
+    }
+    const pending = pendingTabletPointerMoveRef.current;
+    pendingTabletPointerMoveRef.current = null;
+    if (pending) processPointerMove(pending);
+  }, [processPointerMove]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') {
+      processPointerMove(e);
+      return;
+    }
+
+    // React no longer pools synthetic events, but persist documents that this
+    // latest coalesced tablet sample intentionally survives until the frame.
+    e.persist();
+    pendingTabletPointerMoveRef.current = e;
+    if (tabletPointerMoveFrameRef.current != null) return;
+    tabletPointerMoveFrameRef.current = window.requestAnimationFrame(() => {
+      tabletPointerMoveFrameRef.current = null;
+      const pending = pendingTabletPointerMoveRef.current;
+      pendingTabletPointerMoveRef.current = null;
+      if (pending) processPointerMove(pending);
+    });
+  }, [processPointerMove]);
 
   // Pointer handler — convert DOM click to OSMD note
   const handlePointerDown = useCallback((e: PointerEvent) => {
@@ -12461,6 +12775,7 @@ export default function ScoreEditor({
       domPoint,
       selectedVoice,
       selectedPartId: selectedNote?.corePartId ?? null,
+      hitTolerancePx: e.pointerType === 'touch' ? 32 : 24,
     });
     const renderedGlyphReport = {
       ...renderedGlyphHit.report,
@@ -12580,10 +12895,11 @@ export default function ScoreEditor({
     );
     const clickedGhostElementRect = visibleGhostElement?.getBoundingClientRect() ?? null;
     const lockedVisibleGhostTarget = visibleGhostPointerLockRef.current;
+    const ghostHitRadius = e.pointerType === 'touch' ? 18 : 12;
     const clickedLockedVisibleGhost = lockedVisibleGhostTarget
       ? (
-          Math.abs(domPoint.x - (lockedVisibleGhostTarget.previewLeft + lockedVisibleGhostTarget.noteheadCenterX)) <= 12
-          && Math.abs(domPoint.y - (lockedVisibleGhostTarget.previewTop + 28)) <= 12
+          Math.abs(domPoint.x - (lockedVisibleGhostTarget.previewLeft + lockedVisibleGhostTarget.noteheadCenterX)) <= ghostHitRadius
+          && Math.abs(domPoint.y - (lockedVisibleGhostTarget.previewTop + 28)) <= ghostHitRadius
         ) || (
           domPoint.x >= lockedVisibleGhostTarget.domRect.x
           && domPoint.x <= lockedVisibleGhostTarget.domRect.x + lockedVisibleGhostTarget.domRect.width
@@ -12595,7 +12911,14 @@ export default function ScoreEditor({
       domPoint,
       ghostNoteTarget,
       overlayLayerOffset,
-    ) || isClientPointInsideGhostNotehead({ x: e.clientX, y: e.clientY }, visibleGhostElement)
+      ghostHitRadius,
+      ghostHitRadius,
+    ) || isClientPointInsideGhostNotehead(
+      { x: e.clientX, y: e.clientY },
+      visibleGhostElement,
+      ghostHitRadius,
+      ghostHitRadius,
+    )
       || (clickedGhostElementRect ? isPointInsideRect(e.clientX, e.clientY, clickedGhostElementRect) : false)
       || clickedLockedVisibleGhost;
     const clickedDomGhostTarget = clickedCurrentGhost
@@ -12618,6 +12941,8 @@ export default function ScoreEditor({
           domPoint,
           previousGhostNoteTargetRef.current,
           overlayLayerOffset,
+          ghostHitRadius,
+          ghostHitRadius,
         )
         ? previousGhostNoteTargetRef.current
         : null;
@@ -13066,6 +13391,82 @@ export default function ScoreEditor({
       setActiveVisualTargets([]);
       setVisualSelectionOnly(false);
       applyMeasureSelection([], null);
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        if (tabletPointerMoveFrameRef.current != null) {
+          window.cancelAnimationFrame(tabletPointerMoveFrameRef.current);
+          tabletPointerMoveFrameRef.current = null;
+        }
+        pendingTabletPointerMoveRef.current = null;
+        lastTabletStaffSwitchPulseRef.current = 0;
+        const staffDetails = staffDetailsByMeasureRef.current.get(liveGhostTarget.measureNumber) ?? [];
+        const staffDetail = findNearestStaffDetail(
+          staffDetails,
+          liveGhostTarget.staffIndex,
+          liveGhostTarget.domCenter.y,
+          liveGhostTarget.corePartId,
+        );
+        if (!staffDetail) {
+          recordBugReportEvent('input-doctor', 'tablet-entry-missing-staff-geometry', {
+            target: pointerTargetDebug(liveGhostTarget),
+          });
+          return;
+        }
+        const halfStepPx = staffDetail.lineDistanceDom / 2;
+        if (!(halfStepPx > 0)) return;
+        const staffStep = Math.round(
+          (liveGhostTarget.domCenter.y - staffDetail.topLineDomY) / halfStepPx,
+        );
+        let tabletSession = startTabletEntrySession({
+          pointerId: e.pointerId,
+          pointerType: e.pointerType,
+          point: domPoint,
+          staff: buildTabletStaffGeometry(staffDetail, {
+            corePartId: liveGhostTarget.corePartId,
+            systemIndex: liveGhostTarget.systemIndex,
+          }),
+          staffStep,
+          initialSlotKey: resolvedTargetSlotKey(liveGhostTarget.resolvedTarget),
+          preview: liveGhostTarget,
+          resolvedTarget: liveGhostTarget.resolvedTarget,
+        });
+        if (onDirectEntryPitchPreview) {
+          const pitchKey = `${liveGhostTarget.step}:${liveGhostTarget.alter}:${liveGhostTarget.octave}`;
+          const previewNow = performance.now();
+          onDirectEntryPitchPreview({
+            coreMeasureId: liveGhostTarget.measureId,
+            corePartId: liveGhostTarget.corePartId,
+            measureNumber: liveGhostTarget.measureNumber,
+            staffIndex: liveGhostTarget.staffIndex,
+            voiceId: liveGhostTarget.voiceId,
+            timestampNum: liveGhostTarget.timestampNum,
+            timestampDen: liveGhostTarget.timestampDen,
+            step: liveGhostTarget.step,
+            octave: liveGhostTarget.octave,
+            alter: liveGhostTarget.alter,
+            isRest: false,
+            durationType: INPUT_DURATION_TO_TYPE[String(selectedDuration)] ?? String(selectedDuration),
+            isDotted,
+            graphicalNote: null,
+          });
+          tabletSession = markTabletPitchAuditioned(tabletSession, pitchKey, previewNow);
+        }
+        tabletEntrySessionRef.current = tabletSession;
+        visibleGhostPointerLockRef.current = liveGhostTarget;
+        lastGhostStaffIndexRef.current = liveGhostTarget.staffIndex;
+        setGhostNoteTarget(liveGhostTarget);
+        setTabletEntryVisual({
+          phase: tabletSession.phase,
+          pointerType: tabletSession.pointerType,
+          point: tabletSession.latestPoint,
+        });
+        try {
+          viewportRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          // The window pointer-up listener preserves take-off commit when
+          // capture is unavailable in a particular WebKit runtime.
+        }
+        return;
+      }
       onPlaceNoteAt(liveGhostTarget.resolvedTarget);
       lastNoteInputCommitTargetRef.current = {
         measureId: liveGhostTarget.resolvedTarget.measureId,
@@ -13107,6 +13508,7 @@ export default function ScoreEditor({
         domPoint,
         selectedVoice,
         selectedPartId: selectedNote?.corePartId ?? null,
+        hitTolerancePx: e.pointerType === 'touch' ? 32 : 24,
       });
       const renderedGlyphReport = {
         ...renderedGlyphHit.report,
@@ -13425,7 +13827,7 @@ export default function ScoreEditor({
       applyMeasureSelection([], null);
       onNoteClick(null);
     }
-  }, [applyMeasureSelection, chordInputMode, coreDocument, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onNoteClick, onPlaceNoteAt, onSetChordSymbol, overlayLayerOffset, scheduleRenderedGeometryRefresh, selectedAccidental, selectedDuration, selectedNote, selectedVoice, visualDebugEnabled, zoomPercent]);
+  }, [applyMeasureSelection, chordInputMode, coreDocument, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onNoteClick, onPlaceNoteAt, onSetChordSymbol, overlayLayerOffset, scheduleRenderedGeometryRefresh, selectedAccidental, selectedDuration, selectedNote, selectedVoice, visualDebugEnabled, zoomPercent]);
 
   const handleDoubleClick = useCallback((event: MouseEvent) => {
     if (!onSetGuitarFret) return;
@@ -14274,6 +14676,48 @@ export default function ScoreEditor({
 
   useEffect(() => {
     const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        flushPendingTabletPointerMove();
+      }
+      const tabletSession = tabletEntrySessionRef.current;
+      if (tabletSession && event.pointerId === tabletSession.pointerId) {
+        const committed = commitTabletEntrySession(tabletSession);
+        tabletEntrySessionRef.current = null;
+        if (viewportRef.current?.hasPointerCapture(event.pointerId)) {
+          viewportRef.current.releasePointerCapture(event.pointerId);
+        }
+        setTabletEntryVisual({
+          phase: committed.session.phase,
+          pointerType: tabletSession.pointerType,
+          point: tabletSession.latestPoint,
+        });
+        setGhostNoteTarget(null);
+        visibleGhostPointerLockRef.current = null;
+        lastGhostStaffIndexRef.current = null;
+        if (!committed.target) return;
+
+        // Take-off selection: this is the exact object stored with the last
+        // validated preview. Pointer-up coordinates are intentionally ignored.
+        onPlaceNoteAt(committed.target);
+        lastNoteInputCommitTargetRef.current = {
+          measureId: committed.target.measureId,
+          corePartId: committed.target.corePartId,
+          measureNumber: committed.target.measureNumber,
+          staffIndex: committed.target.staffIndex,
+          voiceId: committed.target.voiceId,
+          timestampNum: committed.target.timestampNum,
+          timestampDen: committed.target.timestampDen,
+        };
+        lastPlacementClientRef.current = {
+          x: tabletSession.latestPoint.x,
+          y: tabletSession.latestPoint.y,
+        };
+        lastPlacementMeasureIdRef.current = tabletSession.lastValidatedPreview.measureId;
+        lastPointerClientRef.current = null;
+        lastAdvancedGhostAnchorRef.current = null;
+        scheduleRenderedGeometryRefresh();
+        return;
+      }
       const dragSession = dragSessionRef.current;
       if (!dragSession || event.pointerId !== dragSession.pointerId) return;
       if (viewportRef.current?.hasPointerCapture(event.pointerId)) {
@@ -14311,6 +14755,26 @@ export default function ScoreEditor({
     };
 
     const handlePointerCancel = (event: PointerEvent) => {
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        discardPendingTabletPointerMove();
+      }
+      const tabletSession = tabletEntrySessionRef.current;
+      if (tabletSession && event.pointerId === tabletSession.pointerId) {
+        const cancelled = cancelTabletEntrySession(tabletSession);
+        tabletEntrySessionRef.current = null;
+        if (viewportRef.current?.hasPointerCapture(event.pointerId)) {
+          viewportRef.current.releasePointerCapture(event.pointerId);
+        }
+        setTabletEntryVisual({
+          phase: cancelled.phase,
+          pointerType: cancelled.pointerType,
+          point: cancelled.latestPoint,
+        });
+        setGhostNoteTarget(null);
+        visibleGhostPointerLockRef.current = null;
+        lastGhostStaffIndexRef.current = null;
+        return;
+      }
       const dragSession = dragSessionRef.current;
       if (!dragSession || event.pointerId !== dragSession.pointerId) return;
       if (viewportRef.current?.hasPointerCapture(event.pointerId)) {
@@ -14323,19 +14787,51 @@ export default function ScoreEditor({
 
     window.addEventListener('pointerup', handlePointerUp, true);
     window.addEventListener('pointercancel', handlePointerCancel, true);
+    const viewport = viewportRef.current;
+    const handleLostPointerCapture = (event: PointerEvent) => {
+      discardPendingTabletPointerMove();
+      const tabletSession = tabletEntrySessionRef.current;
+      if (!tabletSession || event.pointerId !== tabletSession.pointerId) return;
+      const cancelled = cancelTabletEntrySession(tabletSession);
+      tabletEntrySessionRef.current = null;
+      setTabletEntryVisual({
+        phase: cancelled.phase,
+        pointerType: cancelled.pointerType,
+        point: cancelled.latestPoint,
+      });
+      setGhostNoteTarget(null);
+      visibleGhostPointerLockRef.current = null;
+      lastGhostStaffIndexRef.current = null;
+    };
+    viewport?.addEventListener('lostpointercapture', handleLostPointerCapture);
     return () => {
       window.removeEventListener('pointerup', handlePointerUp, true);
       window.removeEventListener('pointercancel', handlePointerCancel, true);
+      viewport?.removeEventListener('lostpointercapture', handleLostPointerCapture);
     };
-  }, [dragTransposeMode, onDragTransposeCommit, onDragStringCommit]);
+  }, [discardPendingTabletPointerMove, dragTransposeMode, flushPendingTabletPointerMove, onDragTransposeCommit, onDragStringCommit, onPlaceNoteAt, scheduleRenderedGeometryRefresh]);
 
   useEffect(() => {
     if (noteInputMode) return;
+    discardPendingTabletPointerMove();
+    if (tabletEntrySessionRef.current) {
+      const cancelled = cancelTabletEntrySession(tabletEntrySessionRef.current);
+      tabletEntrySessionRef.current = null;
+      setTabletEntryVisual({
+        phase: cancelled.phase,
+        pointerType: cancelled.pointerType,
+        point: cancelled.latestPoint,
+      });
+    } else {
+      setTabletEntryVisual({ phase: 'idle', pointerType: null, point: null });
+    }
     lastGhostStaffIndexRef.current = null;
     dragSessionRef.current = null;
     setGhostNoteTarget(null);
     setDragPreviewTarget(null);
-  }, [noteInputMode]);
+  }, [discardPendingTabletPointerMove, noteInputMode]);
+
+  useEffect(() => discardPendingTabletPointerMove, [discardPendingTabletPointerMove]);
 
   useEffect(() => {
     if (!noteInputMode) return;
@@ -14432,6 +14928,23 @@ export default function ScoreEditor({
 
       if (event.key === 'Escape') {
         event.preventDefault();
+        const tabletSession = tabletEntrySessionRef.current;
+        if (tabletSession) {
+          const cancelled = cancelTabletEntrySession(tabletSession);
+          tabletEntrySessionRef.current = null;
+          if (viewport?.hasPointerCapture(tabletSession.pointerId)) {
+            viewport.releasePointerCapture(tabletSession.pointerId);
+          }
+          setTabletEntryVisual({
+            phase: cancelled.phase,
+            pointerType: cancelled.pointerType,
+            point: cancelled.latestPoint,
+          });
+          setGhostNoteTarget(null);
+          visibleGhostPointerLockRef.current = null;
+          lastGhostStaffIndexRef.current = null;
+          return;
+        }
         if (findVisible) {
           setFindVisible(false);
           setFindStatus(null);
@@ -15789,15 +16302,23 @@ export default function ScoreEditor({
           data-playback-measure={playbackCursorTarget?.measureNumber ?? ''}
           data-playback-timestamp={playbackCursorTarget ? `${playbackCursorTarget.timestampNum}/${playbackCursorTarget.timestampDen}` : ''}
           data-playback-time-ms={playbackPlayhead?.currentTimeMs ?? ''}
+          data-note-input-gesture-policy={noteInputMode && !inputByDurationMode ? 'direct-entry' : 'navigation'}
+          data-tablet-entry-phase={tabletEntryVisual.phase}
           className="h-full overflow-auto outline-none"
+          style={{
+            touchAction: noteInputMode && !inputByDurationMode ? 'none' : 'pan-x pan-y',
+          }}
           onPointerDown={() => viewportRef.current?.focus()}
           onClick={handlePlaybackSeekClick}
           onPointerMove={handlePointerMove}
           onPointerLeave={() => {
+            if (tabletEntrySessionRef.current) return;
+            discardPendingTabletPointerMove();
             dbg.score('pointerleave → clear ghost');
             lastGhostStaffIndexRef.current = null;
             setGhostNoteTarget(null);
             setDragPreviewTarget(null);
+            setTabletEntryVisual({ phase: 'idle', pointerType: null, point: null });
           }}
         >
           {error && (
@@ -16262,7 +16783,17 @@ export default function ScoreEditor({
                   enabled={noteInputMode || Boolean(dragPreviewTarget)}
                   duration={selectedDuration}
                   isDotted={isDotted}
+                  showNaturalAccidental={selectedAccidental === 'natural'}
                   leadingGuardRightX={visibleScoreInputTarget?.cursorOnly ? null : scoreInputLeadingGuardRightX}
+                  tabletEntryPhase={tabletEntryVisual.phase}
+                  previewPointerType={tabletEntryVisual.pointerType}
+                  contactPoint={tabletEntryVisual.point}
+                  viewportBounds={{
+                    left: viewportBox.scrollLeft,
+                    top: viewportBox.scrollTop,
+                    width: viewportBox.width,
+                    height: viewportBox.height,
+                  }}
                 />
               </div>
             </div>

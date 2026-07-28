@@ -67,10 +67,23 @@ npm run harness:metrics -- .nex/harness-real-cli-events-YYYY-MM-DD.jsonl
 
 ## What To Run Before Opening a PR
 
+- Start with `npm run apps:plan`; shared code changes affect the browser,
+  Electron macOS, native iPad, and the planned Xcode macOS surface.
 - Docs-only changes: read the rendered Markdown, check links, and make sure claims match the repository state.
 - Small code changes: run the focused tests that cover the touched area.
 - Editor, renderer, AI pipeline, import/export, or history changes: run `npm test` and `npm run build`.
+- Shared user-visible or native-access changes: run `npm run ipad:sync` and
+  `npm run ipad:doctor`, then smoke-test a paired physical iPad when available.
+- Electron-visible, packaged-runtime, dependency, asset, or file-handling
+  changes: run `npm run electron:refresh`.
+- Once the Xcode macOS target exists, run its sync, doctor, Xcode build, and
+  real-app smoke workflow for affected shared changes.
 - Release-sensitive workflow changes: also run the relevant Playwright suite and update the validation docs if behavior changed.
+
+The full surface matrix and handoff rules are documented in
+[docs/multi-app-development-flow.md](./docs/multi-app-development-flow.md).
+Run `npm run hooks:install` to include the app-surface plan in the repository's
+pre-commit checks.
 
 ## Code Map
 

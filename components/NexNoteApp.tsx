@@ -8,6 +8,7 @@ import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/
 import type { DialogTab } from '@/components/NewScoreDialog';
 import type { EditPaletteSectionId } from '@/components/EditPalette';
 import LeftNotationSidebar from '@/components/LeftNotationSidebar';
+import IpadSelectionActions from '@/components/IpadSelectionActions';
 import NoteInputToolbar from '@/components/NoteInputToolbar';
 import NotationToolbar from '@/components/NotationToolbar';
 import ScoreInspector from '@/components/ScoreInspector';
@@ -326,6 +327,13 @@ const SMART_OLLAMA_MODEL_IDS = [
   'ministral-3:14b-cloud',
   'deepseek-v4-flash:cloud',
 ];
+
+const INPUT_AUDITION_STORAGE_KEY = 'nex-note:input-audition';
+
+function readInputAuditionPreference() {
+  if (typeof window === 'undefined') return true;
+  return window.localStorage.getItem(INPUT_AUDITION_STORAGE_KEY) !== 'false';
+}
 
 function pickSmartOllamaModels(models: OllamaModelOption[]) {
   const byId = new Map(models.map((model) => [model.id, model]));
@@ -699,6 +707,7 @@ export default function Home({ searchParams }: HomeProps) {
   const [scoreOpenStatus, setScoreOpenStatus] = useState('');
   const [embedStartup, setEmbedStartup] = useState<EmbedStartupState>({ phase: 'idle', message: '' });
   const [nativeProjectCacheEnabled, setNativeProjectCacheEnabled] = useState(false);
+  const [inputAuditionEnabled, setInputAuditionEnabled] = useState(readInputAuditionPreference);
   const [nxnProjectDirectoryLabel, setNxnProjectDirectoryLabel] = useState('');
   const [printView, setPrintView] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
@@ -720,6 +729,10 @@ export default function Home({ searchParams }: HomeProps) {
     startedAt: 0,
     osmdRenderedAt: null,
   });
+
+  useEffect(() => {
+    window.localStorage.setItem(INPUT_AUDITION_STORAGE_KEY, String(inputAuditionEnabled));
+  }, [inputAuditionEnabled]);
   const {
     xml, sourceMusicXml, coreDocument, diagnostics, session, updateSession, loadXml, hydrateCurrentXml, loadFromNxn, replaceXml, applyCommands, undo, redo, reset,
     canUndo, canRedo, lastCommands, historyMeta,
@@ -789,6 +802,22 @@ export default function Home({ searchParams }: HomeProps) {
     }
     writeLeftNotationSidebarCollapsed(leftNotationSidebarCollapsed);
   }, [leftNotationSidebarCollapsed, leftNotationSidebarHydrated]);
+
+  useEffect(() => {
+    if (!document.documentElement.classList.contains('nex-note-native')) return;
+
+    const narrowIpad = window.matchMedia('(max-width: 900px)');
+    const collapseForNarrowIpad = () => {
+      if (!narrowIpad.matches) return;
+      setLeftNotationSidebarCollapsed(true);
+      setSidebarCollapsed(true);
+    };
+
+    collapseForNarrowIpad();
+    narrowIpad.addEventListener('change', collapseForNarrowIpad);
+    return () => narrowIpad.removeEventListener('change', collapseForNarrowIpad);
+  }, [Boolean(xml)]);
+
   const [benchmarkPrompt, setBenchmarkPrompt] = useState('');
 
   // Provider suite
@@ -4616,6 +4645,7 @@ export default function Home({ searchParams }: HomeProps) {
       dragTransposeMode={transposeMode}
       onDragTransposeCommit={viewOnly ? undefined : ({ note, step, alter, octave }) => commitDraggedPitch({ note, step, alter, octave })}
       onDragPitchPreview={viewOnly ? undefined : previewNote}
+      onDirectEntryPitchPreview={viewOnly || !inputAuditionEnabled ? undefined : previewNote}
       onDragStringCommit={viewOnly ? undefined : ({ note, string, fret }) => commitDraggedGuitarString({ note, string, fret })}
       onMeasureSelectionChange={viewOnly ? undefined : handleMeasureSelectionChange}
       clearMeasureSelectionSignal={clearMeasureSelectionSignal}
@@ -4795,7 +4825,7 @@ export default function Home({ searchParams }: HomeProps) {
             });
           }}
           title={`${t('app.searchCommands')} (Cmd/Ctrl+K)`}
-          className="hidden h-8 items-center gap-2 rounded-md border border-nex-border bg-nex-surface px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-nex-ink sm:flex"
+          className="nex-header-command-center hidden h-8 items-center gap-2 rounded-md border border-nex-border bg-nex-surface px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-nex-ink sm:flex"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" />
@@ -4812,7 +4842,7 @@ export default function Home({ searchParams }: HomeProps) {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
             </svg>
-            <span className="hidden sm:inline">{t('app.openFile')}</span>
+            <span className="nex-header-action-label hidden sm:inline">{t('app.openFile')}</span>
           </span>
         </button>
         <button
@@ -4828,7 +4858,7 @@ export default function Home({ searchParams }: HomeProps) {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
-            <span className="hidden sm:inline">{t('app.library')}</span>
+            <span className="nex-header-action-label hidden sm:inline">{t('app.library')}</span>
           </span>
         </button>
         {xml && (
@@ -4908,7 +4938,7 @@ export default function Home({ searchParams }: HomeProps) {
             onOpenAiSettings={() => setAiSettingsOpenSignal((signal) => signal + 1)}
           />
         ) : (
-          <div className="flex-1 flex overflow-hidden">
+          <div className="nex-editor-workspace flex-1 flex overflow-hidden">
             {/* Left panel: Score or Benchmark */}
             {showBenchmark ? (
               <BenchmarkPanel
@@ -4963,6 +4993,7 @@ export default function Home({ searchParams }: HomeProps) {
                     midiInputEnabled={midiInputEnabled}
                     midiInputStatus={midiInputStatus}
                     midiInputDevices={midiInputDevices}
+                    inputAuditionEnabled={inputAuditionEnabled}
                     microphoneInputEnabled={microphoneInputEnabled}
                     microphoneInputStatus={microphoneInputStatus}
                     microphoneDetectedPitchLabel={microphoneDetectedPitchLabel}
@@ -4994,6 +5025,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
                     onToggleInputByDurationMode={toggleInputByDurationMode}
                     onToggleMidiInput={handleToggleMidiInput}
+                    onToggleInputAudition={() => setInputAuditionEnabled((enabled) => !enabled)}
                     onToggleMicrophoneInput={handleToggleMicrophoneInput}
                     onSelectMicrophoneInput={(deviceId) => { void selectMicrophoneInput(deviceId); }}
                     onSelectMicrophoneDetectionMode={selectMicrophoneDetectionMode}
@@ -5111,6 +5143,7 @@ export default function Home({ searchParams }: HomeProps) {
                         midiInputEnabled={midiInputEnabled}
                         midiInputStatus={midiInputStatus}
                         midiInputDevices={midiInputDevices}
+                        inputAuditionEnabled={inputAuditionEnabled}
                         leadsheetMode={leadsheetMode}
                         guitarInputMode={guitarInputMode}
                         selectedGuitarString={selectedGuitarString}
@@ -5131,6 +5164,7 @@ export default function Home({ searchParams }: HomeProps) {
                         onToggleStepInputKeyboardMode={toggleStepInputKeyboardMode}
                         onToggleInputByDurationMode={toggleInputByDurationMode}
                         onToggleMidiInput={handleToggleMidiInput}
+                        onToggleInputAudition={() => setInputAuditionEnabled((enabled) => !enabled)}
                         onToggleLeadsheetMode={toggleLeadsheetMode}
                         onToggleGuitarInputMode={toggleGuitarInputMode}
                         onInsertGuitarFret={insertGuitarFret}
@@ -5169,6 +5203,10 @@ export default function Home({ searchParams }: HomeProps) {
                     <div className="flex-1 overflow-auto p-6 bg-nex-score-bg">
                       {renderScoreEditor()}
                     </div>
+                    <IpadSelectionActions
+                      selectedNote={selectedNote}
+                      onDeleteNote={handleDeleteSelection}
+                    />
                   </div>
                 )}
               </div>

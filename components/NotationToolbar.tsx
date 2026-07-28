@@ -43,6 +43,7 @@ interface Props {
   midiInputEnabled: boolean;
   midiInputStatus: MidiInputStatus;
   midiInputDevices: string[];
+  inputAuditionEnabled: boolean;
   microphoneInputEnabled: boolean;
   microphoneInputStatus: MicrophoneInputStatus;
   microphoneDetectedPitchLabel: string;
@@ -74,6 +75,7 @@ interface Props {
   onToggleStepInputKeyboardMode: () => void;
   onToggleInputByDurationMode: () => void;
   onToggleMidiInput: () => void;
+  onToggleInputAudition: () => void;
   onToggleMicrophoneInput: () => void;
   onSelectMicrophoneInput: (deviceId: string) => void;
   onSelectMicrophoneDetectionMode: (mode: MicrophoneDetectionMode) => void;
@@ -265,9 +267,9 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onSelectMicrophoneInstrumentMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleInputAudition, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onSelectMicrophoneInstrumentMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -567,6 +569,7 @@ export default function NotationToolbar({
           midiInputEnabled={midiInputEnabled}
           midiInputStatus={midiInputStatus}
           midiInputDevices={midiInputDevices}
+          inputAuditionEnabled={inputAuditionEnabled}
           leadsheetMode={leadsheetMode}
           guitarInputMode={guitarInputMode}
           selectedGuitarString={selectedGuitarString}
@@ -587,6 +590,7 @@ export default function NotationToolbar({
           onToggleStepInputKeyboardMode={onToggleStepInputKeyboardMode}
           onToggleInputByDurationMode={onToggleInputByDurationMode}
           onToggleMidiInput={onToggleMidiInput}
+          onToggleInputAudition={onToggleInputAudition}
           onToggleLeadsheetMode={onToggleLeadsheetMode}
           onToggleGuitarInputMode={onToggleGuitarInputMode}
           onInsertGuitarFret={onInsertGuitarFret}

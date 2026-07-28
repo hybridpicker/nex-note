@@ -2,8 +2,11 @@
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
+import { createRequire } from 'module';
 import { join } from 'path';
 
+const require = createRequire(import.meta.url);
+const { describeBuildState, getLocalBuildState } = require('../electron/build-state.cjs');
 const root = process.cwd();
 const standaloneDir = join(root, '.next', 'standalone');
 const staticSource = join(root, '.next', 'static');
@@ -38,13 +41,12 @@ function git(args) {
   }
 }
 
+const localBuildState = getLocalBuildState(root);
 const buildInfo = {
   app: 'nex-note',
   buildTime: new Date().toISOString(),
-  gitCommit: git(['rev-parse', 'HEAD']),
-  gitBranch: git(['branch', '--show-current']),
+  ...localBuildState,
   originDevelCommit: git(['rev-parse', 'origin/devel']),
-  dirty: Boolean(git(['status', '--porcelain'])),
 };
 
 writeFileSync(
@@ -53,4 +55,4 @@ writeFileSync(
 );
 
 console.log('Synced Next standalone static and public assets.');
-console.log(`Stamped standalone build ${buildInfo.gitCommit ?? 'unknown'} on ${buildInfo.gitBranch ?? 'unknown'}.`);
+console.log(`Stamped standalone build from ${describeBuildState(localBuildState)}.`);

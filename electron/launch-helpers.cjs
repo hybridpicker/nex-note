@@ -100,16 +100,11 @@ async function resolveExecutable(command, env = process.env) {
   return null;
 }
 
-function decidePackagedBuildFreshness({ buildCommit, buildDirty, latestDevelCommit }) {
-  if (buildDirty) {
-    return { action: 'run', reason: 'dirty-local-build' };
-  }
-
-  if (!buildCommit || buildCommit !== latestDevelCommit) {
-    return { action: 'rebuild', reason: !buildCommit ? 'missing-build-commit' : 'stale-build-commit' };
-  }
-
-  return { action: 'run', reason: 'fresh-build' };
+function decideLocalBuildFreshness({ buildFingerprint, localFingerprint }) {
+  if (!buildFingerprint) return { action: 'refresh', reason: 'missing-build-fingerprint' };
+  if (!localFingerprint) return { action: 'run', reason: 'unavailable-local-fingerprint' };
+  if (buildFingerprint !== localFingerprint) return { action: 'refresh', reason: 'stale-local-build' };
+  return { action: 'run', reason: 'fresh-local-build' };
 }
 
 function isAllowedRendererPermission(permission, requestingUrl, rendererUrl, details = {}) {
@@ -135,7 +130,7 @@ function isAllowedRendererPermission(permission, requestingUrl, rendererUrl, det
 module.exports = {
   buildChildProcessEnv,
   buildExecutablePath,
-  decidePackagedBuildFreshness,
+  decideLocalBuildFreshness,
   isAllowedRendererPermission,
   pathExists,
   resolveExecutable,

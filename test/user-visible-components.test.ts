@@ -7,6 +7,7 @@ import { act, create, type ReactTestInstance } from 'react-test-renderer';
 import NotationToolbar from '../components/NotationToolbar.tsx';
 import NoteInputToolbar from '../components/NoteInputToolbar.tsx';
 import LeftNotationSidebar from '../components/LeftNotationSidebar.tsx';
+import IpadSelectionActions, { formatIpadSelectedNote } from '../components/IpadSelectionActions.tsx';
 import CommandCenter from '../components/CommandCenter.tsx';
 import FileMenu from '../components/FileMenu.tsx';
 import { ScoreInputOverlay } from '../components/ScoreInputOverlay.tsx';
@@ -130,6 +131,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     midiInputEnabled: false,
     midiInputStatus: 'idle',
     midiInputDevices: [],
+    inputAuditionEnabled: true,
     microphoneInputEnabled: false,
     microphoneInputStatus: 'idle',
     microphoneDetectedPitchLabel: '',
@@ -160,6 +162,7 @@ function toolbarProps(overrides: Partial<React.ComponentProps<typeof NotationToo
     onToggleStepInputKeyboardMode() {},
     onToggleInputByDurationMode() {},
     onToggleMidiInput() {},
+    onToggleInputAudition() {},
     onToggleMicrophoneInput() {},
     onSelectMicrophoneInput() {},
     onSelectMicrophoneDetectionMode() {},
@@ -249,6 +252,35 @@ test('formatShortcutHint adapts command modifiers to the active platform', () =>
   assert.equal(formatShortcutHint('Shift Cmd S', 'Win32'), 'Shift Ctrl S');
   assert.equal(formatShortcutHint('Cmd/Ctrl+Alt/Option+1', 'Linux x86_64'), 'Ctrl+Alt+1');
   assert.equal(formatShortcutHint('Cmd/Ctrl+Alt/Option+1', 'iPad'), 'Cmd+Option+1');
+});
+
+test('iPad selection actions expose a direct, touch-sized note deletion control', () => {
+  const selectedNote = makeSelectedNotes(SAMPLE_XML)[0];
+  let deleteCount = 0;
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(IpadSelectionActions, {
+      selectedNote,
+      onDeleteNote() {
+        deleteCount += 1;
+      },
+    }));
+  });
+
+  assert.equal(formatIpadSelectedNote(selectedNote), 'C4');
+  assert.equal(nodeText(renderer!.root.findByProps({ 'data-testid': 'ipad-selection-actions' })), 'Selected: C4Delete note');
+  const deleteButton = renderer!.root.findByProps({ 'data-testid': 'ipad-delete-note' });
+  assert.equal(deleteButton.props['aria-label'], 'Delete selected note C4');
+
+  act(() => {
+    deleteButton.props.onClick();
+  });
+  assert.equal(deleteCount, 1);
+
+  act(() => {
+    renderer?.unmount();
+  });
 });
 
 test('LeftNotationSidebar hides the full tools panel behind an accessible reopen rail', () => {
@@ -1489,12 +1521,122 @@ test('ScoreInputOverlay identifies the non-committing duration-first pitch curso
   const cursor = root.findAllByProps({ 'data-testid': 'duration-input-pitch-cursor' });
   assert.equal(cursor.length, 1);
   assert.equal(cursor[0]?.props['data-duration-input-cursor'], 'true');
-  assert.equal(cursor[0]?.props['data-ghost-pitch'], 'F#5');
+  assert.equal(cursor[0]?.props['data-ghost-pitch'], 'F♯5');
   assert.equal(root.findAllByProps({ 'data-testid': 'ghost-note-preview' }).length, 0);
 
   act(() => {
     renderer?.unmount();
   });
+});
+
+test('ScoreInputOverlay exposes a stable chip, lane, caret, placement, and finger loupe', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+  act(() => {
+    renderer = create(React.createElement(ScoreInputOverlay, {
+      enabled: true,
+      duration: '4',
+      isDotted: true,
+      tabletEntryPhase: 'contact-preview',
+      previewPointerType: 'touch',
+      contactPoint: { x: 280, y: 220 },
+      viewportBounds: { left: 0, top: 0, width: 320, height: 480 },
+      target: {
+        measureId: 'm1',
+        measureNumber: 1,
+        staffIndex: 1,
+        timestampNum: 1,
+        timestampDen: 4,
+        voiceId: 3,
+        step: 'F',
+        octave: 4,
+        alter: 1,
+        previewLeft: 250,
+        previewTop: 190,
+        previewWidth: 28,
+        previewHeight: 54,
+        accidentalOffsetX: 9,
+        noteheadCenterX: 19.5,
+        stemDirection: 'down',
+        placementMode: 'replace',
+        ledgerLines: [],
+      },
+    }));
+  });
+
+  const root = renderer!.root;
+  const preview = root.findAllByProps({ 'data-testid': 'ghost-note-preview' })[0]!;
+  assert.equal(preview.props['data-tablet-entry-phase'], 'contact-preview');
+  assert.equal(preview.props['data-preview-pointer-type'], 'touch');
+  assert.equal(preview.props['data-preview-stable-pitch'], 'F♯4');
+  assert.equal(preview.props['data-preview-stable-timestamp'], '1/4');
+  assert.equal(preview.props['data-preview-voice'], 3);
+  assert.equal(preview.props['data-preview-placement'], 'replace');
+  assert.match(nodeText(root.findAllByProps({ 'data-testid': 'pitch-chip' })[0]!), /F♯4/);
+  assert.equal(root.findAllByProps({ 'data-testid': 'pitch-lane-indicator' }).length, 1);
+  assert.equal(root.findAllByProps({ 'data-testid': 'onset-caret' }).length, 1);
+  const loupe = root.findAllByProps({ 'data-testid': 'pitch-loupe' })[0]!;
+  assert.equal(loupe.props['data-loupe-placement'], 'above-left');
+  assert.match(nodeText(loupe), /F♯4/);
+  assert.match(nodeText(preview), /Replace/);
+  assert.match(nodeText(preview), /Voice 3/);
+
+  act(() => renderer?.unmount());
+});
+
+test('ScoreInputOverlay keeps the loupe contact-only and out of ordinary mouse hover', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+  act(() => {
+    renderer = create(React.createElement(ScoreInputOverlay, {
+      enabled: true,
+      duration: '8',
+      isDotted: false,
+      tabletEntryPhase: 'idle',
+      previewPointerType: 'mouse',
+      target: {
+        measureNumber: 1,
+        staffIndex: 1,
+        timestampNum: 0,
+        timestampDen: 1,
+        voiceId: 1,
+        step: 'C',
+        octave: 4,
+        alter: 0,
+        previewLeft: 96,
+        previewTop: 64,
+        previewWidth: 28,
+        previewHeight: 54,
+        accidentalOffsetX: 0,
+        noteheadCenterX: 10.5,
+        stemDirection: 'up',
+        placementMode: 'insert',
+        ledgerLines: [],
+      },
+    }));
+  });
+
+  assert.equal(renderer!.root.findAllByProps({ 'data-testid': 'pitch-loupe' }).length, 0);
+  assert.equal(renderer!.root.findAllByProps({ 'data-testid': 'pitch-chip' }).length, 1);
+  act(() => renderer?.unmount());
+});
+
+test('NoteInputToolbar exposes the localized input-audition preference', () => {
+  let toggled = 0;
+  let renderer: ReturnType<typeof create> | null = null;
+  act(() => {
+    renderer = create(React.createElement(NoteInputToolbar, noteInputToolbarProps({
+      inputAuditionEnabled: true,
+      onToggleInputAudition() {
+        toggled += 1;
+      },
+    })));
+  });
+  const button = renderer!.root.findAll((node) => (
+    node.type === 'button' && node.props.title === 'Input audition'
+  ))[0]!;
+  assert.equal(button.props['aria-pressed'], true);
+  act(() => button.props.onClick());
+  assert.equal(toggled, 1);
+  act(() => renderer?.unmount());
 });
 
 test('ScoreLibrary filters, favorites, opens, removes, and clears saved scores', async () => {

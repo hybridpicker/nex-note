@@ -1,3 +1,5 @@
+import { createRandomId } from '@/lib/random-id';
+
 export interface EditPreset {
   id: string;
   name: string;
@@ -48,7 +50,7 @@ export function getUserPresets(): EditPreset[] {
 export function saveUserPreset(name: string, operations: unknown[]): EditPreset {
   const presets = getUserPresets();
   const preset: EditPreset = {
-    id: crypto.randomUUID(),
+    id: createRandomId(),
     name,
     operations,
     createdAt: Date.now(),

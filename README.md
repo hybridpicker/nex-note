@@ -200,19 +200,25 @@ Development shell:
 npm run electron:dev
 ```
 
-Local macOS package build:
+Build, verify, and open the local macOS app from the current `devel` worktree:
 
 ```bash
-npm run electron:build
+npm run app
 ```
 
-For local testing against the latest pushed `devel`, use the guarded launcher:
+This is the normal packaged-app test workflow. It runs the test suite, creates a production Next.js build, refreshes only the `.app` bundle at `dist/macos/mac-arm64/Nex Note.app`, verifies that the embedded source fingerprint matches the current local worktree, and opens that exact bundle. Committed, staged, unstaged, and untracked local source changes are included. If the source changes while the tests or build are running, the refresh fails instead of stamping a mixed build as current.
+
+Opening the repo-local `.app` from Finder performs the same fingerprint check before the product window opens. A stale or legacy bundle shows a refresh window, runs the guarded local workflow, and restarts into the verified build. The refresh log is stored at `.nex/electron-local-refresh.log`.
+
+The packaged app starts its embedded Next.js server as an Electron utility process. On macOS this server remains part of Nex Note and must not appear as a second generic `exec` application or Dock item. The development command `npm run electron:dev` remains attached to its launching terminal so that development logs stay visible.
+
+For a refresh without opening the app:
 
 ```bash
-npm run electron:latest
+npm run electron:refresh
 ```
 
-This fetches `origin/devel`, fast-forwards the local `devel` branch, rebuilds the macOS app bundle, quits any running Nex Note app, and opens the rebuilt app. It deliberately skips DMG and ZIP creation; those are release artifacts, not prerequisites for a local app refresh. Repo-local packaged apps open immediately and refresh a stale build in the background for the next launch.
+`npm run electron:latest` remains available when you explicitly want to fetch and fast-forward to the latest pushed `origin/devel` before running the local refresh. It requires a clean worktree. Use `npm run electron:build` only for release-oriented DMG and ZIP artifacts.
 
 ### Packaged Launch Guardrails
 
@@ -222,13 +228,59 @@ Those helpers own:
 
 - Finder-safe child process `PATH` construction for `git`, `npm`, and the Next dev server.
 - executable resolution before spawning updater commands.
-- repo-local packaged build freshness decisions.
+- local source fingerprint comparison before packaged startup.
 
-Dirty local packaged builds are treated as local developer builds and are allowed to launch. Clean packaged builds also remain usable while the latest `devel` build is prepared in the background. This keeps a normal Dock or Finder launch responsive while preserving automatic updates for the next launch.
+`electron/main.cjs` owns the packaged server lifecycle. It uses `utilityProcess.fork`, forwards server output into the Electron log, restarts the server after an unexpected exit, and terminates it when the app quits. Do not replace this with a second `process.execPath` launch in Node mode: macOS may register that executable as a separate generic `exec` application.
 
-Do not move these rules back into untested inline startup code. Update `test/electron-launch-helpers.test.ts` when changing packaged launch, updater, or macOS PATH behavior.
+Local `devel` is the authority for the repo-local app; startup never fetches or merges a remote branch. The fingerprint includes `HEAD`, tracked changes, untracked files, and local environment files without storing environment-file contents in the bundle. If automated refresh fails, Nex Note reports the log path and opens the last packaged build so a test or compiler failure does not make the app unusable.
+
+Do not move these rules back into untested inline startup code. Update `test/electron-launch-helpers.test.ts` when changing packaged launch, server lifecycle, updater, or macOS PATH behavior.
 
 Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
+
+## Multi-app Development
+
+Shared Nex Note work must keep the web core, Electron macOS app, native iPad
+app, and the planned Xcode macOS app aligned. Start programming tasks with:
+
+```bash
+npm run apps:plan
+```
+
+The command examines the current worktree and reports the affected app surfaces
+and required validation. Shared runtime changes normally require the full test
+suite and production build, an Electron refresh when desktop behavior is
+affected, iPad synchronization/doctor checks, and a physical-device smoke test
+when the paired iPad is available.
+
+See [Multi-app Development Flow](./docs/multi-app-development-flow.md) for the
+change matrix, validation levels, AI-secret rules, and handoff checklist.
+
+## Private iPad App
+
+Nex Note includes a native Capacitor iPad shell for private physical-device
+testing. It is not a PWA. During development, the native app connects to the
+Next.js server on the Mac, so server-backed features remain available and saved
+web-code changes arrive through Fast Refresh.
+
+After installing full Xcode and putting the Mac and iPad on the same Wi-Fi:
+
+```bash
+npm install
+npm run ipad:doctor
+npm run ipad:dev
+```
+
+The last command detects the Mac's LAN address, synchronizes the native debug
+configuration, starts the development server, and opens Xcode. Select the
+connected iPad, choose the personal signing team, and press Run. Keep the
+terminal open while testing. If the app opens before the server is ready, its
+native connection screen automatically retries the configured Mac URL. Selected
+notes and rests expose a persistent touch-sized **Delete note** action, so iPad
+editing does not require a hardware Delete key.
+
+See [Private iPad Testing](./docs/ipad-private-testing.md) for the one-time Xcode,
+signing, Developer Mode, local-network, and troubleshooting steps.
 
 Founder build available on request. The request path is intentionally manual until signing, notarization, and compatibility reporting are ready for broader distribution.
 
@@ -237,10 +289,10 @@ Founder build path:
 ```bash
 git switch devel
 npm install
-npm run electron:latest
+npm run app
 ```
 
-`npm run electron:latest` produces the refreshed `.app` bundle under `dist/macos`. Use `npm run electron:build` when you also need the macOS archive and disk-image release artifacts.
+`npm run app` produces the verified `.app` bundle under `dist/macos`. Use `npm run electron:latest` first only when the founder build must be based on the latest pushed remote commit. Use `npm run electron:build` when you also need the macOS archive and disk-image release artifacts.
 
 ## Founder Test File Intake
 
@@ -280,6 +332,12 @@ Pushing `main` updates the website/web alpha after the next server watcher run. 
 
 ## Testing
 
+Determine the affected application surfaces before selecting checks:
+
+```bash
+npm run apps:plan
+```
+
 Run the core checks before merging release-sensitive work:
 
 ```bash
@@ -302,7 +360,7 @@ For desktop artifacts, also run:
 npm run electron:build
 ```
 
-`npm test` includes `node --check` for `electron/main.cjs` and `electron/launch-helpers.cjs`, plus regression coverage for packaged launch freshness decisions and Finder-style macOS `PATH` handling. For macOS app launch changes, also verify a normal `open dist/macos/mac-arm64/Nex\ Note.app` starts a visible window and a packaged Next server on `127.0.0.1`.
+`npm test` includes `node --check` for `electron/main.cjs` and `electron/launch-helpers.cjs`, plus regression coverage for packaged launch freshness decisions, the invisible utility-process server, and Finder-style macOS `PATH` handling. For macOS app launch changes, also verify a normal `open dist/macos/mac-arm64/Nex\ Note.app` starts one visible Nex Note application, does not register a separate `exec` application, and starts a packaged Next server on `127.0.0.1`.
 
 Current validation snapshot:
 
@@ -332,6 +390,9 @@ Known final-release blockers: notarization, signing identity selection, final ic
 - [English manual](./docs/user-manual.en.md)
 - [Keyboard shortcuts](./docs/keyboard-shortcuts.md)
 - [Documentation guide](./docs/README.md)
+- [Multi-app development flow](./docs/multi-app-development-flow.md)
+- [Private iPad testing](./docs/ipad-private-testing.md)
+- [Native macOS Xcode implementation prompt](./docs/macos-xcode-private-testing-prompt.md)
 - [Release readiness summary](./docs/final-release-readiness-summary.md)
 - [Founder test file intake](./docs/founder-test-file-intake.md)
 - [Architecture blueprint](./docs/architecture-blueprint.md)

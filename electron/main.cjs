@@ -1,16 +1,17 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
-const { execFile, spawn } = require('node:child_process');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess } = require('electron');
+const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const {
   buildChildProcessEnv,
-  decidePackagedBuildFreshness,
+  decideLocalBuildFreshness,
   isAllowedRendererPermission,
   pathExists,
   resolveExecutable,
 } = require('./launch-helpers.cjs');
+const { describeBuildState, getLocalBuildState } = require('./build-state.cjs');
 
 const APP_NAME = 'Nex Note';
 
@@ -21,7 +22,7 @@ let mainWindow = null;
 let nextProcess = null;
 let rendererReady = false;
 let applicationMenu = null;
-let develUpdateStarted = false;
+let localRefreshStarted = false;
 let packagedServerUrl = null;
 let packagedServerRestartTimer = null;
 let quitting = false;
@@ -462,31 +463,6 @@ function getRootDir() {
   return isElectronDevRuntime() ? path.resolve(__dirname, '..') : app.getAppPath();
 }
 
-async function execFileText(command, args, options = {}) {
-  const env = buildChildProcessEnv({}, options.env || process.env);
-  const resolvedCommand = await resolveExecutable(command, env);
-  if (!resolvedCommand) {
-    throw new Error(`Could not find executable "${command}" on PATH`);
-  }
-
-  return new Promise((resolve, reject) => {
-    execFile(resolvedCommand, args, {
-      encoding: 'utf8',
-      timeout: 15000,
-      maxBuffer: 1024 * 1024,
-      ...options,
-      env,
-    }, (error, stdout, stderr) => {
-      if (error) {
-        error.stderr = stderr;
-        reject(error);
-        return;
-      }
-      resolve(String(stdout).trim());
-    });
-  });
-}
-
 async function findRepoRootForPackagedApp() {
   if (isElectronDevRuntime()) return null;
 
@@ -519,55 +495,135 @@ async function readBuildInfo() {
   }
 }
 
-async function updateToLatestDevelInBackground() {
-  if (develUpdateStarted || isElectronDevRuntime()) return;
+function createLocalRefreshWindow(buildInfo, localBuildState) {
+  const icon = getAssetPath(process.platform === 'darwin' ? 'Icon-nexnote.icns' : 'app-icon.png');
+  mainWindow = new BrowserWindow({
+    width: 580,
+    height: 320,
+    resizable: false,
+    maximizable: false,
+    title: `${APP_NAME} — Refreshing`,
+    icon,
+    backgroundColor: '#f8fafc',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  const packagedState = buildInfo?.gitCommit
+    ? `${String(buildInfo.gitBranch || 'unknown')}@${String(buildInfo.gitCommit).slice(0, 8)}`
+    : 'legacy build';
+  const localState = describeBuildState(localBuildState);
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <title>Nex Note — Refreshing</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; color: #0f172a; }
+      main { min-height: 100vh; display: grid; place-content: center; gap: 14px; padding: 36px; box-sizing: border-box; text-align: center; }
+      h1 { margin: 0; font-size: 24px; }
+      p { margin: 0; color: #475569; line-height: 1.5; }
+      code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
+      .bar { width: 380px; height: 6px; overflow: hidden; border-radius: 999px; background: #dbeafe; }
+      .bar::after { content: ''; display: block; width: 45%; height: 100%; border-radius: inherit; background: #2563eb; animation: move 1.2s ease-in-out infinite alternate; }
+      @keyframes move { from { transform: translateX(-15%); } to { transform: translateX(135%); } }
+    </style>
+  </head>
+  <body><main>
+    <h1>Refreshing the local devel app…</h1>
+    <p>Tests and a production build are running before Nex Note restarts.</p>
+    <div class="bar" aria-label="Refresh in progress"></div>
+    <p><code>${packagedState} → ${localState}</code></p>
+  </main></body>
+</html>`;
+  void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+}
+
+async function ensurePackagedBuildMatchesLocalDevel() {
+  if (localRefreshStarted || isElectronDevRuntime()) return false;
 
   try {
     const repoRoot = await findRepoRootForPackagedApp();
-    if (!repoRoot) return;
+    if (!repoRoot) return false;
 
-    const [dirty, buildInfo] = await Promise.all([
-      execFileText('git', ['-C', repoRoot, 'status', '--porcelain']),
+    const [buildInfo, localBuildState] = await Promise.all([
       readBuildInfo(),
+      Promise.resolve().then(() => getLocalBuildState(repoRoot)),
     ]);
-    if (dirty) {
-      console.log('[electron] Skipping devel update because the repository has local changes.');
-      return;
+    if (localBuildState.gitBranch !== 'devel') {
+      console.log(`[electron] Local app auto-refresh is disabled on ${localBuildState.gitBranch || 'detached HEAD'}.`);
+      return false;
     }
 
-    await execFileText('git', ['-C', repoRoot, 'fetch', 'origin', 'devel:refs/remotes/origin/devel']);
-    const latestDevelCommit = await execFileText('git', ['-C', repoRoot, 'rev-parse', 'origin/devel']);
-    const freshness = decidePackagedBuildFreshness({
-      buildCommit: typeof buildInfo?.gitCommit === 'string' ? buildInfo.gitCommit : null,
-      buildDirty: Boolean(buildInfo?.dirty),
-      latestDevelCommit,
+    const freshness = decideLocalBuildFreshness({
+      buildFingerprint: typeof buildInfo?.sourceFingerprint === 'string'
+        ? buildInfo.sourceFingerprint
+        : null,
+      localFingerprint: localBuildState.sourceFingerprint,
     });
-    if (freshness.action === 'run') return;
+    if (freshness.action === 'run') return false;
 
-    const updaterEnv = buildChildProcessEnv({ NEX_NOTE_BACKGROUND_DEVEL_UPDATE: '1' });
+    const updaterEnv = buildChildProcessEnv({ NEX_NOTE_STARTUP_LOCAL_REFRESH: '1' });
     const npmCommand = await resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm', updaterEnv);
     if (!npmCommand) {
-      console.error('[electron] Cannot update to origin/devel: npm was not found.');
-      return;
+      dialog.showErrorBox(
+        'Nex Note could not refresh',
+        'npm was not found. Run npm run app from the nex-note repository.',
+      );
+      return false;
     }
 
-    develUpdateStarted = true;
-    const updater = spawn(npmCommand, ['run', 'electron:latest'], {
+    const logDirectory = path.join(repoRoot, '.nex');
+    const logPath = path.join(logDirectory, 'electron-local-refresh.log');
+    await fs.mkdir(logDirectory, { recursive: true });
+    const logHandle = await fs.open(logPath, 'a');
+    localRefreshStarted = true;
+    createLocalRefreshWindow(buildInfo, localBuildState);
+    const updater = spawn(npmCommand, ['run', 'electron:refresh'], {
       cwd: repoRoot,
-      detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', logHandle.fd, logHandle.fd],
       env: updaterEnv,
     });
-    updater.once('error', (error) => {
-      console.error('[electron] Could not start the origin/devel updater:', error);
-      develUpdateStarted = false;
+    let updaterFinished = false;
+    updater.once('error', async (error) => {
+      if (updaterFinished) return;
+      updaterFinished = true;
+      await logHandle.close();
+      localRefreshStarted = false;
+      console.error('[electron] Could not start the local devel refresh:', error);
+      dialog.showErrorBox('Nex Note could not refresh', `${String(error?.message || error)}\n\nLog: ${logPath}`);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+      createApplicationMenu();
+      queueCommandLineFiles(process.argv.slice(1));
+      await createWindow();
     });
-    updater.unref();
-    console.log('[electron] Updating to the latest origin/devel build in the background.');
+    updater.once('exit', async (code) => {
+      if (updaterFinished) return;
+      updaterFinished = true;
+      await logHandle.close();
+      if (code === 0) {
+        app.relaunch();
+        app.exit(0);
+        return;
+      }
+
+      localRefreshStarted = false;
+      dialog.showErrorBox(
+        'Local devel refresh failed',
+        `Nex Note will open the last packaged build. Fix the reported test or build error, then run npm run app.\n\nLog: ${logPath}`,
+      );
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+      createApplicationMenu();
+      queueCommandLineFiles(process.argv.slice(1));
+      await createWindow();
+    });
+    return true;
   } catch (error) {
-    // A Dock/Finder launch must remain usable when offline or when developer
-    // tooling is unavailable. The next launch retries the background update.
-    console.error('[electron] Could not check origin/devel for updates:', error);
+    console.error('[electron] Could not compare the packaged app with local devel:', error);
+    return false;
   }
 }
 
@@ -662,16 +718,20 @@ async function launchPackagedServer(port) {
   const url = `http://127.0.0.1:${port}`;
 
   console.log(`[electron] Starting packaged Next server from ${standaloneDir}`);
-  const child = spawn(process.execPath, [serverPath], {
+  // Running process.execPath in Node mode starts another copy of the app
+  // executable, which macOS can expose as a generic "exec" Dock item.
+  // A utility process provides the same Node.js runtime without creating a
+  // second visible application.
+  const child = utilityProcess.fork(serverPath, [], {
     cwd: standaloneDir,
     env: {
       ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
       HOSTNAME: '127.0.0.1',
       PORT: String(port),
       NODE_ENV: 'production',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    serviceName: 'Nex Note Server',
   });
   nextProcess = child;
   packagedServerUrl = url;
@@ -691,8 +751,8 @@ async function launchPackagedServer(port) {
     }, 250);
   });
 
-  child.once('error', (error) => {
-    console.error('[electron] Packaged Next server process failed:', error);
+  child.once('error', (type, location, report) => {
+    console.error('[electron] Packaged Next server process failed:', type, location, report);
   });
 
   await waitForServer(url);
@@ -872,10 +932,10 @@ if (!singleInstanceLock) {
     if (process.platform === 'darwin' && app.dock) {
       app.dock.setIcon(getAssetPath('app-icon.png'));
     }
+    if (await ensurePackagedBuildMatchesLocalDevel()) return;
     createApplicationMenu();
     queueCommandLineFiles(process.argv.slice(1));
     await createWindow();
-    void updateToLatestDevelInBackground();
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -897,7 +957,7 @@ app.on('before-quit', () => {
     clearTimeout(packagedServerRestartTimer);
     packagedServerRestartTimer = null;
   }
-  if (nextProcess && !nextProcess.killed) {
+  if (nextProcess) {
     nextProcess.kill();
   }
 });

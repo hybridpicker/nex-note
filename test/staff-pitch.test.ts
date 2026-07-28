@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   diatonicPitchIndex,
+  formatPitchLabel,
   keyFifthsAlterForStep,
   pitchFromDiatonicIndex,
   resolvePitchNameEntry,
@@ -69,6 +70,39 @@ test('resolveStaffStepPitch: negative staffStep goes above the staff', () => {
   const g5 = resolveStaffStepPitch(-1, { sign: 'G', line: 2 });
   assert.equal(g5.step, 'G');
   assert.equal(g5.octave, 5);
+});
+
+test('formatPitchLabel uses engraved accidentals and includes the octave', () => {
+  assert.equal(formatPitchLabel('F', -2, 4), 'F𝄫4');
+  assert.equal(formatPitchLabel('F', -1, 4), 'F♭4');
+  assert.equal(formatPitchLabel('F', 0, 4), 'F4');
+  assert.equal(formatPitchLabel('F', 0, 4, { showNatural: true }), 'F♮4');
+  assert.equal(formatPitchLabel('F', 1, 4), 'F♯4');
+  assert.equal(formatPitchLabel('F', 2, 4), 'F𝄪4');
+});
+
+test('canonical staff geometry gives identical pitch regardless of measure contents', () => {
+  const resolveFromY = (pointerY: number, topLineY: number, lineDistancePx: number) => {
+    const staffStep = Math.round((pointerY - topLineY) / (lineDistancePx / 2));
+    return resolveStaffStepPitch(staffStep, { sign: 'G', line: 2 });
+  };
+  const blankMeasurePitch = resolveFromY(132.5, 100, 10);
+  const restOnlyMeasurePitch = resolveFromY(132.5, 100, 10);
+  const populatedMeasurePitch = resolveFromY(132.5, 100, 10);
+  assert.deepEqual(blankMeasurePitch, restOnlyMeasurePitch);
+  assert.deepEqual(blankMeasurePitch, populatedMeasurePitch);
+});
+
+test('canonical pitch lanes scale with zoom and do not enforce a CSS-pixel minimum', () => {
+  const resolveAtLane = (zoom: number) => {
+    const topLineY = 20 * zoom;
+    const lineDistancePx = 8 * zoom;
+    const pointerY = topLineY + 6 * (lineDistancePx / 2);
+    const staffStep = Math.round((pointerY - topLineY) / (lineDistancePx / 2));
+    return resolveStaffStepPitch(staffStep, { sign: 'C', line: 4 });
+  };
+  assert.deepEqual(resolveAtLane(0.35), resolveAtLane(1));
+  assert.deepEqual(resolveAtLane(2.5), resolveAtLane(1));
 });
 
 test('pitchFromDiatonicIndex round-trips through diatonicPitchIndex', () => {

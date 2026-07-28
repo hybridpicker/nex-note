@@ -12,9 +12,16 @@ function resolveGitBranch() {
   }
 }
 
+const allowedDevOrigin = process.env.NEX_NOTE_ALLOWED_DEV_ORIGIN?.trim();
+
 const nextConfig: NextConfig = {
   output: 'standalone',
-  allowedDevOrigins: ['127.0.0.1', 'localhost'],
+  devIndicators: false,
+  allowedDevOrigins: [
+    '127.0.0.1',
+    'localhost',
+    ...(allowedDevOrigin ? [allowedDevOrigin] : []),
+  ],
   env: {
     NEXT_PUBLIC_NEX_NOTE_GIT_BRANCH: process.env.NEXT_PUBLIC_NEX_NOTE_GIT_BRANCH ?? resolveGitBranch(),
   },

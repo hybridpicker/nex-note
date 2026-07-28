@@ -128,7 +128,7 @@ async function noteheadCenters(page: Page) {
 }
 
 function parseGhostPitch(value: string | null) {
-  const match = value ? /^([A-G])(?:#|b|x|bb)?(\d+)$/.exec(value) : null;
+  const match = value ? /^([A-G])(?:bb|#|b|x|♯|♭|♮|𝄪|𝄫)?(\d+)$/.exec(value) : null;
   if (!match) return null;
   const stepMap: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   return (Number.parseInt(match[2] ?? '0', 10) * 12) + (stepMap[match[1] ?? 'C'] ?? 0);
