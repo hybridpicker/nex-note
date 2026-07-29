@@ -11841,6 +11841,9 @@ export default function ScoreEditor({
   const inlineGuitarFretInputRef = useRef<HTMLInputElement>(null);
   const selectedDurationRef = useRef<Props['selectedDuration']>(selectedDuration);
   const isDottedRef = useRef(isDotted);
+  const onPlaceNoteAtRef = useRef(onPlaceNoteAt);
+  const handlePointerDownRef = useRef<((event: PointerEvent) => void) | null>(null);
+  const handleDoubleClickRef = useRef<((event: MouseEvent) => void) | null>(null);
   const lastEmittedMeasureSelectionRef = useRef<{ measureIds: string[]; measureNumbers: number[] }>({
     measureIds: [],
     measureNumbers: [],
@@ -11904,6 +11907,7 @@ export default function ScoreEditor({
 
   selectedDurationRef.current = selectedDuration;
   isDottedRef.current = isDotted;
+  onPlaceNoteAtRef.current = onPlaceNoteAt;
   activeVisualTargetsRef.current = activeVisualTargets;
   selectedMeasureIdsRef.current = selectedMeasureIds;
   lastSelectedMeasureIdRef.current = lastSelectedMeasureId;
@@ -12452,8 +12456,7 @@ export default function ScoreEditor({
     const directlyHoveredRendered = findDirectRenderedNoteHit(renderedNotesRef.current, pointerPathNodes)
       ?? findRenderedNoteheadAtPoint(renderedNotesRef.current, domPoint);
     const crossVoiceDirectNotehead = Boolean(
-      selectedVoice !== 1
-      && directlyHoveredRendered?.note
+      directlyHoveredRendered?.note
       && !directlyHoveredRendered.note.isRest
       && directlyHoveredRendered.note.voiceId !== selectedVoice,
     );
@@ -12954,7 +12957,6 @@ export default function ScoreEditor({
       return;
     }
     const crossVoicePathHitRendered = !directlyHitRendered
-      && selectedVoice !== 1
       && pathHitRendered?.note
       && !pathHitRendered.note.isRest
       && pathHitRendered.note.voiceId !== selectedVoice
@@ -12969,7 +12971,6 @@ export default function ScoreEditor({
         ? renderedGlyphHit.rendered
         : null;
     const crossVoiceGeometryHitRendered = geometryHitRendered?.note
-      && selectedVoice !== 1
       && !geometryHitRendered.note.isRest
       && geometryHitRendered.note.voiceId !== selectedVoice
       ? geometryHitRendered
@@ -13123,6 +13124,11 @@ export default function ScoreEditor({
       directlyHitRendered: Boolean(directlyHitRendered),
       clickedNoteheadPath,
       directNoteheadHit,
+      directNoteIsActiveSelection: Boolean(
+        directNote
+        && selectedNote
+        && selectedNoteKeyFor(directNote) === selectedNoteKeyFor(selectedNote)
+      ),
       clickedVisibleGhostAtPointer: clickedExplicitVisibleGhostAtPointer,
       chordInputIntent: chordInputMode,
       altKey: e.altKey,
@@ -13201,8 +13207,7 @@ export default function ScoreEditor({
         ? resolvePointerGhostAnchor(selectedNote, overlayAtPoint)
         : null;
       const directCrossVoiceNotehead = Boolean(
-        selectedVoice !== 1
-        && directNote
+        directNote
         && !directNote.isRest
         && directNote.voiceId !== selectedVoice
         && (directlyHitRendered || crossVoicePathHitRendered || crossVoiceGeometryHitRendered || clickedNoteheadPath)
@@ -13967,6 +13972,8 @@ export default function ScoreEditor({
       targetNote: guitarFretTextHit,
     });
   }, [applyMeasureSelection, coreDocument, onNoteClick, onSetGuitarFret]);
+  handlePointerDownRef.current = handlePointerDown;
+  handleDoubleClickRef.current = handleDoubleClick;
 
   useEffect(() => {
     const originalLog = console.log;
@@ -14756,15 +14763,24 @@ export default function ScoreEditor({
 
   // Attach/detach pointer listener on the window so clicks always arrive even
   // when OSMD's inner <svg> elements swallow the event. The handler itself
-  // ignores anything outside the score container.
+  // ignores anything outside the score container. Keep the native listeners
+  // stable and dispatch through render-updated refs so a pointerdown that lands
+  // after React commits new score geometry cannot run the previous document's
+  // validation closure while passive effects are still being refreshed.
   useEffect(() => {
-    window.addEventListener('pointerdown', handlePointerDown, true);
-    window.addEventListener('dblclick', handleDoubleClick, true);
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown, true);
-      window.removeEventListener('dblclick', handleDoubleClick, true);
+    const dispatchPointerDown = (event: PointerEvent) => {
+      handlePointerDownRef.current?.(event);
     };
-  }, [handleDoubleClick, handlePointerDown]);
+    const dispatchDoubleClick = (event: MouseEvent) => {
+      handleDoubleClickRef.current?.(event);
+    };
+    window.addEventListener('pointerdown', dispatchPointerDown, true);
+    window.addEventListener('dblclick', dispatchDoubleClick, true);
+    return () => {
+      window.removeEventListener('pointerdown', dispatchPointerDown, true);
+      window.removeEventListener('dblclick', dispatchDoubleClick, true);
+    };
+  }, []);
 
   useEffect(() => {
     const handlePointerUp = (event: PointerEvent) => {
@@ -14790,7 +14806,7 @@ export default function ScoreEditor({
 
         // Take-off selection: this is the exact object stored with the last
         // validated preview. Pointer-up coordinates are intentionally ignored.
-        onPlaceNoteAt(committed.target);
+        onPlaceNoteAtRef.current(committed.target);
         lastNoteInputCommitTargetRef.current = {
           measureId: committed.target.measureId,
           corePartId: committed.target.corePartId,
@@ -14901,7 +14917,7 @@ export default function ScoreEditor({
       window.removeEventListener('pointercancel', handlePointerCancel, true);
       viewport?.removeEventListener('lostpointercapture', handleLostPointerCapture);
     };
-  }, [discardPendingTabletPointerMove, dragTransposeMode, flushPendingTabletPointerMove, onDragTransposeCommit, onDragStringCommit, onPlaceNoteAt, scheduleRenderedGeometryRefresh]);
+  }, [discardPendingTabletPointerMove, dragTransposeMode, flushPendingTabletPointerMove, onDragTransposeCommit, onDragStringCommit, scheduleRenderedGeometryRefresh]);
 
   useEffect(() => {
     if (noteInputMode) return;

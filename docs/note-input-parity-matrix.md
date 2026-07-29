@@ -1,6 +1,6 @@
 # Note Input Parity Matrix
 
-Updated: 2026-07-22
+Updated: 2026-07-29
 
 This matrix tracks MuseScore/Finale-style note-input behavior against the current nex-note semantic pipeline. It is not a marketing checklist: a row is `PASS` only when the workflow is present, goes through the semantic command path, has automated coverage, and has an explicit acceptance criterion.
 
@@ -115,3 +115,31 @@ Additional hardening completed on 2026-07-04:
 - `npm run smoke:musescore-roundtrip`: exit `0`, verdict `passed-with-local-musescore-limit`; local MuseScore 4.7.3 crashed on some source/baseline and nex-note conversions, so no nex-note-only export failure was isolated on this machine.
 
 QA artifacts for the step-time anchor validation pass are under `artifacts/qa/step-time-anchor-validation/`.
+
+## Milestone 6 Verification 2026-07-29
+
+- `npm test`: 1,072 passed, 0 failed.
+- `npm run build`: passed with production compilation and TypeScript checks.
+- `npm run test:e2e`: 148 passed, 4 opt-in semantic-grid cases skipped,
+  0 failed in 26.5 minutes.
+- Focused pointer matrix: 23 passed, 0 failed.
+- Opt-in semantic-grid seeds 1000–1003: 4 passed, 0 failed.
+- Guitar/TAB smoke: 4 passed, 0 failed.
+- MusicXML/Guitar Pro/playback/history/MuseScore-classification corpus:
+  142 passed, 0 failed.
+- Strict Doctor assertions passed throughout the rendered notation-tool
+  workflows. Stress fixtures with known unmaterialized imported durations
+  continued to report their expected projection diagnostics.
+- `npm run ipad:sync` and `npm run ipad:doctor`: passed for the standalone
+  native bundle and Xcode 26.6 project.
+- `npm run electron:refresh`: repeated unit/build gates, packaged and verified
+  the arm64 app. A subsequent app launch created the embedded Next server and
+  renderer processes and exited cleanly.
+- Xcode macOS target: not run because it remains planned and unimplemented.
+- MuseScore 4.7.3: external verification remains `PARTIAL`. The harness reported
+  `passed-with-local-musescore-limit`, but a first-run Nex Note MXL `SIGABRT`
+  and an exact rerun where Nex Note passed while source MXL steps `SIGABRT` show
+  nondeterministic local `mutex lock failed` crashes. This is not a Nex Note
+  pass. Artifacts are under
+  `.nex/musescore-roundtrip-smoke-2026-07-29T07-33-17-982Z` and
+  `.nex/musescore-roundtrip-smoke-2026-07-29T07-35-00-196Z`.

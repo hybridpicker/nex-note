@@ -8,9 +8,9 @@ milestones. A milestone is complete only after its commit is pushed to
 
 ## Quality gates
 
-| Metric | Target | Evidence through Milestone 1 | Status |
+| Metric | Target | Evidence through Milestone 6 | Status |
 | --- | --- | --- | --- |
-| Preview/commit parity | 100% across the regression corpus | 20 of 20 executed browser cases passed after preserving the authoritative rendered leading-rest anchor | PASS |
+| Preview/commit parity | 100% across the regression corpus | 148 of 148 executed full-E2E cases, 23 of 23 focused pointer cases, and all four opt-in semantic-grid seeds passed after the Milestone 6 arbitration fixes | PASS |
 | Hover mutations | 0 | 0 in unit and Playwright coverage | PASS |
 | Contact-preview mutations | 0 | 0 in unit and Playwright coverage | PASS |
 | Cancellation mutations | 0 | 0 in unit and Playwright coverage | PASS |
@@ -20,9 +20,9 @@ milestones. A milestone is complete only after its commit is pushed to
 | Undo mismatches | 0 | 0 in covered workflows; the full workflow matrix is not yet covered | PARTIAL |
 | Pointer-target failures without diagnostics | 0 | Commit misses and resolver failures publish Input Doctor or target diagnostics; corpus review is incomplete | PARTIAL |
 | Mouse regressions introduced by tablet work | 0 | The deterministic beat-one mouse failure is fixed; all executed mouse regressions pass, and non-primary buttons are mutation-free | PASS |
-| Tablet regressions introduced by mouse work | 0 | 6 of 6 tablet-entry Playwright cases passed, including captured toolbar mode exit | PASS |
-| Stable tablet visual publications | At most one per animation frame | Tablet/coalesced moves retain only the latest sample and publish through one `requestAnimationFrame`; no runtime frame counter yet | PARTIAL |
-| Full semantic regeneration during raw refinement | 0 | Session refinement is ref/state based and does not execute commands; no runtime regeneration counter yet | PARTIAL |
+| Tablet regressions introduced by mouse work | 0 | 7 of 7 tablet-entry Playwright cases passed, including selected-note drag priority and captured toolbar mode exit | PASS |
+| Stable tablet visual publications | At most one per animation frame | A 20-event burst schedules and processes one latest-sample frame and publishes at most one stable target | PASS |
+| Full semantic regeneration during raw refinement | 0 | Runtime refinement metrics report zero semantic regenerations during the 20-event burst | PASS |
 | Content-independent pitch mapping | Identical staff/Y mapping for blank, rest-only, and populated measures | Pure geometry tests pass; browser score-class matrix is incomplete | PARTIAL |
 | Onset lock under minor horizontal drift | 100% | Unit and tablet Playwright cases pass | PASS |
 | Pitch/staff hysteresis stability | 100% inside defined boundaries | Unit boundary and grand-staff lock coverage pass; physical hardware not run for this milestone | PARTIAL |
@@ -428,7 +428,98 @@ preview can still fail to reach mutation.
   non-negative latest/max sample latency; no raw event creates React state.
 - Remaining risks: WebKit scheduling under real Pencil load and long-session
   memory/audio behavior still need physical-device observation.
-- Commit SHA: pending the Milestone 5 commit.
+- Commit SHA: `586988b1f75515b96c4df04788d33b734636dbfe`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 6 — Cross-surface and interoperability proof
+
+- Date: 2026-07-29
+- Starting commit: `586988b1f75515b96c4df04788d33b734636dbfe`
+- Observed problem: the first broad E2E run exposed two load-sensitive workflow
+  failures and seven deterministic notation-entry failures. The deterministic
+  set covered a blank-measure follow-up, a fourth-chord placement, a rapid
+  multi-click boundary, clicked-pitch activation in another voice, direct and
+  chord-tone drag arbitration, and the long Dunhill workflow plus its dependent
+  transform scenario.
+- Baseline result: `npm run test:e2e` completed with 139 passed, 4 skipped, and
+  9 failed. Bounded reruns cleared the two load-sensitive file-workflow cases
+  and reproduced the seven notation failures.
+- Root causes:
+  - window-level native listeners were replaced through passive-effect cleanup,
+    leaving a short post-render interval where a rapid click could execute the
+    previous score geometry and semantic-document closure;
+  - broad glyph hit boxes could steal an explicit visible ghost at another
+    semantic onset, while chord-tone drag protection was not scoped to the
+    active selected tone;
+  - default voice 1 treated a rendered note in another voice differently from
+    voices 2–4, so pitch retargeting could silently activate the clicked voice.
+- Fix:
+  - stable window listeners now dispatch through render-updated handler refs,
+    and tablet take-off dispatches through the latest commit callback;
+  - pointer arbitration gives an active same-onset SVG notehead selection/drag
+    priority, while a visible ghost at another onset or over an unselected chord
+    tone remains actionable;
+  - cross-voice rendered-note targeting now preserves the selected input voice
+    consistently for every voice, including voice 1.
+- Files changed:
+  - `components/ScoreEditor.tsx`
+  - `src/score-input/pointer-entry-mode.ts`
+  - `test/score-input-resolvers.test.ts`
+  - `docs/note-input-parity-matrix.md`
+  - this ledger
+- Automated evidence:
+  - resolver regression file — 44 passed, 0 failed.
+  - repaired focused workflows, full Dunhill workflow, and dependent transform
+    workflow — all passed in bounded reruns.
+  - `npm run test:e2e` — 148 passed, 4 opt-in fuzz cases skipped, 0 failed in
+    26.5 minutes; the full Dunhill Melody stress passed in 12.9 minutes.
+  - pointer corpus (`tablet-entry`, `mouse-precision-stress`,
+    `snap-ghost-debug`, `exhaustive-mouse-grid`) — 23 passed, 0 failed.
+  - opt-in semantic-grid seeds 1000–1003 — 4 passed, 0 failed.
+  - Guitar/TAB smoke — 4 passed, 0 failed.
+  - interoperability corpus covering MusicXML export/reimport, golden
+    roundtrips, Guitar Pro/TAB semantics, playback cursor, history replay,
+    inverse commands, and MuseScore classification — 142 passed, 0 failed.
+  - `npm test` — 1,072 passed, 0 failed.
+  - `npm run build` — production build and TypeScript checks passed.
+  - `npm run ipad:sync` and `npm run ipad:doctor` — standalone bundle
+    synchronized; native project, Xcode 26.6, Capacitor packages, LAN
+    configuration, and disk checks passed.
+  - `npm run electron:refresh` — repeated all 1,072 unit tests and the
+    production build, packaged the arm64 macOS app, and verified its source
+    fingerprint. The packaged app then launched its embedded Next server and
+    renderer process and quit cleanly.
+  - strict Doctor assertions in the rendered notation-tool corpus passed.
+    Imported stress fixtures still surface their expected pre-existing rhythm
+    projection diagnostics; those fixture findings were not reclassified as
+    clean documents.
+  - `git diff --check` — passed.
+- MuseScore evidence:
+  - MuseScore 4.7.3 returned the aggregate harness verdict
+    `passed-with-local-musescore-limit`, but this is **not** recorded as a Nex
+    Note interoperability pass.
+  - The first final run contained a `piano-semantics` Nex Note MXL reopen
+    `SIGABRT` while one source baseline path reopened. An exact rerun with four
+    attempts reopened the Nex Note MXL successfully while source MXL conversion
+    and reopen steps crashed with the same `mutex lock failed` error. The
+    behavior is nondeterministic and remains an external-tool limitation rather
+    than proof of product correctness.
+  - Full-run artifacts:
+    `.nex/musescore-roundtrip-smoke-2026-07-29T07-33-17-982Z`.
+    Exact-rerun artifacts:
+    `.nex/musescore-roundtrip-smoke-2026-07-29T07-35-00-196Z`.
+- Surface evidence:
+  - Next.js shared runtime — full browser and production-build proof passed.
+  - Electron macOS — packaged, fingerprint-verified, and launch-process smoke
+    passed; audible hands-on output was not claimed.
+  - Native iPad — standalone bundle synchronization and Doctor passed;
+    physical-device gesture evidence is Milestone 7.
+  - Xcode macOS — not run because the target remains planned and is not present.
+- Remaining risks: hands-on Pencil/finger behavior and audible hardware output
+  remain unverified. MuseScore CLI stability prevents a clean external-oracle
+  pass on this Mac, and broader per-workflow export/history matrix rows can
+  still grow.
+- Commit SHA: pending the Milestone 6 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings

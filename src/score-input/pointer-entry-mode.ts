@@ -81,6 +81,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   directlyHitRendered: boolean;
   clickedNoteheadPath: boolean;
   directNoteheadHit?: boolean;
+  directNoteIsActiveSelection?: boolean;
   clickedVisibleGhostAtPointer: boolean;
   chordInputIntent?: boolean;
   altKey: boolean;
@@ -96,14 +97,40 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
     && (input.directNoteheadHit || input.directlyHitRendered || input.clickedNoteheadPath),
   );
 
-  // MuseScore gives an existing notehead priority over the pointer-entry ghost:
-  // a press selects the exact chord tone and a subsequent move drags it. Dense
-  // chords can make the pointer-transparent ghost overlap a neighbouring
-  // notehead, so treating that overlap as an explicit replace click creates a
-  // new note before the drag session can start. Chord-entry mode deliberately
-  // keeps the inverse priority so users can still add a new chord tone.
+  // An exact SVG notehead press is selection/drag intent unless chord entry is
+  // explicitly armed. The pointer-transparent ghost may have been promoted to
+  // chord mode by the active input anchor, but that promotion must not turn a
+  // press on the selected tone into a second note before dragging begins.
   if (
     hitPitchedNotehead
+    && input.clickedNoteheadPath
+    && directNoteSharesOnset
+    && (directNoteSharesPitch || input.directNoteIsActiveSelection)
+    && !input.chordInputIntent
+  ) {
+    return false;
+  }
+
+  // A visible ghost at another semantic pitch or onset is an explicit entry
+  // target even when the broad rendered-glyph tolerance also finds a nearby
+  // note. Only an actual SVG notehead path at the same semantic onset retains
+  // press/drag priority. This matters in compact measures where an actionable
+  // rest ghost can sit inside the neighbouring note's generous hit rectangle.
+  if (
+    input.clickedVisibleGhostAtPointer
+    && !input.clickedNoteheadPath
+    && !(directNote && !directNote.isRest && directNoteSharesOnset && directNoteSharesPitch)
+  ) {
+    return true;
+  }
+
+  // MuseScore also gives a confidently resolved existing notehead priority over
+  // a replace ghost: a press selects the exact chord tone and a subsequent move
+  // drags it. Chord-entry mode deliberately keeps the inverse priority so users
+  // can still add a new chord tone.
+  if (
+    hitPitchedNotehead
+    && directNoteSharesOnset
     && ghostTarget.placementMode === 'replace'
     && !input.chordInputIntent
   ) return false;

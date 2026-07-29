@@ -827,6 +827,40 @@ test('locked visible ghost is not discarded by a rendered path at another onset'
   }), true);
 });
 
+test('visible ghost at another onset beats a nearby pitched notehead from the prior slot', () => {
+  const directNote = {
+    measureId: 'm1',
+    corePartId: 'p1',
+    measureNumber: 1,
+    staffIndex: 1,
+    voiceId: 1,
+    timestampNum: 0,
+    timestampDen: 32,
+    step: 'C',
+    octave: 4,
+    alter: 0,
+  };
+  const ghostTarget = {
+    ...directNote,
+    timestampNum: 8,
+    step: 'G',
+    placementMode: 'replace' as const,
+    resolvedTarget: { mode: 'replace' as const },
+  };
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget,
+    directNote,
+    directlyHitRendered: true,
+    clickedNoteheadPath: true,
+    directNoteheadHit: true,
+    directNoteIsActiveSelection: true,
+    clickedVisibleGhostAtPointer: true,
+    chordInputIntent: false,
+    altKey: false,
+  }), true);
+});
+
 test('same-onset same-pitch rendered notehead remains a direct selection target', () => {
   const ghostTarget = {
     measureId: 'm1',
@@ -1022,6 +1056,7 @@ test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priori
     directlyHitRendered: true,
     clickedNoteheadPath: true,
     directNoteheadHit: true,
+    directNoteIsActiveSelection: true,
     clickedVisibleGhostAtPointer: true,
     chordInputIntent: true,
     altKey: false,
@@ -1033,6 +1068,7 @@ test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priori
     directlyHitRendered: true,
     clickedNoteheadPath: true,
     directNoteheadHit: true,
+    directNoteIsActiveSelection: true,
     clickedVisibleGhostAtPointer: true,
     chordInputIntent: false,
     altKey: false,
@@ -1048,10 +1084,11 @@ test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priori
     directlyHitRendered: true,
     clickedNoteheadPath: true,
     directNoteheadHit: true,
+    directNoteIsActiveSelection: true,
     clickedVisibleGhostAtPointer: true,
     chordInputIntent: false,
     altKey: false,
-  }), true);
+  }), false);
 
   assert.equal(shouldCommitPointerGhostOverDirectNote({
     ghostTarget,
