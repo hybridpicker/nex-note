@@ -68,6 +68,9 @@ This document describes the deterministic note-input pipeline introduced for poi
   - semantic snap diagnostics and protected-region checks preserve a validated
     first-slot rendered-rest target rather than moving it onto, or hiding it
     behind, the following pitched note
+  - tablet cancellation through pointer cancellation, lost capture, Escape, or
+    mode exit clears the prospective session and locked ghost; mode exit also
+    releases the exact captured pointer before navigation resumes
   - final horizontal placement is snap-derived: after target resolution, `previewLeft` is recomputed as `canonicalSnapX - noteheadCenterX`, and `resolvedTarget.domX` is the commit X
 
 - [hooks/useNoteEditor.ts](../hooks/useNoteEditor.ts)
@@ -155,6 +158,8 @@ the authoritative pointer-to-history pipeline are tracked in
   - mouse entry into empty measures via measured canonical ghost slots
   - right-click and macOS Control-click on a valid shadow note leave MusicXML,
     history depth, Undo availability, and note count unchanged
+  - toolbar mode exit during touch contact cancels the preview, releases pointer
+    capture, and leaves subsequent pointer-up mutation-free
   - ghost preview timestamp parity with committed note placement
   - beat-1 rest/eighth-note hover and click regression in `e2e/snap-ghost-debug.spec.ts`
   - keyboard flows: replace, insert-between, chord entry

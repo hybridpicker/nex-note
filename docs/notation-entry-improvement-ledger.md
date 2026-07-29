@@ -20,7 +20,7 @@ milestones. A milestone is complete only after its commit is pushed to
 | Undo mismatches | 0 | 0 in covered workflows; the full workflow matrix is not yet covered | PARTIAL |
 | Pointer-target failures without diagnostics | 0 | Commit misses and resolver failures publish Input Doctor or target diagnostics; corpus review is incomplete | PARTIAL |
 | Mouse regressions introduced by tablet work | 0 | The deterministic beat-one mouse failure is fixed; all executed mouse regressions pass, and non-primary buttons are mutation-free | PASS |
-| Tablet regressions introduced by mouse work | 0 | 5 of 5 tablet-entry Playwright cases passed | PASS |
+| Tablet regressions introduced by mouse work | 0 | 6 of 6 tablet-entry Playwright cases passed, including captured toolbar mode exit | PASS |
 | Stable tablet visual publications | At most one per animation frame | Tablet/coalesced moves retain only the latest sample and publish through one `requestAnimationFrame`; no runtime frame counter yet | PARTIAL |
 | Full semantic regeneration during raw refinement | 0 | Session refinement is ref/state based and does not execute commands; no runtime regeneration counter yet | PARTIAL |
 | Content-independent pitch mapping | Identical staff/Y mapping for blank, rest-only, and populated measures | Pure geometry tests pass; browser score-class matrix is incomplete | PARTIAL |
@@ -241,7 +241,61 @@ preview can still fail to reach mutation.
 - Remaining risks: broader Shift/Cmd/Ctrl/Alt browser coverage and rapid entry
   across system boundaries remain incomplete. Physical Pencil barrel behavior
   is not claimed without hardware evidence.
-- Commit SHA: pending the Milestone 2 commit.
+- Commit SHA: `89eab0e4700dbb70fd53f022c7d8d33c33433692`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 3 — Apple Pencil and touch refinement
+
+- Date: 2026-07-29
+- Starting commit: `89eab0e4700dbb70fd53f022c7d8d33c33433692`
+- Observed problem: exiting Note Input from the toolbar during an active touch
+  preview cancelled the semantic session but left the pointer captured by the
+  score viewport and retained the locked ghost reference.
+- Reproduction fixture: `simple.musicxml` with the deterministic Pointer Events
+  capture probe in `e2e/tablet-entry.spec.ts`.
+- Exact steps: enter Note Input, touch a valid blank-staff target, verify
+  contact-preview and capture for pointer ID 57, click the Note Input toolbar
+  toggle, then release the original touch.
+- Input device and surface: synthetic touch Pointer Events exercising the
+  shared browser/WKWebView path in Chromium.
+- Baseline result: mode exited and XML remained unchanged, but
+  `hasPointerCapture(57)` stayed true after the session reached `cancelled`.
+- Root cause: pointer-cancel, lost-capture, and Escape handlers released
+  capture, while the reactive `noteInputMode === false` cleanup only cancelled
+  session state.
+- Fix: mode-exit cleanup now snapshots the active session, nulls it, releases
+  its exact captured pointer, clears the visible-ghost lock and staff-switch
+  pulse, then resets preview and drag state. The subsequent pointer-up has no
+  session and cannot commit.
+- Files changed:
+  - `components/ScoreEditor.tsx`
+  - `e2e/tablet-entry.spec.ts`
+  - `docs/note-input-architecture.md`
+  - `docs/ipad-direct-entry-qa.md`
+  - this ledger
+- Automated evidence:
+  - the new exact regression failed before the fix because pointer ID 57
+    remained captured.
+  - `npx playwright test e2e/tablet-entry.spec.ts --project regression` —
+    6 passed, 0 failed.
+  - `npx playwright test e2e/tablet-entry.spec.ts e2e/mouse-precision-stress.spec.ts e2e/snap-ghost-debug.spec.ts e2e/exhaustive-mouse-grid.spec.ts --project regression`
+    — 22 passed, 0 failed.
+  - `npm test` — 1,070 passed, 0 failed.
+  - `npm run build` — production build and TypeScript checks passed.
+  - `npm run ipad:sync` and `npm run ipad:doctor` — standalone native bundle
+    synchronized and native development checks passed.
+  - `npm run electron:refresh` — repeated all 1,070 unit tests and the
+    production build, packaged the arm64 macOS app, and verified the package.
+  - `git diff --check` — passed.
+- Physical-device evidence: not run. The test exercises the shared Pointer
+  Events contract with deterministic capture instrumentation; real WKWebView,
+  finger, and Pencil behavior remains unclaimed until Milestone 7.
+- Performance evidence: cleanup adds no pointer-move work and removes stale
+  capture/lock state immediately when the mode changes.
+- Remaining risks: physical hover/no-hover behavior, two-finger navigation,
+  orientation changes during contact, and real system-gesture takeover still
+  require device evidence.
+- Commit SHA: pending the Milestone 3 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings

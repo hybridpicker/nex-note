@@ -14835,9 +14835,13 @@ export default function ScoreEditor({
   useEffect(() => {
     if (noteInputMode) return;
     discardPendingTabletPointerMove();
-    if (tabletEntrySessionRef.current) {
-      const cancelled = cancelTabletEntrySession(tabletEntrySessionRef.current);
+    const tabletSession = tabletEntrySessionRef.current;
+    if (tabletSession) {
+      const cancelled = cancelTabletEntrySession(tabletSession);
       tabletEntrySessionRef.current = null;
+      if (viewportRef.current?.hasPointerCapture(tabletSession.pointerId)) {
+        viewportRef.current.releasePointerCapture(tabletSession.pointerId);
+      }
       setTabletEntryVisual({
         phase: cancelled.phase,
         pointerType: cancelled.pointerType,
@@ -14846,6 +14850,8 @@ export default function ScoreEditor({
     } else {
       setTabletEntryVisual({ phase: 'idle', pointerType: null, point: null });
     }
+    visibleGhostPointerLockRef.current = null;
+    lastTabletStaffSwitchPulseRef.current = 0;
     lastGhostStaffIndexRef.current = null;
     dragSessionRef.current = null;
     setGhostNoteTarget(null);

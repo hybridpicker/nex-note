@@ -61,7 +61,9 @@ For every case:
    with the stable sounding pitch, previous previews must not accumulate, and
    playback cursor state must not move.
 10. Trigger cancellation with Escape, a system gesture/pointer cancellation,
-    mode exit, and leaving the score capture area. None may mutate the score.
+    mode exit, and leaving the score capture area. None may mutate the score;
+    each path must release pointer capture and clear the locked preview before
+    navigation resumes.
 11. Press an existing notehead and drag it. It must select/transpose that note
     without inserting an extra note.
 12. Select a note and verify the native contextual action bar appears above the

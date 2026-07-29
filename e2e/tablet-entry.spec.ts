@@ -25,6 +25,34 @@ async function boot(page: Page) {
   await page.keyboard.press('5');
 }
 
+async function installPointerCaptureProbe(page: Page) {
+  await page.addInitScript(() => {
+    const captures = new WeakMap<Element, Set<number>>();
+    Object.defineProperties(Element.prototype, {
+      setPointerCapture: {
+        configurable: true,
+        value(pointerId: number) {
+          const active = captures.get(this) ?? new Set<number>();
+          active.add(pointerId);
+          captures.set(this, active);
+        },
+      },
+      hasPointerCapture: {
+        configurable: true,
+        value(pointerId: number) {
+          return captures.get(this)?.has(pointerId) ?? false;
+        },
+      },
+      releasePointerCapture: {
+        configurable: true,
+        value(pointerId: number) {
+          captures.get(this)?.delete(pointerId);
+        },
+      },
+    });
+  });
+}
+
 async function currentXml(page: Page) {
   return page.evaluate(() => (
     (window as typeof window & {
@@ -190,6 +218,42 @@ test('pointercancel ends touch preview without score mutation', async ({ page })
   await expect(page.getByTestId('pitch-loupe')).toHaveCount(0);
   expect(await currentXml(page)).toBe(before);
   await expect(page.getByTestId('score-viewport')).toHaveAttribute('data-tablet-entry-phase', 'cancelled');
+});
+
+test('toolbar mode exit cancels tablet preview and releases pointer capture', async ({ page }) => {
+  await installPointerCaptureProbe(page);
+  await boot(page);
+  const point = await blankStaffPoint(page);
+  const before = await currentXml(page);
+
+  await dispatchPointer(page, 'pointerdown', {
+    pointerId: 57,
+    pointerType: 'touch',
+    x: point.x,
+    y: point.y,
+  });
+  const viewport = page.getByTestId('score-viewport');
+  await expect(viewport).toHaveAttribute('data-tablet-entry-phase', 'contact-preview');
+  expect(await viewport.evaluate((element) => element.hasPointerCapture(57))).toBe(true);
+
+  await page.getByTitle('Toggle note input (N)').click();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __NEX_NOTE_E2E_STATE__?: { noteInputMode?: boolean };
+    }
+  ).__NEX_NOTE_E2E_STATE__?.noteInputMode ?? true)).toBe(false);
+  await expect(viewport).toHaveAttribute('data-tablet-entry-phase', 'cancelled');
+  expect(await viewport.evaluate((element) => element.hasPointerCapture(57))).toBe(false);
+  expect(await currentXml(page)).toBe(before);
+
+  await dispatchPointer(page, 'pointerup', {
+    pointerId: 57,
+    pointerType: 'touch',
+    x: point.x,
+    y: point.y,
+    buttons: 0,
+  });
+  expect(await currentXml(page)).toBe(before);
 });
 
 test('pen hover predicts without mutation and contact inherits the visible target', async ({ page }) => {
