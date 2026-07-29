@@ -117,6 +117,10 @@ This document describes the deterministic note-input pipeline introduced for poi
 - validator diagnostics:
   - resolved slot, mode, rejection reasons, and existing-event metadata are available on inspected targets during tests and debug logging
 
+Measured milestone results, corpus gaps, deterministic failure artifacts, and
+the authoritative pointer-to-history pipeline are tracked in
+[notation-entry-improvement-ledger.md](notation-entry-improvement-ledger.md).
+
 ## Test Coverage
 
 - unit:
