@@ -1,6 +1,6 @@
 # Physical iPad Direct-Entry QA
 
-Updated: 2026-07-28
+Updated: 2026-07-29
 
 ## Purpose
 
@@ -16,9 +16,9 @@ and include the overlay's `data-ghost-snap-trace` value when possible.
 
 | Device/runtime | Status | Notes |
 | --- | --- | --- |
-| Hover-capable iPad + compatible Apple Pencil | Not run in this workspace | Confirm `pointerType="pen"` hover moves arrive with `buttons=0` before contact. |
-| iPad + Apple Pencil without hover | Not run in this workspace | Confirm contact immediately shows the shadow note and loupe fallback. |
-| Finger-only iPad entry | Partially run on iPad Air 13-inch (M2) | Standalone native launch passed; complete the entry gesture and audible-playback rows manually after unlocking the device. |
+| Hover-capable iPad + compatible Apple Pencil | Not run; Pencil model and hover support were not observable on 2026-07-29 | Confirm `pointerType="pen"` hover moves arrive with `buttons=0` before contact. |
+| iPad + Apple Pencil without hover | Not run; no physical Pencil interaction channel was available on 2026-07-29 | Confirm contact immediately shows the shadow note and loupe fallback. |
+| Finger-only iPad entry | Delivery only on iPad Air 13-inch (M2), iPadOS 26.5.2 | Exact `c91eaa97` standalone build/install/launch passed; finger entry and audible-playback rows were not run. |
 
 Do not mark the hardware pass complete until all available rows have an exact
 device and OS version plus pass/fail evidence. If hover events do not arrive in
@@ -126,3 +126,42 @@ Apple Pencil hover/contact behavior, hands-on finger entry, audible speaker
 output, and the final touch deletion gesture still require a manual unlocked
 device pass. Automated touch coverage and the signed device build do not replace
 those hardware observations.
+
+## Milestone 7 device record
+
+Recorded on 2026-07-29:
+
+| Field | Evidence |
+| --- | --- |
+| Device | `Director Ipad (3)` |
+| Hardware | iPad Air 13-inch (M2), `iPad14,10` |
+| OS | iPadOS 26.5.2 |
+| Pairing | CoreDevice: `available (paired)` |
+| Build | `devel@c91eaa97f25c838ba9793b7f645198b08e48aee9` |
+| App | Debug standalone, `app.nexnote.ipad`, `NexNoteNative/0.0.7` |
+| Server configuration | None; packaged `capacitor.config.json` contains no `server` section |
+| Pencil | Model and attachment state not observable; hover support unknown |
+| Orientation/view/zoom | Not observed |
+
+`npm run ipad:sync` stamped the exact commit, a signed command-line device build
+succeeded, and CoreDevice installed and launched the app. No Mac Next server was
+running, and the physical-device process list contained the installed
+`App.app/App` process. This proves the build, signing, installation, launch, and
+standalone-configuration path only.
+
+The following rows were **not run** because Codex had no physical touch/Pencil
+interaction channel:
+
+- hover-capable Pencil and explicit no-hover Pencil behavior;
+- finger entry;
+- portrait and landscape;
+- page and continuous view at low, normal, and high zoom;
+- every staff line/space and three ledger lines above/below;
+- treble, bass, grand staff, blank, dense, chordal, multi-voice, tuplet, grace,
+  pickup, and TAB material;
+- slow movement, boundary jitter, fast pitch scrubbing, pan, and zoom;
+- hover, contact, refinement, release, cancellation, Undo, audible playback,
+  local editing, and export.
+
+No success was inferred from the running process, and no screen recording or
+failure trace exists because no interaction scenario was executed.

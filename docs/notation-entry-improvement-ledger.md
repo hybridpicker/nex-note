@@ -519,12 +519,57 @@ preview can still fail to reach mutation.
   remain unverified. MuseScore CLI stability prevents a clean external-oracle
   pass on this Mac, and broader per-workflow export/history matrix rows can
   still grow.
-- Commit SHA: pending the Milestone 6 commit.
+- Commit SHA: `c91eaa97f25c838ba9793b7f645198b08e48aee9`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 7 — Physical iPad evidence
+
+- Date: 2026-07-29
+- Starting commit and installed shared payload:
+  `c91eaa97f25c838ba9793b7f645198b08e48aee9`.
+- Device inventory:
+  - device: `Director Ipad (3)`;
+  - model: iPad Air 13-inch (M2), identifier `iPad14,10`;
+  - iPadOS: 26.5.2;
+  - pairing: CoreDevice reported `available (paired)`;
+  - Pencil model: not observable from the available device tooling and not
+    supplied manually, so no Pencil capability was assumed;
+  - orientation, view mode, and zoom: not observed because there was no
+    hands-on interaction channel.
+- App configuration: standalone Debug device build, bundle identifier
+  `app.nexnote.ipad`, `NexNoteNative/0.0.7` user-agent suffix, bundled
+  `.native-ipad` web directory, and no `server` configuration.
+- Native evidence:
+  - `npm run ipad:sync` rebuilt and stamped the standalone payload from
+    `devel@c91eaa97`.
+  - the first command-line build correctly failed closed because the generated
+    project does not persist a development team;
+  - the retry supplied the previously used local team as a command-line-only
+    automatic-signing override and completed with `** BUILD SUCCEEDED **`;
+  - CoreDevice installed the signed app on the physical iPad, launched
+    `app.nexnote.ipad` while no Mac Next server was running, and reported the
+    installed app process running;
+  - the build and launch prove delivery and standalone configuration, not
+    successful notation interaction inside the app.
+- Physical interaction evidence: **not run**. The environment could build,
+  install, launch, and inspect processes, but it could not physically touch the
+  screen or Pencil. Therefore no pass is claimed for Pencil hover/no-hover,
+  finger entry, portrait/landscape, page/continuous view, zoom levels, staff or
+  ledger-line coverage, score-class coverage, slow/jitter/fast refinement,
+  pan/zoom interaction, cancellation, Undo, audible playback, local editing,
+  or export. No screen recording or failure trace was created because no
+  interaction scenario was executed.
+- Implementation result: no new defect was evidenced by the device delivery
+  path, so Milestone 7 changes documentation only.
+- Remaining risks: every hands-on row in `docs/ipad-direct-entry-qa.md` remains
+  open until an unlocked device and a person or suitable physical-interaction
+  harness can exercise it. Apple Pencil model and hover support remain unknown.
+- Commit SHA: pending the Milestone 7 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings
 
 | Severity | Finding | Next evidence-driven milestone |
 | --- | --- | --- |
-| P2 | Several corpus classes have semantic/unit evidence but not a full direct-pointer browser matrix | Milestones 2–6 corpus expansion |
-| P2 | Apple Pencil hover/no-hover and hands-on finger refinement remain unverified on unlocked physical hardware | Milestone 7 physical iPad evidence |
+| P2 | Several corpus classes have semantic/unit evidence but not a full direct-pointer browser matrix | Next evidence-driven continuous-improvement loop |
+| P2 | Apple Pencil hover/no-hover and hands-on finger refinement remain unverified; Milestone 7 proved build/install/launch only because no physical interaction channel was available | Next unlocked-device hands-on pass |

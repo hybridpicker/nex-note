@@ -143,3 +143,19 @@ QA artifacts for the step-time anchor validation pass are under `artifacts/qa/st
   pass. Artifacts are under
   `.nex/musescore-roundtrip-smoke-2026-07-29T07-33-17-982Z` and
   `.nex/musescore-roundtrip-smoke-2026-07-29T07-35-00-196Z`.
+
+## Milestone 7 Physical iPad Evidence 2026-07-29
+
+- Physical delivery passed on `Director Ipad (3)`, iPad Air 13-inch (M2)
+  (`iPad14,10`), iPadOS 26.5.2.
+- The standalone payload was stamped from
+  `c91eaa97f25c838ba9793b7f645198b08e48aee9`, signed, installed, and launched
+  with no Mac Next server running. CoreDevice reported the app process.
+- The packaged configuration contains no `server` section and preserves the
+  `NexNoteNative/0.0.7` user-agent path.
+- This is not a notation-entry behavior pass. Pencil model/hover support,
+  finger/Pencil gestures, orientation, page/continuous view, zoom, staff and
+  score-class matrices, Undo, audible playback, local editing, and export were
+  **not run** because no physical interaction channel was available.
+- No parity row is promoted on process-launch evidence alone. The exact open
+  matrix is recorded in `docs/ipad-direct-entry-qa.md`.
