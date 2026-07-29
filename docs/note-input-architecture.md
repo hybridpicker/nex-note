@@ -65,6 +65,9 @@ This document describes the deterministic note-input pipeline introduced for poi
   - pointer commit now consumes the same resolved model used for ghost preview
   - stale visible ghosts are not allowed to commit after live resolution invalidates them
   - rest-only internal slots are commit-capable only when the ghost target carries matching rendered/synthetic snap evidence and validator diagnostics
+  - semantic snap diagnostics and protected-region checks preserve a validated
+    first-slot rendered-rest target rather than moving it onto, or hiding it
+    behind, the following pitched note
   - final horizontal placement is snap-derived: after target resolution, `previewLeft` is recomputed as `canonicalSnapX - noteheadCenterX`, and `resolvedTarget.domX` is the commit X
 
 - [hooks/useNoteEditor.ts](../hooks/useNoteEditor.ts)
@@ -89,6 +92,10 @@ This document describes the deterministic note-input pipeline introduced for poi
 - X (slot/onset) and Y (pitch lane) resolved independently
 - X is snap-locked: every visible ghost and every pointer commit must use the rendered snap-grid X for its timestamp. Pointer X may choose the nearest legal slot, but it must never become the notehead/commit X.
 - the resolved horizontal coordinate is single-source: `RenderedGhostGrid` feeds `InteractiveEditMap`, `InteractiveEditMap` resolves `ResolvedEditTarget.domX`, and `ScoreEditor` rebases the visual ghost to that same X
+- a core-backed leading-rest glyph is the authoritative timestamp-zero anchor
+  when it lies beyond the system-start modifier guard, within the measure, and
+  safely before the first pitched anchor; a stale, synthetic, modifier-overlap,
+  or notehead-overlap candidate is still clamped or rejected
 - final visual placement is always `previewLeft = canonicalSnapX - noteheadCenterX`
 - If no rendered or explicitly synthetic snap-grid point exists for the resolved timestamp/staff/voice, pointer note input fails closed: no ghost and no commit.
 - ambiguous or non-visible targets resolve to `null` (fail-closed)
@@ -136,6 +143,9 @@ the authoritative pointer-to-history pipeline are tracked in
   - grace entry creates a distinct zero-duration semantic event before the selected anchor; the rhythmic anchor retains its identity and duration, paired notation/TAB receives a matching grace entity, and MusicXML cursor advancement uses the main event rather than the grace event
   - tuplet entry divides one semantic rhythmic slot rather than labeling a pre-existing range: the first note/chord/rest keeps its IDs, remaining equal units are rests ready for entry, the part division grid is rescaled exactly, paired notation/TAB receives a separate same-number span, and unsafe range/tie/nested requests return `tuplet_command_rejected`
   - beat-1 rest plus eighth-note mouse entry keeps visible notehead X and commit X on the same rendered rest snap
+  - system-start normalization preserves a safely separated core-backed
+    leading rest while continuing to clamp invalid, stale, or
+    modifier-overlapping candidates
 
 - e2e:
   - mouse entry into empty measures via measured canonical ghost slots

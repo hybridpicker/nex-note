@@ -8,9 +8,9 @@ milestones. A milestone is complete only after its commit is pushed to
 
 ## Quality gates
 
-| Metric | Target | Baseline at `5b41fcc` | Status |
+| Metric | Target | Evidence through Milestone 1 | Status |
 | --- | --- | --- | --- |
-| Preview/commit parity | 100% across the regression corpus | 19 of 20 executed browser cases passed; the beat-one rest/eighth-note mouse case failed deterministically | FAIL |
+| Preview/commit parity | 100% across the regression corpus | 20 of 20 executed browser cases passed after preserving the authoritative rendered leading-rest anchor | PASS |
 | Hover mutations | 0 | 0 in unit and Playwright coverage | PASS |
 | Contact-preview mutations | 0 | 0 in unit and Playwright coverage | PASS |
 | Cancellation mutations | 0 | 0 in unit and Playwright coverage | PASS |
@@ -19,7 +19,7 @@ milestones. A milestone is complete only after its commit is pushed to
 | Incorrect active-voice commits | 0 | 0 observed in the executed corpus | PASS |
 | Undo mismatches | 0 | 0 in covered workflows; the full workflow matrix is not yet covered | PARTIAL |
 | Pointer-target failures without diagnostics | 0 | Commit misses and resolver failures publish Input Doctor or target diagnostics; corpus review is incomplete | PARTIAL |
-| Mouse regressions introduced by tablet work | 0 | One deterministic existing mouse commit failure is present at the starting commit | FAIL |
+| Mouse regressions introduced by tablet work | 0 | The deterministic beat-one mouse failure is fixed; all executed mouse regressions pass | PASS |
 | Tablet regressions introduced by mouse work | 0 | 5 of 5 tablet-entry Playwright cases passed | PASS |
 | Stable tablet visual publications | At most one per animation frame | Tablet/coalesced moves retain only the latest sample and publish through one `requestAnimationFrame`; no runtime frame counter yet | PARTIAL |
 | Full semantic regeneration during raw refinement | 0 | Session refinement is ref/state based and does not execute commands; no runtime regeneration counter yet | PARTIAL |
@@ -69,7 +69,7 @@ preview can still fail to reach mutation.
 | Score/input class | Current evidence | Gap |
 | --- | --- | --- |
 | Blank and full-measure-rest measures | Rendered-grid units, empty-score snap E2E, tablet fixture | Broader zoom/view matrix |
-| Split rests and leading rests | Rendered-grid units and beat-one rest E2E | Deterministic mouse commit failure at beat one |
+| Split rests and leading rests | Rendered-grid units and repeat-stable beat-one rest E2E | Broader zoom/view matrix |
 | Dense passages and chords | Mouse precision second-cluster E2E, resolver units | Larger multi-voice chord ambiguity corpus |
 | Voices 1-4 | Resolver and editor tests | Cross-part/staff browser matrix |
 | Grand staff | Staff-lock units, piano semantic/snap fixtures | Physical touch/Pencil jitter |
@@ -125,14 +125,73 @@ preview can still fail to reach mutation.
 - Remaining risks: the deterministic mouse parity defect is P1. C-clef,
   multi-voice, tuplet/grace, view/zoom, and physical-iPad cross-products are not
   yet complete. Semantic-grid fuzz was not enabled in this run.
-- Commit SHA: pending the baseline commit.
+- Commit SHA: `713b3ee0de96e23e64694baf6fa2248b542090f4`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 1 — Preview/commit parity
+
+- Date: 2026-07-29
+- Starting commit: `713b3ee0de96e23e64694baf6fa2248b542090f4`
+- Reproduction fixture and steps: the Milestone 0
+  `buildLeadingRestScore()` mouse workflow, unchanged.
+- Root cause: the renderer placed the leading rest at X `191.25`, but
+  `normalizeSystemStartProtectedAnchors(...)` clamped its timestamp-zero anchor
+  to X `229.82`, the left edge of the following C4 notehead. Semantic snap
+  diagnostics repeated that clamp, while the generic protected-region overlay
+  guard hid the corrected target. A click at the clamped position correctly
+  selected the existing C4 under the pointer, so no eighth-note insertion or
+  history transaction occurred.
+- Fix: a real core-backed leading-rest glyph is now authoritative when it is
+  past the system-start modifier guard, inside its measure, before the earliest
+  pitched onset, and its rendered right edge remains safely before the first
+  protected/pitched rectangle. First-measure normalization, semantic snap
+  diagnostics, and overlay protection all preserve that exact target. Invalid,
+  stale, synthetic, and modifier-overlapping rest anchors remain clamped or
+  rejected.
+- Selection contract: direct notehead selection and drag retain priority. The
+  fix removes the false notehead overlap instead of weakening selection
+  arbitration or recomputing a different commit target.
+- Files changed:
+  - `src/render-bridge/osmd/rendered-ghost-grid.ts`
+  - `components/ScoreEditor.tsx`
+  - `test/rendered-ghost-grid.test.ts`
+  - `docs/note-input-architecture.md`
+  - this ledger
+- Automated evidence:
+  - `npx tsx --test test/rendered-ghost-grid.test.ts` — 26 passed, 0 failed;
+    the new regression failed before the implementation with expected X `191`
+    and actual X `230`.
+  - `npx tsx --test test/tablet-entry-session.test.ts test/staff-pitch.test.ts test/score-input-edit-map.test.ts test/score-input-resolvers.test.ts test/smart-ghost-note.test.ts test/rendered-ghost-grid.test.ts test/user-visible-note-editor.test.ts`
+    — 282 passed, 0 failed.
+  - isolated beat-one Playwright regression with `--repeat-each=3` — 3 passed,
+    0 failed; ghost notehead, effective snap, resolved target, and commit X all
+    measured `191.25`.
+  - `npx playwright test e2e/tablet-entry.spec.ts e2e/mouse-precision-stress.spec.ts e2e/snap-ghost-debug.spec.ts e2e/exhaustive-mouse-grid.spec.ts --project regression`
+    — 20 passed, 0 failed.
+  - `npm test` — 1,070 passed, 0 failed.
+  - `npm run build` — production build and TypeScript checks passed.
+  - `npm run ipad:sync` and `npm run ipad:doctor` — standalone native bundle
+    synchronized; native project, Xcode, disk, LAN, and Capacitor checks passed.
+  - `npm run electron:refresh` — repeated all 1,070 unit tests and the
+    production build, packaged the arm64 macOS app, and verified the package.
+  - `git diff --check` — passed.
+- Physical-device evidence: not run. This milestone corrects shared rendered
+  geometry and pointer arbitration; native sync/doctor validation is required
+  before commit, while physical touch/Pencil evidence remains Milestone 7.
+- Performance evidence: no work was added to the raw pointer-move or
+  animation-frame publication loops. The new checks execute while building or
+  consuming rendered geometry.
+- Remaining risks: C-clef, multi-voice, tuplet/grace, complete view/zoom, and
+  physical-iPad cross-products remain incomplete. Existing fixture diagnostics
+  for hidden strong beats remain visible in broad browser logs and require
+  separate evidence before they are treated as an entry defect.
+- Commit SHA: pending the Milestone 1 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings
 
 | Severity | Finding | Next evidence-driven milestone |
 | --- | --- | --- |
-| P1 | Valid beat-one rest ghost fails to commit an eighth note with the mouse | Milestone 1: trace pointerdown arbitration, preserve the authoritative visible target when the click lands on it, and prove preview/commit/history parity |
 | P2 | Runtime counters do not yet prove one stable visual publication per frame or zero semantic regeneration during refinement | Milestone 5 observability and performance instrumentation |
 | P2 | Several corpus classes have semantic/unit evidence but not a full direct-pointer browser matrix | Milestones 2–6 corpus expansion |
 | P2 | Apple Pencil hover/no-hover and hands-on finger refinement remain unverified on unlocked physical hardware | Milestone 7 physical iPad evidence |

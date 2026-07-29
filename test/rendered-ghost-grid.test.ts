@@ -1737,6 +1737,97 @@ test('buildRenderedGhostGrid keeps a leading rest snap before following note anc
   assert.ok(rest.domX < note.domX, `rest x=${rest.domX} note x=${note.domX}`);
 });
 
+test('buildRenderedGhostGrid preserves a safe rendered leading-rest center before the next notehead', () => {
+  const coreDocument = makeCoreDoc({
+    score: {
+      id: 's',
+      parts: [{
+        id: 'p1',
+        sourcePartId: 'P1',
+        name: 'Piano',
+        staves: [{
+          id: 'st1',
+          staffIndex: 1,
+          measures: [{
+            id: 'm1',
+            measureNumber: 1,
+            attributes: [{ id: 'a1', divisions: 4, time: { beats: 4, beatType: 4 }, clefs: [] }],
+            voices: [{ id: 'v1', voiceId: 1, events: [
+              {
+                id: 'r0',
+                kind: 'rest',
+                measureNumber: 1,
+                staffIndex: 1,
+                voiceId: 1,
+                timestampNum: 0,
+                timestampDen: 16,
+                durationDivisions: 4,
+                durationType: 'quarter',
+              },
+              {
+                id: 'n1',
+                kind: 'note',
+                measureNumber: 1,
+                staffIndex: 1,
+                voiceId: 1,
+                timestampNum: 4,
+                timestampDen: 16,
+                durationDivisions: 4,
+                durationType: 'quarter',
+                pitch: { step: 'C', octave: 4, alter: 0 },
+              },
+            ] }],
+          }],
+        }],
+      }],
+    } as any,
+  });
+
+  const renderedRestX = 191;
+  const nextNoteheadCenterX = 236;
+  const nextNoteheadLeftX = nextNoteheadCenterX - 6;
+  const grid = buildRenderedGhostGrid([
+    makeRenderedNote({
+      id: 'r0',
+      measureId: 'm1',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 0,
+      timestampDen: 16,
+      domX: renderedRestX,
+      domY: 183,
+      isRest: true,
+    }),
+    makeRenderedNote({
+      id: 'n1',
+      measureId: 'm1',
+      measureNumber: 1,
+      staffIndex: 1,
+      voiceId: 1,
+      timestampNum: 4,
+      timestampDen: 16,
+      domX: nextNoteheadCenterX,
+      domY: 183,
+    }),
+  ], {
+    coreDocument,
+    measureOverlays: [makeOverlay('m1', 1, { x: 130, y: 150, width: 260, height: 70 }, { breakBefore: true })],
+    selectedDuration: '8',
+  });
+
+  const staffPoints = getRenderedGhostStaffPoints(grid, 'm1', 1);
+  const rest = staffPoints.find((point) => point.coreEntityId === 'r0');
+  const note = staffPoints.find((point) => point.coreEntityId === 'n1');
+  assert.ok(rest);
+  assert.ok(note);
+  assert.equal(rest.domX, renderedRestX);
+  assert.ok(
+    rest.domX + 6 < nextNoteheadLeftX,
+    `leading rest snap x=${rest.domX} must not overlap the following notehead left=${nextNoteheadLeftX}`,
+  );
+});
+
 test('buildRenderedGhostGrid exposes trailing rest-end anchors without synthetic visible slots', () => {
   const coreDocument = makeCoreDoc({
     score: {

@@ -7323,6 +7323,19 @@ function buildSemanticSnapDebugPoints(input: {
       point.corePartId ?? 'partless',
       point.staffIndex,
     ].join(':'));
+    const overlay = overlayByMeasureId.get(point.measureId) ?? null;
+    const timestamp = normalizeFraction(point.timestampNum, Math.max(point.timestampDen, 1));
+    const isPreservedLeadingRest = Boolean(
+      point.isRest
+      && !point.synthetic
+      && point.coreEntityId
+      && timestamp.num === 0
+      && overlay
+      && point.domX >= leadingTimeSignatureGuardRightX(overlay) - 0.75
+      && protectedStart != null
+      && point.domX < protectedStart - 0.5
+    );
+    if (isPreservedLeadingRest) return point.domX;
     if (point.isRest && protectedStart != null && point.domX < protectedStart - 0.5) {
       return protectedStart;
     }
@@ -7689,6 +7702,7 @@ function ghostTargetOverlapsProtectedRect(
   protectedRects: SemanticProtectedDebugRect[],
 ) {
   if (!target || target.placementMode === 'chord') return false;
+  if (isResolvedFirstSlotRestSnapTarget(target)) return false;
   const noteheadX = ghostVisibleNoteheadCenterX(target);
   const noteheadY = target.previewTop + 28;
   return protectedRects.some((region) => (

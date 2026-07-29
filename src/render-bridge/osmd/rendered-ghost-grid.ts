@@ -741,8 +741,16 @@ function normalizeSystemStartProtectedAnchors(
   );
   const semanticStartByMeasure = new Map<string, number>();
   const semanticStartByStaff = new Map<string, number>();
+  const earliestPitchedRatioByStaff = new Map<string, number>();
+  const renderedRestByCoreEntityId = new Map<string, RenderedNote>();
   for (const renderedNote of renderedNotes) {
-    if (renderedNote.note.isRest || !renderedNote.note.coreMeasureId) continue;
+    if (!renderedNote.note.coreMeasureId) continue;
+    if (renderedNote.note.isRest) {
+      if (renderedNote.coreEntityId) {
+        renderedRestByCoreEntityId.set(renderedNote.coreEntityId, renderedNote);
+      }
+      continue;
+    }
     const overlay = measureOverlays.get(renderedNote.note.coreMeasureId) ?? null;
     if (!overlay || (!overlay.breakBefore && overlay.measureNumber !== 1)) continue;
     const measureRight = overlay.domRect.x + overlay.domRect.width;
@@ -770,8 +778,15 @@ function normalizeSystemStartProtectedAnchors(
       staffKey,
       staffCurrent == null ? semanticStartX : Math.min(staffCurrent, semanticStartX),
     );
+    const pitchedRatio = renderedNote.note.timestampNum / Math.max(renderedNote.note.timestampDen, 1);
+    const earliestPitchedRatio = earliestPitchedRatioByStaff.get(staffKey);
+    earliestPitchedRatioByStaff.set(
+      staffKey,
+      earliestPitchedRatio == null ? pitchedRatio : Math.min(earliestPitchedRatio, pitchedRatio),
+    );
   }
 
+  const preservedRenderedRestIds = new Set<string>();
   for (const [measureId, measure] of byMeasureId.entries()) {
     if (
       !measureHasRenderedPitchedPoints(measure)
@@ -782,20 +797,46 @@ function normalizeSystemStartProtectedAnchors(
     const fallbackProtectedStartX = systemStartProtectedStartX(measureOverlays.get(measureId) ?? null);
     for (const point of measure.points) {
       if (!point.isRest) continue;
-      const protectedStartX = semanticStartByStaff.get(`${measureId}:${point.staffIndex}`)
+      const staffKey = `${measureId}:${point.staffIndex}`;
+      const protectedStartX = semanticStartByStaff.get(staffKey)
         ?? semanticStartByMeasure.get(measureId)
         ?? fallbackProtectedStartX;
       if (protectedStartX == null) continue;
+      const overlay = measureOverlays.get(measureId) ?? null;
+      const renderedRest = point.coreEntityId
+        ? renderedRestByCoreEntityId.get(point.coreEntityId) ?? null
+        : null;
+      const earliestPitchedRatio = earliestPitchedRatioByStaff.get(staffKey);
+      if (overlay && renderedRest && earliestPitchedRatio != null && point.ratio < earliestPitchedRatio - 1e-6) {
+        const measureRight = overlay.domRect.x + overlay.domRect.width;
+        const guardX = Math.min(
+          measureRight - 1,
+          overlay.domRect.x + Math.min(SYSTEM_START_LEADING_GUARD_PX, Math.max(overlay.domRect.width, 0)),
+        );
+        const renderedRestRightX = renderedRest.domRect.x + renderedRest.domRect.width;
+        const renderedRestX = renderedRest.domCenter.x;
+        if (
+          renderedRestX >= guardX - 0.75
+          && renderedRestX <= measureRight - 1
+          && renderedRestRightX <= protectedStartX - 1
+        ) {
+          point.domX = renderedRestX;
+          preservedRenderedRestIds.add(point.id);
+          continue;
+        }
+      }
       if (point.domX < protectedStartX) {
         point.domX = protectedStartX;
       }
     }
   }
+  return preservedRenderedRestIds;
 }
 
 function normalizeFirstMeasureDownbeatSnapAnchors(
   byMeasureId: Map<string, RenderedGhostMeasureGrid>,
   options: RenderedGhostGridBuildOptions,
+  preservedRenderedRestIds: ReadonlySet<string> = new Set(),
 ) {
   const measureOverlays = new Map(
     (options.measureOverlays ?? []).map((overlay) => [overlay.measureId, overlay] as const),
@@ -817,6 +858,7 @@ function normalizeFirstMeasureDownbeatSnapAnchors(
       if (!point.isRest) continue;
       const timestamp = normalizeTimestamp(point.timestampNum, point.timestampDen);
       if (timestamp.num !== 0) continue;
+      if (preservedRenderedRestIds.has(point.id)) continue;
       if (hasRenderedPitchedPoints && protectedStartX != null && point.domX >= protectedStartX - 0.75) continue;
 
       if (!(rightShift > 0) || point.domX >= centerX) continue;
@@ -1520,8 +1562,8 @@ export function buildRenderedGhostGrid(
     augmentWithMissingCoreNoteAnchors(byMeasureId, buildOptions);
     normalizeRestAnchorPositions(byMeasureId, buildOptions, restOnlyContentBounds);
     augmentWithInterpolatedTicks(byMeasureId, renderedNotes, buildOptions, restOnlyContentBounds);
-    normalizeSystemStartProtectedAnchors(byMeasureId, buildOptions, renderedNotes);
-    normalizeFirstMeasureDownbeatSnapAnchors(byMeasureId, buildOptions);
+    const preservedRenderedRestIds = normalizeSystemStartProtectedAnchors(byMeasureId, buildOptions, renderedNotes);
+    normalizeFirstMeasureDownbeatSnapAnchors(byMeasureId, buildOptions, preservedRenderedRestIds);
     normalizeCompressedRhythmicSnapSpacing(byMeasureId, buildOptions);
     normalizeRestSnapChronology(byMeasureId, buildOptions);
     normalizeCrossStaffRhythmicSnapX(byMeasureId, buildOptions);
