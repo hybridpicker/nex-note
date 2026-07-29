@@ -564,8 +564,8 @@ preview can still fail to reach mutation.
 - Remaining risks: every hands-on row in `docs/ipad-direct-entry-qa.md` remains
   open until an unlocked device and a person or suitable physical-interaction
   harness can exercise it. Apple Pencil model and hover support remain unknown.
-- Commit SHA: pending the Milestone 7 commit.
-- Push confirmation: pending.
+- Commit SHA: `ebdc7b7109ae8d6d65447949e4f9183e1546ec0e`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
 
 ## Ranked open findings
 
