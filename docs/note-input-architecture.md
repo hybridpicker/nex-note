@@ -71,6 +71,10 @@ This document describes the deterministic note-input pipeline introduced for poi
   - tablet cancellation through pointer cancellation, lost capture, Escape, or
     mode exit clears the prospective session and locked ghost; mode exit also
     releases the exact captured pointer before navigation resumes
+  - touch and Pencil refinement retain only the latest queued Pointer Event and
+    process it in one animation-frame callback; runtime metrics expose raw
+    events, scheduled/processed frames, stable-target publications, latest/max
+    sample latency, and semantic document regeneration during an active session
   - final horizontal placement is snap-derived: after target resolution, `previewLeft` is recomputed as `canonicalSnapX - noteheadCenterX`, and `resolvedTarget.domX` is the commit X
 
 - [hooks/useNoteEditor.ts](../hooks/useNoteEditor.ts)

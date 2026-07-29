@@ -94,7 +94,11 @@ For every case:
 
 The dedicated Playwright spec constructs touch and pen Pointer Events and covers
 take-off commit, release jitter, cancellation, pen hover/contact continuity, and
-the existing mouse click contract. It is not a substitute for the device matrix
+the existing mouse click contract. Its burst-refinement case sends 20 touch
+moves in one browser task and requires exactly one scheduled frame, one
+latest-sample processing pass, at most one stable-target publication, unchanged
+MusicXML, and zero semantic document regenerations. It also records latest and
+maximum sample-to-frame latency. This is not a substitute for the device matrix
 above.
 
 ## Local validation record

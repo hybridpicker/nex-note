@@ -114,6 +114,72 @@ async function blankStaffPoint(page: Page) {
   };
 }
 
+test('tablet refinement publishes the latest sample once per frame without semantic regeneration', async ({ page }) => {
+  await boot(page);
+  const point = await blankStaffPoint(page);
+  const beforeXml = await currentXml(page);
+
+  await dispatchPointer(page, 'pointerdown', {
+    pointerId: 37,
+    pointerType: 'touch',
+    x: point.x,
+    y: point.y,
+  });
+
+  await page.getByTestId('score-viewport').evaluate((element, origin) => {
+    for (let index = 0; index < 20; index += 1) {
+      element.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: 37,
+        pointerType: 'touch',
+        clientX: origin.x + (index * 0.2),
+        clientY: origin.y - 10 - (index * 0.2),
+        buttons: 1,
+        button: 0,
+        isPrimary: true,
+      }));
+    }
+  }, point);
+
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+
+  const metrics = await page.evaluate(() => (
+    window as typeof window & {
+      __NEX_NOTE_POINTER_METRICS__?: () => {
+        rawTabletPointerEvents: number;
+        scheduledAnimationFrames: number;
+        processedLatestSamples: number;
+        stableVisualPublications: number;
+        semanticDocumentRegenerations: number;
+        lastSampleLatencyMs: number;
+        maxSampleLatencyMs: number;
+      };
+    }
+  ).__NEX_NOTE_POINTER_METRICS__?.() ?? null);
+
+  expect(metrics).toBeTruthy();
+  expect(metrics?.rawTabletPointerEvents).toBe(20);
+  expect(metrics?.scheduledAnimationFrames).toBe(1);
+  expect(metrics?.processedLatestSamples).toBe(1);
+  expect(metrics?.stableVisualPublications).toBeLessThanOrEqual(1);
+  expect(metrics?.semanticDocumentRegenerations).toBe(0);
+  expect(metrics?.lastSampleLatencyMs).toBeGreaterThanOrEqual(0);
+  expect(metrics?.maxSampleLatencyMs).toBeGreaterThanOrEqual(metrics?.lastSampleLatencyMs ?? 0);
+  expect(await currentXml(page)).toBe(beforeXml);
+
+  await dispatchPointer(page, 'pointercancel', {
+    pointerId: 37,
+    pointerType: 'touch',
+    x: point.x,
+    y: point.y,
+    buttons: 0,
+  });
+});
+
 test('touch uses preview-refine-takeoff and commits the last stable semantic target', async ({ page }) => {
   await boot(page);
   const point = await blankStaffPoint(page);

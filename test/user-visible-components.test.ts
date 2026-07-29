@@ -1610,7 +1610,10 @@ test('ScoreInputOverlay exposes a stable chip, lane, caret, placement, and finge
   assert.equal(preview.props['data-preview-stable-timestamp'], '1/4');
   assert.equal(preview.props['data-preview-voice'], 3);
   assert.equal(preview.props['data-preview-placement'], 'replace');
-  assert.match(nodeText(root.findAllByProps({ 'data-testid': 'pitch-chip' })[0]!), /F♯4/);
+  const pitchChip = root.findAllByProps({ 'data-testid': 'pitch-chip' })[0]!;
+  assert.match(nodeText(pitchChip), /F♯4/);
+  assert.equal(pitchChip.props['aria-live'], undefined);
+  assert.equal(pitchChip.props.role, undefined);
   assert.equal(root.findAllByProps({ 'data-testid': 'pitch-lane-indicator' }).length, 1);
   assert.equal(root.findAllByProps({ 'data-testid': 'onset-caret' }).length, 1);
   const loupe = root.findAllByProps({ 'data-testid': 'pitch-loupe' })[0]!;

@@ -421,6 +421,28 @@ interface TabletEntryVisualState {
   point: PointLike | null;
 }
 
+interface PointerRefinementMetrics {
+  rawTabletPointerEvents: number;
+  scheduledAnimationFrames: number;
+  processedLatestSamples: number;
+  stableVisualPublications: number;
+  semanticDocumentRegenerations: number;
+  lastSampleLatencyMs: number;
+  maxSampleLatencyMs: number;
+}
+
+function createPointerRefinementMetrics(): PointerRefinementMetrics {
+  return {
+    rawTabletPointerEvents: 0,
+    scheduledAnimationFrames: 0,
+    processedLatestSamples: 0,
+    stableVisualPublications: 0,
+    semanticDocumentRegenerations: 0,
+    lastSampleLatencyMs: 0,
+    maxSampleLatencyMs: 0,
+  };
+}
+
 interface OverlayLayerOffset {
   x: number;
   y: number;
@@ -11743,7 +11765,10 @@ export default function ScoreEditor({
   const ghostNoteTargetRef = useRef<GhostNoteTarget | null>(null);
   const tabletEntrySessionRef = useRef<ActiveTabletEntrySession | null>(null);
   const pendingTabletPointerMoveRef = useRef<React.PointerEvent<HTMLDivElement> | null>(null);
+  const pendingTabletPointerMoveTimeRef = useRef<number | null>(null);
   const tabletPointerMoveFrameRef = useRef<number | null>(null);
+  const pointerRefinementMetricsRef = useRef<PointerRefinementMetrics>(createPointerRefinementMetrics());
+  const previousSemanticXmlRef = useRef(xml);
   const lastTabletStaffSwitchPulseRef = useRef(0);
   const [tabletEntryVisual, setTabletEntryVisual] = useState<TabletEntryVisualState>({
     phase: 'idle',
@@ -11839,6 +11864,29 @@ export default function ScoreEditor({
   const lastEmittedSessionViewModeRef = useRef<ScoreViewMode | null>(null);
   const lastEmittedSessionZoomPercentRef = useRef<number | null>(null);
   const lastPlaybackFollowSystemRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const target = window as typeof window & {
+      __NEX_NOTE_POINTER_METRICS__?: () => PointerRefinementMetrics;
+    };
+    const readMetrics = () => ({ ...pointerRefinementMetricsRef.current });
+    target.__NEX_NOTE_POINTER_METRICS__ = readMetrics;
+    return () => {
+      if (target.__NEX_NOTE_POINTER_METRICS__ === readMetrics) {
+        delete target.__NEX_NOTE_POINTER_METRICS__;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      previousSemanticXmlRef.current !== xml
+      && tabletEntrySessionRef.current
+    ) {
+      pointerRefinementMetricsRef.current.semanticDocumentRegenerations += 1;
+    }
+    previousSemanticXmlRef.current = xml;
+  }, [xml]);
 
   useEffect(() => {
     if (!onSessionViewModeChange) return;
@@ -12587,6 +12635,12 @@ export default function ScoreEditor({
         );
       }
       tabletEntrySessionRef.current = boundSession;
+      if (!ghostTargetsEqual(
+        liveTabletSession.lastValidatedPreview,
+        boundSession.lastValidatedPreview,
+      )) {
+        pointerRefinementMetricsRef.current.stableVisualPublications += 1;
+      }
       setTabletEntryVisual({
         phase: boundSession.phase,
         pointerType: boundSession.pointerType,
@@ -12632,6 +12686,7 @@ export default function ScoreEditor({
       tabletPointerMoveFrameRef.current = null;
     }
     pendingTabletPointerMoveRef.current = null;
+    pendingTabletPointerMoveTimeRef.current = null;
   }, []);
 
   const flushPendingTabletPointerMove = useCallback(() => {
@@ -12641,6 +12696,7 @@ export default function ScoreEditor({
     }
     const pending = pendingTabletPointerMoveRef.current;
     pendingTabletPointerMoveRef.current = null;
+    pendingTabletPointerMoveTimeRef.current = null;
     if (pending) processPointerMove(pending);
   }, [processPointerMove]);
 
@@ -12653,13 +12709,26 @@ export default function ScoreEditor({
     // React no longer pools synthetic events, but persist documents that this
     // latest coalesced tablet sample intentionally survives until the frame.
     e.persist();
+    const metrics = pointerRefinementMetricsRef.current;
+    metrics.rawTabletPointerEvents += 1;
     pendingTabletPointerMoveRef.current = e;
+    pendingTabletPointerMoveTimeRef.current = performance.now();
     if (tabletPointerMoveFrameRef.current != null) return;
+    metrics.scheduledAnimationFrames += 1;
     tabletPointerMoveFrameRef.current = window.requestAnimationFrame(() => {
       tabletPointerMoveFrameRef.current = null;
       const pending = pendingTabletPointerMoveRef.current;
+      const queuedAt = pendingTabletPointerMoveTimeRef.current;
       pendingTabletPointerMoveRef.current = null;
-      if (pending) processPointerMove(pending);
+      pendingTabletPointerMoveTimeRef.current = null;
+      if (pending) {
+        const processedAt = performance.now();
+        const latencyMs = queuedAt == null ? 0 : Math.max(0, processedAt - queuedAt);
+        metrics.processedLatestSamples += 1;
+        metrics.lastSampleLatencyMs = latencyMs;
+        metrics.maxSampleLatencyMs = Math.max(metrics.maxSampleLatencyMs, latencyMs);
+        processPointerMove(pending);
+      }
     });
   }, [processPointerMove]);
 
@@ -13413,11 +13482,13 @@ export default function ScoreEditor({
       setVisualSelectionOnly(false);
       applyMeasureSelection([], null);
       if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        pointerRefinementMetricsRef.current = createPointerRefinementMetrics();
         if (tabletPointerMoveFrameRef.current != null) {
           window.cancelAnimationFrame(tabletPointerMoveFrameRef.current);
           tabletPointerMoveFrameRef.current = null;
         }
         pendingTabletPointerMoveRef.current = null;
+        pendingTabletPointerMoveTimeRef.current = null;
         lastTabletStaffSwitchPulseRef.current = 0;
         const staffDetails = staffDetailsByMeasureRef.current.get(liveGhostTarget.measureNumber) ?? [];
         const staffDetail = findNearestStaffDetail(

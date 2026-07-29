@@ -356,13 +356,84 @@ preview can still fail to reach mutation.
   announcements.
 - Remaining risks: localization of the new state vocabulary and physical
   readability at iPad scale still need separate evidence.
-- Commit SHA: pending the Milestone 4 commit.
+- Commit SHA: `31646bbc9d853dfb8d0a8067e8b9bb35e59ed681`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 5 — Performance, accessibility, and resilience
+
+- Date: 2026-07-29
+- Starting commit: `31646bbc9d853dfb8d0a8067e8b9bb35e59ed681`
+- Observed problem: touch and Pencil pointer moves were already coalesced onto a
+  latest-event animation-frame path, but the runtime exposed no proof that a
+  burst scheduled and processed only one frame, published at most one stable
+  target, or avoided semantic document regeneration. Latency was therefore an
+  assumption rather than a measurement.
+- Reproduction fixture: `simple.musicxml` in `e2e/tablet-entry.spec.ts`.
+- Exact steps: start one touch contact on a blank valid staff position, dispatch
+  20 refinement moves synchronously in a single browser task, wait two browser
+  frames, and inspect runtime refinement metrics before cancellation.
+- Input device and surface: synthetic touch Pointer Events on the shared
+  browser/WKWebView path.
+- Baseline result: the exact regression received `null` because no pointer
+  refinement metrics interface existed.
+- Root cause: the latest-sample RAF mechanism had behavioral coverage but no
+  counters for raw events, scheduling, processing, stable publication,
+  latency, or semantic regeneration during contact.
+- Fix: each tablet session now resets a lightweight metrics record. Raw
+  touch/Pencil events replace the queued sample, only the first event schedules
+  the frame, and the frame records latest-sample latency immediately before
+  processing. Stable semantic-preview changes and XML regeneration during an
+  active contact are counted separately. A read-only browser getter exposes a
+  snapshot for diagnostics and removes itself when the editor unmounts.
+- Accessibility/resilience audit:
+  - pitch chips retain localized readable labels but are neither a status role
+    nor an ARIA live region, so scrubbed lanes are not announced continuously;
+  - the existing `prefers-reduced-motion: reduce` rule collapses all preview
+    animation and transition durations;
+  - pointer, resize, scroll, wheel, keyboard, capture, and custom listeners
+    inspected in `ScoreEditor` all retain matching cleanup paths;
+  - per-pitch audition remains deduplicated and interval-gated by the tablet
+    session reducer.
+- Files changed:
+  - `components/ScoreEditor.tsx`
+  - `e2e/tablet-entry.spec.ts`
+  - `test/user-visible-components.test.ts`
+  - `docs/note-input-architecture.md`
+  - `docs/ipad-direct-entry-qa.md`
+  - this ledger
+- Automated evidence:
+  - the exact browser regression failed before instrumentation because the
+    getter was absent, then passed with 20 raw events, 1 scheduled frame,
+    1 processed latest sample, no more than 1 stable publication, 0 semantic
+    regenerations, and unchanged MusicXML.
+  - `npx tsx --test test/tablet-entry-session.test.ts
+    test/user-visible-components.test.ts` — 61 passed, 0 failed.
+  - `npx playwright test e2e/tablet-entry.spec.ts --project regression` —
+    7 passed, 0 failed.
+  - `npx playwright test e2e/tablet-entry.spec.ts
+    e2e/mouse-precision-stress.spec.ts e2e/snap-ghost-debug.spec.ts
+    e2e/exhaustive-mouse-grid.spec.ts --project regression` — 23 passed,
+    0 failed.
+  - `npm test` — 1,071 passed, 0 failed.
+  - `npm run build` — production build and TypeScript checks passed.
+  - `npm run ipad:sync` and `npm run ipad:doctor` — standalone native bundle
+    synchronized and native development checks passed.
+  - `npm run electron:refresh` — repeated all 1,071 unit tests and the
+    production build, packaged the arm64 macOS app, and verified the package.
+  - `git diff --check` — passed.
+- Physical-device evidence: not run. Browser RAF and Pointer Event evidence
+  covers the shared runtime; physical Pencil latency remains a Milestone 7
+  claim.
+- Performance evidence: deterministic counter assertions above plus recorded
+  non-negative latest/max sample latency; no raw event creates React state.
+- Remaining risks: WebKit scheduling under real Pencil load and long-session
+  memory/audio behavior still need physical-device observation.
+- Commit SHA: pending the Milestone 5 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings
 
 | Severity | Finding | Next evidence-driven milestone |
 | --- | --- | --- |
-| P2 | Runtime counters do not yet prove one stable visual publication per frame or zero semantic regeneration during refinement | Milestone 5 observability and performance instrumentation |
 | P2 | Several corpus classes have semantic/unit evidence but not a full direct-pointer browser matrix | Milestones 2–6 corpus expansion |
 | P2 | Apple Pencil hover/no-hover and hands-on finger refinement remain unverified on unlocked physical hardware | Milestone 7 physical iPad evidence |
