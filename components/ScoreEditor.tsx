@@ -12698,6 +12698,13 @@ export default function ScoreEditor({
       dbg.score('pointerdown ignored — outside score container');
       return;
     }
+    if (noteInputMode && (e.button !== 0 || (e.pointerType === 'mouse' && e.ctrlKey))) {
+      dbg.score(
+        `pointerdown ignored — note input requires an unmodified primary button `
+        + `(button=${e.button} ctrl=${String(e.ctrlKey)})`,
+      );
+      return;
+    }
     viewportRef.current?.focus({ preventScroll: true });
 
     const startDirectNoteDrag = (directNote: SelectedNote) => {

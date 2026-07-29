@@ -88,6 +88,10 @@ This document describes the deterministic note-input pipeline introduced for poi
 
 - explicit placement modes: `replace`, `insert`, `chord`
 - explicit active voice input
+- direct note input accepts the primary pointer button except for mouse
+  Control-click; secondary, middle, stylus-barrel, and macOS Control-click
+  presses do not enter selection/commit arbitration, do not prevent the
+  platform context-menu gesture, and do not mutate document history
 - `T` in note-input mode is a create-and-advance action, not the normal-mode tie toggle; a source chord produces a complete tied target chord
 - X (slot/onset) and Y (pitch lane) resolved independently
 - X is snap-locked: every visible ghost and every pointer commit must use the rendered snap-grid X for its timestamp. Pointer X may choose the nearest legal slot, but it must never become the notehead/commit X.
@@ -149,6 +153,8 @@ the authoritative pointer-to-history pipeline are tracked in
 
 - e2e:
   - mouse entry into empty measures via measured canonical ghost slots
+  - right-click and macOS Control-click on a valid shadow note leave MusicXML,
+    history depth, Undo availability, and note count unchanged
   - ghost preview timestamp parity with committed note placement
   - beat-1 rest/eighth-note hover and click regression in `e2e/snap-ghost-debug.spec.ts`
   - keyboard flows: replace, insert-between, chord entry

@@ -19,7 +19,7 @@ milestones. A milestone is complete only after its commit is pushed to
 | Incorrect active-voice commits | 0 | 0 observed in the executed corpus | PASS |
 | Undo mismatches | 0 | 0 in covered workflows; the full workflow matrix is not yet covered | PARTIAL |
 | Pointer-target failures without diagnostics | 0 | Commit misses and resolver failures publish Input Doctor or target diagnostics; corpus review is incomplete | PARTIAL |
-| Mouse regressions introduced by tablet work | 0 | The deterministic beat-one mouse failure is fixed; all executed mouse regressions pass | PASS |
+| Mouse regressions introduced by tablet work | 0 | The deterministic beat-one mouse failure is fixed; all executed mouse regressions pass, and non-primary buttons are mutation-free | PASS |
 | Tablet regressions introduced by mouse work | 0 | 5 of 5 tablet-entry Playwright cases passed | PASS |
 | Stable tablet visual publications | At most one per animation frame | Tablet/coalesced moves retain only the latest sample and publish through one `requestAnimationFrame`; no runtime frame counter yet | PARTIAL |
 | Full semantic regeneration during raw refinement | 0 | Session refinement is ref/state based and does not execute commands; no runtime regeneration counter yet | PARTIAL |
@@ -81,7 +81,7 @@ preview can still fail to reach mutation.
 | Cross-measure ties | History/round-trip fixtures | Pointer-entry parity around tie endpoints |
 | Paired notation/TAB | Guitar/TAB units and mouse precision E2E | Tablet and Electron TAB-heavy smoke |
 | Page/continuous and zoom | Existing ghost/snap and app tests | Complete low/normal/high cross-product |
-| Mouse | Precision, exhaustive grid, snap debug | Fix the deterministic beat-one rest commit |
+| Mouse | Precision, exhaustive grid, snap debug, non-primary-button safety | Broader modifier and rapid system-boundary matrix |
 | Touch/Pencil | Session units and 5-case Playwright suite | Physical hover/no-hover/finger evidence |
 | MusicXML/MuseScore/playback | Existing round-trip, MuseScore harness, and playback tests | Re-run broad interop proof after interaction fixes |
 
@@ -185,7 +185,63 @@ preview can still fail to reach mutation.
   physical-iPad cross-products remain incomplete. Existing fixture diagnostics
   for hidden strong beats remain visible in broad browser logs and require
   separate evidence before they are treated as an entry defect.
-- Commit SHA: pending the Milestone 1 commit.
+- Commit SHA: `990f6900dd2efb36279a885ccd06b156535ea29b`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 2 — Professional mouse entry
+
+- Date: 2026-07-29
+- Starting commit: `990f6900dd2efb36279a885ccd06b156535ea29b`
+- Observed problem: right-clicking a valid visible shadow note in `N` mode
+  committed it as though the primary button had been pressed. Follow-up
+  modifier inspection found the same missing context-menu distinction for
+  macOS Control-click.
+- Reproduction fixture: the blank four-measure grand-staff score in
+  `e2e/mouse-precision-stress.spec.ts`.
+- Exact steps: enter Note Input, choose quarter duration, hover a valid
+  measure-1 bass-staff E2 shadow note, then right-click or Control-click its
+  visible notehead.
+- Input device and surface: mouse secondary button; Next.js regression surface
+  in Chromium.
+- Baseline result: the measured right-click inserted E2, changed the MusicXML,
+  increased history depth from 0 to 1, and enabled Undo. The Control-click path
+  had no separate guard before the fix.
+- Root cause: `handlePointerDown(...)` gated double-click TAB editing and drag
+  creation by `button === 0`, but the shared note-input commit block had no
+  primary-button guard.
+- Fix: note-input pointer handling now returns before focus, selection, target
+  arbitration, `preventDefault`, or commit when `button !== 0` or a mouse
+  Control-click is received. This also makes stylus barrel and middle-button
+  presses safe while preserving the platform context-menu gesture.
+- Files changed:
+  - `components/ScoreEditor.tsx`
+  - `e2e/mouse-precision-stress.spec.ts`
+  - `docs/note-input-architecture.md`
+  - this ledger
+- Automated evidence:
+  - the new exact Playwright regression failed before the fix with one inserted
+    E2 and one history transaction; its final form covers both right-click and
+    a held-Control primary click.
+  - `npx playwright test e2e/mouse-precision-stress.spec.ts --project regression`
+    — 4 passed, 0 failed.
+  - `npx playwright test e2e/tablet-entry.spec.ts e2e/mouse-precision-stress.spec.ts e2e/snap-ghost-debug.spec.ts e2e/exhaustive-mouse-grid.spec.ts --project regression`
+    — 21 passed, 0 failed.
+  - `npm test` — 1,070 passed, 0 failed.
+  - `npm run build` — production build and TypeScript checks passed.
+  - `npm run ipad:sync` and `npm run ipad:doctor` — standalone native bundle
+    synchronized and the native development checks passed.
+  - `npm run electron:refresh` — repeated all 1,070 unit tests and the
+    production build, packaged the arm64 macOS app, and verified the package.
+  - `git diff --check` — passed.
+- Physical-device evidence: not run. Mouse secondary-button behavior is local;
+  the shared pointer guard will still be synchronized and checked in the native
+  iPad bundle.
+- Performance evidence: rejected non-primary presses return before geometry,
+  React state, or semantic work.
+- Remaining risks: broader Shift/Cmd/Ctrl/Alt browser coverage and rapid entry
+  across system boundaries remain incomplete. Physical Pencil barrel behavior
+  is not claimed without hardware evidence.
+- Commit SHA: pending the Milestone 2 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings

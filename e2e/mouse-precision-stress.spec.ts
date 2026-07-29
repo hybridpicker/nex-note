@@ -305,6 +305,77 @@ test('mouse click commits the same measure, timestamp, and pitch as the visible 
   expect(wrongMeasureHit).toBe(false);
 });
 
+test('right-click and Ctrl-click on a valid shadow note create no notation transaction', async ({ page }) => {
+  await bootWithScore(page, buildBlankPrecisionXml());
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('N');
+  await page.keyboard.press('5');
+
+  const target = await findMeasureOneBassE2BeatOne(page);
+  const before = await page.evaluate(() => {
+    const state = (window as typeof window & {
+      __NEX_NOTE_E2E_STATE__?: {
+        xml?: string;
+        historyDepth?: number;
+        canUndo?: boolean;
+      };
+    }).__NEX_NOTE_E2E_STATE__;
+    return {
+      xml: state?.xml ?? '',
+      historyDepth: state?.historyDepth ?? -1,
+      canUndo: state?.canUndo ?? false,
+    };
+  });
+
+  await page.mouse.click(target.click.x, target.click.y, { button: 'right' });
+  await page.waitForTimeout(250);
+
+  const after = await page.evaluate(() => {
+    const state = (window as typeof window & {
+      __NEX_NOTE_E2E_STATE__?: {
+        xml?: string;
+        historyDepth?: number;
+        canUndo?: boolean;
+      };
+    }).__NEX_NOTE_E2E_STATE__;
+    return {
+      xml: state?.xml ?? '',
+      historyDepth: state?.historyDepth ?? -1,
+      canUndo: state?.canUndo ?? false,
+    };
+  });
+  expect(after).toEqual(before);
+
+  await page.keyboard.down('Control');
+  await page.mouse.click(target.click.x, target.click.y, { button: 'left' });
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(250);
+
+  const afterControlClick = await page.evaluate(() => {
+    const state = (window as typeof window & {
+      __NEX_NOTE_E2E_STATE__?: {
+        xml?: string;
+        historyDepth?: number;
+        canUndo?: boolean;
+      };
+    }).__NEX_NOTE_E2E_STATE__;
+    return {
+      xml: state?.xml ?? '',
+      historyDepth: state?.historyDepth ?? -1,
+      canUndo: state?.canUndo ?? false,
+    };
+  });
+  expect(afterControlClick).toEqual(before);
+
+  const core = await readCurrentCore(page);
+  const insertedNotes = core.score.parts[0].staves.flatMap((staff) => (
+    staff.measures.flatMap((measure) => (
+      measure.voices.flatMap((voice) => voice.events.filter((event) => event.kind === 'note'))
+    ))
+  ));
+  expect(insertedNotes).toHaveLength(0);
+});
+
 test('mouse note entry can build a four-note second cluster without lower notes being stolen by existing noteheads', async ({ page }) => {
   await bootWithScore(page, buildBlankPrecisionXml());
   await page.keyboard.press('Escape');
