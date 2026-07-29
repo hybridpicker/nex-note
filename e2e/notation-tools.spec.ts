@@ -386,6 +386,28 @@ test.afterEach(async ({ page }, testInfo) => {
   await writeFailureArtifacts(page, testInfo);
 });
 
+test('notation toolbar states active voice and entry intent in plain language', async ({ page }) => {
+  await bootWithScore(page);
+
+  const summary = page.getByTestId('note-input-state-summary');
+  await expect(summary).toHaveText('Navigation · Voice 1 · Insert · Single note');
+  await expect(summary).toHaveAttribute('aria-live', 'off');
+
+  await page.getByTitle('Toggle note input (N)').click();
+  await page.getByTitle('Voice 3 (Cmd/Ctrl+Alt/Option+3)').click();
+  await page.getByTitle('Entry: insert (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)').click();
+  await page.getByTitle('Multi-voice input off (Cmd/Ctrl+Shift+H)').click();
+
+  await expect(summary).toHaveText('Note Input · Voice 3 · Replace · Chord');
+  await expect(summary).toHaveAttribute('data-active-voice', '3');
+  await expect(summary).toHaveAttribute('data-entry-mode', 'replace');
+  await expect(summary).toHaveAttribute('data-chord-input', 'chord');
+  await expect(summary).toHaveAttribute(
+    'aria-label',
+    'Notation input state: Note Input, Voice 3, Replace, Chord',
+  );
+});
+
 test('arrow-key transpose applies to every active selected note', async ({ page }) => {
   await bootWithScore(page);
 

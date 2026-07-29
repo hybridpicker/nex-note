@@ -87,6 +87,14 @@ This document describes the deterministic note-input pipeline introduced for poi
   - `data-ghost-voice`
   - `data-ghost-diagnostics`
 
+- [components/NoteInputToolbar.tsx](../components/NoteInputToolbar.tsx)
+  - publishes one persistent, plain-language input-state summary on both the
+    compact toolbar and sidebar surfaces
+  - states navigation versus Note Input, active voice, Insert versus Replace,
+    and Chord versus Single note without depending on active-button color
+  - deliberately uses `aria-live="off"` so pitch refinement and pointer
+    scrubbing never turn the summary into a high-frequency announcement stream
+
 ## Deterministic Resolution Rules
 
 - explicit placement modes: `replace`, `insert`, `chord`

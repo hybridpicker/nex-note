@@ -295,7 +295,68 @@ preview can still fail to reach mutation.
 - Remaining risks: physical hover/no-hover behavior, two-finger navigation,
   orientation changes during contact, and real system-gesture takeover still
   require device evidence.
-- Commit SHA: pending the Milestone 3 commit.
+- Commit SHA: `dbb91f8551f97341e796f7f98b0f1f1a8df1c8d4`
+- Push confirmation: pushed to `origin/devel`; local `HEAD` matched the remote.
+
+## Milestone 4 — Explicit professional input state
+
+- Date: 2026-07-29
+- Starting commit: `dbb91f8551f97341e796f7f98b0f1f1a8df1c8d4`
+- Observed problem: active voice, insertion policy, and chord intent were
+  primarily represented by colored pressed buttons and terse `INS`, `OVR`,
+  and `CHD` labels. The sidebar header omitted the inactive chord state
+  entirely, so a musician had to infer whether the next action would replace,
+  insert, or add a chord tone.
+- Reproduction fixture: the standard notation-tools browser fixture and a
+  direct `NoteInputToolbar` component render.
+- Exact steps: inspect the notation controls in Navigation or Note Input,
+  select voice 3, switch insertion policy, and toggle chord input.
+- Input device and surface: keyboard/mouse-accessible notation controls on the
+  shared Next.js/React surface.
+- Baseline result: no stable state summary element existed; the new component
+  regression failed with `No instances found with props:
+  {"data-testid":"note-input-state-summary"}`.
+- Root cause: the only combined state string used abbreviations in a collapsible
+  sidebar section summary, while the compact toolbar exposed independent
+  color-coded controls.
+- Fix: both toolbar placements now show a persistent plain-language chip such
+  as `Note Input · Voice 3 · Replace · Chord`. It carries stable mode data and
+  a full accessible label, and explicitly names `Single note` when Chord is
+  off. `aria-live="off"` prevents this persistent context from becoming a
+  pointer-scrub announcement channel.
+- Files changed:
+  - `components/NoteInputToolbar.tsx`
+  - `test/user-visible-components.test.ts`
+  - `e2e/notation-tools.spec.ts`
+  - `docs/note-input-architecture.md`
+  - this ledger
+- Automated evidence:
+  - the exact component regression failed before implementation, then passed.
+  - `npx tsx --test test/user-visible-components.test.ts` — 49 passed,
+    0 failed.
+  - `npx playwright test e2e/notation-tools.spec.ts --project regression
+    --grep='states active voice and entry intent'` — 1 passed, 0 failed;
+    the complete file passed 25/25.
+  - `npx playwright test e2e/tablet-entry.spec.ts
+    e2e/mouse-precision-stress.spec.ts e2e/snap-ghost-debug.spec.ts
+    e2e/exhaustive-mouse-grid.spec.ts --project regression` — 22 passed,
+    0 failed.
+  - `npm test` — 1,071 passed, 0 failed.
+  - `npm run build` — production build and TypeScript checks passed.
+  - `npm run ipad:sync` and `npm run ipad:doctor` — standalone native bundle
+    synchronized and native development checks passed.
+  - `npm run electron:refresh` — repeated all 1,071 unit tests and the
+    production build, packaged the arm64 macOS app, and verified the package.
+  - `git diff --check` — passed.
+- Physical-device evidence: not run. The state treatment is shared and will be
+  synchronized into the native shell, but a real iPad claim is deferred to
+  Milestone 7.
+- Performance evidence: the summary derives from existing render state and
+  adds no pointer listeners, geometry reads, semantic regeneration, or live
+  announcements.
+- Remaining risks: localization of the new state vocabulary and physical
+  readability at iPad scale still need separate evidence.
+- Commit SHA: pending the Milestone 4 commit.
 - Push confirmation: pending.
 
 ## Ranked open findings

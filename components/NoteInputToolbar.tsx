@@ -477,11 +477,14 @@ export default function NoteInputToolbar({
   const selectedAccidentalLabel = selectedAccidental
     ? ACCIDENTALS.find((accidental) => accidental.value === selectedAccidental)?.title ?? ''
     : t('note.natural');
-  const activeModes = [
-    noteInputMode ? 'EDIT N' : null,
+  const primaryInputState = [
+    noteInputMode ? 'Note Input' : 'Navigation',
     `${t('note.voice')} ${selectedVoice}`,
-    entryMode === 'overwrite' ? 'OVR' : 'INS',
-    chordInputMode ? 'CHD' : null,
+    entryMode === 'overwrite' ? 'Replace' : 'Insert',
+    chordInputMode ? 'Chord' : 'Single note',
+  ];
+  const activeModes = [
+    ...primaryInputState,
     stepInputKeyboardMode ? 'STEP' : null,
     inputByDurationMode ? `DUR ${preparedDurationPitchLabel || '—'}` : null,
     midiInputEnabled ? 'MIDI' : null,
@@ -583,6 +586,21 @@ export default function NoteInputToolbar({
   const rootClassName = isSidebar
     ? 'nex-note-input-tools nex-note-input-tools--sidebar flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto border-r border-nex-border bg-white p-2'
     : 'nex-note-input-tools mt-2 flex flex-wrap items-center gap-1 border-t border-nex-border pt-2';
+
+  const inputStateSummary = (
+    <div
+      data-testid="note-input-state-summary"
+      data-active-voice={selectedVoice}
+      data-entry-mode={entryMode === 'overwrite' ? 'replace' : 'insert'}
+      data-chord-input={chordInputMode ? 'chord' : 'single-note'}
+      aria-label={`Notation input state: ${primaryInputState.join(', ')}`}
+      aria-live="off"
+      title="Current notation input state"
+      className="flex min-h-8 shrink-0 items-center rounded-md border border-slate-300 bg-slate-50 px-2.5 text-[10px] font-semibold tracking-wide text-slate-700"
+    >
+      {primaryInputState.join(' · ')}
+    </div>
+  );
 
   const durationTools = (
     <Group>
@@ -1124,6 +1142,7 @@ export default function NoteInputToolbar({
   if (isSidebar) {
     return (
       <div className={rootClassName} aria-label="Notation tools">
+        {inputStateSummary}
         <SidebarSection
           title={t('note.section.notes')}
           summary={`${t(selectedDurationTitleKey)} · ${isDotted ? t('note.dotted') : selectedAccidentalLabel}`}
@@ -1225,6 +1244,8 @@ export default function NoteInputToolbar({
 
   return (
     <div className={rootClassName} aria-label="Notation tools">
+      {inputStateSummary}
+      <Divider />
       {durationTools}
       <Divider />
       {accidentalTools}

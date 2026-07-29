@@ -1137,6 +1137,45 @@ test('NoteInputToolbar exposes the full Notes shortcut map on the sidebar header
   });
 });
 
+test('NoteInputToolbar states voice and entry intent without relying on active-button color', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+
+  act(() => {
+    renderer = create(React.createElement(NoteInputToolbar, noteInputToolbarProps({
+      noteInputMode: true,
+      selectedVoice: 3,
+      entryMode: 'insert',
+      chordInputMode: true,
+    })));
+  });
+
+  let summary = renderer!.root.findByProps({ 'data-testid': 'note-input-state-summary' });
+  assert.equal(nodeText(summary), 'Note Input · Voice 3 · Insert · Chord');
+  assert.equal(summary.props['data-active-voice'], 3);
+  assert.equal(summary.props['data-entry-mode'], 'insert');
+  assert.equal(summary.props['data-chord-input'], 'chord');
+  assert.equal(summary.props['aria-label'], 'Notation input state: Note Input, Voice 3, Insert, Chord');
+  assert.equal(summary.props['aria-live'], 'off');
+
+  act(() => {
+    renderer!.update(React.createElement(NoteInputToolbar, noteInputToolbarProps({
+      noteInputMode: true,
+      selectedVoice: 3,
+      entryMode: 'overwrite',
+      chordInputMode: false,
+    })));
+  });
+
+  summary = renderer!.root.findByProps({ 'data-testid': 'note-input-state-summary' });
+  assert.equal(nodeText(summary), 'Note Input · Voice 3 · Replace · Single note');
+  assert.equal(summary.props['data-entry-mode'], 'replace');
+  assert.equal(summary.props['data-chord-input'], 'single-note');
+
+  act(() => {
+    renderer?.unmount();
+  });
+});
+
 test('EditPalette explains disabled selection and pitched-note actions', () => {
   let renderer: ReturnType<typeof create> | null = null;
 
