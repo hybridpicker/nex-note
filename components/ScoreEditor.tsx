@@ -5333,6 +5333,34 @@ function describeRenderableContainerSize(container: HTMLElement, viewport: HTMLE
   return `${Math.round(size.width)}x${Math.round(size.height)}px`;
 }
 
+function isRenderableLayoutTemporarilyUnavailable(container: HTMLElement, viewport: HTMLElement | null) {
+  if (document.visibilityState === 'hidden') return true;
+  if (window.innerWidth < MIN_OSMD_CONTAINER_WIDTH || window.innerHeight < MIN_OSMD_VIEWPORT_HEIGHT) {
+    return true;
+  }
+
+  for (let element: HTMLElement | null = viewport ?? container; element; element = element.parentElement) {
+    if (element.hidden) return true;
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.contentVisibility === 'hidden') return true;
+  }
+
+  return false;
+}
+
+function getRenderableLayoutWatchTargets(container: HTMLElement, viewport: HTMLElement | null) {
+  const targets = new Set<HTMLElement>();
+
+  for (let element: HTMLElement | null = viewport ?? container; element; element = element.parentElement) {
+    targets.add(element);
+  }
+  for (let element: HTMLElement | null = container; element; element = element.parentElement) {
+    targets.add(element);
+  }
+
+  return targets;
+}
+
 function waitForRenderableContainer(container: HTMLElement, viewport: HTMLElement | null, signal: AbortSignal) {
   if (isRenderableContainerReady(container, viewport)) {
     return Promise.resolve(true);
@@ -5341,16 +5369,37 @@ function waitForRenderableContainer(container: HTMLElement, viewport: HTMLElemen
   return new Promise<boolean>((resolve) => {
     let raf = 0;
     let timeout = 0;
-    let observer: ResizeObserver | null = null;
-    let viewportObserver: ResizeObserver | null = null;
+    let visibleLayoutStartedAt: number | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+    let mutationObserver: MutationObserver | null = null;
 
     const finish = (ready: boolean) => {
       if (raf) window.cancelAnimationFrame(raf);
       if (timeout) window.clearTimeout(timeout);
-      observer?.disconnect();
-      viewportObserver?.disconnect();
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener('resize', schedule);
+      window.visualViewport?.removeEventListener('resize', schedule);
+      document.removeEventListener('visibilitychange', schedule);
       signal.removeEventListener('abort', onAbort);
       resolve(ready);
+    };
+
+    const startVisibleLayoutTimeout = () => {
+      if (timeout || visibleLayoutStartedAt === null) return;
+      const remaining = Math.max(0, OSMD_LAYOUT_READY_TIMEOUT_MS - (performance.now() - visibleLayoutStartedAt));
+      timeout = window.setTimeout(() => {
+        timeout = 0;
+        if (isRenderableContainerReady(container, viewport)) {
+          finish(true);
+          return;
+        }
+        if (isRenderableLayoutTemporarilyUnavailable(container, viewport)) {
+          visibleLayoutStartedAt = null;
+          return;
+        }
+        finish(false);
+      }, remaining);
     };
 
     const check = () => {
@@ -5361,7 +5410,18 @@ function waitForRenderableContainer(container: HTMLElement, viewport: HTMLElemen
       }
       if (isRenderableContainerReady(container, viewport)) {
         finish(true);
+        return;
       }
+      if (isRenderableLayoutTemporarilyUnavailable(container, viewport)) {
+        visibleLayoutStartedAt = null;
+        if (timeout) {
+          window.clearTimeout(timeout);
+          timeout = 0;
+        }
+        return;
+      }
+      if (visibleLayoutStartedAt === null) visibleLayoutStartedAt = performance.now();
+      startVisibleLayoutTimeout();
     };
 
     const schedule = () => {
@@ -5373,14 +5433,23 @@ function waitForRenderableContainer(container: HTMLElement, viewport: HTMLElemen
     signal.addEventListener('abort', onAbort, { once: true });
 
     if (typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(schedule);
-      observer.observe(container);
-      if (viewport) {
-        viewportObserver = new ResizeObserver(schedule);
-        viewportObserver.observe(viewport);
+      resizeObserver = new ResizeObserver(schedule);
+      for (const target of getRenderableLayoutWatchTargets(container, viewport)) {
+        resizeObserver.observe(target);
       }
     }
-    timeout = window.setTimeout(() => finish(false), OSMD_LAYOUT_READY_TIMEOUT_MS);
+    if (typeof MutationObserver !== 'undefined') {
+      mutationObserver = new MutationObserver(schedule);
+      for (const target of getRenderableLayoutWatchTargets(container, viewport)) {
+        mutationObserver.observe(target, {
+          attributes: true,
+          attributeFilter: ['class', 'hidden', 'style'],
+        });
+      }
+    }
+    window.addEventListener('resize', schedule);
+    window.visualViewport?.addEventListener('resize', schedule);
+    document.addEventListener('visibilitychange', schedule);
     schedule();
   });
 }

@@ -10,6 +10,8 @@ Score-only embeds keep the existing behavior:
 
 `chrome=0` hides the app chrome and renders only the score.
 
+Embed startup waits for a usable iframe layout before it renders notation. A host may mount an iframe inside a hidden tab or panel, but should still provide a real width and height when that panel becomes visible.
+
 Compact full-app embeds should keep chrome enabled and collapse the side workspaces on initial load:
 
 ```html

@@ -1,9 +1,12 @@
 import { defineConfig } from '@playwright/test';
+import fs from 'node:fs';
 
 const PORT = Number(process.env.NEX_E2E_PORT ?? 3101);
 const HOST = process.env.NEX_E2E_HOST ?? 'localhost';
 const REUSE_EXISTING = process.env.NEX_E2E_REUSE === '1';
-const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const macChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const executablePath = process.env.NEX_E2E_BROWSER_PATH
+  ?? (fs.existsSync(macChromePath) ? macChromePath : undefined);
 
 export default defineConfig({
   testDir: './e2e',
@@ -20,7 +23,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     launchOptions: {
-      executablePath: chromePath,
+      executablePath,
       args: ['--no-sandbox'],
     },
   },
