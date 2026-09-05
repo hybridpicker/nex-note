@@ -910,7 +910,7 @@ function collectEventsInRange(
   const start = compareLocators(range.start, range.end) <= 0 ? range.start : range.end;
   const end = start === range.start ? range.end : range.start;
   const corePartId = start.corePartId ?? end.corePartId ?? null;
-  const collected: Array<{ voice: VoiceNode; eventIndex: number }> = [];
+  const collected: Array<EventVoiceContext & { eventIndex: number }> = [];
 
   document.score.parts.forEach((part) => {
     if (corePartId && part.id !== corePartId) return;
@@ -929,7 +929,7 @@ function collectEventsInRange(
               timestampDen: event.timestampDen,
             };
             if (compareLocators(locator, start) >= 0 && compareLocators(locator, end) <= 0) {
-              collected.push({ voice, eventIndex });
+              collected.push({ part, staff, measure, voice, eventIndex });
             }
           });
         });
@@ -1478,8 +1478,12 @@ function buildInsertedEvent(
     ? structuredClone(command.guitar) as Extract<TimedEvent, { kind: 'note' }>['guitar']
     : undefined;
   const eventCount = measure.voices.reduce((sum, voice) => sum + voice.events.length, 0);
+  const idBase = `${measure.id}:event:${command.voiceId}:${insertionOffset}:${Date.now()}:${eventCount}`;
+  const existingIds = new Set(measure.voices.flatMap(voice => voice.events.map(event => event.id)));
+  let id = idBase;
+  for (let suffix = 1; existingIds.has(id); suffix += 1) id = `${idBase}:${suffix}`;
   const common = {
-    id: `${measure.id}:event:${command.voiceId}:${insertionOffset}:${Date.now()}:${eventCount}`,
+    id,
     kind: command.type === 'insertNote' ? 'note' as const : 'rest' as const,
     measureNumber: measure.measureNumber,
     staffIndex: command.staffIndex,
@@ -1601,6 +1605,45 @@ function buildRestEventsForSpan(
   }
 
   return rests;
+}
+
+type EventVoiceContext = NonNullable<ReturnType<typeof findVoice>>;
+
+function deleteTimedEvent(document: ScoreDocumentModel, context: EventVoiceContext, event: TimedEvent) {
+  const index = context.voice.events.indexOf(event);
+  if (index < 0) return;
+  const remainingTones = context.voice.events.filter(entry => (
+    entry !== event && entry.kind === 'note'
+    && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
+  ));
+  if (event.kind === 'note' && remainingTones.length > 0) {
+    context.voice.events.splice(index, 1);
+    if (!event.isChord) remainingTones[0]!.isChord = false;
+  } else {
+    const timing = resolveMeasureTiming(context.staff, context.measure);
+    context.voice.events.splice(index, 1, ...buildRestEventsForSpan(
+      context.measure, timing.divisions, event.staffIndex, event.voiceId,
+      event.timestampNum, event.durationDivisions, event.durationDivisions,
+    ));
+  }
+  removeDeletedEventReferences(document, new Set([event.id]));
+}
+
+function deleteEventAndPairedGuitarNote(document: ScoreDocumentModel, context: EventVoiceContext, event: TimedEvent) {
+  // Resolve the matching tone before mutating either chord. A positional
+  // fallback is useful for entry, but must never delete a different pitch.
+  const paired = event.kind === 'note' ? findPairedTabNotationTimedEvent(
+    context.part, context.staff.staffIndex, event.measureNumber, event.voiceId,
+    event.timestampNum, event.timestampDen, event,
+  ) : null;
+  const expectedPitch = event.kind === 'note' && paired
+    ? pitchForPairedGuitarStaff(context.part, context.staff.staffIndex, paired.isTab, event.pitch)
+    : null;
+  deleteTimedEvent(document, context, event);
+  if (paired?.event.kind === 'note' && expectedPitch
+    && pitchMidiNumber(paired.event.pitch) === pitchMidiNumber(expectedPitch)) {
+    deleteTimedEvent(document, { ...paired, part: context.part }, paired.event);
+  }
 }
 
 function mirrorGuitarInsertionToPairedStaff(input: {
@@ -3930,55 +3973,23 @@ export function executeCoreCommands(
         break;
       }
       case 'deleteNote': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
         const index = found ? findCommandEventIndex(found.voice, command) : -1;
         const event = index >= 0 ? found?.voice.events[index] : null;
-        if (event) {
-          const simultaneousNoteCount = found!.voice.events.filter((entry) => (
-            entry.kind === 'note'
-            && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
-          )).length;
-          if (event.kind === 'note' && simultaneousNoteCount > 1) {
-            const deletedEventIds = new Set([event.id]);
-            const deletedRoot = !event.isChord;
-            found!.voice.events.splice(index, 1);
-            if (deletedRoot) {
-              const replacementRoot = found!.voice.events
-                .filter((entry) => (
-                  entry.kind === 'note'
-                  && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
-                ))
-                .sort((left, right) => Number(left.isChord) - Number(right.isChord))[0];
-              if (replacementRoot) replacementRoot.isChord = false;
-            }
-            removeDeletedEventReferences(nextDocument, deletedEventIds);
-            break;
-          }
-          const timing = resolveMeasureTiming(found!.staff, found!.measure);
-          found!.voice.events.splice(index, 1, ...buildRestEventsForSpan(
-            found!.measure,
-            timing.divisions,
-            command.staffIndex,
-            command.voiceId,
-            event.timestampNum,
-            event.durationDivisions,
-            event.durationDivisions,
-          ));
-        }
+        if (found && event) deleteEventAndPairedGuitarNote(nextDocument, found, event);
         break;
       }
       case 'deleteRange': {
         const range = command.target.range;
         if (!range) break;
-        const targets = collectEventsInRange(nextDocument, range);
-        targets.forEach(({ voice, eventIndex }) => {
-          const event = voice.events[eventIndex];
-          if (!event) return;
-          voice.events[eventIndex] = {
-            ...event,
-            kind: 'rest',
-          };
-        });
+        // Snapshot identities because deleting chord tones changes array indices.
+        const targets = collectEventsInRange(nextDocument, range)
+          .map(target => ({ ...target, event: target.voice.events[target.eventIndex] }));
+        for (const { part, staff, measure, voice, event } of targets) {
+          if (event && voice.events.includes(event)) {
+            deleteEventAndPairedGuitarNote(nextDocument, { part, staff, measure, voice }, event);
+          }
+        }
         break;
       }
       case 'clearMeasureVoice': {

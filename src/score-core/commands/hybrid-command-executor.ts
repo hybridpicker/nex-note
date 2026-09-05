@@ -25,6 +25,9 @@ const UNSAFE_CORE_ROUNDTRIP_TAGS = [
 const CORE_SAFE_WITH_UNSAFE_ROUNDTRIP_TAGS = new Set([
   'setKey',
   'setGuitarFret',
+  // Linked notation/TAB deletion needs the same core pairing as insertion.
+  'deleteNote',
+  'deleteRange',
   'setAccidentalDisplay',
   'addTuplet',
   'addGraceNote',

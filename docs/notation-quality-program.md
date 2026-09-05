@@ -604,3 +604,46 @@ comparison are recorded in the execution handoff and local
 The iPad installation contains the tested final runtime from the pre-commit
 worktree; its provenance is `653e186f+local`, not a claim that a clean final Git
 revision was physically edited on the device.
+
+## Iteration 9 — Delete linked guitar notation and TAB together
+
+- User reproduction: notes entered in Guitar + TAB create frets automatically,
+  but deleting the notation leaves the TAB behind. The two direct core deletion
+  tests reproduced this. Browser Delete/Backspace also reproduced it after the
+  initial core fix: scores with staff-details still used the legacy XML path.
+- Change: single-note and range deletion resolve the paired pitch before
+  mutation and update both staves in one command/history transaction. Chord
+  deletion retains the other tones and promotes a remaining root. An unmatched
+  pitch is not deleted. Staff-details scores use the core deletion path, with
+  preservation/export regression coverage.
+- The chord regression also exposed duplicate IDs when replacing a rest and
+  adding a tone within one millisecond. Inserted IDs now check existing IDs in
+  the measure; the regression freezes Date.now to exercise that collision.
+- Validation: 1,082 unit tests passed. All 11 guitar/TAB Chromium cases passed,
+  including Delete/Backspace, visible fret removal and exact XML Undo/Redo.
+  The first browser run had one unrelated Next.js JSON/500 failure; the final
+  run passed all cases. Core tests also cover TAB-to-notation deletion, range
+  boundaries, retained chord tones, mismatched pitches and export/reopen with
+  six-line staff-details preserved. Evidence: `test-results/tab-delete/`.
+- Before refreshing the user's running Mac app, saved and verified a native
+  NXN backup in Downloads: `Guitar TAB before deletion fix 2026-09-05.nxn`.
+  This fix synchronizes subsequent deletions; it does not infer and purge
+  unmatched TAB notes already left by earlier edits.
+- Cross-app build, packaged editing and delivery results follow in the task
+  handoff. Physical iPad interaction remains a separate required check; app
+  delivery never counts as finger/Pencil editing. The broader gates above
+  remain open, and the planned Xcode macOS target remains absent.
+- App validation: production build and Electron refresh passed. In the actual
+  packaged Mac app, opened a dedicated guitar/TAB fixture, selected C4 with
+  Control+Home, pressed Backspace, then used native Edit > Undo and Redo.
+  Note/fret disappeared, returned together, and disappeared together again.
+  Exported NXN was parsed and verified to contain only rests on both staves
+  (`native-result.nxn`, `native-smoke.log`). This did not edit the user's score.
+- iPad sync and Doctor passed. Xcode compilation reached CodeSign, which failed
+  twice with `errSecInternalComponent` signing App.debug.dylib. Device tools
+  accepted installation and launch of the existing derived-data app afterward,
+  but that is not a successful fresh signed build or validated delivery of this
+  fix. Physical iPad editing remains unperformed and fresh signing is blocked.
+- Final notation pre-commit and macOS packaging hooks, commit SHA and remote
+  verification are recorded in `test-results/tab-delete/` and the task handoff.
+  No temporary worktree or branch was created; unrelated files were untouched.

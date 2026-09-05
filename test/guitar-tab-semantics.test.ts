@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { normalizeScoreCommands } from '../src/shared/schemas/score-command.ts';
 import assert from 'node:assert/strict';
 
 import { applyDocumentCommands } from '../src/score-core/commands/apply-document-commands.ts';
@@ -887,4 +888,57 @@ test('guitar techniques round-trip through MusicXML technical notation', () => {
   const exported = exportCoreToMusicXml(applied.xml, imported);
   assert.equal((exported.match(/<hammer-on/g) ?? []).length, 1);
   assert.equal((exported.match(/<wavy-line/g) ?? []).length, 1);
+});
+
+for (const staffIndex of [1, 2]) {
+  test(`deleting a linked guitar note from staff ${staffIndex} clears both staves`, () => {
+    const source = importMusicXmlToCore(DUAL_STAFF_TAB_XML);
+    const next = applyCoreCommands(source, [{ type: 'deleteNote', measureNumber: 1, staffIndex, voiceId: 1, timestampNum: 0, timestampDen: 4 }]);
+    for (const staff of next.score.parts[0]!.staves) {
+      assert.equal(staff.measures[0]!.voices[0]!.events.some(event => event.kind === 'note'), false);
+      assert.equal(staff.measures[0]!.voices[0]!.events[0]!.durationDivisions, 1);
+    }
+  });
+}
+
+test('deleting one linked chord tone preserves the other tones on both staves', (t) => {
+  t.mock.method(Date, 'now', () => 1234);
+  const source = applyCoreCommands(importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML), ['E', 'G', 'B'].map((step, index) => ({
+    type: 'insertNoteAt', corePartId: 'part:P1', measureNumber: 1, staffIndex: 1, voiceId: 1,
+    timestampNum: 1, timestampDen: 4, step, octave: 4, alter: 0, durationType: 'quarter', isDotted: false, asChord: index > 0,
+  })) as any);
+  const tone = source.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events.find(e => e.kind === 'note' && e.pitch.step === 'G' && e.timestampNum === 1)!;
+  const next = applyCoreCommands(source, [{ type: 'deleteNote', coreEntityId: tone.id, measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, timestampDen: 4 }]);
+  for (const staff of next.score.parts[0]!.staves) {
+    assert.deepEqual(staff.measures[0]!.voices[0]!.events.filter(e => e.kind === 'note' && e.timestampNum === 1).map(e => e.kind === 'note' ? e.pitch.step : ''), ['E', 'B']);
+  }
+});
+
+test('deleting a notation range clears the paired TAB range', () => {
+  const source = importMusicXmlToCore(DUAL_STAFF_TAB_REST_ANCHORS_XML);
+  const next = applyCoreCommands(source, normalizeScoreCommands([{ type: 'deleteRange', range: {
+    start: { measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 },
+    end: { measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, timestampDen: 4 },
+  } }]));
+  for (const staff of next.score.parts[0]!.staves) assert.deepEqual(staff.measures[0]!.voices[0]!.events.filter(e => e.kind === 'note').map(e => e.timestampNum), [2]);
+});
+
+test('deletion does not remove a different pitch from an unsynchronized TAB staff', () => {
+  const source = importMusicXmlToCore(DUAL_STAFF_TAB_XML);
+  const tab = source.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0]!;
+  assert.equal(tab.kind, 'note');
+  if (tab.kind === 'note') tab.pitch.step = 'D';
+  const next = applyCoreCommands(source, [{ type: 'deleteNote', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 }]);
+  assert.equal(next.score.parts[0]!.staves[1]!.measures[0]!.voices[0]!.events[0]!.kind, 'note');
+});
+
+test('document deletion preserves staff details and removes the paired TAB note through export/reopen', () => {
+  const source = importMusicXmlToCore(DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS);
+  const next = applyDocumentCommands({ xml: DUAL_STAFF_TAB_XML_WITH_STAFF_DETAILS, coreDocument: source }, [{
+    type: 'deleteNote', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4,
+  }]);
+  assert.match(next.xml, /<staff-details/);
+  assert.match(next.xml, /<staff-lines>6<\/staff-lines>/);
+  const reopened = importMusicXmlToCore(next.xml);
+  for (const staff of reopened.score.parts[0]!.staves) assert.equal(staff.measures[0]!.voices[0]!.events.some(e => e.kind === 'note'), false);
 });

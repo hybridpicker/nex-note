@@ -287,3 +287,25 @@ test('note input hover shows no notehead ghost over the TAB staff @smoke', async
   await page.mouse.move(tab.x + tab.width * 0.45, tab.y + tab.height * 0.5, { steps: 4 });
   await expect(ghost).toHaveCount(0);
 });
+
+for (const key of ['Delete', 'Backspace']) {
+  test(`${key} removes linked notation and TAB with atomic history @smoke`, async ({ page }) => {
+    const xml = DUAL_STAFF_TAB_XML.replace('<octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff>', '<octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>2</staff>');
+    await page.addInitScript(xml => localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'delete-linked.musicxml' })), xml);
+    await page.goto('/');
+    const note = page.locator('[data-testid="score-canvas"] .vf-notehead').first();
+    await expect(note).toBeVisible();
+    const readXml = () => page.evaluate(() => (window as typeof window & { __NEX_NOTE_E2E_STATE__: { xml: string } }).__NEX_NOTE_E2E_STATE__.xml);
+    const before = await readXml();
+    await note.click();
+    await page.keyboard.press(key);
+    await expect.poll(async () => (await readXml()).match(/<pitch>/g)?.length ?? 0).toBe(0);
+    await expect(page.locator('svg text').filter({ hasText: /^3$/ })).toHaveCount(0);
+    const after = await readXml();
+    await page.keyboard.press('Control+z');
+    await expect.poll(readXml).toBe(before);
+    await expect(page.locator('svg text').filter({ hasText: /^3$/ }).first()).toBeVisible();
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(readXml).toBe(after);
+  });
+}
