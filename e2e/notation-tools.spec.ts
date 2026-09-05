@@ -206,7 +206,7 @@ async function bootWithScore(page: Page, xml = buildNotationToolsFixtureXml(), o
 }
 
 async function clickRenderedNotehead(page: Page, index: number) {
-  await page.locator('[data-testid="score-canvas"] .vf-notehead').nth(index).click({ force: true });
+  await page.locator('[data-testid="score-canvas"] .vf-notehead').nth(index).click();
 }
 
 async function readE2EState(page: Page) {
@@ -1551,4 +1551,46 @@ test('closing the score cancels an audition waiting for MIDI', async ({ page }) 
   await held!.fulfill({ status: 200, contentType: 'audio/midi', body: buildMidiBody() });
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
   expect(await playbackStarts(page)).toHaveLength(0);
+});
+
+test('eight-bar keyboard replacement preserves correction and MusicXML reopen', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const base = buildNotationToolsFixtureXml();
+  const firstMeasure = /<measure number="1">([\s\S]*?)<\/measure>/.exec(base)![1];
+  const fixture = base.replace(/<measure number="1">[\s\S]*<\/measure>/, Array.from({ length: 8 }, (_, i) =>
+    `<measure number="${i + 1}">${i ? firstMeasure.replace(/<attributes>[\s\S]*?<\/attributes>/, '') : firstMeasure}</measure>`
+  ).join(''));
+  await bootWithScore(page, fixture);
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('N');
+  const keys = ['C', 'D', 'E', 'F', 'G', '0', 'A', 'B', 'C', 'B', 'A', 'G', 'F', 'G', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'G', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'F', 'E', 'D'];
+  for (const key of keys) await page.keyboard.press(key);
+  const readPassage = async () => (await readCurrentCore(page)).score.parts[0].staves[0].measures
+    .map(m => m.voices[0].events.map(e => e.kind === 'note' ? e.pitch.step : '0'));
+  await expect.poll(readPassage).toEqual(Array.from({ length: 8 }, (_, i) => keys.slice(i * 4, i * 4 + 4)));
+  await expect.poll(() => readMainVoiceMidi(page)).toEqual([60,62,64,65,67,null,69,71,72,71,69,67,65,67,69,71,72,74,76,77,79,79,81,83,84,86,88,89,91,89,88,86]);
+  const beforeCorrection = await readCurrentXml(page);
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(() => readCurrentXml(page)).not.toBe(beforeCorrection);
+  const corrected = await readCurrentXml(page);
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => readCurrentXml(page)).toBe(beforeCorrection);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(() => readCurrentXml(page)).toBe(corrected);
+  const expected = await readPassage();
+  const expectedMidi = await readMainVoiceMidi(page);
+  expect(expectedMidi.at(-1)).toBe(87);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTitle('Download .mxl', { exact: true }).focus();
+  await page.keyboard.press('Enter');
+  const download = await downloadPromise;
+  const exported = testInfo.outputPath('eight-bars.mxl');
+  await download.saveAs(exported);
+  await page.keyboard.press('Control+w');
+  await expect.poll(async () => (await readE2EState(page))?.xml).toBe('');
+  await page.locator('input[type="file"]').first().setInputFiles(exported);
+  await expect.poll(async () => (await readE2EState(page))?.xml ?? '').not.toBe('');
+  await expect.poll(readPassage).toEqual(expected);
+  await expect.poll(() => readMainVoiceMidi(page)).toEqual(expectedMidi);
+  await expectNoDoctorIssues(page, 'eight-bar keyboard passage reopen');
 });

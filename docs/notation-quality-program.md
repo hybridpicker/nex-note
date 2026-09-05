@@ -1,6 +1,6 @@
 # Notation quality improvement program
 
-Started: 2026-09-05. Status: resumed after the earlier four-iteration execution; remaining program gates are open.
+Started: 2026-09-05. Status: four additional product iterations delivered (5–8); the program remains open with explicit acceptance blockers below.
 
 ## Objective and evidence
 
@@ -537,3 +537,70 @@ reports the separate closeout commit after its push is verified.
   the 12 matrix passes in the 06-26 browser report. Native iPad physical input
   remains blocked by device lock and unavailable finger/Pencil participation;
   Xcode macOS target is absent. No latency or usability speed gate is closed.
+
+- Iteration-7 commit `d924c9a495b253b81e42a149271e1f5ce6835a03` was pushed
+  without force and verified equal to remote devel. Duplicate notation and
+  packaging hooks reused the completed unchanged-runtime evidence above.
+
+## Iteration 8 — Continue the melodic register after a rest
+
+- Date: 2026-09-05. Before: the eight-bar keyboard corpus entered G4, rest, A3
+  instead of A4. Comparing note names alone hid the defect; exact MIDI pitches
+  exposed it and the remainder of the passage inherited the wrong register.
+  The rest's placeholder pitch was being used as the melodic reference.
+- Change: when the input reference is a rest, derive the preceding pitched note
+  from the current semantic lane. Include the current document in the keyboard
+  callback dependencies so history and navigation cannot retain stale content.
+- After: the 32-event, eight-bar replacement corpus checks every MIDI pitch,
+  including the rest and following A4. A final semitone correction yields D#6;
+  exact XML Undo/Redo passes. The app downloads an actual MXL file, closes the
+  score, imports that file and retains all expected pitches. Strict Doctor is
+  clean. This is not the complete blank-entry chord/tie/triplet benchmark.
+- Test-harness corrections are distinguished from product defects: a new hook
+  unit originally batched selection and input-mode activation into one React
+  act, selecting the default note. Separate actions fixed that setup. Reopen
+  polling now waits for loaded XML before invoking the nonempty XML parser.
+  Neither harness failure is claimed as a product improvement. The commit hook
+  also exposed an existing forced-click race during notehead redraw. The shared
+  test helper now uses Playwright actionability waits; the failed artifact is
+  retained in `commit6-palette-failure` and the notation suite is rerun.
+- Validation: all 1,076 unit tests and 396 domain executions passed after those
+  corrections. The expanded browser run passed 74/75 before correcting reopen
+  polling; its final eight-bar rerun passed. The commit-6 retry hook passed all 34 notation tests with the final
+  implementation and actionability helper. Packaged Electron independently
+  verifies G4/rest/A4, correction and native Undo/Redo. Production build,
+  Electron refresh and iPad sync/Doctor/signed build/install passed on the same
+  runtime worktree. iPad launch remains locked; physical entry remains not-run.
+- Evidence: `keyboard-pitch-after.log`, `rest-unit-after.log`,
+  `final-focused.log`, `electron-edit-smoke.log`, `electron-refresh-final.log`,
+  `domains-final.log` and `ipad-*-final.log` in the continuation evidence root.
+
+## Continuation handoff — open gates remain open
+
+This execution delivered product fixes; it does not complete the quality
+program. The following is the current acceptance status, not a replacement for
+recorded historical results.
+
+| Gate | Recorded evidence added | Unresolved blocker / work needed |
+| --- | --- | --- |
+| Keyboard | Text spaces/focus, eight-bar exact-pitch replacement, correction, atomic history, actual MXL export/reopen; native Electron editing/history | The complete blank-entry passage combining chords, ties and triplets and three human timed runs have not been performed. No end-to-end task-time baseline exists. |
+| Mouse | Alto/tenor C-clefs × two populated voices × two views × three zoom levels, exact ghost/commit and history; nine TAB tests; packaged C-clef editing | Full eight-bar mouse passage and measured physical preview latency/task time remain unperformed; the finite automated corpus cannot certify all scores. |
+| Native iPad | Synced standalone shell, Doctor, signed build and installation; existing simulated cancellation regressions pass | Connected Director Ipad is locked and launch was rejected. Finger and Pencil entry/cancellation/navigation/orientation and physical latency require the tester; no native editing pass is claimed. |
+| Playback | 37 playback domain executions pass, including existing cancellation/transport scheduling contracts | Actual audio/cursor synchronization, stop/seek/tempo listening, calibrated latency, 60-second drift, timbre, balance and offline listening remain unperformed. Instrument stubs are not audio evidence. |
+| Formatting | Three rendered A4 PDFs visually reviewed; print visibility fixed; three command-level NXN disk roundtrips preserve format values and musical events | Full UI formatting/Undo/Redo/save/reopen corpus, manual click/time measurements and a named multipage print corpus remain unperformed. Short single-page PDFs do not close this gate. |
+
+The tester must follow [the participation checklist](notation-quality-participation.md),
+provide the named exports/recordings and mark each matrix cell pass/fail/not-run.
+For iPad, unlock the installed native app before starting. For playback, provide
+actual output audio and screen on one timebase with route/latency calibration.
+These are required user actions, not approvals for already completed fixes.
+The Xcode macOS target does not exist, so its build and editing checks cannot run.
+No temporary branch or worktree was created. Commit receipts follow below.
+
+The final keyboard commit uses the already-passing 34-case notation hook and
+runs the normal post-commit macOS artifact build. Its full SHA, push and remote
+comparison are recorded in the execution handoff and local
+`test-results/notation-quality/continuation-2026-09-05/iteration-8-verification.json`.
+The iPad installation contains the tested final runtime from the pre-commit
+worktree; its provenance is `653e186f+local`, not a claim that a clean final Git
+revision was physically edited on the device.

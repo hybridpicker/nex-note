@@ -7622,3 +7622,16 @@ test('rendered onset refinement cannot replace a snap from another voice', () =>
   const renderedSnap = { domX: 180, ratio: 0, voiceId: 1, timestampNum: 0, timestampDen: 32, isRest: false };
   assert.equal(preferRenderedOnsetSnap(gridSnap, renderedSnap, 180), gridSnap);
 });
+
+test('letter entry on a rest continues the preceding pitch in the same lane', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const rest = makeSelectedNotes(SAMPLE_XML).find(note => note.isRest && note.measureNumber === 2);
+  assert.ok(rest);
+  act(() => { hook.current.handleNoteClick(rest); });
+  act(() => { hook.current.toggleNoteInput(); });
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('A')); });
+  hook.rerender();
+  const entered = flattenVoiceEvents(hook.xml).find(event => event.measureNumber === 2 && event.timestampNum === 2);
+  assert.equal(entered?.kind === 'note' ? `${entered.pitch.step}${entered.pitch.octave}` : null, 'A4');
+  hook.unmount();
+});
