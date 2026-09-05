@@ -1,6 +1,6 @@
 const CHAT_PANEL_SELECTOR = '[data-chat-panel="true"]';
 
-export type NativeEditCommand = 'cut' | 'copy' | 'paste';
+export type NativeEditCommand = 'cut' | 'copy' | 'paste' | 'undo' | 'redo';
 
 function isElement(value: unknown): value is Element {
   return typeof Element !== 'undefined' && value instanceof Element;
@@ -36,4 +36,9 @@ export function shouldUseNativeClipboardShortcut(target: EventTarget | null | un
 export function shouldUseNativeMenuClipboardCommand() {
   if (typeof document === 'undefined') return false;
   return shouldUseNativeClipboardShortcut(document.activeElement);
+}
+
+// History belongs to the focused editor, never to an unrelated score selection.
+export function shouldUseNativeMenuHistoryCommand() {
+  return typeof document !== 'undefined' && isEditableElement(document.activeElement);
 }

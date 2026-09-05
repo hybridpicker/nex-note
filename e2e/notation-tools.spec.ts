@@ -1356,3 +1356,80 @@ test('held space does not restart playback through key repeat', async ({ page })
   expect(await playbackStarts(page)).toEqual([]);
   expect(await playbackSounded(page)).toEqual([]);
 });
+
+
+test('text-field Undo and Redo preserve score history', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(() => readCurrentXml(page)).not.toBe(initialXml);
+  const editedXml = await readCurrentXml(page);
+  // Exercise native editing targets without relying on a particular panel layout.
+  for (const tag of ['input', 'textarea', 'div']) {
+    await page.evaluate((tag) => {
+      const field = document.createElement(tag);
+      field.id = 'history-focus-probe';
+      if (tag === 'div') field.contentEditable = 'true';
+      document.body.append(field);
+      field.focus();
+    }, tag);
+    await page.keyboard.type('draft');
+    await page.keyboard.press('Control+z');
+    expect(await readCurrentXml(page)).toBe(editedXml);
+    await page.keyboard.press('Control+Shift+z');
+    expect(await readCurrentXml(page)).toBe(editedXml);
+    await page.locator('#history-focus-probe').evaluate((field) => field.remove());
+  }
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => readCurrentXml(page)).toBe(initialXml);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(() => readCurrentXml(page)).toBe(editedXml);
+});
+
+
+test('Electron menu history routes to focused text before score history', async ({ page }) => {
+  await page.addInitScript(() => {
+    const listeners = new Set<(command: string) => void>();
+    window.nexNoteElectron = {
+      isElectron: true,
+      onMenuCommand: (callback) => { listeners.add(callback); return () => { listeners.delete(callback); }; },
+      onOpenFile: () => () => {},
+      openFileDialog: async () => {},
+      listUserTemplates: async () => [],
+      readUserTemplateSample: async () => new ArrayBuffer(0),
+      updateMenuState: () => {},
+      performNativeEditCommand: async (command) => { document.execCommand(command); },
+    };
+    window.addEventListener('test-menu-history', (event) => {
+      for (const callback of listeners) callback((event as CustomEvent<string>).detail);
+    });
+  });
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(() => readCurrentXml(page)).not.toBe(initialXml);
+  const editedXml = await readCurrentXml(page);
+  const menu = async (command: string) => page.evaluate((command) => {
+    window.dispatchEvent(new CustomEvent('test-menu-history', { detail: command }));
+  }, command);
+  await page.evaluate(() => {
+    const field = document.createElement('textarea');
+    field.id = 'history-focus-probe';
+    document.body.append(field);
+    field.focus();
+  });
+  await page.keyboard.type('draft');
+  await menu('edit:undo');
+  await expect(page.locator('#history-focus-probe')).toHaveValue('');
+  expect(await readCurrentXml(page)).toBe(editedXml);
+  await menu('edit:redo');
+  await expect(page.locator('#history-focus-probe')).toHaveValue('draft');
+  expect(await readCurrentXml(page)).toBe(editedXml);
+  await page.locator('#history-focus-probe').evaluate((field) => field.remove());
+  await menu('edit:undo');
+  await expect.poll(() => readCurrentXml(page)).toBe(initialXml);
+  await menu('edit:redo');
+  await expect.poll(() => readCurrentXml(page)).toBe(editedXml);
+});

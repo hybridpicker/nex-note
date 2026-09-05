@@ -90,7 +90,7 @@ import { getDoctorRuntimeState, publishDoctorReport, registerDoctorRunner } from
 import type { DoctorDomain } from '@/src/debug/doctor/types';
 import { useI18n } from '@/lib/i18n';
 import { writeLeftNotationSidebarCollapsed } from '@/lib/left-notation-sidebar';
-import { type NativeEditCommand, shouldUseNativeMenuClipboardCommand } from '@/lib/native-clipboard-shortcuts';
+import { type NativeEditCommand, shouldUseNativeMenuClipboardCommand, shouldUseNativeMenuHistoryCommand } from '@/lib/native-clipboard-shortcuts';
 import { preferFlatsForKeySignature } from '@/src/score-input/midi-input';
 
 const ScoreEditor = dynamic(() => import('@/components/ScoreEditor'), { ssr: false });
@@ -1375,14 +1375,14 @@ export default function Home({ searchParams }: HomeProps) {
         });
         return;
       }
-      if (!getNexNoteElectronApi() && metaKey && isKeyZ && !e.shiftKey) {
+      if (!getNexNoteElectronApi() && !isTextEntry && metaKey && isKeyZ && !e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
         recordBugReportEvent('commands', 'undo');
         undo();
         return;
       }
-      if (!getNexNoteElectronApi() && metaKey && (isKeyY || (isKeyZ && e.shiftKey))) {
+      if (!getNexNoteElectronApi() && !isTextEntry && metaKey && (isKeyY || (isKeyZ && e.shiftKey))) {
         e.preventDefault();
         e.stopPropagation();
         recordBugReportEvent('commands', 'redo');
@@ -3298,9 +3298,17 @@ export default function Home({ searchParams }: HomeProps) {
           handleCloseScore();
           break;
         case 'edit:undo':
+          if (shouldUseNativeMenuHistoryCommand()) {
+            void electronApi.performNativeEditCommand('undo');
+            break;
+          }
           handleUndo();
           break;
         case 'edit:redo':
+          if (shouldUseNativeMenuHistoryCommand()) {
+            void electronApi.performNativeEditCommand('redo');
+            break;
+          }
           handleRedo();
           break;
         case 'edit:cut':

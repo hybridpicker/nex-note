@@ -172,3 +172,53 @@ current implementation prevents the target workflow.
 - Next iteration: execute the eight-bar keyboard benchmark, capture focus and
   correction friction, and implement the highest-impact reproduced issue.
   Physical-device and listening measurements remain required workstreams.
+
+## Iteration 1 — Keep text corrections out of score history
+
+- Date: 2026-09-05; branch `devel`; starting revision
+  `5ae0e17060f85215c59b8eaa495f7b3d9d6892dc`; initially clean worktree.
+- Priority/workstream: lost-work prevention during keyboard text correction;
+  shared history protects edits entered by keyboard, mouse, or touch and layout
+  changes alike.
+- Reproduction: Chromium, notation-tools two-bar piano fixture; select first C4,
+  press ArrowUp (C-sharp4), focus a text input, type `draft`, press Ctrl+Z.
+  Before the fix, the score silently reverted C-sharp4 to C4. This is a
+  deterministic behavioral regression, not a timed eight-bar benchmark.
+- Change: browser/native-webview score Undo/Redo yields to input, textarea and
+  contenteditable focus. Electron menu commands route focused text history to
+  native webContents undo/redo; menu availability no longer depends on score
+  history, because native text can have independent history. Score history and
+  semantic commands remain unchanged.
+- Regression: new browser test failed before the fix on the exact MusicXML pitch
+  difference and passed afterward. Tests cover all three editable target kinds,
+  score Undo/Redo after leaving the field, and Electron renderer menu routing
+  with actual browser text undo/redo through a stubbed bridge.
+- Automated domain cycle: keyboard 232, mouse 51, tablet 37, playback 35,
+  formatting 37 passed; Chromium 53 passed, zero failures/skips/flaky cases,
+  including four semantic-grid seeds. Full unit suite: 1,072 passed.
+- Evidence directory:
+  `test-results/notation-quality/2026-09-05T04-50-21.647Z-25829/` contains
+  report.json, browser-results.json, history-before.log, history-after.log,
+  full-unit-suite.log and domain logs. Generated artifacts are ignored by Git.
+- App checks: `npm run electron:refresh` repeated all 1,072 tests, completed
+  `npm run build`, packaged arm64 Electron, and verified the source fingerprint.
+  A real packaged-Electron Playwright smoke loaded `piano-semantics.musicxml`,
+  changed a note, exercised native menu Undo/Redo in input, textarea and editable
+  div, and verified exact score XML plus score Undo/Redo after focus left text.
+  This is executed native edit behavior, not a listening or visual-quality pass.
+- Native iPad: sync and Doctor passed; Xcode 26.6 signed Debug device build
+  passed with the existing team supplied only on the command line. Installed
+  and launched `app.nexnote.ipad` on connected Director Ipad, iPad Air 13-inch
+  (M2). Delivery/launch passed; physical text editing, finger/Pencil, orientation,
+  and navigation smoke tests were not run because no physical input channel is
+  available. Xcode macOS remains absent, so its build/smoke is not applicable.
+- Audible playback, output latency, print/PDF review and timed keyboard task
+  remain not run. No new sound, engraving, or physical usability claim is made.
+- Additional local evidence: `electron-refresh.log`, `electron-smoke.log`,
+  `ipad-sync.log`, `ipad-doctor.log`, `ipad-build.log`, `ipad-install.log`,
+  `ipad-launch.log`, and the Electron smoke script in the evidence directory.
+- `git diff --check` passed. Commit/push receipt is saved beside the evidence
+  after commit; the exact verified SHA is reported in the execution handoff.
+- Decision: accepted automated correctness increment with the named physical
+  gates open. Next issue: reproduce capture loss during an existing-note drag;
+  capture-loss cleanup currently handles tablet note-entry sessions only.

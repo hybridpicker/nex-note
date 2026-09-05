@@ -262,6 +262,10 @@ function sendMenuCommand(commandId) {
 
 function performNativeEditCommand(command) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (command === 'undo' || command === 'redo') {
+    mainWindow.webContents[command]();
+    return;
+  }
   if (command === 'cut') {
     mainWindow.webContents.cut();
     return;
@@ -366,8 +370,10 @@ function buildApplicationMenuTemplate() {
   const editMenu = {
     label: 'Edit',
     submenu: [
-      menuCommand('edit:undo', { label: 'Undo', accelerator: 'CommandOrControl+Z', enabled: menuState.hasScore && menuState.canUndo }),
-      menuCommand('edit:redo', { label: 'Redo', accelerator: redoAccelerator, enabled: menuState.hasScore && menuState.canRedo }),
+      // Native text history can exist even when score history is empty.
+      // The renderer routes these commands using the current focus.
+      menuCommand('edit:undo', { label: 'Undo', accelerator: 'CommandOrControl+Z', enabled: true }),
+      menuCommand('edit:redo', { label: 'Redo', accelerator: redoAccelerator, enabled: true }),
       { type: 'separator' },
       menuCommand('edit:cut', { label: 'Cut', accelerator: 'CommandOrControl+X', enabled: menuState.hasSelection }),
       menuCommand('edit:copy', { label: 'Copy', accelerator: 'CommandOrControl+C', enabled: menuState.hasSelection }),
@@ -882,7 +888,7 @@ ipcMain.handle('nex-note:open-file-dialog', async () => {
 });
 
 ipcMain.handle('nex-note:native-edit-command', (_event, command) => {
-  if (!['cut', 'copy', 'paste'].includes(command)) return;
+  if (!['cut', 'copy', 'paste', 'undo', 'redo'].includes(command)) return;
   performNativeEditCommand(command);
 });
 
