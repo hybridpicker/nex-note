@@ -404,3 +404,39 @@ local HEAD matched the remote product tip before this documentation closeout.
 This closeout changes documentation only; its diff and recorded commit IDs were
 checked without repeating product tests or native builds. The final handoff
 reports the separate closeout commit after its push is verified.
+
+## Iteration 5 — Preserve spaces in editable text
+
+- Date: 2026-09-05; `devel`; starting revision
+  `8f8149cb34128523ae250f0460fe4722f0e54209`; initially clean worktree.
+- Concrete defect: Chromium typing `first second` into contenteditable produced
+  `firstsecond`: global Space intercepted text and could start transport.
+  Input and textarea controls already yielded correctly.
+- Before evidence: the added browser regression failed on exact text content.
+  After: typing spaces, held-Space transport, and text-history tests passed 3/3.
+  Returning focus to the score still starts/pauses transport. XML remains exact.
+- Bounded change: reuse the existing text-focus predicate for Space. No score,
+  history, pitch, timing or document serialization implementation changed.
+- Evidence: `test-results/notation-quality/continuation-2026-09-05/` contains
+  focus-before.log and focus-after.log. Full domain/browser evidence is under
+  `test-results/notation-quality/2026-09-05T05-51-09.092Z-98350/`.
+- Physical participation instructions are in
+  [notation-quality-participation.md](notation-quality-participation.md).
+  These are pending tasks, not reported passes or substitute measurements.
+- Cross-app validation and commit receipt are recorded below after execution.
+- Next reproduced defect: print media hides the complete score preview for
+  piano, choir and leadsheet. The initial PDFs are failed evidence, not approved
+  outputs. This independent print defect is reserved for the next iteration.
+- Validation: 1,074 unit tests, 394 domain executions and 62 Chromium tests
+  passed, zero failures/skips in those suites. Electron refresh performed the
+  production build, package creation and fingerprint verification. Packaged
+  Electron entered `first second` in input, textarea and contenteditable, kept
+  transport stopped, and passed native text and score Undo/Redo.
+- iPad: sync, Doctor and signed Xcode device build passed. Installed on connected
+  Director Ipad, iPad Air 13-inch M2. Physical input remains unperformed: the
+  available device tools provide delivery, not finger/Pencil manipulation.
+  Xcode macOS target remains absent. No listening or task-time pass is claimed.
+- The separate new print corpus failed 3/3 before its reserved fix; those
+  failures are not hidden by the existing cycle's pass.
+- App logs and the reproducible Electron smoke script are beside focus evidence.
+  `git diff --check` passed. Commit/remote verification follows this record.

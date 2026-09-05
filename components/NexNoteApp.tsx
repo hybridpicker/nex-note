@@ -1389,7 +1389,7 @@ export default function Home({ searchParams }: HomeProps) {
         redo();
         return;
       }
-      if (e.key === ' ' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+      if (e.key === ' ' && !isTextEntry) {
         e.preventDefault();
         if (e.repeat) return;
         if (playbackState === 'playing') pause();

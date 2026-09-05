@@ -1358,6 +1358,33 @@ test('held space does not restart playback through key repeat', async ({ page })
 });
 
 
+test('typing spaces in editable text preserves text and transport', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+  for (const tag of ['input', 'textarea', 'div']) {
+    await page.evaluate((tag) => {
+      const field = document.createElement(tag);
+      field.id = 'space-focus-probe';
+      if (tag === 'div') field.contentEditable = 'true';
+      document.body.append(field);
+      field.focus();
+    }, tag);
+    await page.keyboard.type('first second');
+    const field = page.locator('#space-focus-probe');
+    if (tag === 'div') await expect(field).toHaveText('first second');
+    else await expect(field).toHaveValue('first second');
+    expect((await readE2EState(page))?.playbackState).toBe('stopped');
+    expect(await readCurrentXml(page)).toBe(initialXml);
+    await field.evaluate((element) => element.remove());
+  }
+  expect(await playbackStarts(page)).toHaveLength(0);
+  await page.getByTestId('score-viewport').focus();
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await readE2EState(page))?.playbackState).toBe('playing');
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await readE2EState(page))?.playbackState).toBe('paused');
+});
+
 test('text-field Undo and Redo preserve score history', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);
