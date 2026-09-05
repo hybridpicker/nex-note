@@ -1,6 +1,6 @@
 # Notation quality improvement program
 
-Started: 2026-09-05. Status: correctness improvements underway; physical and usability gates open.
+Started: 2026-09-05. Status: this execution finalized after four validated product iterations; remaining program gates are open.
 
 ## Objective and evidence
 
@@ -362,11 +362,45 @@ current implementation prevents the target workflow.
   were not exercised because no physical interaction/listening channel is
   available. Xcode macOS target is still absent. Native logs and the Electron
   smoke script are alongside the regression evidence.
-- Decision: accepted playback-correctness increment; commit/push receipt is
-  written after remote verification and the exact SHA is reported in handoff.
+- Verified iteration-4 commit/push: `0db41d8bc883bda73a394774627d03a6fb611794`;
+  local HEAD matched `origin/devel`. Post-commit notation-tool checks passed
+  32/32 and Mac artifact packaging/verification passed. The local receipt is
+  `test-results/notation-quality/2026-09-05T05-27-49.591Z-70626/commit-receipt.json`.
+- Decision: accepted playback-correctness increment.
 - Remaining program gates: timed eight-bar keyboard benchmark; broader C-clef,
   voice, zoom/view and TAB interaction corpus; physical finger/Pencil matrix;
   recorded audible synchronization, timbre/balance and output latency; reviewed
   print/PDF corpus. These are not closed by this run. No failing automated
   regression remains in the executed corpus. The next improvement should be
   selected from a concrete failure or measured friction in these open gates.
+
+
+## Execution closeout — 2026-09-05
+
+This execution is finalized at the user's request. Four bounded product
+improvements were reproduced, implemented, validated, committed separately on
+`devel`, pushed without force, and verified against `origin/devel`:
+
+| Iteration | Delivered improvement | Verified commit |
+| --- | --- | --- |
+| 1 | Keep text Undo/Redo out of score history | `b94c8c57b5983d58590f3ce748d82c37a6619bfc` |
+| 2 | Cancel existing-note drags on capture loss | `488032a92c570723d593e63e5ced49374b3407f0` |
+| 3 | Reject layout cleanup prepared for an obsolete document | `189efa8e36f25246e91a09eaee7aab4f5a7ae086` |
+| 4 | Cancel auditions awaiting MIDI or instrument loading | `0db41d8bc883bda73a394774627d03a6fb611794` |
+
+Final product validation passed 1,074 unit tests, 394 focused domain executions
+and 61 browser tests, with no failures or skips in those runs. Production builds,
+Electron refresh/package verification and the documented native Electron smoke
+flows passed. iPad sync, Doctor, signed device build, installation and launch
+passed. Detailed evidence and limitations remain in the iteration records above.
+
+The broader quality program is not certified complete: physical finger/Pencil
+interaction, audible synchronization and timbre, timed keyboard tasks, expanded
+pointer matrices, and reviewed print/PDF output remain open. The Xcode macOS
+target is absent. No unperformed manual check is counted as passed.
+
+No temporary branches or worktrees were created. The worktree was clean and
+local HEAD matched the remote product tip before this documentation closeout.
+This closeout changes documentation only; its diff and recorded commit IDs were
+checked without repeating product tests or native builds. The final handoff
+reports the separate closeout commit after its push is verified.
