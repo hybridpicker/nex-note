@@ -708,3 +708,26 @@ revision was physically edited on the device.
   run above; no runtime changes followed it. The normal post-commit macOS
   artifact build stamps the final revision. Commit/push and remote equality
   receipts are stored under `test-results/mouse-latency/verification.json`.
+
+### Iteration 10 device follow-up — 2026-09-05
+
+- User confirmed that Mac entry now works ("klappt jetzt"). This is qualitative
+  acceptance of the reported delay, not a measured physical latency percentile.
+  The user's expectation that iPad should work again is not an iPad editing pass.
+- Rebuilt the standalone iPad payload from clean runtime commit
+  `e7ff91b8f812425c7b5b13c68ae529427188c79a`. Production build, `ipad:sync`,
+  `ipad:doctor` and the command-line Xcode Debug device build all passed.
+  Code signing succeeded this time; the previous signing blocker is resolved.
+- Device tools confirmed installation of that fresh App.app and successful
+  launch of `app.nexnote.ipad` on connected Director Ipad, iPad Air 13-inch M2.
+  Evidence: `test-results/ipad-latency-followup/{sync,doctor,build,install,launch}.log`.
+  Installation/launch establish delivery, not successful physical editing.
+- Requested tester smoke: use a separate Guitar + TAB score; enter five notes
+  with a finger and five with Pencil; delete a note and check paired TAB plus
+  Undo/Redo. Report responsiveness and any mismatch, with screen recording and
+  exported NXN for failures. This check is pending. Cancellation, navigation,
+  rotation, listening and remaining full-program gates still require their
+  evidence from `notation-quality-participation.md`.
+- No product code changed in this follow-up. Existing 1,082 unit and 77 browser
+  passes apply to the unchanged runtime. Only this evidence record is committed;
+  documentation-only hooks do not repeat notation tests or Mac packaging.
