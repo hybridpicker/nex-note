@@ -35,12 +35,15 @@ not be substituted. Preserve the exported file from each run.
 
 Open the installed **native Nex Note app**, not Safari. Record iPad model,
 iPadOS, Pencil model and whether hover is supported. Create a four-bar piano
-score and record a screen video. Repeat separately with finger and Pencil in
-portrait/page, landscape/page, portrait/continuous and landscape/continuous.
+score and record a screen video. As requested on 2026-09-05, use Pencil for
+note entry and fingers for markings/text/barlines and navigation. Test both
+modes in portrait/page, landscape/page, portrait/continuous and landscape/continuous.
 At 75%, 100% and 150% zoom:
 
-1. In Note Input, touch upper-staff C4, refine to E4 and release. Verify one
-   E4 is committed; Undo removes exactly one entry and Redo restores it.
+1. Choose **Pencil · Notes**, contact upper-staff C4 with Pencil, refine to E4
+   and release. Verify one E4 is committed; Undo removes exactly one entry and
+   Redo restores it. A stationary contact/release should sound once, not twice.
+   Touch the same blank area with a finger: no note should be entered.
 2. Enter lower-staff C3, correct it to D3, then Undo/Redo the correction.
 3. Begin a blank-slot preview and cancel by leaving Note Input before release.
    Verify no new note and no new Undo transaction.
@@ -51,7 +54,11 @@ At 75%, 100% and 150% zoom:
    accidental entry, loss of score, duplicate commit or stuck preview.
 6. Rotate during contact, release, then make a fresh entry. Record whether the
    interrupted gesture cancels cleanly and the fresh preview matches its pitch.
-7. Export, close and reopen the score. Compare both staves and final history
+7. Choose **Finger · Markings**. Select an existing note with a finger; add a
+   dynamic, text and a double barline using their tools. Undo/Redo each change.
+   Verify no extra notes, and switch back to Pencil entry successfully. AI
+   starts closed; explicitly open and close it without losing the score.
+8. Export, close and reopen the score. Compare both staves and final history
    results. Retain export and recording; list each matrix cell as pass/fail/not-run.
 
 For latency, use an external high-frame-rate recording that sees the contact

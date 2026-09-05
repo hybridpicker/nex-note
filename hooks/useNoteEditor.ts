@@ -1862,6 +1862,7 @@ export function useNoteEditor(
       alter?: number;
     },
     behavior?: {
+      audition?: boolean;
       advanceCursor?: boolean;
       useAdvancedSelectionAsInputAnchor?: boolean;
     },
@@ -1905,7 +1906,7 @@ export function useNoteEditor(
       selectionAnchor: persistedSelectionAnchor,
     });
 
-    if (enteredNote) {
+    if (enteredNote && behavior?.audition !== false) {
       const soundingNotes = getSimultaneousPitchedNotes(nextDocument, enteredNote);
       if (options?.onActiveNotesPreview) {
         options.onActiveNotesPreview(soundingNotes);
@@ -1999,6 +2000,7 @@ export function useNoteEditor(
 
   const commitResolvedNoteEntry = useCallback((input: {
     target: ResolvedEditTarget;
+    audition?: boolean;
     duration: NoteDuration;
     dotted: boolean;
     label: string;
@@ -2066,10 +2068,9 @@ export function useNoteEditor(
           ? rawNextSelection
           : null;
         const soundingNotes = getSimultaneousPitchedNotes(coreDocument, enteredNote);
-        if (options?.onActiveNotesPreview) {
-          options.onActiveNotesPreview(soundingNotes);
-        } else {
-          options?.onActiveNotePreview?.(enteredNote);
+        if (input.audition !== false) {
+          if (options?.onActiveNotesPreview) options.onActiveNotesPreview(soundingNotes);
+          else options?.onActiveNotePreview?.(enteredNote);
         }
         const selectedAfterInput = nextSelection ?? enteredNote;
         selectSingleNote(selectedAfterInput, {
@@ -2091,13 +2092,14 @@ export function useNoteEditor(
       octave: validatedTarget.octave,
       alter: validatedTarget.alter,
     }, {
+      audition: input.audition,
       advanceCursor: validatedTarget.mode !== 'chord',
     });
     if (writtenAccidental) setSelectedAccidentalLive(null);
     return true;
   }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveRecentInputFromDocument, selectSingleNote, setSelectedAccidentalLive, warnNoOpEdit, warnRejectedEdit, xml]);
 
-  const placeNoteAt = useCallback((target: ResolvedEditTarget | LegacyPointerPlacementTarget) => {
+  const placeNoteAt = useCallback((target: ResolvedEditTarget | LegacyPointerPlacementTarget, placementOptions?: { audition?: boolean }) => {
     const normalizedTarget = (() => {
       if ('source' in target) return target;
 
@@ -2170,6 +2172,7 @@ export function useNoteEditor(
     }
     commitResolvedNoteEntry({
       target: normalizedTarget,
+      audition: placementOptions?.audition,
       duration: selectedDurationRef.current,
       dotted: isDottedRef.current,
       label: 'placeNoteAt',

@@ -190,6 +190,7 @@ const ACCIDENTAL_SHORTCUTS: Record<Exclude<AccidentalChoice, null>, string> = {
 
 interface Props {
   placement?: 'toolbar' | 'sidebar';
+  pencilFocus?: boolean;
   coreDocument: ScoreDocumentModel | null;
   noteInputMode: boolean;
   chordInputMode: boolean;
@@ -414,6 +415,7 @@ function stripShortcutSuffix(label: string) {
 
 export default function NoteInputToolbar({
   placement = 'toolbar',
+  pencilFocus = false,
   coreDocument,
   noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
   selectedDuration, selectedAccidental, isDotted, selectedVoice,
@@ -1138,6 +1140,27 @@ export default function NoteInputToolbar({
       )}
     </div>
   );
+
+  if (isSidebar && pencilFocus) {
+    return (
+      <div className={`${rootClassName} nex-pencil-tools`} data-testid="pencil-tools" aria-label="Pencil entry tools">
+        {inputStateSummary}
+        <p className="text-xs font-semibold text-slate-500">Note values</p>
+        {durationTools}
+        <p className="text-xs font-semibold text-slate-500">Accidentals</p>
+        {accidentalTools}
+        <p className="text-xs font-semibold text-slate-500">Voice</p>
+        <Group>{[1, 2, 3, 4].map(v => <TBtn key={v} title={`Voice ${v}`} active={selectedVoice === v} onClick={() => onVoiceChange(v)}>{v}</TBtn>)}</Group>
+        <Group>
+          <TBtn title={t('note.inputAudition')} active={inputAuditionEnabled} onClick={onToggleInputAudition}>♪</TBtn>
+          <TBtn title="Insert rest" disabled={!selectedNote} onClick={onInsertRest}><RestGlyph className="h-6 w-6" /></TBtn>
+          <TBtn title="Delete selected note" disabled={!selectedNote} onClick={onDeleteNote}>⌫</TBtn>
+          <TBtn title="Chord input" active={chordInputMode} onClick={onToggleChordInputMode}>CHD</TBtn>
+        </Group>
+        {guitarInputMode && guitarTools}
+      </div>
+    );
+  }
 
   if (isSidebar) {
     return (

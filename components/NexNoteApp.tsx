@@ -690,12 +690,20 @@ export default function Home({ searchParams }: HomeProps) {
   const [workspaceTab, setWorkspaceTab] = useState<'assistant' | 'library' | 'inspector'>('assistant');
   const initialLeftNotationSidebarCollapsed = embedConfig.enabled
     ? embedConfig.initialLeftToolsCollapsed ?? false
-    : false;
+    : true;
   const initialWorkspaceCollapsed = (
     embedConfig.enabled
       ? embedConfig.initialWorkspaceCollapsed ?? embedConfig.scoreOnly
-      : false
+      : true
   );
+  const [pencilFocus, setPencilFocus] = useState(false);
+  const [pencilInputDevice, setPencilInputDevice] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      setPencilFocus(true);
+      setPencilInputDevice(true);
+    }
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => initialWorkspaceCollapsed);
   const [leftNotationSidebarCollapsed, setLeftNotationSidebarCollapsed] = useState(() => initialLeftNotationSidebarCollapsed);
   const [leftNotationSidebarHydrated, setLeftNotationSidebarHydrated] = useState(false);
@@ -4664,6 +4672,7 @@ export default function Home({ searchParams }: HomeProps) {
       playbackPlayhead={viewOnly ? null : playhead}
       followPlayback={!viewOnly}
       onNoteClick={viewOnly ? () => undefined : handleScoreNoteClick}
+      pencilOnlyInput={(pencilInputDevice || pencilFocus) && noteInputMode && !printView}
       onPlaceNoteAt={viewOnly ? () => undefined : placeNoteAt}
       onSetChordSymbol={viewOnly ? undefined : setHarmonyAtSelection}
       onSetGuitarFret={viewOnly ? undefined : setGuitarFretAtNote}
@@ -4712,8 +4721,10 @@ export default function Home({ searchParams }: HomeProps) {
     );
   }
 
+  const pencilFocusActive = pencilFocus && noteInputMode && !printView;
+
   return (
-    <div className={`nex-app-shell h-screen bg-nex-surface flex flex-col overflow-hidden ${printView ? 'nex-print-view' : ''}`}>
+    <div data-pencil-focus={pencilFocusActive ? "true" : "false"} className={`nex-app-shell h-screen bg-nex-surface flex flex-col overflow-hidden ${printView ? 'nex-print-view' : ''}`}>
       <CommandCenter
         open={commandCenterOpen}
         actions={commandCenterActions}
@@ -4872,7 +4883,7 @@ export default function Home({ searchParams }: HomeProps) {
           </span>
         </button>
         <button
-          onClick={() => setWorkspaceTab('library')}
+          onClick={() => { setWorkspaceTab('library'); setSidebarCollapsed(false); setPencilFocus(false); }}
           title={t('app.library')}
           className={`h-8 rounded-md px-2.5 text-xs font-semibold transition-colors ${
             workspaceTab === 'library'
@@ -4993,6 +5004,24 @@ export default function Home({ searchParams }: HomeProps) {
               />
             ) : (
               <div className="nex-score-column flex-1 bg-nex-score-bg border-r border-nex-border flex flex-col overflow-hidden">
+                {!printView && pencilInputDevice && (
+                  <div className="nex-pencil-focus-bar flex items-center gap-3 border-b border-nex-border bg-white px-3 py-1">
+                    <button type="button" data-testid="pencil-focus-toggle" aria-pressed={pencilFocusActive}
+                      className={`min-h-12 rounded-lg px-4 text-sm font-semibold ${pencilFocusActive ? 'nex-brand-active' : 'nex-brand-button'}`}
+                      onClick={() => {
+                        setPencilFocus(true);
+                        if (!noteInputMode) toggleNoteInput();
+                      }}>Pencil · Notes</button>
+                    <button type="button" data-testid="finger-mode-toggle" aria-pressed={!noteInputMode}
+                      className={`min-h-12 rounded-lg px-4 text-sm font-semibold ${!noteInputMode ? 'nex-brand-active' : 'nex-brand-button'}`}
+                      onClick={() => {
+                        setPencilFocus(false);
+                        if (noteInputMode) toggleNoteInput();
+                        setLeftNotationSidebarCollapsed(false);
+                      }}>Finger · Markings</button>
+                    {pencilFocusActive && <span className="text-xs text-slate-500">Pencil writes · fingers navigate</span>}
+                  </div>
+                )}
                 {!printView && (
                   <NotationToolbar
                     playbackState={playbackState}
@@ -5110,7 +5139,7 @@ export default function Home({ searchParams }: HomeProps) {
                 ) : (
                   <div className="nex-score-stage flex-1 flex overflow-hidden">
                     <LeftNotationSidebar
-                      collapsed={leftNotationSidebarCollapsed}
+                      collapsed={pencilFocusActive ? false : leftNotationSidebarCollapsed}
                       onToggleCollapsed={() => setLeftNotationSidebarCollapsed((current) => !current)}
                       labels={{
                         show: t('app.leftToolsShow'),
@@ -5136,7 +5165,7 @@ export default function Home({ searchParams }: HomeProps) {
                         </button>
                       ) : null}
                     >
-                      <EditPalette
+                      {!pencilFocusActive && <EditPalette
                         selectedNote={selectedNote}
                         selectedNotes={selectedNotes}
                         noteInputMode={noteInputMode}
@@ -5157,9 +5186,10 @@ export default function Home({ searchParams }: HomeProps) {
                         onDeleteSelection={handleDeleteSelection}
                         onClearSelection={clearSelection}
                         iconMode
-                      />
+                      />}
                       <NoteInputToolbar
                         placement="sidebar"
+                        pencilFocus={pencilFocusActive}
                         coreDocument={deferredCoreDocument}
                         noteInputMode={noteInputMode}
                         chordInputMode={chordInputMode}
@@ -5239,10 +5269,10 @@ export default function Home({ searchParams }: HomeProps) {
             )}
 
             {/* Right panel: Workspace */}
-            {sidebarCollapsed ? (
+            {(sidebarCollapsed || pencilFocusActive) ? (
               <div className="flex flex-col items-center justify-start pt-2 w-8 bg-white border-l border-nex-border shrink-0" data-testid="workspace-collapsed-rail">
                 <button
-                  onClick={() => setSidebarCollapsed(false)}
+                  onClick={() => { setPencilFocus(false); setSidebarCollapsed(false); }}
                   title={t('app.panelShow')}
                   className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-nex-ink hover:bg-nex-surface transition-colors"
                 >

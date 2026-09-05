@@ -7635,3 +7635,27 @@ test('letter entry on a rest continues the preceding pitch in the same lane', ()
   assert.equal(entered?.kind === 'note' ? `${entered.pitch.step}${entered.pitch.octave}` : null, 'A4');
   hook.unmount();
 });
+
+test('tablet takeoff suppresses only its own audition, including no-change replacement', () => {
+  const hook = renderHook(SAMPLE_XML);
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('N')); });
+  act(() => { hook.current.setDuration('4'); });
+  const target = {
+    measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0,
+    timestampDen: 4, step: 'G', octave: 4, alter: 0,
+    placementMode: 'replace' as const,
+  };
+  const before = hook.previewedNoteGroups.length;
+  act(() => { hook.current.placeNoteAt(target, { audition: false }); });
+  const committed = hook.xml;
+  assert.equal(hook.previewedNoteGroups.length, before);
+  assert.equal(flattenVoiceEvents(committed).find(e => e.kind === 'note')?.kind, 'note');
+  act(() => { hook.current.placeNoteAt(target, { audition: false }); });
+  assert.equal(hook.xml, committed);
+  assert.equal(hook.previewedNoteGroups.length, before);
+  act(() => { hook.current.placeNoteAt(target); });
+  assert.equal(hook.previewedNoteGroups.length, before + 1);
+  act(() => { hook.current.placeNoteAt({ ...target, timestampNum: 1 }); });
+  assert.equal(hook.previewedNoteGroups.length, before + 2);
+  hook.unmount();
+});

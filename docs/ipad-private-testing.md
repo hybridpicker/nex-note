@@ -215,3 +215,20 @@ again and press Run once in Xcode. This does not affect a standalone build.
 Initiate the wired pairing in Xcode first. iPadOS only exposes Developer Mode
 after a development pairing has started. Then enable Developer Mode in Privacy
 & Security and restart the iPad.
+
+## Pencil and finger workspace milestone
+
+Open **Pencil · Notes** to enter notation with Pencil using large duration,
+accidental, voice, rest and delete targets. Finger contact does not enter notes
+in this mode. The full header and AI panel are hidden while the score and
+essential entry controls stay visible.
+
+Choose **Finger · Markings** to leave Note Input and open the ordinary notation
+tools. Use a finger to select existing notes and apply markings, text and
+barlines. AI and notation sidebars start closed on ordinary score opening;
+explicit mode/panel controls open them. The AI panel remains independent.
+
+Contact/refinement auditions a pitch once; releasing an unchanged Pencil pitch
+does not replay it. Confirm this by listening on the physical device, including
+refinement, rapid repeated notes, cancellation and orientation changes. Browser
+pointer tests and instrument counters cannot certify that physical behavior.

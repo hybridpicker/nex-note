@@ -436,3 +436,82 @@ for (const pointerType of ['touch', 'pen', 'mouse'] as const) {
     await expect.poll(() => currentXml(page)).toBe(changed);
   });
 }
+
+for (const pointerType of ['pen', 'touch'] as const) {
+  test(`${pointerType} entry auditions once across contact and takeoff`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const probe = { starts: 0, loaded: false };
+      (window as any).__tabletAudioProbe = probe;
+      (window as any).__NEX_NOTE_E2E_INSTRUMENT_LOADER__ = async () => {
+        probe.loaded = true;
+        return { start() { probe.starts += 1; }, stop() {} };
+      };
+    });
+    await boot(page);
+    await expect.poll(() => page.evaluate(() => (window as any).__tabletAudioProbe.loaded)).toBe(true);
+    const point = await blankStaffPoint(page);
+    const before = await noteCount(page);
+    await dispatchPointer(page, 'pointerdown', { pointerId: 81, pointerType, ...point });
+    await expect.poll(() => page.evaluate(() => (window as any).__tabletAudioProbe.starts)).toBe(1);
+    expect(await noteCount(page)).toBe(before);
+    await dispatchPointer(page, 'pointerup', { pointerId: 81, pointerType, ...point });
+    await expect.poll(() => noteCount(page)).toBe(before + 1);
+    // Scheduling contract only; physical listening is a separate device check.
+    await page.waitForTimeout(350);
+    expect(await page.evaluate(() => (window as any).__tabletAudioProbe.starts)).toBe(1);
+  });
+}
+
+
+test.describe('Pencil focus layout', () => {
+  test.use({ hasTouch: true, viewport: { width: 1366, height: 1024 } });
+  test('keeps panels closed, enlarges entry targets and reserves writing for Pencil', async ({ page }) => {
+    await page.addInitScript(xml => {
+      localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'pencil-layout.musicxml' }));
+      document.addEventListener('DOMContentLoaded', () => document.documentElement.classList.add('nex-note-native', 'nex-note-ios'));
+    }, fixtureXml);
+    await page.goto('/nex-note-app/');
+    await expect(page.locator('[data-testid="score-canvas"] .vf-notehead').first()).toBeVisible();
+    await expect(page.getByTestId('workspace-panel')).toHaveCount(0);
+    await expect(page.getByTestId('left-notation-sidebar-collapsed-rail')).toBeVisible();
+    await page.getByTestId('pencil-focus-toggle').click();
+    await expect(page.getByTestId('pencil-tools')).toBeVisible();
+    await expect(page.getByTestId('app-header')).toBeHidden();
+    const quarter = page.getByTestId('pencil-tools').getByRole('button', { name: /^Quarter note/ });
+    const box = await quarter.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(52);
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    await quarter.click();
+    const before = await currentXml(page);
+    const point = await blankStaffPoint(page);
+    await dispatchPointer(page, 'pointerdown', { pointerId: 91, pointerType: 'touch', ...point });
+    await dispatchPointer(page, 'pointermove', { pointerId: 91, pointerType: 'touch', x: point.x, y: point.y + 80 });
+    await dispatchPointer(page, 'pointerup', { pointerId: 91, pointerType: 'touch', ...point });
+    expect(await currentXml(page)).toBe(before);
+    await expect(page.getByTestId('ghost-note-preview')).toBeHidden();
+    await dispatchPointer(page, 'pointerdown', { pointerId: 92, pointerType: 'pen', ...point });
+    await dispatchPointer(page, 'pointerup', { pointerId: 92, pointerType: 'pen', ...point });
+    await expect.poll(() => currentXml(page)).not.toBe(before);
+    const after = await currentXml(page);
+    await page.screenshot({ path: 'test-results/pencil-audition/landscape.png' });
+    await page.setViewportSize({ width: 1024, height: 1366 });
+    await expect(quarter).toBeVisible();
+    expect(await currentXml(page)).toBe(after);
+    await page.screenshot({ path: 'test-results/pencil-audition/portrait.png' });
+    await page.getByTestId('finger-mode-toggle').click();
+    await expect(page.getByTestId('pencil-tools')).toHaveCount(0);
+    await expect(page.getByTestId('app-header')).toBeVisible();
+    await expect(page.locator('#nex-left-notation-tools-panel')).toBeVisible();
+    await expect(page.getByTestId('score-viewport')).toHaveAttribute('data-note-input-gesture-policy', 'navigation');
+    await page.locator('[data-testid="score-canvas"] .vf-notehead').last().tap();
+    expect(await currentXml(page)).toBe(after);
+    await page.getByRole('button', { name: /^Measures barlines$/i }).tap();
+    await page.getByRole('button', { name: 'Double barline', exact: true }).tap();
+    await expect.poll(() => currentXml(page)).not.toBe(after);
+    await page.getByRole('button', { name: 'Undo (Cmd/Ctrl+Z)', exact: true }).click();
+    await expect.poll(() => currentXml(page)).toBe(after);
+    await page.getByTestId('workspace-collapsed-rail').getByRole('button').click();
+    await expect(page.getByTestId('workspace-panel')).toBeVisible();
+    expect(await currentXml(page)).toBe(after);
+  });
+});

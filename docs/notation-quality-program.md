@@ -51,7 +51,7 @@ the first physical baseline before adjusting them; record any adjustment.
 | --- | --- | --- | --- |
 | Laptop keyboard | Enter an eight-bar passage with rests, accidentals, a chord, tie and triplet; correct one note; Undo/Redo; export/reopen | Exact pitch, rhythm, voice and history; text fields retain ordinary typing; held keys do not duplicate transport actions | Complete without reaching for the mouse; record seconds, keystrokes and corrections over three runs; compare median against baseline |
 | Mouse | Enter the same passage; replace a note, add a chord tone and edit both piano staves at 75%, 100%, 150% zoom | Visible preview equals committed onset/staff/pitch/voice; zero hover mutations and duplicate commits | Zero wrong-target commits in the fixed corpus; measure task time and correction count; target p95 visible preview response <= 50 ms on recorded hardware |
-| Tablet | Enter/correct a four-bar grand-staff passage with finger and Pencil in portrait/landscape, page/continuous view; cancel a gesture; scroll and zoom | Preview/refine/release commits once; cancellation commits nothing; navigation preserves score; selected-note gestures retain priority | Zero accidental entries while navigating; physical finger and Pencil passes separately; target p95 preview response <= 50 ms; emulated Pointer Events do not satisfy this gate |
+| Tablet | Enter/correct a four-bar grand-staff passage with Pencil; use fingers for markings/text/barlines and navigation in portrait/landscape, page/continuous view; cancel a gesture; scroll and zoom | Preview/refine/release commits once; cancellation commits nothing; navigation preserves score; selected-note gestures retain priority | Zero accidental entries while navigating; physical Pencil-entry and finger-marking passes separately; target p95 preview response <= 50 ms; emulated Pointer Events do not satisfy this gate |
 | Playback and sounds | Play from selection; pause/resume/seek; change tempo; play repeats, ties, mixed meter and multiple instruments; test offline output | Correct onsets/durations, instrument mapping and cursor position; no hanging notes after stop/seek | Record audio and screen together; target p95 cursor-to-audible-onset offset <= 50 ms after accounting for output latency; inspect 60 seconds for drift; assess timbre/balance by listening |
 | Formatting | Format piano, choir and leadsheet scores: page/system breaks, spacing, staff distance and text; Undo/Redo; save/reopen; PDF | Formatting persists without altering musical content; deterministic projection and successful export | Zero clipped glyphs, overlapping lyrics or detached markings in the reviewed corpus; inspect every PDF page at print scale; record clicks and task time |
 
@@ -731,3 +731,82 @@ revision was physically edited on the device.
 - No product code changed in this follow-up. Existing 1,082 unit and 77 browser
   passes apply to the unchanged runtime. Only this evidence record is committed;
   documentation-only hooks do not repeat notation tests or Mac packaging.
+
+## Iteration 11 — Pencil notation and finger markings milestone
+
+- User physically confirmed Pencil note entry on the installed iPad runtime,
+  but heard a double attack ("da-da"). They requested a simpler Pencil layout,
+  larger targets, AI/tools initially closed, then clarified the interaction:
+  Pencil for notation; fingers for markings, text and barlines. This supersedes
+  the earlier requirement for finger note entry on iPad.
+- Before evidence: pen and touch contact/takeoff each created exactly one new
+  note but scheduled two instrument starts. Both new regression assertions
+  failed with expected 1 / received 2 in `test-results/pencil-audition/before.log`.
+  Code paths independently auditioned contact and committed takeoff. Normal
+  desktop toolbar targets were 32px high (native coarse minimum 44px), with no
+  compact essential-controls view; ordinary score loading opened both panels.
+- Bounded audio fix: carry a per-placement audition option through commit,
+  suppressing takeoff only when the final pitch matches the session's last
+  auditioned pitch. Contact/refinement feedback remains; an unauditioned final
+  pitch and ordinary mouse/keyboard commits still audition. No global timing
+  debounce suppresses legitimate repeated entries. The same suppression covers
+  successful no-change replacements.
+- UI: explicit Pencil · Notes and Finger · Markings controls. Pencil focus
+  shows a four-column essential toolbar with >=44px width and 52px height,
+  hides the header/AI panel and reserves contact entry for Pencil. Finger mode
+  leaves Note Input and opens the existing notation tools for selection and
+  marking edits. Ordinary AI/notation panels initially close and retain explicit
+  open controls; opening Library also opens its panel.
+- Evidence and build/device receipts: `test-results/pencil-audition/`.
+  Physical listening, finger navigation/pinch, Pencil palm rejection and the
+  complete orientation/cancellation matrix still require the tester. Updated
+  exact steps are in `notation-quality-participation.md`. No entire-program
+  completion is claimed by this milestone.
+
+- Validation so far: the 12-case tablet regression passed after the audio fix.
+  The expanded 13-case suite then passed, including coarse-pointer native-style
+  layout, 52px targets, no finger note mutation in Pencil mode, Pencil commit,
+  viewport rotation preserving XML, finger selection and double-barline edit
+  with Undo, and explicit panel reopening. Landscape/portrait screenshots were
+  visually reviewed; these are browser renders, not physical iPad observations.
+  An earlier exploratory run was invalidated by development refresh during a
+  mouse test; its layout test also used a stale mode-toggle expectation. The
+  fresh focused layout run exposed only a case-sensitive test label mismatch
+  (Measures vs CSS-uppercase MEASURES), corrected before the passing run.
+- User's current Mac piano score was saved before updating the app as
+  Downloads/Piano before Pencil milestone 2026-09-05.nxn. Native smoke uses a
+  separate fixture. Final regression/build/device/commit receipts follow below.
+
+- Broader regression setup correction: three notation-tool cases initially
+  failed because they assumed the sidebar was visible. Their common setup now
+  explicitly opens it before testing controls; the independent closed-start
+  layout test remains unchanged. That exploratory batch was interrupted, not
+  counted as a passing run. Its 18 mouse and 2 iPad-style smoke cases passed.
+- A focused hook regression passes for silent takeoff, silent no-change
+  replacement, and subsequent same-pitch audible requests at the same and next
+  rhythmic slot. It verifies request counts, not actual output audio.
+
+- Final validation: 47/47 fresh notation/tablet cases passed, including the
+  complete 34-case notation hook suite; combined with 18 mouse and 2 iPad-style
+  smoke passes, 67 distinct browser cases passed for this runtime.
+  `electron:refresh` passed all 1,083 unit tests, production TypeScript/build,
+  arm64 packaging and verification. The raw all-files `tsc --noEmit` probe
+  reported test/test-results typing errors; production typechecking passed.
+- Actual packaged Mac smoke: both panels started closed, N enabled entry,
+  one mouse click inserted E5, native Edit Undo/Redo reversed/restored it,
+  and explicit controls opened notation and AI panels. Native NXN export was
+  parsed and asserted as C4 E5 D4 E4 F4 (four originals plus exactly one entry).
+  See `native-result.nxn` and `native-smoke.log`. User piano work was preserved.
+- iPad production sync, Doctor and fresh signed Xcode device build passed.
+  Device tools confirmed fresh App.app installation and launch on connected
+  Director Ipad (iPad Air 13-inch M2). It contains the pre-commit tested runtime
+  from `6869e65d+local`; installation/launch are delivery evidence only. Physical
+  single-attack listening, Pencil gestures and finger marking changes were
+  requested from the user and remain pending for this updated build.
+- Milestone: implementation and automated/native-Mac validation complete;
+  physical iPad acceptance remains open. The planned Xcode macOS target is
+  absent, so its build/smoke cannot run. Earlier full-program timing, listening,
+  cancellation/navigation/orientation and long-score formatting gates remain
+  open. Reuse the passed 34-case notation suite for pre-commit; run the normal
+  post-commit Mac artifact build, push without force and verify remote equality.
+  Full commit, clean-tree and remote receipts: `test-results/pencil-audition/verification.json`.

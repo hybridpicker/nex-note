@@ -202,6 +202,8 @@ async function bootWithScore(page: Page, xml = buildNotationToolsFixtureXml(), o
   await page.goto(options?.strictDoctor === false ? '/' : '/?debug=true&doctor=strict');
   await expect(page.getByTitle('Save as')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('[data-testid="score-canvas"] .vf-notehead').first()).toBeVisible({ timeout: 15_000 });
+  // Tools now start closed; this suite explicitly opens the controls it tests.
+  await openNotationTools(page);
   await page.getByTestId('score-viewport').focus();
 }
 

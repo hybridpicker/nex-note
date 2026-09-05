@@ -150,6 +150,7 @@ interface Props {
   selectedNote: SelectedNote | null;
   selectedNotes: SelectedNote[];
   noteInputMode: boolean;
+  pencilOnlyInput?: boolean;
   inputByDurationMode?: boolean;
   preparedDurationActivePitch?: { step: string; octave: number; alter: number } | null;
   selectedDuration: NoteDuration;
@@ -174,7 +175,7 @@ interface Props {
     visualMeasureNumber?: number | null;
     visualStaffIndex?: number | null;
   }) => void;
-  onPlaceNoteAt: (target: ResolvedEditTarget) => void;
+  onPlaceNoteAt: (target: ResolvedEditTarget, options?: { audition?: boolean }) => void;
   onSetChordSymbol?: (value: string, targetNote?: SelectedNote | null) => void;
   onSetGuitarFret?: (targetNote: SelectedNote, fret: number) => void;
   onPlaybackSeekRequest?: (target: PlaybackCursorTarget) => void;
@@ -11728,6 +11729,7 @@ export default function ScoreEditor({
   selectedNote,
   selectedNotes,
   noteInputMode,
+  pencilOnlyInput = false,
   inputByDurationMode = false,
   preparedDurationActivePitch = null,
   selectedDuration,
@@ -12257,6 +12259,7 @@ export default function ScoreEditor({
   }, [initializeOsmd]);
 
   const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (pencilOnlyInput && e.pointerType === 'touch') return;
     lastPointerClientRef.current = { x: e.clientX, y: e.clientY };
     const dragSession = dragSessionRef.current;
     if (dragSession) {
@@ -12696,7 +12699,7 @@ export default function ScoreEditor({
       if (ghostTargetsEqual(current, nextGhost)) return current;
       return nextGhost;
     });
-  }, [chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
+  }, [pencilOnlyInput, chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
 
   const discardPendingTabletPointerMove = useCallback(() => {
     if (tabletPointerMoveFrameRef.current != null) {
@@ -12752,6 +12755,7 @@ export default function ScoreEditor({
 
   // Pointer handler — convert DOM click to OSMD note
   const handlePointerDown = useCallback((e: PointerEvent) => {
+    if (pencilOnlyInput && e.pointerType === 'touch') return;
     const osmd = osmdRef.current;
     const container = containerRef.current;
     if (!osmd?.GraphicSheet || !container) {
@@ -13940,7 +13944,7 @@ export default function ScoreEditor({
       applyMeasureSelection([], null);
       onNoteClick(null);
     }
-  }, [applyMeasureSelection, chordInputMode, coreDocument, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onNoteClick, onPlaceNoteAt, onSetChordSymbol, overlayLayerOffset, scheduleRenderedGeometryRefresh, selectedAccidental, selectedDuration, selectedNote, selectedVoice, visualDebugEnabled, zoomPercent]);
+  }, [pencilOnlyInput, applyMeasureSelection, chordInputMode, coreDocument, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onNoteClick, onPlaceNoteAt, onSetChordSymbol, overlayLayerOffset, scheduleRenderedGeometryRefresh, selectedAccidental, selectedDuration, selectedNote, selectedVoice, visualDebugEnabled, zoomPercent]);
 
   const handleDoubleClick = useCallback((event: MouseEvent) => {
     if (!onSetGuitarFret) return;
@@ -14823,7 +14827,12 @@ export default function ScoreEditor({
 
         // Take-off selection: this is the exact object stored with the last
         // validated preview. Pointer-up coordinates are intentionally ignored.
-        onPlaceNoteAtRef.current(committed.target);
+        const pitchKey = `${committed.target.step}:${committed.target.alter}:${committed.target.octave}`;
+        // Contact/refinement already sounded this pitch. Do not retrigger it
+        // on takeoff; a final pitch not yet auditioned still needs feedback.
+        onPlaceNoteAtRef.current(committed.target, {
+          audition: tabletSession.lastAuditionedPitch !== pitchKey,
+        });
         lastNoteInputCommitTargetRef.current = {
           measureId: committed.target.measureId,
           corePartId: committed.target.corePartId,
@@ -16445,7 +16454,7 @@ export default function ScoreEditor({
           data-tablet-entry-phase={tabletEntryVisual.phase}
           className="h-full overflow-auto outline-none"
           style={{
-            touchAction: noteInputMode && !inputByDurationMode ? 'none' : 'pan-x pan-y',
+            touchAction: noteInputMode && !inputByDurationMode && !pencilOnlyInput ? 'none' : 'pan-x pan-y pinch-zoom',
           }}
           onPointerDown={() => viewportRef.current?.focus()}
           onClick={handlePlaybackSeekClick}
