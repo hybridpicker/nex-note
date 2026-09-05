@@ -3051,8 +3051,8 @@ export default function Home({ searchParams }: HomeProps) {
     return result;
   }, [applyCommands, currentSelectionAnchor]);
 
-  const layoutCleanupDocumentRef = useRef(coreDocument);
-  layoutCleanupDocumentRef.current = coreDocument;
+  const currentDocumentRef = useRef(coreDocument);
+  currentDocumentRef.current = coreDocument;
 
   const handleLayoutCleanup = useCallback(async () => {
     if (!xml || layoutCleanupLoading) return;
@@ -3077,7 +3077,7 @@ export default function Home({ searchParams }: HomeProps) {
 
       // Cleanup commands describe the requested document. Even confirmed
       // commands must never be applied to an edited or newly opened score.
-      if (layoutCleanupDocumentRef.current !== requestedDocument) {
+      if (currentDocumentRef.current !== requestedDocument) {
         window.alert(t('toolbar.layoutStale'));
         return;
       }
@@ -3200,6 +3200,7 @@ export default function Home({ searchParams }: HomeProps) {
         return;
       }
       if (xml && await ensureMidiLoaded(xml)) {
+        if (currentDocumentRef.current !== coreDocument) return;
         markMidiReady(xml);
         await seekToCursorTarget({
           measureNumber: note.measureNumber,
@@ -3207,6 +3208,7 @@ export default function Home({ searchParams }: HomeProps) {
           timestampDen: note.timestampDen,
         });
       }
+      if (currentDocumentRef.current !== coreDocument) return;
       await previewNotes(notesToPreview);
     })();
   }, [coreDocument, ensureMidiLoaded, handleNoteClick, markMidiReady, playbackSampleBank, playbackState, previewNotes, seekToCursorTarget, startFromNote, xml]);

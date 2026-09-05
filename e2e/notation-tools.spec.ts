@@ -1481,3 +1481,47 @@ for (const change of ['replace score', 'edit score', 'selection only'] as const)
     }
   });
 }
+
+
+test('closing the score cancels a pending note audition', async ({ page }) => {
+  await bootWithScore(page);
+  await page.evaluate(() => {
+    const probe = window as typeof window & {
+      __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: (...args: unknown[]) => unknown;
+      __releaseAudition?: () => void;
+      __auditionWaiting?: boolean;
+      __auditionStarts?: number;
+    };
+    probe.__auditionStarts = 0;
+    probe.__NEX_NOTE_E2E_INSTRUMENT_LOADER__ = () => new Promise((resolve) => {
+      probe.__auditionWaiting = true;
+      probe.__releaseAudition = () => resolve({
+        start: () => { probe.__auditionStarts! += 1; return { stop() {} }; },
+        stop() {},
+      });
+    });
+  });
+  await clickRenderedNotehead(page, 0);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __auditionWaiting?: boolean }).__auditionWaiting)).toBe(true);
+  await page.keyboard.press('Control+w');
+  await expect.poll(async () => (await readE2EState(page))?.xml).toBe('');
+  await page.evaluate(async () => {
+    (window as typeof window & { __releaseAudition?: () => void }).__releaseAudition?.();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+  expect(await page.evaluate(() => (window as typeof window & { __auditionStarts?: number }).__auditionStarts)).toBe(0);
+});
+
+
+test('closing the score cancels an audition waiting for MIDI', async ({ page }) => {
+  let held: Route | undefined;
+  await page.route('**/api/midi', (route) => { held = route; });
+  await bootWithScore(page);
+  await clickRenderedNotehead(page, 0);
+  await expect.poll(() => Boolean(held)).toBe(true);
+  await page.keyboard.press('Control+w');
+  await expect.poll(async () => (await readE2EState(page))?.xml).toBe('');
+  await held!.fulfill({ status: 200, contentType: 'audio/midi', body: buildMidiBody() });
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
+  expect(await playbackStarts(page)).toHaveLength(0);
+});

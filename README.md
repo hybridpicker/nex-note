@@ -59,6 +59,7 @@ The core value is:
 - Save local `.nxn` project working copies and reopen recent/library scores.
 - Boot embeddable score views for private websites or member areas.
 - Export `.mxl`, `.abc`, MIDI-backed playback output, and practice-pack JSON.
+- Stop cancels pending note/chord auditions; closing a score also cancels auditions still waiting for MIDI.
 - Package the local app as a macOS Electron shell.
 
 ## First Paid Workflow

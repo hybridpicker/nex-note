@@ -20,7 +20,7 @@ const unitGroups = {
   keyboard: ['score-input-resolvers', 'input-by-duration', 'repitch-and-tab-entry', 'accidentals', 'user-visible-note-editor'],
   mouse: ['score-input-edit-map', 'rendered-ghost-grid', 'smart-ghost-note', 'snap-point-contract'],
   tablet: ['tablet-entry-session', 'staff-pitch'],
-  playback: ['playback-audio-context', 'playback-cursor', 'playback-sample-bank', 'midi-instruments'],
+  playback: ['playback-cancellation', 'playback-audio-context', 'playback-cursor', 'playback-sample-bank', 'midi-instruments'],
   formatting: ['layout-regression', 'layout-render-projection', 'layout-snapshot', 'render-layout-bridge', 'user-visible-exports'],
 };
 const startedAt = new Date().toISOString();

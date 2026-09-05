@@ -1,6 +1,6 @@
 # Notation quality improvement program
 
-Started: 2026-09-05. Status: automated baseline established; physical and usability gates open.
+Started: 2026-09-05. Status: correctness improvements underway; physical and usability gates open.
 
 ## Objective and evidence
 
@@ -314,6 +314,59 @@ current implementation prevents the target workflow.
   review remain not run. Native delivery does not close these manual gates.
 - Native logs and the Electron smoke script are in the same evidence directory.
   `git diff --check` passed; commit/push receipt follows remote verification.
+- Verified iteration-3 commit/push: `189efa8e36f25246e91a09eaee7aab4f5a7ae086`;
+  local HEAD matched `origin/devel`. Post-commit Mac artifact packaging and
+  verification passed.
 - Decision: accepted formatting-correctness increment. Next: reproduce pending
   note audition after closing the score, both during MIDI loading and during
   instrument loading; no listening-quality claim follows from scheduler tests.
+
+## Iteration 4 — Cancel pending auditions when the score stops or closes
+
+- Date: 2026-09-05; `devel`; base revision
+  `189efa8e36f25246e91a09eaee7aab4f5a7ae086`; initially clean worktree.
+- Priority/workstream: playback correctness; a delayed note could start after
+  the score was closed or its audition was stopped.
+- Reproduction: Chromium notation-tools fixture; select C4, hold either the
+  MIDI response or instrument-loader promise, close the score with Ctrl+W,
+  then complete the load. Both tests observed a late instrument start before
+  the fix. Separate hook tests held a note/chord instrument load, called Stop,
+  then resolved it: one/two note starts respectively instead of zero.
+- Change: stopping scheduled playback invalidates pending audition generations
+  without throwing away reusable loaded assets. The note-click workflow checks
+  document identity after MIDI loading and before preview, so an earlier click
+  cannot resume against a closed or changed score. The same document reference
+  continues to protect layout cleanup.
+- Focused evidence: both UI regressions failed before and passed after; both
+  hook tests failed before and passed after. The hook tests await the actual
+  audition promise and also prove that a new audition reuses the loaded
+  instrument successfully. Added the tests to the program playback gate.
+- Evidence concerns instrument-start calls, not audible output. Sound timbre,
+  balance, acoustic stop latency, cursor/audio offset and listening quality
+  have not been measured by these tests.
+- Validation: keyboard 232, mouse 51, tablet 37, playback 37, formatting 37
+  passed (394 domain executions). Full unit suite 1,074 passed. Chromium 61
+  passed with zero failures, skips or flaky cases. `git diff --check` passed.
+- Evidence: `test-results/notation-quality/2026-09-05T05-27-49.591Z-70626/`
+  contains report.json, browser/domain logs, playback-before.log,
+  playback-after.log, unit-before.log, unit-after.log and full-unit-suite.log.
+- Electron: refresh repeated all units and the production build, packaged and
+  verified the app. Packaged smoke selected a note in `simple.musicxml`, held
+  the instrument load, invoked File > Close Score, then completed the load and
+  observed zero instrument starts. The instrument was stubbed: this proves
+  native app workflow/cancellation, not listening. An initial setup did not
+  reach the loader; the successful run used a fresh profile and explicit app
+  focus, and both logs are retained.
+- Native iPad: sync, Doctor, signed Xcode build, install and launch passed on
+  Director Ipad (iPad Air 13-inch M2). Physical editing and audible playback
+  were not exercised because no physical interaction/listening channel is
+  available. Xcode macOS target is still absent. Native logs and the Electron
+  smoke script are alongside the regression evidence.
+- Decision: accepted playback-correctness increment; commit/push receipt is
+  written after remote verification and the exact SHA is reported in handoff.
+- Remaining program gates: timed eight-bar keyboard benchmark; broader C-clef,
+  voice, zoom/view and TAB interaction corpus; physical finger/Pencil matrix;
+  recorded audible synchronization, timbre/balance and output latency; reviewed
+  print/PDF corpus. These are not closed by this run. No failing automated
+  regression remains in the executed corpus. The next improvement should be
+  selected from a concrete failure or measured friction in these open gates.

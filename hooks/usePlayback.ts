@@ -1196,6 +1196,9 @@ export function usePlayback(options?: {
 
   function stopScheduledPlayback(options?: { resetAudioContext?: boolean }) {
     playbackGenerationRef.current += 1;
+    // A stopped audition must stay silent even if its instrument/sample load
+    // finishes later. Keep loaded assets reusable by a subsequent audition.
+    previewGenerationRef.current += 1;
     const ac = audioCtxRef.current;
     stopHandleSet(scheduledPlaybackHandlesRef.current);
     stopHandleSet(previewSampleHandlesRef.current);
