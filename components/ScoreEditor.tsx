@@ -2698,10 +2698,22 @@ function applyEntryModeToGhostTarget(
   target: GhostNoteTarget | null,
   entryMode: NoteEntryMode,
   chordInputMode: boolean,
+  selectedVoice: number,
   selectedNote?: SelectedNote | null,
   noteInputAnchor?: SelectedNote | null,
   recentCommitTarget?: PointerEntryLocator | null,
 ) {
+  if (target && target.voiceId !== selectedVoice) {
+    target = {
+      ...target,
+      voiceId: selectedVoice,
+      placementMode: 'replace',
+      placementAnchorIsRest: true,
+      semanticAnchorIsRest: true,
+      allowCrossVoiceRenderedSnap: true,
+      resolvedTarget: undefined,
+    };
+  }
   return resolveMuseScorePointerEntryMode(target, {
     entryMode,
     chordInputMode,
@@ -9252,6 +9264,8 @@ export function preferRenderedOnsetSnap<T extends GhostSnapCandidate | null>(
   if (!renderedSnap) return gridSnap;
   const renderedDx = Math.abs(renderedSnap.domX - pointerX);
   if (!gridSnap) return renderedDx <= 14 ? renderedSnap : null;
+  // Refining the horizontal position must not change the chosen input voice.
+  if (renderedSnap.voiceId !== gridSnap.voiceId) return gridSnap;
   const gridDx = Math.abs(gridSnap.domX - pointerX);
   const timestampDiffers = renderedSnap.timestampNum !== gridSnap.timestampNum
     || renderedSnap.timestampDen !== gridSnap.timestampDen;
@@ -12507,6 +12521,7 @@ export default function ScoreEditor({
             applyPointerModifiersToGhostTarget(nextGhostCandidate, e),
             entryMode,
             chordInputMode,
+            selectedVoice,
             selectedNote,
             noteInputAnchor,
             lastNoteInputCommitTargetRef.current,
@@ -13255,6 +13270,7 @@ export default function ScoreEditor({
           applyPointerModifiersToGhostTarget(candidate, e),
           entryMode,
           chordInputMode,
+          selectedVoice,
           selectedNote,
           noteInputAnchor,
           lastNoteInputCommitTargetRef.current,
@@ -14387,6 +14403,7 @@ export default function ScoreEditor({
             nextGhostCandidate,
             entryMode,
             chordInputMode,
+            selectedVoice,
             selectedNote,
             noteInputAnchor,
             lastNoteInputCommitTargetRef.current,

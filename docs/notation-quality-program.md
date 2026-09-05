@@ -501,3 +501,39 @@ reports the separate closeout commit after its push is verified.
 - Validation explicitly covered the combined worktree before staging separate
   bounded commits. Repeated hooks may reuse this unchanged-code evidence;
   no hook skip stands in for the required app checks. `git diff --check` passed.
+
+- Iteration-6 commit `4668ccf5dd6b0ce49916b8d36a1fd5298a6c112b` was pushed
+  without force and verified equal to remote devel. Final notation hook: 34/34
+  passed after replacing a forced-click test race with actionability waiting.
+  The repeated post-commit packaging hook was skipped because refresh had
+  already built and verified the identical runtime; final packaging follows
+  the last continuation commit.
+
+## Iteration 7 — Preserve the selected voice in pointer entry
+
+- Date: 2026-09-05. Concrete defect: after choosing voice 2 in a C-clef
+  score with explicit voice-2 rests, the settled preview offered a voice-1
+  chord and committed into voice 1. The visible note's rendered anchor could
+  override the selected voice. This is incorrect musical content, not latency.
+- Before evidence: `voice-settled.log` and its browser artifacts reproduce the
+  wrong voice after geometry settles; the added onset-refinement unit test
+  failed with voice 1 where voice 2 was expected. Early searches with an
+  absent voice or a too-narrow x range are exploratory failures, not this proof.
+- Change: horizontal rendered-onset refinement cannot switch voices. When a
+  shared rendered anchor belongs to another voice, rebind its entry candidate
+  to the selected voice and discard the old resolved target so the semantic
+  entry resolver validates it again in the intended lane.
+- After: 12 Chromium cases pass for alto/tenor C-clefs, page/continuous-vertical
+  views and 75/100/150% zoom. Each enters C4 in voice 1 and E4 in voice 2 at
+  onset zero, checks exact preview/commit voice and pitch, verifies unchanged
+  XML on hover, and checks exact XML Undo/Redo. Existing grand-staff/chord
+  pointer regressions passed in the same cycle. TAB coverage is in iteration 6.
+- Actual packaged Electron independently entered C4/E4 into voices 1/2 in
+  C-clef page view and verified unchanged XML on hover. This is automated
+  native desktop editing, not a physical mouse task-time measurement.
+- Validation: the 1,076-unit, 396-domain, build/refresh, iPad sync/Doctor/signed
+  build/install evidence recorded in iteration 6 covers this unchanged shared
+  implementation. Evidence: `voice-lock.log`, `electron-voice-smoke.log`, and
+  the 12 matrix passes in the 06-26 browser report. Native iPad physical input
+  remains blocked by device lock and unavailable finger/Pencil participation;
+  Xcode macOS target is absent. No latency or usability speed gate is closed.

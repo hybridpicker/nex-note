@@ -108,6 +108,7 @@ async function readGhost(page: Page) {
       timestamp: element.dataset.ghostTimestamp ?? null,
       pitch: element.dataset.ghostPitch ?? null,
       staff: element.dataset.ghostStaff ?? null,
+      voice: element.dataset.ghostVoice ?? null,
       mode: element.dataset.ghostMode ?? null,
       commitMode: element.dataset.ghostCommitMode ?? null,
       diagnostics: element.dataset.ghostDiagnostics ?? null,
@@ -205,7 +206,7 @@ async function findMeasureOneTreblePitchBeatOne(page: Page, pitch: string, near?
   const trebleBox = boxes[0]!;
 
   const yRatios = Array.from({ length: 30 }, (_, index) => 0.18 + (index * 0.035));
-  const xRatios = Array.from({ length: 9 }, (_, index) => 0.05 + (index * 0.035));
+  const xRatios = Array.from({ length: 25 }, (_, index) => 0.05 + (index * 0.035));
 
   for (const yRatio of yRatios) {
     for (const xRatio of xRatios) {
@@ -422,3 +423,43 @@ test('mouse note entry can build a four-note second cluster without lower notes 
 
   expect(beatOnePitches).toEqual(['C4:chord', 'D4:chord', 'E4:chord', 'F4:root']);
 });
+
+for (const line of [3, 4]) {
+  for (const view of ['page', 'continuous-vertical']) {
+    for (const zoom of [75, 100, 150]) {
+      test(`C clef line ${line}, ${view}, ${zoom}% preserves active voice and history`, async ({ page }) => {
+        test.setTimeout(120_000);
+        const xml = buildBlankPrecisionXml()
+          .replace('<sign>G</sign>', '<sign>C</sign>')
+          .replace('<line>2</line>', `<line>${line}</line>`)
+          .replace('<backup><duration>32</duration></backup>', '<backup><duration>32</duration></backup><note><rest measure="yes"/><duration>32</duration><voice>2</voice><type>whole</type><staff>1</staff></note><backup><duration>32</duration></backup>');
+        await bootWithScore(page, xml);
+        await page.getByLabel('Score view mode', { exact: true }).selectOption(view);
+        await page.getByLabel('Zoom percent', { exact: true }).fill(String(zoom));
+        await page.getByTestId('score-viewport').focus();
+        await page.keyboard.press('N');
+        await page.keyboard.press('5');
+        for (const voice of [1, 2]) {
+          await page.keyboard.press(`Control+Alt+${voice}`);
+          await page.waitForTimeout(500); // Let the view/zoom transition and OSMD geometry settle.
+          const before = await page.evaluate(() => (window as any).__NEX_NOTE_E2E_STATE__.xml as string);
+          const pitch = voice === 1 ? 'C4' : 'E4';
+          const target = await findMeasureOneTreblePitchBeatOne(page, pitch);
+          expect(target.ghost.voice).toBe(String(voice));
+          expect(await page.evaluate(() => (window as any).__NEX_NOTE_E2E_STATE__.xml)).toBe(before);
+          await page.mouse.click(target.click.x, target.click.y);
+          await expect.poll(async () => {
+            const core = await readCurrentCore(page);
+            return core.score.parts[0].staves[0].measures[0].voices.find(v => v.voiceId === voice)?.events
+              .filter(e => e.kind === 'note').map(e => e.kind === 'note' ? `${e.pitch.step}${e.pitch.octave}:${e.timestampNum}` : '');
+          }).toEqual([`${pitch}:0`]);
+          const after = await page.evaluate(() => (window as any).__NEX_NOTE_E2E_STATE__.xml as string);
+          await page.keyboard.press('Control+z');
+          await expect.poll(() => page.evaluate(() => (window as any).__NEX_NOTE_E2E_STATE__.xml)).toBe(before);
+          await page.keyboard.press('Control+Shift+z');
+          await expect.poll(() => page.evaluate(() => (window as any).__NEX_NOTE_E2E_STATE__.xml)).toBe(after);
+        }
+      });
+    }
+  }
+}

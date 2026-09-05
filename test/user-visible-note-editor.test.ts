@@ -7616,3 +7616,9 @@ test('nested tuplets resolve to the innermost segment and compound time scaling'
   assert.equal(segment.depth, 2);
   assert.deepEqual(nestedDuration, { num: 3, den: 40 });
 });
+
+test('rendered onset refinement cannot replace a snap from another voice', () => {
+  const gridSnap = { domX: 220, ratio: 0, voiceId: 2, timestampNum: 0, timestampDen: 32, isRest: true };
+  const renderedSnap = { domX: 180, ratio: 0, voiceId: 1, timestampNum: 0, timestampDen: 32, isRest: false };
+  assert.equal(preferRenderedOnsetSnap(gridSnap, renderedSnap, 180), gridSnap);
+});
