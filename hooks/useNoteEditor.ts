@@ -185,6 +185,7 @@ interface VisualSelection {
 }
 
 interface UseNoteEditorOptions {
+  onNoteInputActivated?: () => void;
   onActiveNotePreview?: (note: SelectedNote | null) => void;
   onActiveNotesPreview?: (notes: SelectedNote[]) => void;
   hydratedSession?: {
@@ -827,6 +828,8 @@ export function useNoteEditor(
   const selectedVisualRef = useRef<VisualSelection | null>(null);
   const lastNoteInputRef = useRef<SelectedNote | null>(null);
   const noteInputModeRef = useRef(false);
+  const onNoteInputActivatedRef = useRef(options?.onNoteInputActivated);
+  onNoteInputActivatedRef.current = options?.onNoteInputActivated;
   const selectedDurationRef = useRef<NoteDuration>(initialSelectedDuration);
   const selectedAccidentalRef = useRef<AccidentalChoice>(null);
   const isDottedRef = useRef(false);
@@ -889,8 +892,10 @@ export function useNoteEditor(
   }, []);
 
   const setNoteInputModeLive = useCallback((value: boolean) => {
+    const entering = value && !noteInputModeRef.current;
     noteInputModeRef.current = value;
     setNoteInputMode(value);
+    if (entering) onNoteInputActivatedRef.current?.();
   }, []);
 
   const setInputByDurationModeLive = useCallback((value: boolean) => {

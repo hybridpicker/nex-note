@@ -1065,8 +1065,13 @@ export default function Home({ searchParams }: HomeProps) {
     coreDocument,
     (commands, meta) => applyCommands(commands, { selectionAnchor: meta?.selectionAnchor ?? null }),
     {
+      onNoteInputActivated: () => {
+        // Initialize audio in the mode-activation gesture, before a note click
+        // needs to commit and paint. Prewarming never starts a note.
+        if (inputAuditionEnabled) void prewarm().catch(() => undefined);
+      },
       onActiveNotesPreview: (notes) => {
-        void previewNotes(notes);
+        if (inputAuditionEnabled) void previewNotes(notes);
       },
       hydratedSession: {
         selectedDuration: session.selectedDuration,

@@ -647,3 +647,64 @@ revision was physically edited on the device.
 - Final notation pre-commit and macOS packaging hooks, commit SHA and remote
   verification are recorded in `test-results/tab-delete/` and the task handoff.
   No temporary worktree or branch was created; unrelated files were untouched.
+
+## Iteration 10 — Prepare audition audio before the first mouse entry
+
+- User report: a long delay between a mouse click and its visible note. The
+  current exported user score has 32 empty Guitar + TAB measures at 100%,
+  continuous-vertical view. A matching synthetic score was profiled without
+  changing the user's document.
+- Before: the first preview constructed AudioContext synchronously inside the
+  pointer commit handler. The CPU profile attributed about 187 ms to getAc in
+  the initial run. The first measurement (164.5 ms) started at document capture
+  and missed the editor's earlier window-capture handler; it is not the full
+  click-latency baseline. Corrected measurement installs window capture before
+  application startup and measures through the next two animation frames after
+  the notehead appears. Three cold runs: 270.7, 274.3, 312.4 ms.
+- Change: entering Note Input calls the existing non-sounding audio prewarm in
+  that activation gesture. Subsequent note commits reuse the context and
+  instrument. This moves audio initialization to mode activation; it does not
+  make initialization itself free. Direct entry auditions now honor the input
+  audition preference instead of creating audio even when disabled.
+- After, same automated 32-bar Chrome protocol: 66.5, 69.8, 70.9 ms. Median
+  improved from 274.3 to 69.8 ms (about 75%). These three runs do not establish
+  physical input p95, native-device latency or the <=50 ms experience gate.
+  A multi-second delay was not reproduced in this corpus.
+- Two behavioral browser regressions failed before the fix: audio was not
+  prepared on mode entry, and muted entry still created/played audio. The new
+  assertions require preparation with zero starts, context reuse on a real
+  mouse commit, correct notation, and zero contexts/loads/starts when muted.
+  Start counts only verify scheduling/silence contracts, not listening quality.
+- Evidence root: `test-results/mouse-latency/`, including cold.log, warm.log,
+  initial and post-fix CPU profiles, diagnostic source, and contracts-before.
+  Current score backup: Downloads/Guitar before latency fix 2026-09-05.nxn.
+  All earlier unperformed physical/listening gates remain open. Build, native
+  smoke, final regression and push receipts follow in the execution handoff.
+
+- Validation: all five automated domain groups passed (396 overlapping test
+  executions); all 77 browser regressions passed without retries, failures or
+  skips, including the two new audio-preparation contracts. Report:
+  `test-results/notation-quality/2026-09-05T08-08-21.666Z-96787/report.json`.
+  `electron:refresh` passed all 1,082 unit tests, production TypeScript/build,
+  packaging and package verification.
+- Actual packaged Electron editing: opened a separate 32-bar Guitar + TAB
+  fixture, enabled Note Input with N and clicked written C4. The note and
+  string-5/fret-3 TAB appeared together. Native Edit > Undo removed both and
+  Redo restored both. Native NXN export was parsed and asserted to contain
+  exactly that note on each staff (written C4, sounding C3). This is editing
+  evidence, not a native latency benchmark or listening test. See
+  `native-result.nxn`, `native-smoke.log` and the CUA transcript.
+- iPad sync and Doctor passed. The fresh Xcode device build again failed at
+  CodeSign of App.debug.dylib with `errSecInternalComponent`; this run did not
+  install an older artifact as a substitute. Fresh iPad delivery and physical
+  editing remain blocked. The Xcode macOS target is still absent.
+- Remaining user check for this report: in the updated Mac app, enable Note
+  Input, click five successive quarter notes, exit/re-enter Note Input and
+  repeat. Record whether only the first click or every click lags; include
+  score file, view/zoom and a screen recording showing the pointer and notes.
+  Exact physical iPad/listening and other open-gate requirements remain in
+  `notation-quality-participation.md`; the quality program is not complete.
+- The 34-case notation pre-commit suite is reused from the successful 77-case
+  run above; no runtime changes followed it. The normal post-commit macOS
+  artifact build stamps the final revision. Commit/push and remote equality
+  receipts are stored under `test-results/mouse-latency/verification.json`.

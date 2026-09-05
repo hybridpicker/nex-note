@@ -463,3 +463,40 @@ for (const line of [3, 4]) {
     }
   }
 }
+
+for (const auditionEnabled of [true, false]) {
+  test(`mouse entry prepares audio before commit and respects audition=${auditionEnabled}`, async ({ page }) => {
+    await page.addInitScript(enabled => {
+      localStorage.setItem('nex-note:input-audition', String(enabled));
+      const state = { contexts: 0, loads: 0, starts: 0 };
+      (window as any).__audioEntryProbe = state;
+      const NativeAudioContext = window.AudioContext;
+      window.AudioContext = class extends NativeAudioContext {
+        constructor(options?: AudioContextOptions) { super(options); state.contexts += 1; }
+      };
+      (window as any).__NEX_NOTE_E2E_INSTRUMENT_LOADER__ = async () => {
+        state.loads += 1;
+        return { start() { state.starts += 1; }, stop() {} };
+      };
+    }, auditionEnabled);
+    await bootWithScore(page, buildBlankGuitarTabXml());
+    await page.keyboard.press('N');
+    if (auditionEnabled) {
+      await expect.poll(() => page.evaluate(() => (window as any).__audioEntryProbe.loads)).toBe(1);
+    }
+    expect(await page.evaluate(() => (window as any).__audioEntryProbe.starts)).toBe(0);
+    const before = await page.evaluate(() => ({ ...(window as any).__audioEntryProbe }));
+    const target = await findMeasureOneTreblePitchBeatOne(page, 'C4');
+    await page.mouse.click(target.click.x, target.click.y);
+    await expect.poll(async () => (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0].events.some(e => e.kind === 'note')).toBe(true);
+    if (auditionEnabled) {
+      await expect.poll(() => page.evaluate(() => (window as any).__audioEntryProbe.starts)).toBeGreaterThan(0);
+      expect(await page.evaluate(() => (window as any).__audioEntryProbe.contexts)).toBe(before.contexts);
+      expect(before.contexts).toBe(1);
+    } else {
+      // Let delayed preview effects settle; this is a silence contract, not an audio latency measurement.
+      await page.waitForTimeout(300);
+      expect(await page.evaluate(() => (window as any).__audioEntryProbe)).toEqual({ contexts: 0, loads: 0, starts: 0 });
+    }
+  });
+}
