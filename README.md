@@ -16,6 +16,7 @@ This is not a replacement for MuseScore, Dorico, Sibelius, Flat, or GuitarPro. I
 - Release channel: private AGPL relaunch / teacher-MVP preview.
 - Founder build available on request for macOS app testing.
 - Primary development branch: `devel`.
+- Notation quality program: [five-workstream iteration and acceptance criteria](docs/notation-quality-program.md). Run `node scripts/notation-quality-cycle.mjs --browser` for a recorded regression baseline.
 - Published alpha snapshots previously lived on `main`; older MIT copies remain under their original license.
 - Current focus: app packaging, private archive workflow, AI-assisted editor actions, real score fixtures, MuseScore round-tripping, private embeds, practice-pack export, and first paid users.
 - Release validation on 2026-07-23: `npm test` passed with `991` tests, coverage gates and the Next 16.2.11 production build passed, and all `30` browser smoke tests passed. The production dependency audit reports `0` vulnerabilities. The bounded MuseScore roundtrip completed with `passed-with-local-musescore-limit`; MuseScore 4.7.3 remained crash-unstable across source and nex-note conversions, so crash-only differences remain inconclusive.
