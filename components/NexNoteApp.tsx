@@ -4736,7 +4736,7 @@ export default function Home({ searchParams }: HomeProps) {
       />
       {activeStatus && (
         <div
-          className={`pointer-events-none fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg border px-4 py-3 shadow-[0_18px_50px_-32px_rgba(15,23,42,0.85)] backdrop-blur ${
+          className={`nex-workspace-status pointer-events-none fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg border px-4 py-3 shadow-[0_18px_50px_-32px_rgba(15,23,42,0.85)] backdrop-blur ${
             activeStatusIsError
               ? 'border-red-200 bg-red-50/95'
               : 'border-slate-200 bg-white/95'

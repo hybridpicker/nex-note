@@ -462,11 +462,11 @@ html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
   }
 
   .nex-app-shell > header,
+  .nex-workspace-status,
   .nex-workspace-panel,
   .nex-left-tools-shell,
   .nex-ipad-selection-actions,
-  .nex-edit-palette,
-  .nex-print-view .nex-score-column > :first-child {
+  .nex-edit-palette {
     display: none !important;
   }
 

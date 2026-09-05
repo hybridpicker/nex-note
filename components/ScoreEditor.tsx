@@ -16447,7 +16447,7 @@ export default function ScoreEditor({
             <div className="m-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
           )}
           <div className={`relative min-h-full min-w-full ${viewMode === 'page' ? 'bg-stone-200/70 p-6' : ''}`}>
-            <div className={`relative ${viewMode === 'page' ? 'mx-auto w-fit' : 'min-w-full'}`}>
+            <div className={`relative ${viewMode === 'page' ? 'mx-auto w-full max-w-[1120px]' : 'min-w-full'}`}>
               <div
                 ref={containerRef}
                 className={`bg-white ${viewMode === 'page' ? 'max-w-[1120px] rounded-[28px] border border-stone-300 px-6 py-8 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.35)]' : 'w-full'} ${viewMode === 'continuous-horizontal' ? 'inline-block min-w-max' : ''}`}

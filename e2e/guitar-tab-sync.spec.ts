@@ -102,15 +102,19 @@ test('single-clicking a TAB fret selects it, keeps TAB visible, and does not rew
   expect(afterXml).toBe(beforeXml);
 });
 
-test('double-clicking a TAB fret number edits that digit and keeps notation in sync @smoke', async ({ page }) => {
+for (const view of ['page', 'continuous-vertical']) {
+for (const zoom of [75, 100, 150]) {
+test(`TAB fret editing at ${zoom}% in ${view} keeps notation in sync @smoke`, async ({ page }) => {
   await page.addInitScript(({ xml }) => {
     localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'dual-staff-tab-inline-edit.musicxml' }));
   }, { xml: DUAL_STAFF_TAB_XML });
 
-  await page.goto('/?debug=true&visual-debug=true');
+  await page.goto('/');
   await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('score-canvas')).toHaveAttribute('data-edit-map-measure-count', /^[1-9]\d*$/);
 
+  await page.getByLabel('Score view mode', { exact: true }).selectOption(view);
+  await page.getByLabel('Zoom preset', { exact: true }).selectOption(String(zoom));
   const fretText = page.locator('svg text').filter({ hasText: /^3$/ }).first();
   await expect(fretText).toBeVisible();
   const fretBox = await fretText.boundingBox();
@@ -141,6 +145,8 @@ test('double-clicking a TAB fret number edits that digit and keeps notation in s
     };
   })).toEqual({ notationD4: true, tabFret5: true });
 });
+}
+}
 
 const SEPARATE_PARTS_TAB_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">

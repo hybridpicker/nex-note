@@ -1,6 +1,6 @@
 # Notation quality improvement program
 
-Started: 2026-09-05. Status: this execution finalized after four validated product iterations; remaining program gates are open.
+Started: 2026-09-05. Status: resumed after the earlier four-iteration execution; remaining program gates are open.
 
 ## Objective and evidence
 
@@ -440,3 +440,64 @@ reports the separate closeout commit after its push is verified.
   failures are not hidden by the existing cycle's pass.
 - App logs and the reproducible Electron smoke script are beside focus evidence.
   `git diff --check` passed. Commit/remote verification follows this record.
+
+- Verified iteration-5 commit/push: `653e186f3bb7d9805b9e7f4daad931ec58e24d8d`;
+  local HEAD matched remote `devel`. The hook passed 33 notation tests and
+  post-commit Mac artifact build/verification. Native launch was attempted but
+  iPadOS rejected it because Director Ipad was locked; installation passed.
+
+## Iteration 6 — Keep notation visible in page and print views
+
+- Date: 2026-09-05; base `653e186f3bb7d9805b9e7f4daad931ec58e24d8d`.
+- Before: all three A4 PDFs (piano-semantics, choir-lyrics, leadsheet-repeat)
+  omitted notation. The print CSS hid the first score-column child, which is
+  now the score stage because the toolbar is absent in print view. A transient
+  workspace status could still print. The three rendered regressions failed
+  on hidden noteheads after switching to print media.
+- Second visibility reproduction: the page-view wrapper used shrink-to-fit
+  sizing around an asynchronously rendered score. The blank C-clef piano page
+  collapsed to about 100 px, clipping notation and preventing visible-ghost
+  commits. Screenshot and failing mouse baseline are retained.
+- Change: preserve the score stage in print CSS, hide workspace status from
+  paper output, and give page view an explicit available width capped at the
+  existing 1120 px maximum. No semantic score or pitch rules changed.
+- Print regression: 3/3 pass after the fix. All three single-page A4 PDFs were
+  rendered to PNG and visually inspected: notation, lyrics, harmony, slur and
+  repeats are present; no page-edge clipping, lyric overlaps or UI status is
+  visible in this short corpus. This does not certify multipage pagination.
+- Expanded input evidence is recorded separately from physical timing. Initial
+  mouse experiments used a missing voice 2 and cannot certify populated-voice
+  entry; the final fixture supplies explicit full-measure rests in both voices.
+  The first six baseline cases executed before a post-commit server shutdown;
+  the last six failed on unavailable server and are infrastructure failures.
+- Evidence root: `test-results/notation-quality/continuation-2026-09-05/`.
+  `print-before`, `print-after`, source PDFs/PNG previews, mouse-matrix,
+  mouse-probe and expanded-probe retain the failed and successful observations.
+- Cross-app validation, final expanded results and commit receipt follow below.
+
+- Validation on the combined continuation worktree (iterations 6–8): all 1,076
+  unit tests and 396 domain executions passed. The expanded 75-case browser
+  run passed 74 cases; its remaining failure was a test polling empty XML before
+  asynchronous reopen completed. After waiting for loaded XML, the eight-bar
+  download/reopen case passed. The separate print/page corpus passed 4/4.
+  TAB passed all nine cases across the run and an isolated rerun: its 75% page
+  case was interrupted by a Next.js full reload on the first run. No physical
+  timing claim is derived from these automated tests.
+- Production build and Electron refresh/package verification passed. Actual
+  packaged Electron page editing, rest-to-A4 entry, correction, native menu
+  Undo/Redo and print-media notation passed. iPad sync, Doctor, signed device
+  build and installation passed; launch failed because the iPad is locked.
+  Finger/Pencil editing is not performed. The Xcode macOS target is absent.
+- Additional formatting evidence: command-level system/page-break flags,
+  staffSpacing=124, collisionPolicy=open and staff text survive NXN disk
+  serialization/reopen for all three fixtures; voice/event data is unchanged.
+  This checks serialized document values (ignoring absent undefined fields),
+  not UI editing, multipage layout or manual save/reopen. Break flags were
+  placed on measure 1 because the piano fixture contains only one measure.
+- Final logs: `electron-refresh-final.log`, `electron-edit-smoke.log`,
+  `ipad-*-final.log`, `final-focused.log`, `tab75-final.log`, and
+  `format-persistence.log` in the continuation evidence root. Domain report:
+  `test-results/notation-quality/2026-09-05T06-34-09.594Z-33918/report.json`.
+- Validation explicitly covered the combined worktree before staging separate
+  bounded commits. Repeated hooks may reuse this unchanged-code evidence;
+  no hook skip stands in for the required app checks. `git diff --check` passed.
