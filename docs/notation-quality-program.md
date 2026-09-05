@@ -267,7 +267,53 @@ current implementation prevents the target workflow.
   these independent manual gates remain open.
 - `git diff --check` passed. Commit/push receipt is recorded in the evidence
   directory after remote verification and the verified SHA is in the handoff.
+- Verified iteration-2 commit/push: `488032a92c570723d593e63e5ced49374b3407f0`;
+  local HEAD matched `origin/devel`. Post-commit Mac artifact packaging and
+  verification passed.
 - Decision: accepted correctness increment; physical native gesture gate open.
   Next issue: delayed layout cleanup may apply commands to a different score
   opened while the request was pending. Reproduce the current confirmation
   response path before selecting an implementation.
+
+## Iteration 3 — Bind pending layout cleanup to its source document
+
+- Date: 2026-09-05; `devel`; base revision
+  `488032a92c570723d593e63e5ced49374b3407f0`; initially clean worktree.
+- Priority/workstream: formatting commands targeting the wrong document after
+  an asynchronous response. This also protects intervening keyboard/mouse/touch
+  edits from stale cleanup assumptions.
+- Reproduction: Chromium notation-tools fixture; request layout cleanup, hold
+  the response, then either edit C4 with ArrowUp or load the four-bar playback
+  fixture. Deliver the current confirmation-style response with a page-break
+  command for bar 2 and accept it. Before the fix, both changed documents
+  acquired the obsolete page break. Selection-only changes remained valid.
+- Before evidence: two failures on exact XML differences, one selection-only
+  pass. After: all three pass. The response is deliberately stubbed/delayed;
+  no external AI model or service was required to reproduce the client race.
+- Change: retain the requested immutable core document and compare it with the
+  current document before offering or applying the result. On mismatch, keep
+  the current score and explain that cleanup must be rerun for this version.
+  Selection changes do not invalidate the document. This also guards the
+  legacy direct-XML response branch, though the regression exercises the
+  current confirmation response contract.
+- Fresh cleanup still applies its page break; MusicXML parsing, atomic Undo
+  and Redo pass. No renderer, spacing rules or engraving algorithms changed;
+  this is formatting correctness, not a print-quality or visual-polish claim.
+- Validation: five domain gates passed (392 executions); full unit suite 1,072
+  passed; Chromium 59 passed, zero failures, skips or flaky cases. Evidence:
+  `test-results/notation-quality/2026-09-05T05-15-32.802Z-56227/`, including
+  report.json, layout-before.log, layout-after.log and full-unit-suite.log.
+- Electron refresh repeated the units and production build, packaged and
+  verified the app. Packaged-Electron smoke held the cleanup response, loaded
+  `choir-lyrics.musicxml` after `piano-semantics.musicxml`, then delivered the
+  old commands and verified the replacement score XML was unchanged. Passed.
+- Native iPad: sync, Doctor, signed Xcode build, installation and launch passed
+  on Director Ipad (iPad Air 13-inch M2). Hands-on editing/formatting on iPad was
+  not run because no physical input channel is available. Xcode macOS is absent.
+- Physical finger/Pencil, audible playback, latency, timed entry and print/PDF
+  review remain not run. Native delivery does not close these manual gates.
+- Native logs and the Electron smoke script are in the same evidence directory.
+  `git diff --check` passed; commit/push receipt follows remote verification.
+- Decision: accepted formatting-correctness increment. Next: reproduce pending
+  note audition after closing the score, both during MIDI loading and during
+  instrument loading; no listening-quality claim follows from scheduler tests.

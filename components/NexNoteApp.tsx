@@ -3051,8 +3051,12 @@ export default function Home({ searchParams }: HomeProps) {
     return result;
   }, [applyCommands, currentSelectionAnchor]);
 
+  const layoutCleanupDocumentRef = useRef(coreDocument);
+  layoutCleanupDocumentRef.current = coreDocument;
+
   const handleLayoutCleanup = useCallback(async () => {
     if (!xml || layoutCleanupLoading) return;
+    const requestedDocument = coreDocument;
 
     setLayoutCleanupLoading(true);
     try {
@@ -3070,6 +3074,13 @@ export default function Home({ searchParams }: HomeProps) {
         }),
       });
       const data = await res.json();
+
+      // Cleanup commands describe the requested document. Even confirmed
+      // commands must never be applied to an edited or newly opened score.
+      if (layoutCleanupDocumentRef.current !== requestedDocument) {
+        window.alert(t('toolbar.layoutStale'));
+        return;
+      }
 
       if (!res.ok) {
         window.alert(`Layout cleanup failed: ${data.error ?? 'Unknown error'}`);
@@ -3115,7 +3126,7 @@ export default function Home({ searchParams }: HomeProps) {
     } finally {
       setLayoutCleanupLoading(false);
     }
-  }, [aiProviderRequestSettings, buildScoreRequestPayload, handleApplyCommands, handleXmlUpdate, layoutCleanupLoading, locale, ollamaModel, provider, t, xml]);
+  }, [aiProviderRequestSettings, buildScoreRequestPayload, coreDocument, handleApplyCommands, handleXmlUpdate, layoutCleanupLoading, locale, ollamaModel, provider, t, xml]);
 
   const handlePlay = useCallback(async () => {
     if (!xml) return;

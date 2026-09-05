@@ -1433,3 +1433,51 @@ test('Electron menu history routes to focused text before score history', async 
   await menu('edit:redo');
   await expect.poll(() => readCurrentXml(page)).toBe(editedXml);
 });
+
+for (const change of ['replace score', 'edit score', 'selection only'] as const) {
+  test(`delayed layout cleanup respects ${change}`, async ({ page }) => {
+    await bootWithScore(page);
+    let held: Route | undefined;
+    await page.route('**/api/chat', (route) => { held = route; });
+    const dialogs: string[] = [];
+    page.on('dialog', async (dialog) => { dialogs.push(dialog.type()); await dialog.accept(); });
+    const layout = page.getByRole('button', { name: 'Tidy up score layout with AI', exact: true });
+    await layout.click();
+    await expect.poll(() => Boolean(held)).toBe(true);
+    if (change === 'replace score') {
+      await page.evaluate((xml) => {
+        (window as typeof window & { __NEX_NOTE_E2E_LOAD_XML__: (xml: string, name: string) => void })
+          .__NEX_NOTE_E2E_LOAD_XML__(xml, 'replacement.musicxml');
+      }, buildFourMeasurePlaybackFixtureXml());
+      await expect.poll(async () => (await readCurrentCore(page)).score.parts[0].staves[0].measures.length).toBe(4);
+    } else {
+      await clickRenderedNotehead(page, 0);
+      if (change === 'edit score') await page.keyboard.press('ArrowUp');
+    }
+    const current = await readCurrentXml(page);
+    await held!.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        commands: [{ type: 'setPageBreak', measureNumber: 2 }],
+        requiresConfirmation: true,
+        explanation: 'Page break prepared for the original score',
+        affectedMeasures: [2],
+        plan: ['Add page break'],
+      }),
+    });
+    await expect(layout).toBeEnabled();
+    if (change !== 'selection only') {
+      expect(await readCurrentXml(page)).toBe(current);
+      expect(dialogs).not.toContain('confirm');
+    } else {
+      await expect.poll(async () => (await readCurrentCore(page)).score.parts[0].staves[0].measures[1].print?.newPage).toBe(true);
+      const formatted = await readCurrentXml(page);
+      expect(dialogs).toEqual(['confirm']);
+      await page.keyboard.press('Control+z');
+      await expect.poll(() => readCurrentXml(page)).toBe(current);
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(() => readCurrentXml(page)).toBe(formatted);
+    }
+  });
+}

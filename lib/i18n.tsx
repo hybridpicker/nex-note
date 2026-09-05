@@ -362,6 +362,7 @@ const en = {
   'toolbar.leadOff': 'Leadsheet mode off',
   'toolbar.layout': 'Layout',
   'toolbar.layoutTitle': 'Tidy up score layout with AI',
+  'toolbar.layoutStale': 'The score changed while layout cleanup was being prepared. Your current score was kept. Run layout cleanup again for this version.',
   'toolbar.playbackFailed': 'Playback failed',
 
   'note.duration.64': '64th note (1)',
