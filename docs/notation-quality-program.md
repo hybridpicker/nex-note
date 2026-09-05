@@ -219,6 +219,55 @@ current implementation prevents the target workflow.
   `ipad-launch.log`, and the Electron smoke script in the evidence directory.
 - `git diff --check` passed. Commit/push receipt is saved beside the evidence
   after commit; the exact verified SHA is reported in the execution handoff.
+- Verified iteration-1 commit/push: `b94c8c57b5983d58590f3ce748d82c37a6619bfc`;
+  local HEAD matched `origin/devel` after push. Post-commit Mac artifact build
+  and package verification also passed.
 - Decision: accepted automated correctness increment with the named physical
   gates open. Next issue: reproduce capture loss during an existing-note drag;
   capture-loss cleanup currently handles tablet note-entry sessions only.
+
+## Iteration 2 — Abandon existing-note drags on capture loss
+
+- Date: 2026-09-05; `devel`; base revision
+  `b94c8c57b5983d58590f3ce748d82c37a6619bfc`; initially clean worktree.
+- Priority/workstreams: incorrect pitch after an interrupted mouse/touch/pen
+  gesture. Shared cancellation now covers existing-note drags, including the
+  shared TAB-drag session, as well as tablet insertion sessions.
+- Reproduction: `e2e/fixtures/simple.musicxml`, Chromium; enter N mode, contact
+  the first C4, refine 24 pixels upward, lose pointer capture, then release.
+  All three synthetic pointer types changed C4 to F4 after capture was lost.
+  New tests failed 3/3 on the exact XML pitch difference before the fix.
+- Change: `lostpointercapture` discards the matching drag session and preview.
+  An unrelated pointer ID does not cancel the active drag. No semantic command
+  executes on cancellation; no history or projection implementation changed.
+- Focused regression: tablet-entry suite 10/10 passed, including touch, pen and
+  mouse cancellation, normal subsequent drag with unrelated capture loss, and
+  exact MusicXML Undo/Redo. The capture probe is simulated input, not physical
+  finger/Pencil evidence. TAB uses the same cancelled session; a TAB-specific
+  cancellation gesture has not been exercised.
+- Five-domain cycle passed: keyboard 232, mouse 51, tablet 37, playback 35,
+  formatting 37; rendered Chromium 56 passed, no skips/failures/flaky cases.
+  Full unit suite: 1,072 passed.
+- Evidence: `test-results/notation-quality/2026-09-05T05-02-52.699Z-39966/`,
+  including report.json, domain/browser logs, drag-before.log, drag-after.log,
+  full-unit-suite.log and native logs. Generated artifacts are ignored by Git.
+- Electron: refresh repeated all units and the production build, packaged and
+  verified the app. Native packaged smoke on `simple.musicxml` used actual
+  Playwright mouse input and native pointer capture: release capture during a
+  drag, release the button, verify unchanged XML; then perform a normal drag
+  and verify Undo restores the exact XML. Passed. Earlier smoke attempts did
+  not establish the intended captured drag; their logs are retained, and no
+  pass is attributed to them. The successful setup explicitly focuses the app,
+  loads the fixed fixture and enters Note Input before the gesture.
+- iPad: sync, Doctor, signed Xcode device build, install and launch passed on
+  connected Director Ipad (iPad Air 13-inch M2). Physical finger/Pencil drag,
+  cancellation, orientation and navigation checks were not run: no physical
+  interaction channel is available. Xcode macOS target remains absent.
+- Audible playback/latency, print-quality review and task timing were not run;
+  these independent manual gates remain open.
+- `git diff --check` passed. Commit/push receipt is recorded in the evidence
+  directory after remote verification and the verified SHA is in the handoff.
+- Decision: accepted correctness increment; physical native gesture gate open.
+  Next issue: delayed layout cleanup may apply commands to a different score
+  opened while the request was pending. Reproduce the current confirmation
+  response path before selecting an implementation.

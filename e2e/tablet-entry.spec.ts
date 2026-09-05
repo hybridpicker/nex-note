@@ -78,7 +78,7 @@ async function dispatchPointer(
   type: 'pointermove' | 'pointerdown' | 'pointerup' | 'pointercancel',
   input: {
     pointerId: number;
-    pointerType: 'touch' | 'pen';
+    pointerType: 'touch' | 'pen' | 'mouse';
     x: number;
     y: number;
     buttons?: number;
@@ -401,3 +401,38 @@ test('touching an existing note keeps selection/drag priority and inserts no dup
     }
   ).__NEX_NOTE_E2E_STATE__?.selectedNote ?? null)).not.toBeNull();
 });
+
+
+for (const pointerType of ['touch', 'pen', 'mouse'] as const) {
+  test(`${pointerType} note drag cannot commit after losing pointer capture`, async ({ page }) => {
+    await installPointerCaptureProbe(page);
+    await boot(page);
+    const notehead = await page.locator('[data-testid="score-canvas"] .vf-notehead').first().boundingBox();
+    if (!notehead) throw new Error('Missing first notehead');
+    const before = await currentXml(page);
+    const viewport = page.getByTestId('score-viewport');
+    const x = notehead.x + notehead.width / 2;
+    const y = notehead.y + notehead.height / 2;
+    await dispatchPointer(page, 'pointerdown', { pointerId: 81, pointerType, x, y });
+    await dispatchPointer(page, 'pointermove', { pointerId: 81, pointerType, x, y: y - 24 });
+    await expect(page.getByTestId('ghost-note-preview')).toBeVisible();
+    expect(await currentXml(page)).toBe(before);
+    await viewport.evaluate((element) => element.releasePointerCapture(81));
+    await viewport.dispatchEvent('lostpointercapture', { pointerId: 81, pointerType, bubbles: true });
+    await dispatchPointer(page, 'pointerup', { pointerId: 81, pointerType, x, y: y - 24, buttons: 0 });
+    expect(await currentXml(page)).toBe(before);
+    await expect(page.getByTestId('ghost-note-preview')).toHaveCount(0);
+    // An unrelated pointer must not cancel the next valid drag.
+    await dispatchPointer(page, 'pointerdown', { pointerId: 82, pointerType, x, y });
+    await dispatchPointer(page, 'pointermove', { pointerId: 82, pointerType, x, y: y - 24 });
+    await expect(page.getByTestId('ghost-note-preview')).toBeVisible();
+    await viewport.dispatchEvent('lostpointercapture', { pointerId: 99, pointerType, bubbles: true });
+    await dispatchPointer(page, 'pointerup', { pointerId: 82, pointerType, x, y: y - 24, buttons: 0 });
+    await expect.poll(() => currentXml(page)).not.toBe(before);
+    const changed = await currentXml(page);
+    await page.keyboard.press('Control+z');
+    await expect.poll(() => currentXml(page)).toBe(before);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(() => currentXml(page)).toBe(changed);
+  });
+}

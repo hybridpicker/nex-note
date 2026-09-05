@@ -14899,17 +14899,25 @@ export default function ScoreEditor({
     const handleLostPointerCapture = (event: PointerEvent) => {
       discardPendingTabletPointerMove();
       const tabletSession = tabletEntrySessionRef.current;
-      if (!tabletSession || event.pointerId !== tabletSession.pointerId) return;
-      const cancelled = cancelTabletEntrySession(tabletSession);
-      tabletEntrySessionRef.current = null;
-      setTabletEntryVisual({
-        phase: cancelled.phase,
-        pointerType: cancelled.pointerType,
-        point: cancelled.latestPoint,
-      });
-      setGhostNoteTarget(null);
-      visibleGhostPointerLockRef.current = null;
-      lastGhostStaffIndexRef.current = null;
+      if (tabletSession && event.pointerId === tabletSession.pointerId) {
+        const cancelled = cancelTabletEntrySession(tabletSession);
+        tabletEntrySessionRef.current = null;
+        setTabletEntryVisual({
+          phase: cancelled.phase,
+          pointerType: cancelled.pointerType,
+          point: cancelled.latestPoint,
+        });
+        setGhostNoteTarget(null);
+        visibleGhostPointerLockRef.current = null;
+        lastGhostStaffIndexRef.current = null;
+      }
+      // Existing-note drags have their own session, including mouse and TAB
+      // drags. Capture loss abandons that gesture before any later release.
+      if (dragSessionRef.current?.pointerId === event.pointerId) {
+        dragSessionRef.current = null;
+        setDragPreviewTarget(null);
+        lastGhostStaffIndexRef.current = null;
+      }
     };
     viewport?.addEventListener('lostpointercapture', handleLostPointerCapture);
     return () => {

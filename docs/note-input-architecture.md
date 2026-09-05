@@ -71,6 +71,9 @@ This document describes the deterministic note-input pipeline introduced for poi
   - tablet cancellation through pointer cancellation, lost capture, Escape, or
     mode exit clears the prospective session and locked ghost; mode exit also
     releases the exact captured pointer before navigation resumes
+  - loss of capture also discards a matching existing-note pitch or TAB drag
+    for mouse, touch, and pen; a later release cannot commit it, and an unrelated
+    pointer ID cannot cancel the active drag
   - touch and Pencil refinement retain only the latest queued Pointer Event and
     process it in one animation-frame callback; runtime metrics expose raw
     events, scheduled/processed frames, stable-target publications, latest/max
