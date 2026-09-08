@@ -156,6 +156,66 @@ function buildDocumentFromStaves(input: {
   };
 }
 
+test('setTimeSignature rebars existing events into the new meter instead of leaving them outside the measure', () => {
+  const firstMeasure = buildMeasure('m1', 1, 1, { beats: 4, beatType: 4 });
+  const secondMeasure = buildMeasure('m2', 2, 1, { beats: 4, beatType: 4 });
+  // Match regular MusicXML: the first meter carries into following measures.
+  delete secondMeasure.attributes[0]!.time;
+  firstMeasure.voices = [{
+    id: 'm1:v1',
+    voiceId: 1,
+    events: [
+      buildNoteEvent({ id: 'm1:c', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 1, durationType: 'quarter', step: 'C', octave: 4 }),
+      buildNoteEvent({ id: 'm1:d', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, durationDivisions: 1, durationType: 'quarter', step: 'D', octave: 4 }),
+      buildNoteEvent({ id: 'm1:e', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 2, durationDivisions: 1, durationType: 'quarter', step: 'E', octave: 4 }),
+      buildRestEvent({ id: 'm1:rest', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 3, durationDivisions: 1, durationType: 'quarter' }),
+    ],
+  }];
+  secondMeasure.voices = [{
+    id: 'm2:v1',
+    voiceId: 1,
+    events: [
+      buildNoteEvent({ id: 'm2:g', measureNumber: 2, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 1, durationType: 'quarter', step: 'G', octave: 4 }),
+      buildRestEvent({ id: 'm2:rest', measureNumber: 2, staffIndex: 1, voiceId: 1, timestampNum: 1, durationDivisions: 3, durationType: 'half', isDotted: true }),
+    ],
+  }];
+  const document = buildDocumentFromStaves({
+    staves: [{ staffIndex: 1, measures: [firstMeasure, secondMeasure] }],
+  });
+
+  const next = applyCoreCommands(document, [{
+    type: 'setTimeSignature',
+    beats: 3,
+    beatType: 4,
+    measureNumber: 1,
+  } as never]);
+  const measures = next.score.parts[0]!.staves[0]!.measures;
+
+  assert.equal(measures.length, 3, 'the shorter meter gains a bar instead of truncating existing time');
+  assert.equal(measures[0]!.attributes[0]?.time?.beats, 3);
+  assert.deepEqual(
+    measures[0]!.voices[0]!.events.map((event) => `${event.timestampNum}:${event.kind === 'note' ? event.pitch.step : 'rest'}`),
+    ['0:C', '1:D', '2:E'],
+  );
+  assert.equal(
+    measures[1]!.voices[0]!.events.find((event) => event.id === 'm1:rest')?.timestampNum,
+    0,
+    'the former fourth beat becomes the first beat of the next 3/4 measure',
+  );
+  assert.equal(
+    measures[1]!.voices[0]!.events.find((event) => event.id === 'm2:g')?.timestampNum,
+    1,
+    'following music keeps its absolute musical position',
+  );
+  measures.forEach((measure) => {
+    measure.voices.forEach((voice) => {
+      voice.events.forEach((event) => {
+        assert.ok(event.timestampNum + event.durationDivisions <= 3, `event ${event.id} remains within measure ${measure.measureNumber}`);
+      });
+    });
+  });
+});
+
 function firstVoicePitch(voice: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number]['voices'][number]) {
   const note = voice.events.find((event) => event.kind === 'note' && !event.isChord);
   return note?.kind === 'note' ? `${note.pitch.step}${note.pitch.octave}` : 'rest';

@@ -127,7 +127,7 @@ String, fret, tuning, and guitar techniques are stored as semantic note data. Mu
 
 ## Pitch, Accidentals, and Duration
 
-Select a note and use `A` to `G`, the active-note buttons, arrow-key transposition, or the Edit Palette. Plain `ArrowUp/Down` always changes pitch chromatically by exactly one semitone per press throughout Note Input. This applies to active existing notes, individual chord tones immediately after building a chord, explicit multi-note selections, and the duration-first prepared-pitch cursor when no existing note is active. Multiple selected pitches move together and remain selected for repeated presses. Selecting a note before entering or re-entering Note Input makes that selection the active note; clicking a different note while Note Input is active moves the active state to that note. `Q/W` halve or double duration; `Shift+Q/W` do the dotted-aware versions. Accidentals can be selected in the toolbar, with `-` for flat, `=` for natural, `+` for sharp, `Alt/Option+-` for double-flat, and `Alt/Option+=` for double-sharp.
+Select a note and use `A` to `G`, the active-note buttons, arrow-key transposition, or the Edit Palette. Plain `ArrowUp/Down` always changes pitch chromatically by exactly one semitone per press throughout Note Input. This applies to active existing notes, individual chord tones immediately after building a chord, explicit multi-note selections, and the duration-first prepared-pitch cursor when no existing note is active. With Input Audition enabled, every such pitch edit plays the resulting pitch. Multiple selected pitches move together and remain selected for repeated presses. Selecting a note before entering or re-entering Note Input makes that selection the active note; clicking a different note while Note Input is active moves the active state to that note. `Q/W` halve or double duration; `Shift+Q/W` do the dotted-aware versions. Accidentals can be selected in the toolbar, with `-` for flat, `=` for natural, `+` for sharp, `Alt/Option+-` for double-flat, and `Alt/Option+=` for double-sharp.
 
 In Note Input, an armed accidental is consumed only after the next successful pitched commit. Its sounding alteration then carries to the same letter and octave on that staff until the barline, including across voices; another octave and the next measure have independent context. The explicit written glyph is stored separately from sounding pitch and survives MusicXML, Copy/Paste, paired notation/TAB edits, and Undo/Redo.
 
@@ -170,6 +170,10 @@ The Inspector is the structured editor for score-wide and measure-level commands
 | Text & Rehearsal | Rehearsal marks, staff text vs expression text, and above/below placement for text and dynamics. |
 | Lyrics | Attach lyrics to selected notes. |
 | Parts & Instruments | Part name, abbreviation, instrument name, transposition, part extraction, layout presets. |
+
+To change a measure's meter, select a note or rest in that measure, open **Inspector → Time & Clef**, then choose the target meter. Existing music is rebared into the new meter instead of being discarded; shortening the meter can therefore add a following measure.
+
+Select a note or rest and press `Delete` or `Backspace` to replace it with a rest of the same duration. In Note Input, entering a note at a selected rest replaces or splits that rest according to the selected duration; two eighth notes entered at a quarter-rest position fill that quarter.
 
 Part extraction opens an individual part as its own working score.
 

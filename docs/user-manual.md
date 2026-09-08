@@ -140,7 +140,7 @@ Direkte Bearbeitung ist ueber Toolbar, Tastatur und Palette moeglich:
 
 | Funktion | Bedienung |
 | --- | --- |
-| Tonhoehe setzen | Note auswaehlen, dann `A` bis `G` oder Pitch-Buttons in der Toolbar. |
+| Tonhoehe setzen | Note auswaehlen, dann `A` bis `G` oder Pitch-Buttons in der Toolbar. Bei aktivem Input Audition hoert man nach jeder solchen Aenderung den resultierenden Ton. |
 | Chromatisch transponieren | `Arrow Up/Down` oder Palette `+/-1 semitone`. |
 | Oktavieren | `Shift+Arrow Up/Down`, `Cmd/Ctrl+Arrow Up/Down`, Toolbar `8va+/-`, Palette `+/-1 octave`. |
 | Cross-Staff verschieben | `Cmd/Ctrl+Shift+Arrow Up/Down` verschiebt Noten, Akkorde oder gemischte Note/Rest-Bereiche auf den Nachbarstaff, wenn dort passende Rest-Slots liegen. |
@@ -219,6 +219,10 @@ Die Bereiche sind als ein- und ausklappbare Sektionen organisiert. Die Chips dir
 | Text & Rehearsal | Rehearsal Marks, Staff Text vs. Expression Text sowie Above/Below-Placement fuer Text und Dynamics. |
 | Lyrics | Lyrics an selektierte Noten haengen. |
 | Parts & Instruments | Part Name, Abbreviation, Instrument Name, Transposition, Part Extraction und Layout-Presets. |
+
+Um die Taktart eines Takts zu aendern, eine Note oder Pause in diesem Takt auswaehlen, **Inspector → Time & Clef** oeffnen und die Ziel-Taktart waehlen. Bereits geschriebene Musik wird in die neue Taktart umgebrochen statt verworfen; bei einer kuerzeren Taktart kann deshalb ein weiterer Takt entstehen.
+
+Eine Note oder Pause auswaehlen und `Delete` oder `Backspace` druecken, um sie durch eine gleich lange Pause zu ersetzen. Im Note Input ersetzt oder teilt eine an einer ausgewaehlten Pause eingegebene Note diese Pause entsprechend der gewaehlten Dauer; zwei Achtelnoten an einer Viertelpause fuellen genau diese Viertelposition.
 
 Part Extraction oeffnet eine ausgezogene Stimme als eigene Arbeitsfassung.
 

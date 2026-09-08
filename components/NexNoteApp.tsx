@@ -1078,6 +1078,9 @@ export default function Home({ searchParams }: HomeProps) {
         // needs to commit and paint. Prewarming never starts a note.
         if (inputAuditionEnabled) void prewarm().catch(() => undefined);
       },
+      onActiveNotePreview: (note) => {
+        if (inputAuditionEnabled && note && !note.isRest) void previewNote(note);
+      },
       onActiveNotesPreview: (notes) => {
         if (inputAuditionEnabled) void previewNotes(notes);
       },

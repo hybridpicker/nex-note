@@ -1823,6 +1823,22 @@ type AbsoluteVoiceEvent = {
   divisions: number;
 };
 
+type AbsoluteTimedDirection = {
+  direction: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number]['directions'][number];
+  absStart: number;
+};
+
+type TimeSignatureRebarSnapshot = {
+  partId: string;
+  staffIndex: number;
+  voices: Array<{
+    voiceId: number;
+    events: AbsoluteVoiceEvent[];
+  }>;
+  directions: AbsoluteTimedDirection[];
+  minimumDurationDivisions: number;
+};
+
 type EventFragmentIdentity = {
   firstFragmentId: string;
   lastFragmentId: string;
@@ -3000,6 +3016,93 @@ function rewriteVoiceFromAbsoluteTimeline(
   }
 }
 
+function snapshotStaffForTimeSignatureRebar(
+  partId: string,
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+): TimeSignatureRebarSnapshot {
+  const voiceIds = new Set<number>(
+    staff.measures.flatMap((measure) => measure.voices.map((voice) => voice.voiceId)),
+  );
+  const timeline = buildStaffTimeline(staff);
+  const directions = timeline.flatMap((entry) => entry.measure.directions.map((direction) => ({
+    direction: structuredClone(direction),
+    absStart: entry.startOffset + Math.max(0, direction.timestampNum ?? 0),
+  })));
+  const voices = [...voiceIds].map((voiceId) => ({
+    voiceId,
+    events: flattenVoiceEventsToAbsoluteTimeline(staff, voiceId),
+  }));
+  const minimumDurationDivisions = voices.reduce((maximum, voice) => (
+    Math.max(
+      maximum,
+      ...voice.events.map((entry) => entry.absStart + entry.event.durationDivisions),
+    )
+  ), timeline.reduce((sum, entry) => sum + entry.durationDivisions, 0));
+
+  return {
+    partId,
+    staffIndex: staff.staffIndex,
+    voices,
+    directions,
+    minimumDurationDivisions,
+  };
+}
+
+function rewriteTimedDirectionsFromAbsoluteTimeline(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  directions: AbsoluteTimedDirection[],
+) {
+  const timeline = buildStaffTimeline(staff);
+  timeline.forEach((entry) => {
+    entry.measure.directions = [];
+  });
+
+  directions.forEach((absoluteDirection) => {
+    const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, absoluteDirection.absStart);
+    if (!timelineEntry) return;
+    const direction = structuredClone(absoluteDirection.direction);
+    direction.measureNumber = timelineEntry.measure.measureNumber;
+    direction.staffIndex = staff.staffIndex;
+    direction.timestampNum = absoluteDirection.absStart - timelineEntry.startOffset;
+    direction.timestampDen = Math.max(timelineEntry.divisions * 4, 1);
+    timelineEntry.measure.directions.push(direction);
+  });
+}
+
+function rebarTimeSignatureSnapshots(
+  document: ScoreDocumentModel,
+  snapshots: TimeSignatureRebarSnapshot[],
+) {
+  snapshots.forEach((snapshot) => {
+    ensureStaffTimelineDuration(
+      document,
+      snapshot.partId,
+      snapshot.staffIndex,
+      snapshot.minimumDurationDivisions,
+    );
+
+    const part = document.score.parts.find((entry) => entry.id === snapshot.partId);
+    const staff = part?.staves.find((entry) => entry.staffIndex === snapshot.staffIndex);
+    if (!staff) return;
+
+    snapshot.voices.forEach(({ voiceId, events }) => {
+      rewriteVoiceFromAbsoluteTimeline(staff, voiceId, events);
+      const firstMeasureNumber = staff.measures[0]?.measureNumber ?? 1;
+      const lastMeasureNumber = staff.measures.at(-1)?.measureNumber ?? firstMeasureNumber;
+      normalizeVoiceTimelineAcrossMeasures(document, staff, voiceId, {
+        startMeasureNumber: firstMeasureNumber,
+        endMeasureNumber: lastMeasureNumber,
+      });
+      fillVoiceTimelineGaps(staff, voiceId, {
+        startMeasureNumber: firstMeasureNumber,
+        endMeasureNumber: lastMeasureNumber,
+      });
+    });
+
+    rewriteTimedDirectionsFromAbsoluteTimeline(staff, snapshot.directions);
+  });
+}
+
 function remapSelectionRemapTargets(
   selectionRemap: SelectionRemap,
   eventIdMap: Map<string, string>,
@@ -3439,6 +3542,19 @@ export function executeCoreCommands(
       }
       case 'setTimeSignature': {
         const targetMeasure = command.measureNumber ?? 1;
+        const affectedStaves = nextDocument.score.parts.flatMap((part) => (
+          part.staves
+            .filter((staff) => staff.measures.some((measure) => measure.measureNumber === targetMeasure))
+            .map((staff) => ({ part, staff }))
+        ));
+        const meterChangesContent = affectedStaves.some(({ staff }) => {
+          const measure = staff.measures.find((entry) => entry.measureNumber === targetMeasure);
+          const current = measure ? resolveMeasureTiming(staff, measure).timeSignature : null;
+          return current?.beats !== command.beats || current?.beatType !== command.beatType;
+        });
+        const snapshots = meterChangesContent
+          ? affectedStaves.map(({ part, staff }) => snapshotStaffForTimeSignatureRebar(part.id, staff))
+          : [];
         applyToMatchingMeasures(nextDocument, targetMeasure, ({ partIndex, staffIndex, measureIndex }) => {
           const attributes = ensureMeasureAttributes(nextDocument, partIndex, staffIndex, measureIndex);
           attributes.time = {
@@ -3446,6 +3562,7 @@ export function executeCoreCommands(
             beatType: command.beatType,
           };
         });
+        if (snapshots.length > 0) rebarTimeSignatureSnapshots(nextDocument, snapshots);
         break;
       }
       case 'setClef': {
