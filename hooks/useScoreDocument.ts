@@ -4,6 +4,8 @@ import { useCallback, useRef, useState } from 'react';
 import type { NxnFileV1 } from '@/lib/nxn-file';
 import {
   applyDocumentCommands,
+  commitPreparedDocumentCommands,
+  type PreparedDocumentCommands,
   buildDocumentState,
   buildDocumentStateFromCore,
   type DocumentState,
@@ -200,10 +202,16 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
   }, []);
 
   const pushUndo = useCallback((entry: HistoryEntry) => {
-    const nextUndo = [...undoStackRef.current, entry].slice(-MAX_HISTORY);
+    const nextUndo = [...undoStackRef.current, entry];
+    if (nextUndo.length > MAX_HISTORY) {
+      const discarded = nextUndo.splice(0, nextUndo.length - MAX_HISTORY);
+      // The retained commands still depend on this prefix. Dropping it without
+      // advancing the baseline makes the next Undo erase unrelated old edits.
+      setBaseDocumentLive(discarded.at(-1)?.document ?? replayHistory(baseDocumentRef.current, discarded));
+    }
     setUndoStackLive(nextUndo);
     return nextUndo;
-  }, [setUndoStackLive]);
+  }, [replayHistory, setBaseDocumentLive, setUndoStackLive]);
 
   const clearHistoryStacks = useCallback(() => {
     setUndoStackLive([]);
@@ -378,10 +386,10 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     });
   }, [buildCoreState, clearHistoryStacks, replaceSession, setBaseDocumentLive, setDocumentLive]);
 
-  const applyCommands = useCallback((commands: ScoreCommand[], meta?: { label?: string; selectionAnchor?: ScoreDocumentSelectionAnchor | null }) => {
+  const applyCommands = useCallback((commands: ScoreCommand[], meta?: { label?: string; selectionAnchor?: ScoreDocumentSelectionAnchor | null; prepared?: PreparedDocumentCommands }) => {
     if (!commands.length) return { applied: false, reason: 'empty-command-batch' as const, commandCount: 0, commandTypes: [] as string[] };
     const current = documentRef.current;
-    const next = applyDocumentCommands(current, commands);
+    const next = commitPreparedDocumentCommands(current, commands, meta?.prepared);
     if (
       next.xml === current.xml
       && !coreDocumentsDifferIgnoringRevision(current.coreDocument, next.coreDocument)
@@ -440,6 +448,7 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
       selectionAnchor: meta?.selectionAnchor ?? null,
     });
     const nextUndo = pushUndo({
+      document: nextDocumentState,
       commands: next.appliedCommands,
       rollbackDocument: forceSnapshot
         ? cloneDocument(nextDocumentState)
@@ -477,7 +486,7 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     const remaining = current.slice(0, -1);
     setUndoStackLive(remaining);
     setRedoStackLive([...redoStackRef.current, removed].slice(-MAX_HISTORY));
-    const replayed = replayHistory(baseDocumentRef.current, remaining);
+    const replayed = remaining.at(-1)?.document ?? (remaining.length ? replayHistory(baseDocumentRef.current, remaining) : baseDocumentRef.current);
     setDocumentLive(replayed);
     setLastCommands(remaining[remaining.length - 1]?.commands ?? []);
     const restoredSelectionAnchor = removed.transaction.selectionAnchor ?? null;
@@ -524,7 +533,7 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     const remainingRedo = current.slice(0, -1);
     const nextUndo = [...undoStackRef.current, next].slice(-MAX_HISTORY);
     const previousDocument = documentRef.current;
-    const replayed = replayHistory(baseDocumentRef.current, nextUndo);
+    const replayed = next.document ?? replayHistory(baseDocumentRef.current, nextUndo);
     setRedoStackLive(remainingRedo);
     setUndoStackLive(nextUndo);
     setDocumentLive(replayed);

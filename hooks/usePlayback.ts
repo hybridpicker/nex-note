@@ -1,5 +1,6 @@
 'use client';
 
+import { captureInputMetric, markInputFeedback } from '@/src/score-input/input-metrics';
 import { useRef, useState, useCallback, useEffect, type RefObject } from 'react';
 import { dbg } from '@/lib/debug';
 import {
@@ -1895,6 +1896,7 @@ export function usePlayback(options?: {
 
   const previewNote = useCallback(async (note: SelectedNote | null) => {
     if (!note || note.isRest) return;
+    const metric = captureInputMetric();
 
     const previewGeneration = ++previewGenerationRef.current;
     stopHandleSet(previewSampleHandlesRef.current);
@@ -1910,6 +1912,7 @@ export function usePlayback(options?: {
         if (previewGeneration !== previewGenerationRef.current) return;
         const handle = startAudioSample(ac, buffer, ac.currentTime + 0.01, 0.75);
         previewSampleHandlesRef.current.add(handle);
+        markInputFeedback('input-to-audio-scheduled', metric);
         window.setTimeout(() => previewSampleHandlesRef.current.delete(handle), (buffer.duration + 0.25) * 1000);
         return;
       }
@@ -1922,12 +1925,14 @@ export function usePlayback(options?: {
         duration: 0.45,
         gain: 0.75,
       });
+      markInputFeedback('input-to-audio-scheduled', metric);
     } catch (err) {
       dbg.warn('playback', 'preview note failed:', err);
     }
   }, [options?.coreDocument]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const previewNotes = useCallback(async (notes: SelectedNote[]) => {
+    const metric = captureInputMetric();
     const playableNotes = notes.filter((note) => note && !note.isRest);
     if (playableNotes.length === 0) return;
 
@@ -1960,6 +1965,7 @@ export function usePlayback(options?: {
           previewSampleHandlesRef.current.add(handle);
           window.setTimeout(() => previewSampleHandlesRef.current.delete(handle), (buffer.duration + 0.25) * 1000);
         });
+        markInputFeedback('input-to-audio-scheduled', metric);
         return;
       }
       const notesBySoundfont = new Map<SoundfontInstrumentName, SelectedNote[]>();
@@ -1984,6 +1990,7 @@ export function usePlayback(options?: {
           });
         });
       });
+      markInputFeedback('input-to-audio-scheduled', metric);
     } catch (err) {
       dbg.warn('playback', 'preview notes failed:', err);
     }

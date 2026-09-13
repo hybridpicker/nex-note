@@ -1,12 +1,60 @@
 # Notation Entry Improvement Ledger
 
-Updated: 2026-07-29
+Updated: 2026-09-13
 
 This ledger records measured mouse, touch, and Apple Pencil notation-entry
 milestones. A milestone is complete only after its commit is pushed to
 `origin/devel` and local `HEAD` matches the remote branch.
 
-## Quality gates
+## September 2026 checkpoint: note-entry hardening
+
+This checkpoint preserves the previously uncommitted implementation plus the
+finalization fixes in one source milestone on `devel`. At the user's request it
+is committed and pushed after verification. Source-checkpoint completion is
+separate from product acceptance: the performance budgets, physical-device
+checks and successful external musical exchange remain open. The final local
+manifest records the commit and remote-head verification.
+See [the seven-area report](note-entry-quality-2026-09-13.md) and the updated
+parity matrix for supported combinations and missing hardware/external evidence.
+
+Finalization fixes overlapping active-note/visible-chord-ghost click arbitration,
+stale MIDI port callbacks/selection failures, recording startup
+fallthrough and stale-take revision collisions, same-pitch MIDI cursor stalls,
+history prefix loss beyond 100 entries, incoming tie division, global tuplet
+number suppression, early printing and right-edge PDF clipping. Unsupported
+linked TAB paste and complex single-event duplication now reject atomically
+instead of silently falling through or losing relationships.
+
+Current paired browser measurements use four warm-ups and 30 retained samples
+per stage and size. They include non-mutating pointer preview, visible keyboard
+edits, preloaded synthetic WebAudio scheduling, semantic execution, layout, OSMD
+load and render. A separate single-task 24-attack MIDI sequence checks exact
+order and full-score preservation. Raw arrays and summaries live in
+`.nex/note-entry-quality/finalization/`; see the dated report for all median,
+p95 and maximum values. The original 20-edit keyboard-only results remain
+historical evidence. They no longer describe the final implementation.
+
+Layout-only XML projection and a bounded pure VexFlow outline cache reduce
+measured work without truncating the score. Full-score semantic export, OSMD
+load/render and DOM geometry collection still dominate large edits. Performance
+acceptance remains open wherever the documented p95 budgets are exceeded;
+software scheduling is not acoustic hardware latency.
+
+Current unit verification passes 1,126 tests; the production build, iPad sync
+and doctor, simulator and unsigned arm64 device builds pass. The final gate
+manifest (`.nex/note-entry-quality/finalization/final-verification.json`)
+records Electron refresh and the isolated packaged UI smoke after documentation
+freeze, preserving build/source identity. It distinguishes unit/browser checks, production packaging,
+native compilation and device interaction. A simulator build is not physical
+interaction. The paired iPad reconnected for device-info inspection, but the signed build
+lacks the required Xcode account and provisioning profile. CoreMIDI exposed zero sources.
+MuseScore's restricted Cocoa conversion intermittently aborts after writing an
+output; surviving output and zero-exit repeats fail the nested musical-semantic
+comparison. No successful external parity or manual time/action comparison is
+claimed. Dorico is not installed.
+
+## Historical quality gates (July 2026)
+
 
 | Metric | Target | Evidence through Milestone 6 | Status |
 | --- | --- | --- | --- |
@@ -573,3 +621,13 @@ preview can still fail to reach mutation.
 | --- | --- | --- |
 | P2 | Several corpus classes have semantic/unit evidence but not a full direct-pointer browser matrix | Next evidence-driven continuous-improvement loop |
 | P2 | Apple Pencil hover/no-hover and hands-on finger refinement remain unverified; Milestone 7 proved build/install/launch only because no physical interaction channel was available | Next unlocked-device hands-on pass |
+
+## Final semantic execution comparison (September 2026)
+
+Same-code paired medians for double execution versus prepared reuse:
+32 events 6.11 -> 3.22 ms, 512 events 100.36 -> 48.15 ms,
+4096 events 1056.04 -> 530.74 ms. Full p95/maximum and methodology are in the dated
+quality report. The final unit suite passes 1,109 tests; 34 browser workflows
+and three paced latency cases pass. The separate nested bracket regression
+checks independent 5:2 and 3:2 labels and their visible geometry. Physical MIDI,
+Pencil/USB event delivery and actual acoustic latency remain unverified.

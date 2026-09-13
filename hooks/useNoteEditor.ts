@@ -6,7 +6,7 @@ import type { ScoreCommand } from '@/lib/score-commands';
 import { dbg } from '@/lib/debug';
 import { readClientVisualDebugEnabled } from '@/lib/debug-flags';
 import { shouldUseNativeClipboardShortcut } from '@/lib/native-clipboard-shortcuts';
-import { applyDocumentCommands } from '@/src/score-core/commands/apply-document-commands';
+import { prepareDocumentCommands, type PreparedDocumentCommands } from '@/src/score-core/commands/apply-document-commands';
 import type { GuitarTechniqueKind, ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
 import { validateScoreDocument } from '@/src/score-core/validation/validate-score-document';
 import {
@@ -163,6 +163,7 @@ export interface EditorSelection {
 }
 
 export interface NoteEditorUpdateMeta {
+  prepared?: PreparedDocumentCommands;
   selectionAnchor?: ScoreDocumentSelectionAnchor | null;
 }
 
@@ -795,7 +796,7 @@ function resolveSelectionAnchor(document: ScoreDocumentModel | null | undefined,
 export function useNoteEditor(
   xml: string,
   coreDocument: ScoreDocumentModel | null,
-  onApplyCommands: (commands: ScoreCommand[], meta?: NoteEditorUpdateMeta) => void,
+  onApplyCommandsCallback: (commands: ScoreCommand[], meta?: NoteEditorUpdateMeta) => void | { applied: boolean },
   options?: UseNoteEditorOptions,
 ) {
   const initialSelectedDuration = options?.hydratedSession?.selectedDuration ?? '4';
@@ -853,9 +854,24 @@ export function useNoteEditor(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const setOsmd = useCallback((osmd: any) => { osmdRef.current = osmd; }, []);
 
-  const applyEditorCommands = useCallback((commands: ScoreCommand[]) => (
-    applyDocumentCommands({ xml, coreDocument }, commands)
-  ), [coreDocument, xml]);
+  const preparedCommandsRef = useRef<PreparedDocumentCommands | undefined>(undefined);
+  const applyEditorCommands = useCallback((commands: ScoreCommand[]) => {
+    const prepared = prepareDocumentCommands({ xml, coreDocument }, commands);
+    preparedCommandsRef.current = prepared;
+    const rejection = prepared.result.diagnostics.find(d => d.code.endsWith('_rejected'));
+    if (rejection) setEditorError(rejection.message);
+    return prepared.result;
+  }, [coreDocument, xml]);
+  const onApplyCommands = useCallback((commands: ScoreCommand[], meta?: NoteEditorUpdateMeta) => {
+    const prepared = preparedCommandsRef.current;
+    preparedCommandsRef.current = undefined;
+    const result = onApplyCommandsCallback(commands, { ...meta, prepared });
+    if (result && !result.applied) {
+      setEditorError('The score validation did not accept this input.');
+      return false;
+    }
+    return true;
+  }, [onApplyCommandsCallback]);
 
   const warnNoOpEdit = useCallback((context: string, command: ScoreCommand, details?: Record<string, unknown>) => {
     // eslint-disable-next-line no-console
@@ -1417,6 +1433,7 @@ export function useNoteEditor(
     const payload = buildClipboardPayloadFromSelection(
       coreDocument,
       targets.map((note) => ({
+        coreEntityId: note.coreEntityId ?? null,
         coreMeasureId: note.coreMeasureId ?? null,
         corePartId: note.corePartId ?? null,
         measureNumber: note.measureNumber,
@@ -1426,7 +1443,7 @@ export function useNoteEditor(
         timestampDen: note.timestampDen,
       })),
     );
-    if (!payload) return;
+    if (!payload) { setClipboard(null); setEditorError('Copy requires complete tuplets in one part with a consistent division grid.'); return; }
     setClipboard(payload);
     dbg.editor(`copySelectedRange count=${payload.timeline.length}`);
   }, [coreDocument, selectedNote, selectedNotes]);
@@ -1865,22 +1882,16 @@ export function useNoteEditor(
       audition?: boolean;
       advanceCursor?: boolean;
       useAdvancedSelectionAsInputAnchor?: boolean;
+      skipHistory?: boolean;
     },
   ) => {
     setEditorError(null);
+    if (behavior?.skipHistory) preparedCommandsRef.current = undefined;
     if (!enteredLocator) {
-      onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-      return;
+      return onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
     }
 
     const enteredNote = resolveRecentInputFromDocument(nextDocument, enteredLocator, inputHint);
-    if (enteredNote) {
-      lastNoteInputRef.current = {
-        ...enteredNote,
-        durationType: enteredNote.durationType ?? DURATION_TYPE_MAP[selectedDurationRef.current],
-        isDotted: enteredNote.isDotted ?? isDottedRef.current,
-      };
-    }
 
     const rawNextSelection = behavior?.advanceCursor !== false
       && noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && enteredNote
@@ -1902,9 +1913,17 @@ export function useNoteEditor(
         ? toSelectionAnchor(selectionAfterUpdate, [selectionAfterUpdate])
         : toSelectionAnchor(selectedNote, selectedNotes));
 
-    onApplyCommands(commands, {
+    if (!behavior?.skipHistory && !onApplyCommands(commands, {
       selectionAnchor: persistedSelectionAnchor,
-    });
+    })) return false;
+
+    if (enteredNote) {
+      lastNoteInputRef.current = {
+        ...enteredNote,
+        durationType: enteredNote.durationType ?? DURATION_TYPE_MAP[selectedDurationRef.current],
+        isDotted: enteredNote.isDotted ?? isDottedRef.current,
+      };
+    }
 
     if (enteredNote && behavior?.audition !== false) {
       const soundingNotes = getSimultaneousPitchedNotes(nextDocument, enteredNote);
@@ -1919,11 +1938,12 @@ export function useNoteEditor(
         lastNoteInputRef.current = nextSelection;
       }
       selectSingleNote(nextSelection, { visualOnly: false, text: null, measureNumber: nextSelection.measureNumber, staffIndex: nextSelection.staffIndex });
-      return;
+      return true;
     }
     if (enteredNote) {
       selectSingleNote(enteredNote, { visualOnly: false, text: null, measureNumber: enteredNote.measureNumber, staffIndex: enteredNote.staffIndex });
     }
+    return true;
   }, [chordInputMode, noteInputMode, onApplyCommands, options, resolveRecentInputFromDocument, selectSingleNote, selectedNote, selectedNotes]);
 
   const resolveActiveDurationTarget = useCallback(() => {
@@ -2421,8 +2441,7 @@ export function useNoteEditor(
     }
 
     const next = applyEditorCommands(commands);
-    if (next.xml === xml) {
-      warnNoOpEdit('insertMidiChord', commands[0]!);
+    if (!next.appliedCommands.length || next.diagnostics.some(d => d.code.endsWith('_rejected'))) {
       return false;
     }
 
@@ -2433,9 +2452,9 @@ export function useNoteEditor(
       validatedTarget,
       commands,
     );
-    commitNoteInputUpdate(
+    return commitNoteInputUpdate(
       commands,
-      next.coreDocument,
+      next.xml === xml ? coreDocument : next.coreDocument,
       toResolvedEditLocator(validatedTarget),
       targetNote,
       {
@@ -2447,9 +2466,11 @@ export function useNoteEditor(
       {
         advanceCursor: inputOptions?.advanceCursor !== false,
         useAdvancedSelectionAsInputAnchor: inputOptions?.advanceCursor !== false,
+        // Confirming the pitch already at this onset is still a performed MIDI
+        // input. Advance/audition it without inventing an Undo transaction.
+        skipHistory: next.xml === xml,
       },
     );
-    return true;
   }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, warnNoOpEdit, warnRejectedEdit, xml]);
 
   const commitPreparedDurationPitches = useCallback((duration: NoteDuration) => {

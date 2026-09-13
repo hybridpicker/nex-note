@@ -84,6 +84,23 @@ function renderHook(initialXml = '', options?: Parameters<typeof useScoreDocumen
   };
 }
 
+test('bounded history retains the prefix when more than one hundred edits are followed by Undo', () => {
+  const hook = renderHook(SAMPLE_XML);
+  try {
+    act(() => { hook.current.applyCommands([{ type: 'setComposer', composer: 'Synthetic prefix' }]); });
+    for (let index = 0; index < 100; index++) {
+      act(() => { hook.current.applyCommands([{ type: 'setTitle', title: `Synthetic edit ${index}` }]); });
+    }
+    assert.equal(hook.current.historyDepth, 100);
+    act(() => hook.current.undo());
+    assert.match(hook.current.xml, /Synthetic prefix/);
+    assert.match(hook.current.xml, /Synthetic edit 98/);
+    act(() => hook.current.redo());
+    assert.match(hook.current.xml, /Synthetic prefix/);
+    assert.match(hook.current.xml, /Synthetic edit 99/);
+  } finally { hook.unmount(); }
+});
+
 test('useScoreDocument loads .nxn state without invoking XML-to-core hydration', () => {
   const coreDocument = importMusicXmlToCore(SAMPLE_XML);
   let xmlHydrationCalls = 0;

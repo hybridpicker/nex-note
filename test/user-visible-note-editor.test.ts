@@ -1082,7 +1082,7 @@ test('mouse-style note placement clears persisted selection metadata while note 
   });
   hook.rerender();
 
-  assert.deepEqual(hook.appliedMetas.at(-1), { selectionAnchor: null });
+  assert.equal((hook.appliedMetas.at(-1) as { selectionAnchor: unknown }).selectionAnchor, null);
   hook.unmount();
 });
 

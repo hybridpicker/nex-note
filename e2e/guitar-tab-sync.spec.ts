@@ -41,7 +41,8 @@ test('single-clicking a TAB fret selects it, keeps TAB visible, and does not rew
 
   await page.goto('/?debug=true&visual-debug=true');
   await expect(page.locator('[data-testid="score-canvas"] svg')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: 'Hide notation tools' }).click();
+  const hideTools = page.getByRole('button', { name: 'Hide notation tools' });
+  if (await hideTools.isVisible()) await hideTools.click();
   await expect(page.getByRole('button', { name: 'Show notation tools' })).toBeVisible();
 
   const fretText = page.locator('svg text').filter({ hasText: /^3$/ }).first();

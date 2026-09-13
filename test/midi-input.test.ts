@@ -28,3 +28,31 @@ test('simultaneous MIDI notes become one ordered, de-duplicated chord', () => {
     ['C4', 'E4', 'G4'],
   );
 });
+
+import { MidiStepAccumulator, parseMidiInputMessage } from '@/src/score-input/midi-input';
+
+test('held and rolled MIDI chords commit once on final physical release, independent of sustain', () => {
+  const input = new MidiStepAccumulator();
+  for (const data of [[0x90, 60, 90], [0xb0, 64, 127], [0x90, 64, 80], [0x90, 67, 75], [0x80, 60, 0], [0x90, 64, 0]]) {
+    assert.deepEqual(input.accept(data), []);
+  }
+  assert.deepEqual(input.accept([0x80, 67, 0]), [[60, 64, 67]]);
+  assert.deepEqual(input.accept([0xb0, 64, 0]), []);
+  assert.deepEqual(input.accept([0x80, 67, 0]), []);
+});
+
+test('repeated MIDI attacks remain separate onsets; cancellation and channel reset discard pending chords', () => {
+  const input = new MidiStepAccumulator();
+  input.accept([0x90, 60, 90]);
+  assert.deepEqual(input.accept([0x90, 60, 100]), [[60]]);
+  assert.deepEqual(input.accept([0x80, 60, 0]), [[60]]);
+  input.accept([0x90, 64, 90]);
+  input.reset();
+  assert.deepEqual(input.accept([0x80, 64, 0]), []);
+  input.accept([0x90, 60, 90]);
+  input.accept([0xb0, 123, 0]);
+  assert.deepEqual(input.accept([0x80, 60, 0]), []);
+  for (const bytes of [[0x90, 60.5, 90], [0x90, 60, 256], [0x190, 60, 90], [0x90, NaN, 90]]) {
+    assert.equal(parseMidiInputMessage(bytes), null);
+  }
+});

@@ -1,3 +1,4 @@
+import { recordInputMetric } from '@/src/score-input/input-metrics';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
 import { exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
 import { executeHybridCommands } from '@/src/score-core/commands/hybrid-command-executor';
@@ -79,9 +80,14 @@ export function applyDocumentCommands(
   documentState: Pick<DocumentState, 'xml' | 'coreDocument'> & Partial<Pick<DocumentState, 'sourceMusicXml'>>,
   commands: unknown[],
 ): ApplyDocumentCommandsResult {
+  const began = performance.now();
   const appliedCommands = normalizeScoreCommands(commands);
   const baselineCoreDocument = documentState.coreDocument ?? (documentState.xml ? normalizeScoreDocument(importMusicXmlToCore(documentState.xml)) : null);
   const execution = executeHybridCommands(documentState.xml, baselineCoreDocument, appliedCommands);
+  if (execution.coreDiagnostics.some(d => d.code.endsWith('_rejected'))) {
+    recordInputMetric('semantic-command', performance.now() - began);
+    return { xml: documentState.xml, sourceMusicXml: documentState.sourceMusicXml ?? documentState.xml, coreDocument: baselineCoreDocument, diagnostics: execution.coreDiagnostics, revision: baselineCoreDocument?.revision ?? 0, appliedCommands: [], selectionRemap: {} };
+  }
   const nextCoreDocument = execution.fallbackCommands.length === 0
     ? (execution.coreDocument ? normalizeScoreDocument(execution.coreDocument) : null)
     : (execution.xml ? normalizeScoreDocument(importMusicXmlToCore(execution.xml)) : null);
@@ -108,6 +114,7 @@ export function applyDocumentCommands(
 
   diagnostics.push(...validateScoreDocument(nextCoreDocument));
 
+  recordInputMetric('semantic-command', performance.now() - began);
   return {
     xml: execution.xml,
     sourceMusicXml,
@@ -117,4 +124,37 @@ export function applyDocumentCommands(
     appliedCommands,
     selectionRemap: execution.selectionRemap,
   };
+}
+
+/** A verified editor proposal is reusable only against the exact immutable baseline. */
+export interface PreparedDocumentCommands {
+  baselineXml: string;
+  baselineCore: ScoreDocumentModel | null;
+  commandFingerprint: string;
+  result: ApplyDocumentCommandsResult;
+}
+
+export function prepareDocumentCommands(
+  state: Pick<DocumentState, 'xml' | 'coreDocument'>,
+  commands: unknown[],
+): PreparedDocumentCommands {
+  return {
+    baselineXml: state.xml,
+    baselineCore: state.coreDocument,
+    commandFingerprint: JSON.stringify(commands),
+    result: applyDocumentCommands(state, commands),
+  };
+}
+
+export function commitPreparedDocumentCommands(
+  state: Pick<DocumentState, 'xml' | 'coreDocument'> & Partial<Pick<DocumentState, 'sourceMusicXml'>>,
+  commands: unknown[],
+  prepared?: PreparedDocumentCommands,
+): ApplyDocumentCommandsResult {
+  if (prepared && prepared.baselineCore === state.coreDocument
+    && prepared.baselineXml === state.xml
+    && prepared.commandFingerprint === JSON.stringify(commands)) {
+    return { ...prepared.result, sourceMusicXml: state.sourceMusicXml ?? state.xml };
+  }
+  return applyDocumentCommands(state, commands);
 }

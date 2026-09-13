@@ -340,22 +340,45 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
       track.instrument.number = musicXmlProgramToToneProgram(playbackInstrument.midiProgram);
 
       const timing = buildMeasureTiming(staff);
-      for (const measure of staff.measures) {
-        const measureStart = timing.startTicks.get(measure.id) ?? 0;
-        for (const voice of measure.voices) {
-          for (const event of voice.events) {
-            if (event.kind !== 'note' || event.hidden) continue;
-            const ticks = measureStart + eventOffsetTicks(event);
-            const durationTicks = eventDurationTicks(event);
-            track.addNote({
-              midi: pitchToMidiNumber(event.pitch),
-              ticks,
-              durationTicks,
-              velocity: 0.8,
-            });
-            noteCount++;
-          }
+      const voiceIds = [...new Set(staff.measures.flatMap(measure => measure.voices.map(voice => voice.voiceId)))];
+      for (const voiceId of voiceIds) {
+        const entries = staff.measures.flatMap(measure => (measure.voices.find(voice => voice.voiceId === voiceId)?.events ?? [])
+          .filter((event): event is Extract<TimedEvent, { kind: 'note' }> => event.kind === 'note' && !event.hidden)
+          .map(event => ({ event, ticks: (timing.startTicks.get(measure.id) ?? 0) + eventOffsetTicks(event) })));
+        const rendered: Array<{ midi: number; ticks: number; durationTicks: number; velocity: number }> = [];
+        const pendingTies = new Map<number, typeof rendered[number]>();
+        const graceGroups = new Map<number, typeof entries>();
+        for (const entry of entries) if (entry.event.durationDivisions === 0) {
+          const group = graceGroups.get(entry.ticks) ?? []; group.push(entry); graceGroups.set(entry.ticks, group);
         }
+        const graceBudgets = new Map<number, number>();
+        for (const [ticks, graces] of graceGroups) {
+          const anchors = entries.filter(entry => entry.ticks === ticks && entry.event.durationDivisions > 0);
+          if (!anchors.length) continue;
+          const budget = Math.min(Math.floor(Math.min(...anchors.map(entry => eventDurationTicks(entry.event))) / 2), graces.length * MIDI_PPQ / 8);
+          if (budget < graces.length) continue;
+          graceBudgets.set(ticks, budget);
+          graces.forEach((entry, index) => {
+            const start = Math.round(index * budget / graces.length);
+            const end = Math.round((index + 1) * budget / graces.length);
+            rendered.push({ midi: pitchToMidiNumber(entry.event.pitch), ticks: ticks + start, durationTicks: end - start, velocity: .65 });
+          });
+        }
+        for (const { event, ticks } of entries) {
+          if (event.durationDivisions === 0) continue;
+          const pitch = pitchToMidiNumber(event.pitch);
+          // Round absolute endpoints, so unusual tuplets do not accumulate tick drift.
+          const durationTicks = Math.max(1, fractionToTicks(event.timestampNum + event.durationDivisions, event.timestampDen) - eventOffsetTicks(event));
+          const tied = pendingTies.get(pitch);
+          const continuation = tied && tied.ticks + tied.durationTicks === ticks;
+          const delay = continuation ? 0 : graceBudgets.get(ticks) ?? 0;
+          const note = continuation ? tied : { midi: pitch, ticks: ticks + delay, durationTicks: durationTicks - delay, velocity: .8 };
+          if (continuation) note.durationTicks += durationTicks;
+          else rendered.push(note);
+          if (event.tieStart) pendingTies.set(pitch, note);
+          else pendingTies.delete(pitch);
+        }
+        for (const note of rendered) { track.addNote(note); noteCount++; }
       }
     }
   }

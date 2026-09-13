@@ -42,13 +42,9 @@ function tupletScaledDuration(
   eventId: string,
   baseDuration: number,
 ) {
-  const tuplet = document.tuplets.find((entry) => (
-    entry.eventIds.includes(eventId)
-    && entry.actualNotes
-    && entry.normalNotes
-  ));
-  if (!tuplet?.actualNotes || !tuplet.normalNotes) return baseDuration;
-  return Math.max(1, Math.round((baseDuration * tuplet.normalNotes) / tuplet.actualNotes));
+  const scaling = document.tuplets.filter(entry => entry.eventIds.includes(eventId))
+    .reduce((value, entry) => value * (entry.normalNotes ?? 1) / (entry.actualNotes ?? 1), 1);
+  return Math.max(1, Math.round(baseDuration * scaling));
 }
 
 function getEffectiveAttributes(document: ScoreDocumentModel, partIndex: number, staffIndex: number, measureIndex: number) {
@@ -445,7 +441,11 @@ export function validateScoreDocument(document: ScoreDocumentModel | null): Docu
     }
 
     const rhythmicRefs = refs.filter((ref) => !ref.event.isChord);
-    if (tuplet.actualNotes && rhythmicRefs.length !== tuplet.actualNotes) {
+    const nested = document.tuplets.filter(child => child !== tuplet && child.eventIds.length < tuplet.eventIds.length
+      && child.eventIds.every(id => tuplet.eventIds.includes(id)));
+    const directChildren = nested.filter(child => !nested.some(other => other !== child && other.eventIds.length > child.eventIds.length && child.eventIds.every(id => other.eventIds.includes(id))));
+    const expandedCount = rhythmicRefs.length - directChildren.reduce((count, child) => count + child.eventIds.filter(id => !eventLookup.get(id)?.event.isChord).length - 1, 0);
+    if (tuplet.actualNotes && expandedCount !== tuplet.actualNotes) {
       diagnostics.push(createDiagnostic('tuplet_count_mismatch', `Tuplet ${tuplet.id} contains ${rhythmicRefs.length} rhythmic events but declares ${tuplet.actualNotes} actual notes.`));
     }
   }

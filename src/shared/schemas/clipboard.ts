@@ -1,4 +1,4 @@
-import type { DirectionNode, SlurSpan, TimedEvent } from '@/src/score-core/model/types';
+import type { DirectionNode, SlurSpan, TimedEvent, TupletSpan, GraceNoteLink } from '@/src/score-core/model/types';
 
 export interface ClipboardLaneIdentifier {
   sourceStaffIndex: number;
@@ -25,6 +25,9 @@ export interface ClipboardTimedDirection {
 export interface ScoreClipboardPayload {
   kind: 'score-content';
   version: 1;
+  sourceDivisions?: number;
+  tuplets?: TupletSpan[];
+  graceNotes?: GraceNoteLink[];
   durationDivisions: number;
   lanes: ClipboardLaneIdentifier[];
   timeline: ClipboardAbsoluteEvent[];

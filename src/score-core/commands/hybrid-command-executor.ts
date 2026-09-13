@@ -29,9 +29,17 @@ const CORE_SAFE_WITH_UNSAFE_ROUNDTRIP_TAGS = new Set([
   'deleteNote',
   'deleteRange',
   'setAccidentalDisplay',
+  'replaceMidiPassage',
+  'editRhythm',
+  'editTupletUnit',
   'addTuplet',
+  'setAccidentalPolicy',
+  'setRhythmSpelling',
+  'moveGraceNote',
   'addGraceNote',
   'removeGraceNote',
+  'pasteContent',
+  'duplicateNote',
   'changeNoteDuration',
   'replaceWithRest',
   'transposeDocumentChromatic',
@@ -93,10 +101,11 @@ export function executeHybridCommands(
       if (!nextCoreDocument) continue;
 
       const execution = executeCoreCommands(nextCoreDocument, run);
+      const unchanged = execution.coreDocument === nextCoreDocument;
       nextCoreDocument = execution.coreDocument;
       selectionRemap = { ...selectionRemap, ...execution.selectionRemap };
       coreDiagnostics.push(...execution.diagnostics);
-      nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
+      if (!unchanged) nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
       if (hasUnsafeTags && run.some((command) => command.type === 'setGuitarFret')) {
         nextCoreDocument = importMusicXmlToCore(nextXml);
       }

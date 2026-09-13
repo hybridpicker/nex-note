@@ -829,7 +829,7 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   ))[0];
   assert.ok(midiButton);
   assert.match(midiButton.props.title, /Disable MIDI note input/);
-  assert.match(midiButton.props.title, /within 35 ms.*one chord/);
+  assert.match(midiButton.props.title, /Release all physical keys.*chord; sustain does not change notation/);
   assert.match(nodeText(midiButton), /MIDI/);
 
   act(() => prominentRecordButton.props.onClick());

@@ -548,26 +548,39 @@ function collectNotationSemantics(
   }
 
   const timeModification = note.getElementsByTagName('time-modification')[0];
-  const tupletEl = Array.from(notations?.getElementsByTagName('tuplet') ?? [])[0];
-  if (timeModification || tupletEl) {
-    const number = parseIntSafe(tupletEl?.getAttribute('number'), 1) || 1;
-    const key = `${measureNumber}:${staffIndex}:${voiceId}:${number}`;
-    let group = state.tupletGroups.get(key);
-    if (!group) {
-      group = {
-        id: makeId('tuplet', measureNumber, staffIndex, voiceId, number),
-        number,
-        eventIds: [],
-        actualNotes: parseIntSafe(timeModification?.getElementsByTagName('actual-notes')[0]?.textContent, 0) || undefined,
-        normalNotes: parseIntSafe(timeModification?.getElementsByTagName('normal-notes')[0]?.textContent, 0) || undefined,
-        bracket: tupletEl?.getAttribute('bracket') === 'yes' || undefined,
-        showNumber: (tupletEl?.getAttribute('show-number') as TupletSpan['showNumber']) ?? undefined,
-      };
-      state.tupletGroups.set(key, group);
-      collectors.tuplets.push(group);
-    }
-    if (!group.eventIds.includes(eventId)) group.eventIds.push(eventId);
-    if ((tupletEl?.getAttribute('type') ?? '') === 'stop') state.tupletGroups.delete(key);
+  const tupletElements = Array.from(notations?.getElementsByTagName('tuplet') ?? []);
+  const lanePrefix = `${measureNumber}:${staffIndex}:${voiceId}:`;
+  const starts = tupletElements.filter(element => element.getAttribute('type') === 'start');
+  // Explicit nested brackets carry their individual ratio; time-modification is the product.
+  for (const element of starts) {
+    const number = parseIntSafe(element.getAttribute('number'), 1) || 1;
+    const actual = element.getElementsByTagName('tuplet-actual')[0]?.getElementsByTagName('tuplet-number')[0];
+    const normal = element.getElementsByTagName('tuplet-normal')[0]?.getElementsByTagName('tuplet-number')[0];
+    const group: TupletSpan = {
+      id: makeId('tuplet', measureNumber, staffIndex, voiceId, number, eventId), number, eventIds: [],
+      actualNotes: parseIntSafe(actual?.textContent ?? timeModification?.getElementsByTagName('actual-notes')[0]?.textContent, 0) || undefined,
+      normalNotes: parseIntSafe(normal?.textContent ?? timeModification?.getElementsByTagName('normal-notes')[0]?.textContent, 0) || undefined,
+      bracket: element.getAttribute('bracket') === 'yes' || undefined,
+      showNumber: (element.getAttribute('show-number') as TupletSpan['showNumber']) ?? undefined,
+    };
+    state.tupletGroups.set(`${lanePrefix}${number}`, group);
+    collectors.tuplets.push(group);
+  }
+  if (timeModification && ![...state.tupletGroups.keys()].some(key => key.startsWith(lanePrefix))) {
+    const number = parseIntSafe(tupletElements[0]?.getAttribute('number'), 1) || 1;
+    const group: TupletSpan = {
+      id: makeId('tuplet', measureNumber, staffIndex, voiceId, number, eventId), number, eventIds: [],
+      actualNotes: parseIntSafe(timeModification.getElementsByTagName('actual-notes')[0]?.textContent, 0) || undefined,
+      normalNotes: parseIntSafe(timeModification.getElementsByTagName('normal-notes')[0]?.textContent, 0) || undefined,
+    };
+    state.tupletGroups.set(`${lanePrefix}${number}`, group);
+    collectors.tuplets.push(group);
+  }
+  for (const [key, group] of state.tupletGroups) {
+    if (timeModification && key.startsWith(lanePrefix) && !group.eventIds.includes(eventId)) group.eventIds.push(eventId);
+  }
+  for (const element of tupletElements.filter(element => element.getAttribute('type') === 'stop')) {
+    state.tupletGroups.delete(`${lanePrefix}${parseIntSafe(element.getAttribute('number'), 1) || 1}`);
   }
 
   const grace = note.getElementsByTagName('grace')[0];
@@ -1094,6 +1107,7 @@ export function importMusicXmlToCore(xml: string): ScoreDocumentModel {
 
   return {
     score: { id: 'score:root', parts },
+    accidentalPolicy: (() => { const value = Array.from(doc.getElementsByTagName('miscellaneous-field')).find(field => field.getAttribute('name') === 'nex-note:accidental-policy')?.textContent; return value === 'always' || value === 'barline' || value === 'none' ? value : undefined; })(),
     metadata,
     index: { measureIds, voiceIds, eventIds },
     slurs: collectors.slurs,

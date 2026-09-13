@@ -22,6 +22,9 @@ export type LegacyScoreOperation =
   | { type: 'removeArticulations' }
   | { type: 'deleteRange'; corePartId?: string | null; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
   | { type: 'clearMeasureVoice'; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number }
+  | ({ type: 'replaceMidiPassage'; takeId: string; ticksPerQuarter: number; lengthTicks: number; notes: Array<{ midi: number; startTick: number; durationTicks: number }> } & NoteLocatorLike)
+  | ({ type: 'editTupletUnit'; action: 'pitch' | 'chord' | 'rest'; step: string; alter: number; octave: number } & NoteLocatorLike)
+  | ({ type: 'editRhythm'; operation: 'insert' | 'delete' | 'resize'; scope: 'voice' | 'instrument' | 'score'; endMeasureNumber: number; durationType: string; isDotted?: boolean } & NoteLocatorLike)
   | ({ type: 'rippleDelete' } & NoteLocatorLike)
   | { type: 'rippleDeleteRange'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
   | { type: 'setKey'; fifths: number }
@@ -39,7 +42,7 @@ export type LegacyScoreOperation =
   | { type: 'setHarmonyAt'; value: string; measureNumber: number; staffIndex?: number; timestampNum: number; timestampDen: number }
   | { type: 'fillSlashMeasure'; measureNumber: number; staffIndex?: number; voiceId?: number; stem?: 'none' }
   | ({ type: 'duplicateNote' } & NoteLocatorLike)
-  | { type: 'setTimeSignature'; beats: number; beatType: number; measureNumber?: number }
+  | { type: 'setTimeSignature'; beats: number; beatType: number; beatGroups?: number[]; measureNumber?: number }
   | { type: 'setClef'; sign: 'G' | 'F' | 'C'; line: 1 | 2 | 3 | 4 | 5; measureNumber?: number; staffIndex?: number }
   | { type: 'removeClefChange'; measureNumber: number; staffIndex?: number }
   | { type: 'insertMeasureAfter'; measureNumber: number }
@@ -115,6 +118,7 @@ export type LegacyScoreOperation =
   | ({ type: 'setLyricLine'; verseNumber: number; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end' } & NoteLocatorLike)
   | {
       type: 'addTuplet';
+      convertRange?: boolean;
       coreEntityId?: string | null;
       coreMeasureId?: string | null;
       corePartId?: string | null;
@@ -132,6 +136,9 @@ export type LegacyScoreOperation =
     }
   | ({ type: 'addGraceNote'; slash?: boolean } & NoteLocatorLike)
   | ({ type: 'removeGraceNote' } & NoteLocatorLike)
+  | ({ type: 'moveGraceNote'; direction: 'earlier' | 'later' } & NoteLocatorLike)
+  | ({ type: 'setRhythmSpelling'; literal: boolean } & NoteLocatorLike)
+  | { type: 'setAccidentalPolicy'; policy: 'none' | 'barline' | 'always' }
   | ({ type: 'addFingering'; fingering: string } & NoteLocatorLike)
   | ({ type: 'addOrnament'; ornament: 'trill-mark' | 'mordent' | 'inverted-mordent' | 'turn' } & NoteLocatorLike)
   | {
@@ -699,6 +706,12 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       ensureString(command, 'barline', issues);
       break;
     case 'setTimeSignature':
+      if (command.beatGroups != null && (!Array.isArray(command.beatGroups)
+        || command.beatGroups.length < 1
+        || !command.beatGroups.every(group => Number.isInteger(group) && Number(group) > 0)
+        || command.beatGroups.reduce((sum: number, group: number) => sum + group, 0) !== command.beats)) {
+        issues.push('beatGroups must contain positive integers summing to beats');
+      }
       ensureNumber(command, 'beats', issues, { min: 1, max: 32 });
       ensureNumber(command, 'beatType', issues, { min: 1, max: 32 });
       if (command.measureNumber != null) ensureNumber(command, 'measureNumber', issues, { min: 1 });
@@ -824,6 +837,39 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       if (!['rehearsal', 'roomy', 'compact'].includes(String(command.profile ?? ''))) issues.push('profile must be rehearsal, roomy, or compact');
       if (command.startMeasureNumber != null) ensureNumber(command, 'startMeasureNumber', issues, { min: 1 });
       if (command.endMeasureNumber != null) ensureNumber(command, 'endMeasureNumber', issues, { min: 1 });
+      break;
+    case 'editTupletUnit':
+      ensureLocator(command, issues);
+      if (!['pitch', 'chord', 'rest'].includes(String(command.action))) issues.push('Invalid tuplet edit');
+      if (!['C','D','E','F','G','A','B'].includes(String(command.step))) issues.push('Invalid tuplet pitch');
+      ensureNumber(command, 'alter', issues, { min: -2, max: 2 });
+      ensureNumber(command, 'octave', issues, { min: 0, max: 8 });
+      break;
+    case 'moveGraceNote':
+      ensureLocator(command, issues);
+      if (!['earlier', 'later'].includes(String(command.direction))) issues.push('Invalid grace order');
+      break;
+    case 'setRhythmSpelling':
+      ensureLocator(command, issues);
+      ensureBoolean(command, 'literal', issues);
+      break;
+    case 'setAccidentalPolicy':
+      if (!['none', 'barline', 'always'].includes(String(command.policy))) issues.push('Invalid accidental policy');
+      break;
+    case 'replaceMidiPassage':
+      ensureLocator(command, issues);
+      ensureString(command, 'takeId', issues);
+      ensureNumber(command, 'lengthTicks', issues, { min: 1, max: 65536 });
+      if (![1,2,4,8].includes(Number(command.ticksPerQuarter))) issues.push('Invalid recording grid');
+      if (!Array.isArray(command.notes) || command.notes.length < 1 || command.notes.length > 10000
+        || !command.notes.every(n => n && Number.isInteger(n.midi) && n.midi >= 0 && n.midi <= 127 && Number.isInteger(n.startTick) && n.startTick >= 0 && Number.isInteger(n.durationTicks) && n.durationTicks > 0 && n.startTick + n.durationTicks <= Number(command.lengthTicks))) issues.push('Invalid recorded note sequence');
+      break;
+    case 'editRhythm':
+      ensureLocator(command, issues);
+      ensureNumber(command, 'endMeasureNumber', issues, { min: 1 });
+      if (!['insert', 'delete', 'resize'].includes(String(command.operation))) issues.push('Invalid rhythm operation');
+      if (!['voice', 'instrument', 'score'].includes(String(command.scope))) issues.push('Invalid rhythm scope');
+      if (!['whole', 'half', 'quarter', 'eighth', '16th', '32nd', '64th'].includes(String(command.durationType))) issues.push('Invalid rhythm duration');
       break;
     case 'addTuplet':
       ensureNumber(command, 'measureNumber', issues, { min: 0 });

@@ -83,3 +83,55 @@ export function normalizeMidiChord(notes: Iterable<number>, preferFlats = false)
 export function preferFlatsForKeySignature(keyFifths: number | null | undefined) {
   return Number.isFinite(keyFifths) && Number(keyFifths) < 0;
 }
+
+export type MidiInputMessage =
+  | { type: 'on' | 'off'; channel: number; note: number; velocity: number }
+  | { type: 'sustain'; channel: number; down: boolean }
+  | { type: 'reset'; channel: number };
+
+/** Strict channel-message parsing; malformed bytes must never become pitches. */
+export function parseMidiInputMessage(data: ArrayLike<number>): MidiInputMessage | null {
+  if (data.length < 3) return null;
+  const [status, first, second] = [Number(data[0]), Number(data[1]), Number(data[2])];
+  if (!Number.isInteger(status) || status < 0x80 || status > 0xef
+    || ![first, second].every(value => Number.isInteger(value) && value >= 0 && value <= 127)) return null;
+  const channel = status & 15;
+  const kind = status & 0xf0;
+  if (kind === 0x80 || kind === 0x90) {
+    return { type: kind === 0x80 || second === 0 ? 'off' : 'on', channel, note: first, velocity: second };
+  }
+  if (kind === 0xb0 && first === 64) return { type: 'sustain', channel, down: second >= 64 };
+  if (kind === 0xb0 && [120, 121, 123].includes(first)) return { type: 'reset', channel };
+  return null;
+}
+
+/** Step-time chords end on physical key release. Sustain never advances or prolongs notation. */
+export class MidiStepAccumulator {
+  private held = new Set<string>();
+  private pending = new Set<number>();
+
+  reset() { this.held.clear(); this.pending.clear(); }
+
+  accept(data: ArrayLike<number>): number[][] {
+    const message = parseMidiInputMessage(data);
+    if (!message || message.type === 'sustain') return [];
+    if (message.type === 'reset') { this.reset(); return []; }
+    const key = `${message.channel}:${message.note}`;
+    if (message.type === 'on') {
+      const completed: number[][] = [];
+      // A repeated attack is a new onset, even if a device omitted Note Off.
+      if (this.held.has(key) && this.pending.size) {
+        completed.push([...this.pending].sort((a, b) => a - b));
+        this.reset();
+      }
+      this.held.add(key);
+      this.pending.add(message.note);
+      return completed;
+    }
+    if (!this.held.delete(key)) return [];
+    if (this.held.size || !this.pending.size) return [];
+    const chord = [...this.pending].sort((a, b) => a - b);
+    this.pending.clear();
+    return [chord];
+  }
+}

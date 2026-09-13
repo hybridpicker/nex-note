@@ -123,8 +123,9 @@ export function normalizeScoreDocument(document: ScoreDocumentModel): ScoreDocum
             .flatMap((event) => normalizeRestEventDuration(event, effectiveDivisions, tupletEventIds))
             .sort((a, b) => (
               a.timestampNum - b.timestampNum
+              || Number(b.durationDivisions === 0) - Number(a.durationDivisions === 0)
               || Number(a.isChord) - Number(b.isChord)
-              || a.id.localeCompare(b.id)
+              || (a.durationDivisions === 0 && b.durationDivisions === 0 ? 0 : a.id.localeCompare(b.id))
             ));
         });
       });

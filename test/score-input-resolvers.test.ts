@@ -1051,6 +1051,14 @@ test('shouldCommitPointerGhostOverDirectNote gives pitched notehead drags priori
   };
 
   assert.equal(shouldCommitPointerGhostOverDirectNote({
+    ghostTarget: { ...ghostTarget, placementMode: 'chord', resolvedTarget: { mode: 'chord' } },
+    directNote, directlyHitRendered: true, clickedNoteheadPath: true,
+    directNoteheadHit: true, directNoteIsActiveSelection: true,
+    clickedVisibleGhostAtPointer: true, pointerCloserToGhostNotehead: true,
+    chordInputIntent: false, altKey: false,
+  }), true, 'a distinct chord ghost center wins over the overlapping active notehead');
+
+  assert.equal(shouldCommitPointerGhostOverDirectNote({
     ghostTarget,
     directNote,
     directlyHitRendered: true,

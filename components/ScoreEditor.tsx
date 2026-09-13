@@ -1,5 +1,8 @@
 'use client';
 
+import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } from '@/src/render-bridge/osmd/nested-tuplets';
+
+import { inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback } from '@/src/score-input/input-metrics';
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import type { NoteDuration, NoteEntryMode, SelectedNote } from '@/hooks/useNoteEditor';
 import type { PlaybackCursorTarget, PlaybackPlayheadSnapshot, PlaybackState } from '@/hooks/usePlayback';
@@ -9,7 +12,8 @@ import { readClientVisualDebugEnabled } from '@/lib/debug-flags';
 import { resolveMusicXmlMetadataDrawOptions } from '@/lib/musicxml-metadata-display';
 import { resolveReachedPlaybackOnset } from '@/lib/playback-highlight';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
-import { projectLayoutToDocument } from '@/src/layout/project-layout-to-document';
+import { projectOsmdLayoutXml } from '@/src/render-bridge/osmd/layout-render-xml';
+import { installOsmdGlyphBoundsCache } from '@/src/render-bridge/osmd/glyph-bounds-cache';
 import {
   collectRenderedNotes as bridgeCollectRenderedNotes,
   eventToSvgPoint as bridgeEventToSvgPoint,
@@ -32,7 +36,6 @@ import {
   type RenderedGhostGrid,
   type RenderedGhostGridPoint,
 } from '@/src/render-bridge/osmd/rendered-ghost-grid';
-import { exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
 import {
   GeometryProxy,
   buildStaffDetailsByMeasure,
@@ -12249,14 +12252,27 @@ export default function ScoreEditor({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     OpenSheetMusicDisplay: any,
     candidateXml: string,
+    signal?: AbortSignal,
   ) => {
     const osmd = initializeOsmd(OpenSheetMusicDisplay, candidateXml);
     if (!osmd) return null;
-    await osmd.load(candidateXml);
+    const loadStarted = performance.now();
+    await osmd.load(nestedTupletRenderXml(candidateXml, coreDocument));
+    if (hasNestedTuplets(coreDocument)) {
+      osmd.EngravingRules.TupletNumberUseShowNoneXMLValue = true;
+      osmd.EngravingRules.TupletsBracketedUseXMLValue = true;
+    }
+    if (signal?.aborted) return null;
+    installOsmdGlyphBoundsCache(osmd);
+    recordInputMetric('osmd-load', performance.now() - loadStarted);
+    const renderStarted = performance.now();
     osmd.render();
+    const glyphCacheInstalled = installOsmdGlyphBoundsCache(osmd);
+    if (containerRef.current) containerRef.current.dataset.glyphBoundsCache = String(glyphCacheInstalled);
+    recordInputMetric('osmd-render', performance.now() - renderStarted);
     if (containerRef.current) postProcessTabClefs(containerRef.current);
     return osmd;
-  }, [initializeOsmd]);
+  }, [initializeOsmd, coreDocument]);
 
   const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (pencilOnlyInput && e.pointerType === 'touch') return;
@@ -13148,6 +13164,16 @@ export default function ScoreEditor({
         && selectedNote
         && selectedNoteKeyFor(directNote) === selectedNoteKeyFor(selectedNote)
       ),
+      pointerCloserToGhostNotehead: (() => {
+        const visibleGhost = clickedVisibleGhostTargetAtPointer;
+        if (e.pointerType !== 'mouse' || !clickedExplicitVisibleGhostAtPointer || !visibleGhost || !directNote?.coreEntityId) return false;
+        const rendered = renderedNotesRef.current.find(entry => entry.coreEntityId === directNote.coreEntityId);
+        if (!rendered) return false;
+        const ghostX = visibleGhost.previewLeft + visibleGhost.noteheadCenterX;
+        const ghostY = visibleGhost.previewTop + 28;
+        return Math.hypot(domPoint.x - ghostX, domPoint.y - ghostY) + 1
+          < Math.hypot(domPoint.x - rendered.domCenter.x, domPoint.y - rendered.domCenter.y);
+      })(),
       clickedVisibleGhostAtPointer: clickedExplicitVisibleGhostAtPointer,
       chordInputIntent: chordInputMode,
       altKey: e.altKey,
@@ -14083,10 +14109,12 @@ export default function ScoreEditor({
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay');
         if (cancelled || !containerRef.current) return;
 
+        const layoutStarted = performance.now();
         layoutBridgeRef.current = coreDocument ? buildOsmdLayoutBridge(coreDocument, RENDER_LAYOUT_OPTIONS) : null;
-        const projectedXml = coreDocument
-          ? exportCoreToMusicXml(xml, projectLayoutToDocument(coreDocument, RENDER_LAYOUT_OPTIONS))
+        const projectedXml = coreDocument && layoutBridgeRef.current
+          ? projectOsmdLayoutXml(xml, coreDocument, layoutBridgeRef.current)
           : xml;
+        recordInputMetric('layout-projection', performance.now() - layoutStarted);
         dbg.score('OSMD loading XML …');
         if (!cancelled) {
           let activeOsmd = null;
@@ -14096,7 +14124,8 @@ export default function ScoreEditor({
           let attemptIndex = 0;
           for (const attempt of attempts) {
             try {
-              activeOsmd = await loadAndRenderOsmd(OpenSheetMusicDisplay, attempt.xml);
+              activeOsmd = await loadAndRenderOsmd(OpenSheetMusicDisplay, attempt.xml, abortController.signal);
+              if (cancelled || abortController.signal.aborted) return;
               if (attemptIndex > 0) {
                 dbg.warn('score', `OSMD fallback succeeded with ${attempt.label}.`);
               }
@@ -14116,6 +14145,7 @@ export default function ScoreEditor({
           }
           setOverlayLayerOffset(resolveOverlayLayerOffset(containerRef.current));
           renderedNotesRef.current = bridgeCollectRenderedNotes(activeOsmd, containerRef.current, coreDocument);
+          if (containerRef.current) drawNestedTupletBrackets(containerRef.current, coreDocument, renderedNotesRef.current);
           setRenderedNoteDebugMarkers(buildRenderedNoteDebugMarkers(renderedNotesRef.current, selectedNote, selectionConfidence));
           const graphicalMeasureRects = buildDomMeasureRectsByVisualOrder(containerRef.current, coreDocument);
           const osmdGraphicalMeasureRects = buildGraphicalMeasureRectsById(activeOsmd, containerRef.current, coreDocument);
@@ -14185,7 +14215,9 @@ export default function ScoreEditor({
           }
 
           setLoading(false);
+          if (containerRef.current) containerRef.current.dataset.renderedRevision = String(coreDocument?.revision ?? 0);
           onOsmdReady(activeOsmd);
+          markInputFeedback('input-to-note-frame');
         }
       } catch (err) {
         dbg.error('score', 'OSMD render error:', err);
@@ -14205,6 +14237,21 @@ export default function ScoreEditor({
       geometryProxyRef.current.invalidate();
     };
   }, [clearActiveScoreTints, coreDocument, loadAndRenderOsmd, onOsmdReady, onRenderError, onRenderStart, refreshGeometryProxy, renderViewportRevision, viewMode, xml, zoomPercent]);
+
+  useEffect(() => {
+    if (ghostNoteTarget) markInputFeedback('input-to-preview-frame');
+  }, [ghostNoteTarget]);
+  useEffect(() => {
+    const measureInput = (event: Event) => {
+      if (!inputMetricsEnabled()) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.type === 'keydown' && !(event instanceof KeyboardEvent && /^[a-g0-9]$/i.test(event.key))) return;
+      markInputStart();
+    };
+    for (const type of ['pointerdown', 'pointermove', 'keydown']) window.addEventListener(type, measureInput, true);
+    return () => { for (const type of ['pointerdown', 'pointermove', 'keydown']) window.removeEventListener(type, measureInput, true); };
+  }, []);
 
   // React to note selection / mode changes without a full re-render
   useEffect(() => {
@@ -14919,6 +14966,29 @@ export default function ScoreEditor({
       lastGhostStaffIndexRef.current = null;
     };
 
+    const cancelActiveGestures = () => {
+      discardPendingTabletPointerMove();
+      const tablet = tabletEntrySessionRef.current;
+      const drag = dragSessionRef.current;
+      // Null the sessions before releasing capture: lostpointercapture may fire synchronously.
+      tabletEntrySessionRef.current = null;
+      dragSessionRef.current = null;
+      for (const pointerId of new Set([tablet?.pointerId, drag?.pointerId])) {
+        if (pointerId != null && viewportRef.current?.hasPointerCapture(pointerId)) {
+          viewportRef.current.releasePointerCapture(pointerId);
+        }
+      }
+      if (tablet) setTabletEntryVisual({ phase: 'cancelled', pointerType: tablet.pointerType, point: tablet.latestPoint });
+      visibleGhostPointerLockRef.current = null;
+      lastGhostStaffIndexRef.current = null;
+      setGhostNoteTarget(null);
+      setDragPreviewTarget(null);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') cancelActiveGestures();
+    };
+    window.addEventListener('blur', cancelActiveGestures);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pointerup', handlePointerUp, true);
     window.addEventListener('pointercancel', handlePointerCancel, true);
     const viewport = viewportRef.current;
@@ -14947,6 +15017,8 @@ export default function ScoreEditor({
     };
     viewport?.addEventListener('lostpointercapture', handleLostPointerCapture);
     return () => {
+      window.removeEventListener('blur', cancelActiveGestures);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pointerup', handlePointerUp, true);
       window.removeEventListener('pointercancel', handlePointerCancel, true);
       viewport?.removeEventListener('lostpointercapture', handleLostPointerCapture);
@@ -16477,7 +16549,8 @@ export default function ScoreEditor({
               <div
                 ref={containerRef}
                 className={`bg-white ${viewMode === 'page' ? 'max-w-[1120px] rounded-[28px] border border-stone-300 px-6 py-8 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.35)]' : 'w-full'} ${viewMode === 'continuous-horizontal' ? 'inline-block min-w-max' : ''}`}
-                data-testid="score-canvas"
+          data-testid="score-canvas"
+          data-document-revision={coreDocument?.revision ?? 0}
               />
               <div
                 className="pointer-events-none absolute inset-0 z-20"

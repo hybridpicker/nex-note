@@ -15,6 +15,7 @@ export interface ScoreDocumentModel {
   glissandos: GlissandoLine[];
   arpeggios: ArpeggioMark[];
   fermataEventIds: Set<string>;
+  accidentalPolicy?: 'none' | 'barline' | 'always';
   swingRatio?: number; // e.g. 0.667 for triplet feel (first note's share of the swung pair)
   swingUnit?: 'eighth' | '16th';
   revision: number;

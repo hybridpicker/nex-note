@@ -440,6 +440,8 @@ async function waitForRenderedLayout(page: Page) {
 }
 
 async function openNotationSection(page: Page, name: RegExp | string) {
+  const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
+  if (await showTools.isVisible()) await showTools.click();
   const section = page.getByRole('button', { name });
   if ((await section.getAttribute('aria-expanded')) !== 'true') {
     await section.click();
@@ -1557,6 +1559,8 @@ test('visible guitar TAB controls write conventional notation one octave above t
   }));
   await waitForRenderedLayout(page);
 
+  const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
+  if (await showTools.isVisible()) await showTools.click();
   await page.getByTitle('Toggle note input (N)').click();
   await page.getByTitle(/^Eighth note: 4/).click();
   await page.getByTitle('Guitar tab input (TAB button)').click();
@@ -2670,6 +2674,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
 
       for (const lane of pitchLaneAvailability.filter((entry) => entry.staffStep <= 3)) {
         await page.mouse.move(lane.x, lane.y);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         await expect(ghost).toBeVisible();
         await expect(ghost).toHaveAttribute('data-ghost-timestamp', '8/32');
         const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
@@ -2740,6 +2745,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
   for (const lane of threeNoteHigherLanes) {
     if (!lane.pitch || usedPitches.has(lane.pitch)) continue;
     await page.mouse.move(lane.x, lane.y);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     if (!(await ghost.isVisible().catch(() => false))) continue;
     if (await ghost.getAttribute('data-ghost-timestamp') !== '8/32') continue;
     const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
@@ -3672,6 +3678,8 @@ test('note input commits the selected voice on lower piano staff rest targets', 
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');
   await page.keyboard.press('5');
+  const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
+  if (await showTools.isVisible()) await showTools.click();
   await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
   await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(2);
 
@@ -3716,6 +3724,8 @@ test('debug doctor verifies multi-voice lower-staff input and note frequencies',
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');
   await page.keyboard.press('5');
+  const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
+  if (await showTools.isVisible()) await showTools.click();
   await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
   await expect.poll(async () => (
     await page.evaluate(() => Boolean((window as any).__NEX_NOTE_DOCTOR__?.settings?.enabled))

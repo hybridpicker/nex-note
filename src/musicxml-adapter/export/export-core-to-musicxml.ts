@@ -663,11 +663,11 @@ function buildEventElement(
     note.appendChild(beamEl);
   });
 
-  const tuplet = coreDocument.tuplets.find((entry) => entry.eventIds.includes(event.id));
-  if (tuplet && tuplet.actualNotes && tuplet.normalNotes) {
+  const eventTuplets = coreDocument.tuplets.filter(entry => entry.eventIds.includes(event.id));
+  if (eventTuplets.length) {
     const timeModification = doc.createElement('time-modification');
-    setOrCreateTextElement(doc, timeModification, 'actual-notes', String(tuplet.actualNotes));
-    setOrCreateTextElement(doc, timeModification, 'normal-notes', String(tuplet.normalNotes));
+    setOrCreateTextElement(doc, timeModification, 'actual-notes', String(eventTuplets.reduce((n, t) => n * (t.actualNotes ?? 1), 1)));
+    setOrCreateTextElement(doc, timeModification, 'normal-notes', String(eventTuplets.reduce((n, t) => n * (t.normalNotes ?? 1), 1)));
     note.appendChild(timeModification);
   }
   const hasTieStop = tieStopEventPlacements.has(event.id);
@@ -686,8 +686,8 @@ function buildEventElement(
   const guitarTechniques = event.kind === 'note' ? new Set(event.guitar?.techniques ?? []) : new Set<string>();
   // Only write a tuplet notation element for the first and last note of the span;
   // middle notes carry only <time-modification> and do not need a <notations> block.
-  const hasTupletNotation = Boolean(tuplet)
-    && (tuplet!.eventIds[0] === event.id || tuplet!.eventIds[tuplet!.eventIds.length - 1] === event.id);
+  const boundaryTuplets = eventTuplets.filter(t => t.eventIds[0] === event.id || t.eventIds.at(-1) === event.id);
+  const hasTupletNotation = boundaryTuplets.length > 0;
   const hasGuitarTechnical = event.kind === 'note' && Boolean(event.guitar);
   const hasFermata = coreDocument.fermataEventIds.has(event.id);
   const eventTremolo = coreDocument.tremolos.find((t) => t.eventId === event.id);
@@ -727,13 +727,23 @@ function buildEventElement(
       if (slur.placement) slurEl.setAttribute('placement', slur.placement);
       notations.appendChild(slurEl);
     });
-    if (tuplet && (tuplet.eventIds[0] === event.id || tuplet.eventIds[tuplet.eventIds.length - 1] === event.id)) {
-      const tupletEl = doc.createElement('tuplet');
-      tupletEl.setAttribute('number', String(tuplet.number));
-      tupletEl.setAttribute('type', tuplet.eventIds[0] === event.id ? 'start' : 'stop');
-      if (tuplet.bracket) tupletEl.setAttribute('bracket', 'yes');
-      if (tuplet.showNumber) tupletEl.setAttribute('show-number', tuplet.showNumber);
-      notations.appendChild(tupletEl);
+    for (const tuplet of boundaryTuplets) {
+      for (const type of ['start', 'stop'] as const) {
+        if ((type === 'start' ? tuplet.eventIds[0] : tuplet.eventIds.at(-1)) !== event.id) continue;
+        const tupletEl = doc.createElement('tuplet');
+        tupletEl.setAttribute('number', String(tuplet.number));
+        tupletEl.setAttribute('type', type);
+        if (tuplet.bracket != null) tupletEl.setAttribute('bracket', tuplet.bracket ? 'yes' : 'no');
+        if (tuplet.showNumber) tupletEl.setAttribute('show-number', tuplet.showNumber);
+        if (type === 'start') {
+          for (const [tag, count] of [['tuplet-actual', tuplet.actualNotes], ['tuplet-normal', tuplet.normalNotes]] as const) {
+            const ratio = doc.createElement(tag);
+            setOrCreateTextElement(doc, ratio, 'tuplet-number', String(count ?? 1));
+            tupletEl.appendChild(ratio);
+          }
+        }
+        notations.appendChild(tupletEl);
+      }
     }
     if (event.kind === 'note' && guitarTechniques.has('slide')) {
       const slide = doc.createElement('slide');
@@ -1291,6 +1301,15 @@ export function exportCoreToMusicXml(sourceXml: string, coreDocument: ScoreDocum
   const doc = parser.parseFromString(sourceXml, 'application/xml');
   syncPartMeasures(doc, coreDocument);
   updateMetadata(doc, coreDocument);
+  if (coreDocument.accidentalPolicy && doc.documentElement) {
+    const identification = getOrCreateRootChildInMusicXmlOrder(doc, doc.documentElement, 'identification');
+    const misc = getDirectChild(identification, 'miscellaneous') ?? doc.createElement('miscellaneous');
+    if (!misc.parentNode) identification.appendChild(misc);
+    let field = Array.from(misc.getElementsByTagName('miscellaneous-field')).find(field => field.getAttribute('name') === 'nex-note:accidental-policy');
+    if (!field) { field = doc.createElement('miscellaneous-field'); field.setAttribute('name', 'nex-note:accidental-policy'); misc.appendChild(field); }
+    field.textContent = coreDocument.accidentalPolicy;
+  }
+
   updatePartList(doc, coreDocument);
   updateTranspose(doc, coreDocument);
   updateAttributes(doc, coreDocument);

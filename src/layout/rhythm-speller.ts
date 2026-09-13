@@ -190,7 +190,7 @@ export function spellVoiceRhythm(input: {
     divisions,
     measureDurationDivisions,
     fragments: sortedEvents.flatMap((event) => (
-      input.hints?.preserveImportedSpelling
+      (input.hints?.preserveImportedSpelling || event.preservedXml?.notationChildren?.some(xml => xml.includes('nex-note:literal-duration')))
         ? preserveImportedFragments({ event, divisions })
         : splitEventAtMetricBoundaries({
             event,

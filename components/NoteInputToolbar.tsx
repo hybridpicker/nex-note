@@ -798,7 +798,7 @@ export default function NoteInputToolbar({
         title={[
           midiInputEnabled ? 'Disable MIDI note input' : 'Enable MIDI note input',
           'Choose a note value with 1–9, then play one MIDI pitch or chord',
-          'Notes arriving within 35 ms are notated as one chord',
+          'Release all physical keys to enter a chord; sustain does not change notation',
           midiInputStatus === 'requesting' ? 'Requesting MIDI access…' : null,
           midiInputStatus === 'waiting' ? 'Waiting for a MIDI input device' : null,
           midiInputStatus === 'denied' ? 'MIDI access was denied; click to retry' : null,

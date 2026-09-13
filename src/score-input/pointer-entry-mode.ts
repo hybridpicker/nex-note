@@ -82,6 +82,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   clickedNoteheadPath: boolean;
   directNoteheadHit?: boolean;
   directNoteIsActiveSelection?: boolean;
+  pointerCloserToGhostNotehead?: boolean;
   clickedVisibleGhostAtPointer: boolean;
   chordInputIntent?: boolean;
   altKey: boolean;
@@ -105,7 +106,7 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
     hitPitchedNotehead
     && input.clickedNoteheadPath
     && directNoteSharesOnset
-    && (directNoteSharesPitch || input.directNoteIsActiveSelection)
+    && (directNoteSharesPitch || (input.directNoteIsActiveSelection && !(ghostTarget.placementMode === 'chord' && input.pointerCloserToGhostNotehead)))
     && !input.chordInputIntent
   ) {
     return false;

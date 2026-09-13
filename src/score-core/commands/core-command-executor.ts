@@ -1,3 +1,4 @@
+import { midiNoteToPitch } from '@/src/score-input/midi-input';
 import { noteTypeToDivisions } from '@/lib/note-editor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
@@ -42,6 +43,9 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'deleteNote',
   'deleteRange',
   'clearMeasureVoice',
+  'replaceMidiPassage',
+  'editRhythm',
+  'editTupletUnit',
   'rippleDelete',
   'rippleDeleteRange',
   'insertNote',
@@ -90,6 +94,9 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'setLyricLine',
   'duplicateNote',
   'addTuplet',
+  'setAccidentalPolicy',
+  'setRhythmSpelling',
+  'moveGraceNote',
   'addGraceNote',
   'removeGraceNote',
   'addFingering',
@@ -257,7 +264,7 @@ function resolveBeamGroupUnitDivisions(divisions: number, timeSignature: { beats
   return compoundMeter ? beatDivisions * 3 : beatDivisions;
 }
 
-function rebuildDefaultBeams(document: ScoreDocumentModel) {
+function rebuildDefaultBeams(document: ScoreDocumentModel, baseline: ScoreDocumentModel) {
   const rebuilt: ScoreDocumentModel['beams'] = [];
 
   document.score.parts.forEach((part) => {
@@ -265,8 +272,21 @@ function rebuildDefaultBeams(document: ScoreDocumentModel) {
       staff.measures.forEach((measure) => {
         const timing = resolveMeasureTiming(staff, measure);
         const groupUnitDivisions = resolveBeamGroupUnitDivisions(timing.divisions, timing.timeSignature);
+        const groups = timing.timeSignature?.beatGroups;
+        const groupEnds = groups?.map((_, index) => groups.slice(0, index + 1).reduce((sum, value) => sum + value, 0) * timing.divisions * 4 / timing.timeSignature!.beatType);
+        const previousStaff = baseline.score.parts.find(p => p.id === part.id)?.staves.find(s => s.staffIndex === staff.staffIndex);
+        const previousMeasure = previousStaff?.measures.find(m => m.measureNumber === measure.measureNumber);
 
         measure.voices.forEach((voice) => {
+          const previousVoice = previousMeasure?.voices.find(v => v.voiceId === voice.voiceId);
+          const rhythmKey = (events: TimedEvent[]) => JSON.stringify(events.map(e => [e.id, e.kind, e.timestampNum, e.timestampDen, e.durationDivisions, e.durationType, e.isDotted, e.isChord, e.kind === 'note' ? e.pitch : null]));
+          if (previousVoice && previousStaff && previousMeasure
+            && rhythmKey(previousVoice.events) === rhythmKey(voice.events)
+            && JSON.stringify(resolveMeasureTiming(previousStaff, previousMeasure).timeSignature) === JSON.stringify(timing.timeSignature)) {
+            const ids = new Set(voice.events.map(e => e.id));
+            rebuilt.push(...baseline.beams.filter(beam => beam.eventIds.every(id => ids.has(id))));
+            return;
+          }
           const ordered = [...voice.events].sort((left, right) => (
             left.timestampNum - right.timestampNum
             || Number(left.isChord) - Number(right.isChord)
@@ -328,8 +348,11 @@ function rebuildDefaultBeams(document: ScoreDocumentModel) {
               return;
             }
 
-            const bucketIndex = Math.floor(event.timestampNum / Math.max(groupUnitDivisions, 1));
-            const crossesBoundary = Math.floor((Math.max(event.timestampNum + event.durationDivisions - 1, event.timestampNum)) / Math.max(groupUnitDivisions, 1)) !== bucketIndex;
+            const bucketFor = (offset: number) => groupEnds
+              ? groupEnds.filter(end => offset >= end).length
+              : Math.floor(offset / Math.max(groupUnitDivisions, 1));
+            const bucketIndex = bucketFor(event.timestampNum);
+            const crossesBoundary = bucketFor(Math.max(event.timestampNum + event.durationDivisions - 1, event.timestampNum)) !== bucketIndex;
             const contiguous = previousEnd == null || previousEnd === event.timestampNum;
             if (
               crossesBoundary
@@ -1908,8 +1931,9 @@ function getTimelineEntryForAbsoluteOffset(
 function sortAbsoluteVoiceEvents(events: AbsoluteVoiceEvent[]) {
   return events.sort((left, right) => (
     left.absStart - right.absStart
+    || Number(right.event.durationDivisions === 0) - Number(left.event.durationDivisions === 0)
     || Number(left.event.isChord) - Number(right.event.isChord)
-    || left.event.id.localeCompare(right.event.id)
+    || (left.event.durationDivisions === 0 && right.event.durationDivisions === 0 ? 0 : left.event.id.localeCompare(right.event.id))
   ));
 }
 
@@ -1989,6 +2013,7 @@ function cloneClipboardLaneEvents(
   targetStaffIndex: number,
   targetAbsoluteOffset: number,
   identityMap: Map<string, ClipboardEventIdentity>,
+  revision: number,
 ) {
   return clipboardEvents
     .filter((entry) => (
@@ -1997,7 +2022,7 @@ function cloneClipboardLaneEvents(
     ))
     .map((entry, index) => {
       const nextEvent = structuredClone(entry.event);
-      const nextId = `paste:${targetStaffIndex}:${mapping.targetVoiceId}:${entry.absStart}:${index}:${entry.event.id}`;
+      const nextId = `paste:${revision}:${targetAbsoluteOffset}:${targetStaffIndex}:${mapping.targetVoiceId}:${entry.absStart}:${index}:${entry.event.id}`;
       nextEvent.id = nextId;
       nextEvent.staffIndex = targetStaffIndex;
       nextEvent.voiceId = mapping.targetVoiceId;
@@ -2484,6 +2509,7 @@ function buildTimelineFragmentsForEvent(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   entry: AbsoluteVoiceEvent,
   fragmentIdMap: EventFragmentIdentityMap,
+  splitUnrepresentable = false,
 ) {
   const timeline = buildStaffTimeline(staff);
   const fragments: AbsoluteVoiceEvent[] = [];
@@ -2497,7 +2523,10 @@ function buildTimelineFragmentsForEvent(
     if (!timelineEntry) break;
     const localOffset = cursor - timelineEntry.startOffset;
     const available = Math.max(1, timelineEntry.durationDivisions - localOffset);
-    const fragmentDuration = Math.min(remaining, available);
+    const availableDuration = Math.min(remaining, available);
+    const fragmentDuration = splitUnrepresentable && !isRepresentableDuration(availableDuration, timelineEntry.divisions)
+      ? decomposeDurationDivisions(availableDuration, timelineEntry.divisions, 0, localOffset)[0]!
+      : availableDuration;
     const isFirst = fragmentIndex === 0;
     const hasNextFragment = remaining > fragmentDuration;
     const fragmentId = isFirst ? entry.event.id : `${entry.event.id}:fragment:${fragmentIndex}`;
@@ -2653,6 +2682,20 @@ function sameTiePitch(left: TimedEvent | null | undefined, right: TimedEvent | n
     && left.pitch.step === right.pitch.step
     && left.pitch.alter === right.pitch.alter
     && left.pitch.octave === right.pitch.octave;
+}
+
+function hasIncomingTie(staff: ScoreDocumentModel['score']['parts'][number]['staves'][number], voiceId: number, targets: TimedEvent[]) {
+  const events = staff.measures.flatMap(measure => measure.voices.filter(voice => voice.voiceId === voiceId).flatMap(voice => voice.events))
+    .filter(event => event.durationDivisions > 0)
+    .sort((a, b) => a.measureNumber - b.measureNumber || a.timestampNum / a.timestampDen - b.timestampNum / b.timestampDen);
+  return targets.some(target => {
+    if (target.kind !== 'note') return false;
+    const earlier = events.filter(event => event.measureNumber < target.measureNumber || (event.measureNumber === target.measureNumber && event.timestampNum / event.timestampDen < target.timestampNum / target.timestampDen));
+    const previous = earlier.at(-1);
+    return previous && earlier.some(event => event.measureNumber === previous.measureNumber
+      && timestampsEqual(event.timestampNum, event.timestampDen, previous.timestampNum, previous.timestampDen)
+      && event.tieStart && sameTiePitch(event, target));
+  });
 }
 
 function tieContinuesAtNextCoreOnset(refs: TieContinuityEventRef[], current: TieContinuityEventRef) {
@@ -3436,6 +3479,201 @@ function coalesceAdjacentRestsInMeasure(
   return rebuilt;
 }
 
+/** Bounded time editing uses one integer grid and rejects conflicts before publishing. */
+function replaceMidiPassage(document: ScoreDocumentModel, command: Extract<ValidatedScoreCommand, { type: 'replaceMidiPassage' }>): string | null {
+  const onsets = new Map<number, { duration: number; pitches: Set<number> }>();
+  for (const note of command.notes) {
+    if (note.startTick + note.durationTicks > command.lengthTicks) return 'A recorded note exceeds the take boundary.';
+    const group = onsets.get(note.startTick);
+    if (group && (group.duration !== note.durationTicks || group.pitches.has(note.midi))) return 'Recorded chords require equal gates and unique pitches.';
+    if (group) group.pitches.add(note.midi);
+    else onsets.set(note.startTick, { duration: note.durationTicks, pitches: new Set([note.midi]) });
+  }
+  const starts = [...onsets.keys()].sort((a, b) => a - b);
+  if (starts.some((start, i) => i > 0 && starts[i-1]! + onsets.get(starts[i-1]!)!.duration > start)) return 'Overlapping onsets require separate voices.';
+  command = { ...command, notes: [...command.notes].sort((a,b) => a.startTick - b.startTick || a.midi - b.midi) };
+  const found = findVoice(document, command.measureNumber, command.staffIndex, command.voiceId, command);
+  if (!found) return 'Select an existing voice before applying a MIDI take.';
+  if (findPairedStaffVoice(found.part, command.staffIndex, command.measureNumber, command.voiceId)) return 'Real-time take replacement on linked TAB is not supported; use MIDI step entry.';
+  let grid = 16;
+  for (const measure of found.staff.measures) grid = lcm(grid, resolveMeasureTiming(found.staff, measure).divisions);
+  if (!Number.isSafeInteger(grid) || grid > 1048576) return 'The recording requires an unsupported division grid.';
+  for (const measure of found.staff.measures) setStaffDivisionsAtMeasure(found.staff, measure.measureNumber, grid);
+  const timeline = buildStaffTimeline(found.staff);
+  const measure = getTimelineEntryForMeasure(timeline, command.measureNumber)!;
+  const start = measure.startOffset + timestampToDivisionsOffset(grid, command.timestampNum, command.timestampDen);
+  const end = start + command.lengthTicks * grid / command.ticksPerQuarter;
+  const last = timeline.at(-1)!;
+  if (end > last.startOffset + last.durationDivisions) return 'The take exceeds the score. Add empty bars before applying it.';
+  const entries = flattenVoiceEventsToAbsoluteTimeline(found.staff, command.voiceId);
+  const removed = new Set<string>();
+  const retained: AbsoluteVoiceEvent[] = [];
+  for (const entry of entries) {
+    const eventEnd = entry.absStart + entry.event.durationDivisions;
+    if (entry.absStart >= end || eventEnd <= start) { retained.push(entry); continue; }
+    if (entry.event.kind !== 'rest' && (entry.absStart < start || eventEnd > end)) return 'The take boundary cuts an existing note. Use an empty or exactly bounded passage.';
+    removed.add(entry.event.id);
+    if (entry.event.kind === 'rest') {
+      if (entry.absStart < start) retained.push({ ...entry, event: cloneTimedEventWithDuration(entry.event, start - entry.absStart, grid) });
+      if (eventEnd > end) retained.push({ ...entry, absStart: end, event: cloneTimedEventWithDuration(entry.event, eventEnd - end, grid, { id: `${entry.event.id}:midi-tail` }) });
+    }
+  }
+  for (const tuplet of document.tuplets) if (tuplet.eventIds.some(id => removed.has(id)) && !tuplet.eventIds.every(id => removed.has(id))) return 'The take boundary cuts a tuplet.';
+  if (entries.some(entry => entry.event.tieStart && (removed.has(entry.event.id) || entry.absStart < start && entry.absStart + entry.event.durationDivisions === start))) return 'The take touches tied music; remove or include its complete phrase first.';
+  if (document.graceNotes.some(g => removed.has(g.eventId))) return 'Replace grace passages with the grace editor before recording.';
+  const inserted: AbsoluteVoiceEvent[] = command.notes.map((note, index) => {
+    const pitch = midiNoteToPitch(note.midi);
+    const absolute = start + note.startTick * grid / command.ticksPerQuarter;
+    const target = getTimelineEntryForAbsoluteOffset(timeline, absolute)!;
+    const durationDivisions = note.durationTicks * grid / command.ticksPerQuarter;
+    const spelling = describeDuration(durationDivisions, grid);
+    return { absStart: absolute, divisions: grid, event: {
+      id: `midi-take:${command.takeId}:${index}`, kind: 'note', pitch: { step: pitch.step, alter: pitch.alter, octave: pitch.octave },
+      measureNumber: target.measure.measureNumber, staffIndex: command.staffIndex, voiceId: command.voiceId,
+      timestampNum: absolute - target.startOffset, timestampDen: grid * 4, durationDivisions,
+      durationType: spelling.type, isDotted: spelling.dotted, isChord: index > 0 && command.notes[index - 1]!.startTick === note.startTick,
+      articulations: [], lyrics: [], tieStart: false,
+    } };
+  });
+  const fragmentMap: EventFragmentIdentityMap = new Map();
+  const fragments = [...retained, ...inserted].flatMap(entry => buildTimelineFragmentsForEvent(found.staff, entry, fragmentMap, true));
+  rewriteVoiceFromAbsoluteTimeline(found.staff, command.voiceId, fragments);
+  removeDeletedEventReferences(document, removed);
+  const endMeasure = getTimelineEntryForAbsoluteOffset(timeline, Math.max(start, end - 1))!.measure.measureNumber;
+  fillVoiceTimelineGaps(found.staff, command.voiceId, { startMeasureNumber: command.measureNumber, endMeasureNumber: endMeasure });
+  return null;
+}
+
+function convertTupletRange(document: ScoreDocumentModel, command: Extract<ValidatedScoreCommand, { type: 'addTuplet' }>): string | null {
+  const found = findVoice(document, command.measureNumber, command.staffIndex, command.voiceId, command);
+  if (!found || command.normalNotes > command.actualNotes) return 'Range conversion requires one voice and a compressing ratio.';
+  const timing = resolveMeasureTiming(found.staff, found.measure);
+  const start = timestampToDivisionsOffset(timing.divisions, command.startTimestampNum, command.startTimestampDen);
+  const stop = timestampToDivisionsOffset(timing.divisions, command.stopTimestampNum, command.stopTimestampDen);
+  const selected = found.voice.events.filter(e => e.timestampNum >= start && e.timestampNum <= stop);
+  const roots = selected.filter(e => !e.isChord && e.durationDivisions > 0);
+  if (roots.length !== command.actualNotes || roots.some(e => e.durationDivisions !== roots[0]!.durationDivisions)) return 'Select exactly the requested number of equal rhythmic units.';
+  if (hasIncomingTie(found.staff, command.voiceId, selected) || selected.some(e => e.durationDivisions === 0 || e.tieStart || document.tuplets.some(t => t.eventIds.includes(e.id)))) return 'Range conversion requires untied units outside existing tuplets and grace groups.';
+  if (roots.some((event, i) => i > 0 && event.timestampNum !== roots[i - 1]!.timestampNum + roots[i - 1]!.durationDivisions)) return 'The selected units must be contiguous.';
+  const paired = findPairedStaffVoice(found.part, command.staffIndex, command.measureNumber, command.voiceId);
+  if (paired) return 'Convert ranges on unpaired notation; paired TAB supports dividing an anchor.';
+  const factor = command.actualNotes / gcd(roots[0]!.durationDivisions * command.normalNotes, command.actualNotes);
+  if (timing.divisions * factor > 1048576) return 'This ratio exceeds the supported exact division grid.';
+  found.part.staves.forEach(staff => {
+    const t = getEffectiveMeasureTimingFromStaff(staff, { measureNumber: command.measureNumber });
+    if (t) setStaffDivisionsAtMeasure(staff, command.measureNumber, t.divisions * factor);
+  });
+  const scaledStart = start * factor;
+  const lastEnd = (roots.at(-1)!.timestampNum + roots.at(-1)!.durationDivisions);
+  for (const event of selected) {
+    event.timestampNum = scaledStart + (event.timestampNum - scaledStart) * command.normalNotes / command.actualNotes;
+    event.durationDivisions = event.durationDivisions * command.normalNotes / command.actualNotes;
+    if (!Number.isSafeInteger(event.timestampNum) || !Number.isSafeInteger(event.durationDivisions)) return 'The range could not be represented exactly.';
+  }
+  const number = Math.max(0, ...document.tuplets.map(t => t.number)) + 1;
+  document.tuplets.push({ id: `tuplet:converted:${roots[0]!.id}:${number}`, number, eventIds: selected.map(e => e.id), actualNotes: command.actualNotes, normalNotes: command.normalNotes, bracket: command.bracket, showNumber: command.showNumber });
+  const newEnd = roots.at(-1)!.timestampNum + roots.at(-1)!.durationDivisions;
+  if (newEnd < lastEnd) fillVoiceTimelineGaps(found.staff, command.voiceId, { startMeasureNumber: command.measureNumber, endMeasureNumber: command.measureNumber });
+  return null;
+}
+
+function editRhythmPassage(document: ScoreDocumentModel, command: Extract<ValidatedScoreCommand, { type: 'editRhythm' }>): string | null {
+  const found = findVoice(document, command.measureNumber, command.staffIndex, command.voiceId, command);
+  const anchor = found?.voice.events[findCommandEventIndex(found.voice, command)];
+  if (!found || !anchor || anchor.durationDivisions <= 0) return 'Select a rhythmic note, chord, or rest.';
+  if (command.endMeasureNumber < command.measureNumber) return 'The stop bar must follow the selected onset.';
+  const parts = command.scope === 'score' ? document.score.parts : [found.part];
+  const paired = findPairedStaffVoice(found.part, command.staffIndex, command.measureNumber, command.voiceId);
+  const staves = parts.flatMap(part => part.staves.filter(staff => command.scope !== 'voice' || staff === found.staff || staff === paired?.staff));
+  let grid = 16;
+  for (const staff of staves) for (const measure of staff.measures) grid = lcm(grid, resolveMeasureTiming(staff, measure).divisions);
+  if (!Number.isSafeInteger(grid) || grid > 1048576) return 'This passage requires an unsupported division grid.';
+  const sourceTiming = resolveMeasureTiming(found.staff, found.measure);
+  const originalDuration = anchor.durationDivisions * grid / sourceTiming.divisions;
+  const newDuration = requestedDurationDivisions(command.durationType, command.isDotted, grid);
+  for (const staff of staves) for (const measure of staff.measures) setStaffDivisionsAtMeasure(staff, measure.measureNumber, grid);
+  const sourceTimeline = buildStaffTimeline(found.staff);
+  const sourceMeasure = getTimelineEntryForMeasure(sourceTimeline, command.measureNumber)!;
+  const start = sourceMeasure.startOffset + timestampToDivisionsOffset(grid, command.timestampNum, command.timestampDen);
+  const delta = command.operation === 'delete' ? -originalDuration : command.operation === 'resize' ? newDuration - originalDuration : newDuration;
+  const pivot = command.operation === 'resize' ? start + originalDuration : start;
+  const removeEnd = command.operation === 'delete' ? start + originalDuration : pivot;
+  const deleted = new Set<string>();
+  const tupletIds = buildTupletEventIdSet(document);
+  for (const staff of staves) {
+    const timeline = buildStaffTimeline(staff);
+    const stopMeasure = getTimelineEntryForMeasure(timeline, command.endMeasureNumber);
+    if (!stopMeasure) return 'Every affected staff must contain the selected stop bar.';
+    const stop = stopMeasure.startOffset + stopMeasure.durationDivisions;
+    const voices = command.scope === 'voice' ? [command.voiceId] : [...new Set(staff.measures.flatMap(m => m.voices.map(v => v.voiceId)))];
+    for (const voiceId of voices) {
+      const entries = flattenVoiceEventsToAbsoluteTimeline(staff, voiceId);
+      const isResizedLane = command.operation === 'resize' && (staff === found.staff || staff === paired?.staff) && voiceId === command.voiceId;
+      const changedIds = new Set<string>();
+      const next: AbsoluteVoiceEvent[] = [];
+      for (const entry of entries) {
+        const end = entry.absStart + entry.event.durationDivisions;
+        if ((entry.absStart < start || !isResizedLane && entry.absStart < pivot) && end > pivot) return 'A sustained event crosses the edit point in another voice.';
+        if (entry.absStart >= stop || end <= start && entry.event.durationDivisions > 0) { next.push(entry); continue; }
+        if (isResizedLane && entry.absStart === start) {
+          if (entry.event.durationDivisions === 0) { next.push(entry); continue; }
+          if (tupletIds.has(entry.event.id) || entry.event.tieStart) return 'Resize tied notes or tuplet units with their dedicated tools.';
+          if (start + newDuration > stop) return 'The resized note would pass the stop bar.';
+          entry.event.durationDivisions = newDuration;
+          entry.event.durationType = command.durationType;
+          entry.event.isDotted = command.isDotted;
+          changedIds.add(entry.event.id);
+          next.push(entry);
+          continue;
+        }
+        if (command.operation === 'delete' && entry.absStart >= start && entry.absStart < removeEnd) {
+          if (end > removeEnd) return 'The deletion would cut through an event in an affected voice.';
+          deleted.add(entry.event.id);
+          changedIds.add(entry.event.id);
+          continue;
+        }
+        if (entry.absStart < pivot) { next.push(entry); continue; }
+        entry.absStart += delta;
+        changedIds.add(entry.event.id);
+        const nextEnd = entry.absStart + entry.event.durationDivisions;
+        if (entry.absStart < start) return 'The shift would overlap earlier music.';
+        if (nextEnd > stop) {
+          if (entry.event.kind !== 'rest') return 'Music would pass the stop bar. Extend the range or add empty bars first.';
+          if (entry.absStart >= stop) { deleted.add(entry.event.id); continue; }
+          entry.event.durationDivisions = stop - entry.absStart;
+          const spelling = describeDuration(entry.event.durationDivisions, grid);
+          entry.event.durationType = spelling.type;
+          entry.event.isDotted = spelling.dotted;
+        }
+        if (tupletIds.has(entry.event.id)) {
+          const target = getTimelineEntryForAbsoluteOffset(timeline, entry.absStart);
+          if (!target || nextEnd > target.startOffset + target.durationDivisions) return 'A tuplet cannot be split across a barline.';
+        }
+        next.push(entry);
+      }
+      for (const tuplet of document.tuplets) {
+        const membership = tuplet.eventIds.filter(id => changedIds.has(id));
+        if (membership.length && membership.length !== tuplet.eventIds.length) return 'Move or delete the complete tuplet, including nested units.';
+        const destinations = new Set(next.filter(e => tuplet.eventIds.includes(e.event.id)).map(e => getTimelineEntryForAbsoluteOffset(timeline, e.absStart)?.measure.id));
+        if (membership.length && destinations.size > 1) return 'The complete tuplet must fit inside one bar.';
+      }
+      for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index]!;
+        if (!entry.event.tieStart || entry.event.kind !== 'note') continue;
+        const pitch = pitchMidiNumber(entry.event.pitch);
+        const receiver = entries.slice(index + 1).find(other => other.event.kind === 'note' && pitchMidiNumber(other.event.pitch) === pitch);
+        if (receiver && (changedIds.has(entry.event.id) !== changedIds.has(receiver.event.id)
+          || deleted.has(entry.event.id) !== deleted.has(receiver.event.id))) return 'The edit boundary cuts an existing tie. Include both ends.';
+      }
+      rewriteVoiceFromAbsoluteTimeline(staff, voiceId, next);
+      normalizeVoiceTimelineAcrossMeasures(document, staff, voiceId, { startMeasureNumber: command.measureNumber, endMeasureNumber: command.endMeasureNumber });
+      fillVoiceTimelineGaps(staff, voiceId, { startMeasureNumber: command.measureNumber, endMeasureNumber: command.endMeasureNumber });
+    }
+  }
+  removeDeletedEventReferences(document, deleted);
+  return null;
+}
+
 export function executeCoreCommands(
   currentDocument: ScoreDocumentModel,
   commands: ValidatedScoreCommand[],
@@ -3560,6 +3798,7 @@ export function executeCoreCommands(
           attributes.time = {
             beats: command.beats,
             beatType: command.beatType,
+            beatGroups: command.beatGroups?.slice(),
           };
         });
         if (snapshots.length > 0) rebarTimeSignatureSnapshots(nextDocument, snapshots);
@@ -4124,6 +4363,16 @@ export function executeCoreCommands(
           timing.durationDivisions,
         );
         removeDeletedEventReferences(nextDocument, deletedEventIds);
+        break;
+      }
+      case 'replaceMidiPassage': {
+        const rejection = replaceMidiPassage(nextDocument, command);
+        if (rejection) diagnostics.push({ level: 'warning', code: 'midi_command_rejected', message: rejection });
+        break;
+      }
+      case 'editRhythm': {
+        const rejection = editRhythmPassage(nextDocument, command);
+        if (rejection) diagnostics.push({ level: 'warning', code: 'rhythm_command_rejected', message: rejection });
         break;
       }
       case 'rippleDelete': {
@@ -4756,11 +5005,50 @@ export function executeCoreCommands(
         }
         break;
       }
+      case 'editTupletUnit': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
+        const spans = nextDocument.tuplets.filter(t => event && t.eventIds.includes(event.id));
+        if (!found || !event || !spans.length || findPairedStaffVoice(found.part, command.staffIndex, command.measureNumber, command.voiceId)) {
+          diagnostics.push({ level: 'warning', code: 'tuplet_command_rejected', message: 'Select a tuplet unit in unpaired notation for this edit.' }); break;
+        }
+        const onset = found.voice.events.filter(e => e.timestampNum === event.timestampNum && e.durationDivisions > 0);
+        if (onset.some(e => e.tieStart) || hasIncomingTie(found.staff, command.voiceId, onset)) { diagnostics.push({ level: 'warning', code: 'tuplet_command_rejected', message: 'Resolve the unit tie before replacing its pitches.' }); break; }
+        const root = onset.find(e => !e.isChord) ?? event;
+        const pitch = { step: command.step, alter: command.alter, octave: command.octave };
+        if (command.action === 'rest') {
+          const removed = new Set(onset.filter(e => e !== root).map(e => e.id));
+          found.voice.events = found.voice.events.filter(e => !removed.has(e.id));
+          for (const span of nextDocument.tuplets) span.eventIds = span.eventIds.filter(id => !removed.has(id));
+          removeDeletedEventReferences(nextDocument, removed);
+          root.kind = 'rest'; root.isChord = false; root.tieStart = false;
+        } else if (command.action === 'chord' && root.kind === 'note') {
+          if (!onset.some(e => e.kind === 'note' && pitchMidiNumber(e.pitch) === pitchMidiNumber(pitch))) {
+            const added = { ...structuredClone(root), id: `${root.id}:tuplet-chord:${nextDocument.revision}:${onset.length}`, pitch, isChord: true, writtenAccidental: undefined, accidentalCautionary: undefined, accidentalEnclosure: undefined, lyrics: [], articulations: [], preservedXml: undefined };
+            found.voice.events.push(added);
+            for (const span of nextDocument.tuplets.filter(t => t.eventIds.includes(root.id))) span.eventIds.splice(span.eventIds.indexOf(root.id) + 1, 0, added.id);
+          }
+        } else {
+          event.kind = 'note';
+          const note = event as Extract<TimedEvent, { kind: 'note' }>;
+          note.pitch = pitch; note.writtenAccidental = undefined; note.accidentalCautionary = undefined; note.accidentalEnclosure = undefined;
+        }
+        break;
+      }
       case 'duplicateNote': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
-        const index = found ? findEventIndex(found.voice, command.timestampNum, command.timestampDen) : -1;
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const index = found ? findCommandEventIndex(found.voice, command) : -1;
         const event = index >= 0 ? found?.voice.events[index] : null;
         if (found && event) {
+          if (findPairedStaffVoice(found.part, command.staffIndex, command.measureNumber, command.voiceId)) {
+            diagnostics.push({ level: 'warning', code: 'duplicate_command_rejected', message: 'Duplicating linked notation/TAB is not supported. Enter the new onset with linked note input.' }); break;
+          }
+          if (nextDocument.tuplets.some(t => t.eventIds.includes(event.id)) || event.durationDivisions === 0 || found.voice.events.some(e => e.durationDivisions === 0 && timestampsEqual(e.timestampNum, e.timestampDen, event.timestampNum, event.timestampDen))) {
+            diagnostics.push({ level: 'warning', code: 'duplicate_command_rejected', message: 'Copy and paste the complete tuplet or grace passage.' }); break;
+          }
+          if (event.tieStart || hasIncomingTie(found.staff, command.voiceId, [event]) || found.voice.events.filter(e => e.durationDivisions > 0 && timestampsEqual(e.timestampNum, e.timestampDen, event.timestampNum, event.timestampDen)).length > 1) {
+            diagnostics.push({ level: 'warning', code: 'duplicate_command_rejected', message: 'Copy and paste the complete chord or tie passage; single-event duplication cannot preserve these relationships.' }); break;
+          }
           const duplicate = structuredClone(event);
           duplicate.id = `${event.id}:duplicate:${found.voice.events.length}`;
           duplicate.isChord = false;
@@ -4819,6 +5107,11 @@ export function executeCoreCommands(
         break;
       }
       case 'addTuplet': {
+        if (command.convertRange) {
+          const rejection = convertTupletRange(nextDocument, command);
+          if (rejection) diagnostics.push({ level: 'warning', code: 'tuplet_command_rejected', message: rejection });
+          break;
+        }
         const rejectTuplet = (message: string) => diagnostics.push({
           level: 'warning',
           code: 'tuplet_command_rejected',
@@ -4884,14 +5177,17 @@ export function executeCoreCommands(
         );
         const pairedLane = pairedVoice ? resolveLane(pairedVoice.voice) : null;
         const lanes = [sourceLane, pairedLane].filter((lane): lane is NonNullable<typeof lane> => Boolean(lane));
-        if (lanes.some((lane) => lane.onsetEvents.some((event) => event.tieStart))) {
+        if (lanes.some((lane) => lane.onsetEvents.some((event) => event.tieStart))
+          || hasIncomingTie(found.staff, command.voiceId, sourceLane.onsetEvents)
+          || (pairedLane && pairedVoice && hasIncomingTie(pairedVoice.staff, command.voiceId, pairedLane.onsetEvents))) {
           rejectTuplet('Tuplet creation on a tied source is unsafe; remove or complete the tie first.');
           break;
         }
-        if (lanes.some((lane) => lane.onsetEvents.some((event) => (
-          nextDocument.tuplets.some((tuplet) => tuplet.eventIds.includes(event.id))
-        )))) {
-          rejectTuplet('The selected rhythmic slot is already inside a tuplet; nested tuplets are not yet editable safely.');
+        const enclosing = nextDocument.tuplets.filter(tuplet => lanes.some(lane => tuplet.eventIds.includes(lane.root.id)));
+        if (enclosing.some(tuplet => lanes.some(lane =>
+          tuplet.eventIds.includes(lane.root.id) && lane.onsetEvents.some(event => !tuplet.eventIds.includes(event.id))
+        )) || enclosing.filter(tuplet => tuplet.eventIds.includes(sourceLane.root.id)).length >= 4) {
+          rejectTuplet('Nested tuplets require a complete onset and support at most four enclosing levels.');
           break;
         }
         if (pairedLane && (
@@ -4907,7 +5203,7 @@ export function executeCoreCommands(
         const notationDivisions = requiredDivisionsForDuration(unitNotation.type, unitNotation.dotted, timing.divisions);
         const targetDivisions = lcm(timing.divisions * durationFactor, notationDivisions);
         const scaleFactor = targetDivisions / timing.divisions;
-        if (!Number.isInteger(scaleFactor) || scaleFactor < 1) {
+        if (!Number.isSafeInteger(targetDivisions) || targetDivisions > 1048576 || !Number.isInteger(scaleFactor) || scaleFactor < 1) {
           rejectTuplet('Tuplet creation could not establish an exact integer division grid.');
           break;
         }
@@ -4968,6 +5264,10 @@ export function executeCoreCommands(
             });
           }
           lane.voice.events.splice(insertionIndex, 0, ...restEvents);
+          for (const parent of enclosing.filter(tuplet => tuplet.eventIds.includes(lane.root.id))) {
+            const lastToneIndex = Math.max(...lane.onsetEvents.map(event => parent.eventIds.indexOf(event.id)));
+            parent.eventIds.splice(lastToneIndex + 1, 0, ...restEvents.map(event => event.id));
+          }
           nextDocument.tuplets.push({
             id: `tuplet:${measure.id}:${lane.root.staffIndex}:${command.voiceId}:${lane.root.id}:${nextNumber}`,
             number: nextNumber,
@@ -4978,6 +5278,44 @@ export function executeCoreCommands(
             showNumber: command.showNumber,
           });
         });
+        break;
+      }
+      case 'setAccidentalPolicy': {
+        nextDocument.accidentalPolicy = command.policy;
+        break;
+      }
+      case 'setRhythmSpelling': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
+        if (!event) break;
+        const children = (event.preservedXml?.notationChildren ?? []).filter(xml => !xml.includes('nex-note:literal-duration'));
+        if (command.literal) children.push('<other-notation type="single" print-object="no">nex-note:literal-duration</other-notation>');
+        event.preservedXml = { ...event.preservedXml, notationChildren: children };
+        break;
+      }
+      case 'moveGraceNote': {
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
+        const event = found?.voice.events[findCommandEventIndex(found.voice, command)];
+        if (!found || !event) break;
+        const ids = new Set(nextDocument.graceNotes.map(g => g.eventId));
+        const sequence = found.voice.events.filter(e => ids.has(e.id) && timestampsEqual(e.timestampNum, e.timestampDen, event.timestampNum, event.timestampDen));
+        const index = sequence.indexOf(event);
+        const destination = index + (command.direction === 'earlier' ? -1 : 1);
+        if (index < 0 || destination < 0 || destination >= sequence.length) break;
+        const swap = (voice: VoiceNode) => {
+          const siblings = voice.events.filter(e => ids.has(e.id) && timestampsEqual(e.timestampNum, e.timestampDen, event.timestampNum, event.timestampDen));
+          if (siblings.length !== sequence.length) return false;
+          const left = voice.events.indexOf(siblings[index]!);
+          const right = voice.events.indexOf(siblings[destination]!);
+          [voice.events[left], voice.events[right]] = [voice.events[right]!, voice.events[left]!];
+          return true;
+        };
+        const paired = findPairedStaffVoice(found.part, command.staffIndex, command.measureNumber, command.voiceId);
+        if (paired && !swap(paired.voice)) {
+          diagnostics.push({ level: 'warning', code: 'grace_command_rejected', message: 'Paired grace sequences disagree; repair their order before moving notes.' });
+          break;
+        }
+        swap(found.voice);
         break;
       }
       case 'addGraceNote': {
@@ -5236,17 +5574,31 @@ export function executeCoreCommands(
         break;
       }
       case 'pasteContent': {
+        const clipboardData = structuredClone(command.clipboardData);
         const target = findPartStaff(nextDocument, command.targetPartId, command.targetStaffIndex);
-        if (!target || command.clipboardData.timeline.length === 0) break;
+        if (!target || clipboardData.timeline.length === 0) break;
+        if (target.staff.measures.some(measure => measure.voices.some(voice => findPairedStaffVoice(target.part, target.staff.staffIndex, measure.measureNumber, voice.voiceId)))) {
+          diagnostics.push({ level: 'warning', code: 'clipboard_command_rejected', message: 'Pasting into linked notation/TAB is not supported. Use linked note input to preserve both staves.' }); break;
+        }
 
+        if (clipboardData.sourceDivisions) {
+          let grid = clipboardData.sourceDivisions;
+          for (const measure of target.staff.measures) grid = lcm(grid, resolveMeasureTiming(target.staff, measure).divisions);
+          if (!Number.isSafeInteger(grid) || grid > 1048576) { diagnostics.push({ level: 'warning', code: 'clipboard_command_rejected', message: 'Unsupported clipboard division grid.' }); break; }
+          for (const measure of target.staff.measures) setStaffDivisionsAtMeasure(target.staff, measure.measureNumber, grid);
+          const factor = grid / clipboardData.sourceDivisions;
+          clipboardData.durationDivisions *= factor;
+          clipboardData.timeline.forEach(entry => { entry.absStart *= factor; entry.event.timestampNum *= factor; entry.event.timestampDen *= factor; entry.event.durationDivisions *= factor; });
+          clipboardData.timedDirections.forEach(entry => { entry.absStart *= factor; });
+        }
         const targetAbsoluteOffset = buildTargetAbsoluteOffset(target.staff, command.targetOffset);
         if (targetAbsoluteOffset == null) break;
 
         const initialTimeline = buildStaffTimeline(target.staff);
         const initialTotalDuration = initialTimeline.reduce((sum, entry) => sum + entry.durationDivisions, 0);
         const requiredTimelineEnd = command.mode === 'insert'
-          ? initialTotalDuration + command.clipboardData.durationDivisions
-          : Math.max(initialTotalDuration, targetAbsoluteOffset + command.clipboardData.durationDivisions);
+          ? initialTotalDuration + clipboardData.durationDivisions
+          : Math.max(initialTotalDuration, targetAbsoluteOffset + clipboardData.durationDivisions);
 
         ensureStaffTimelineDuration(
           nextDocument,
@@ -5259,32 +5611,51 @@ export function executeCoreCommands(
           rewriteTimedDirectionsAfterAbsoluteInsert(
             target.staff,
             targetAbsoluteOffset,
-            command.clipboardData.durationDivisions,
+            clipboardData.durationDivisions,
             0,
           );
         }
 
-        const laneMappings = resolveClipboardLaneMappings(target.staff, command.clipboardData);
+        const laneMappings = resolveClipboardLaneMappings(target.staff, clipboardData);
         const pastedIdentityMap = new Map<string, ClipboardEventIdentity>();
         const deletedEventIds = new Set<string>();
 
         laneMappings.forEach((mapping) => {
           const currentEvents = flattenVoiceEventsToAbsoluteTimeline(target.staff, mapping.targetVoiceId);
           const pastedLaneEvents = cloneClipboardLaneEvents(
-            command.clipboardData.timeline,
+            clipboardData.timeline,
             mapping,
             target.staff.staffIndex,
             targetAbsoluteOffset,
             pastedIdentityMap,
+            nextDocument.revision + 1,
           );
           if (pastedLaneEvents.length === 0) return;
+          const timeline = buildStaffTimeline(target.staff);
+          for (const tuplet of clipboardData.tuplets ?? []) {
+            const mapped = tuplet.eventIds.map(id => pastedIdentityMap.get(id)?.selectionEventId);
+            if (!mapped.every((id): id is string => Boolean(id))) continue;
+            const entries = pastedLaneEvents.filter(entry => mapped.includes(entry.event.id));
+            if (!entries.length) continue;
+            const destinations = new Set(entries.map(entry => getTimelineEntryForAbsoluteOffset(timeline, entry.absStart)?.measure.id));
+            if (destinations.size > 1 || entries.some(entry => { const m = getTimelineEntryForAbsoluteOffset(timeline, entry.absStart)!; return entry.absStart + entry.event.durationDivisions > m.startOffset + m.durationDivisions; })) {
+              diagnostics.push({ level: 'warning', code: 'clipboard_command_rejected', message: 'Pasted tuplets must fit completely inside one bar.' }); return;
+            }
+            const number = Math.max(0, ...nextDocument.tuplets.map(t => t.number)) + 1;
+            nextDocument.tuplets.push({ ...structuredClone(tuplet), id: `paste-tuplet:${number}:${mapped[0]}`, number, eventIds: mapped });
+          }
+          for (const grace of clipboardData.graceNotes ?? []) {
+            const eventId = pastedIdentityMap.get(grace.eventId)?.selectionEventId;
+            if (eventId && pastedLaneEvents.some(entry => entry.event.id === eventId)) nextDocument.graceNotes.push({ ...grace, id: `grace:${eventId}`, eventId });
+          }
+
 
           const transformed = command.mode === 'insert'
             ? {
               events: transformAbsoluteInsertTimelineEvents(
                 currentEvents,
                 targetAbsoluteOffset,
-                command.clipboardData.durationDivisions,
+                clipboardData.durationDivisions,
                 0,
               ),
               deletedEventIds: new Set<string>(),
@@ -5292,7 +5663,7 @@ export function executeCoreCommands(
             : overwriteAbsoluteTimelineEvents(
               currentEvents,
               targetAbsoluteOffset,
-              targetAbsoluteOffset + command.clipboardData.durationDivisions,
+              targetAbsoluteOffset + clipboardData.durationDivisions,
             );
 
           rewriteVoiceFromAbsoluteTimeline(
@@ -5309,7 +5680,7 @@ export function executeCoreCommands(
           const refreshedEvents = flattenVoiceEventsToAbsoluteTimeline(target.staff, mapping.targetVoiceId);
           const lastAbsoluteEnd = refreshedEvents.reduce(
             (max, entry) => Math.max(max, entry.absStart + entry.event.durationDivisions),
-            targetAbsoluteOffset + command.clipboardData.durationDivisions,
+            targetAbsoluteOffset + clipboardData.durationDivisions,
           );
           const firstMeasureNumber = getTimelineEntryForAbsoluteOffset(refreshedTimeline, targetAbsoluteOffset)?.measure.measureNumber
             ?? command.targetOffset.measureNumber;
@@ -5328,7 +5699,7 @@ export function executeCoreCommands(
             endMeasureNumber: lastMeasureNumber,
           });
 
-          const laneEventIds = command.clipboardData.timeline
+          const laneEventIds = clipboardData.timeline
             .filter((entry) => (
               entry.sourceStaffIndex === mapping.sourceStaffIndex
               && entry.sourceVoiceId === mapping.sourceVoiceId
@@ -5361,9 +5732,9 @@ export function executeCoreCommands(
           nextDocument,
           target.staff,
           targetAbsoluteOffset,
-          command.clipboardData.timedDirections,
+          clipboardData.timedDirections,
         );
-        pasteClipboardSlurs(nextDocument, command.clipboardData.noteSpanners, pastedIdentityMap);
+        pasteClipboardSlurs(nextDocument, clipboardData.noteSpanners, pastedIdentityMap);
 
         const knownEventIds = buildDocumentEventIdSet(nextDocument);
         pastedIdentityMap.forEach((identity, sourceEventId) => {
@@ -5851,6 +6222,10 @@ export function executeCoreCommands(
     selectionRemap = mergeSelectionRemaps(selectionRemap, commandSelectionRemap);
   }
 
+  if (diagnostics.some(diagnostic => diagnostic.code.endsWith('_rejected'))) {
+    return { coreDocument: currentDocument, diagnostics, selectionRemap: {} };
+  }
+
   const rhythmSpellingTargets: RhythmSpellingTarget[] = [];
   const noteEntryBatch = commands.some((command) => (
     command.type === 'changeNotePitch'
@@ -5886,8 +6261,28 @@ export function executeCoreCommands(
       timestampDen: Number(candidate.timestampDen),
     });
   }
+  if (noteEntryBatch && nextDocument.accidentalPolicy && nextDocument.accidentalPolicy !== 'none') {
+    const oldEvents = new Map(currentDocument.score.parts.flatMap(p => p.staves.flatMap(s => s.measures.flatMap(m => m.voices.flatMap(v => v.events.map(e => [e.id, e] as const))))));
+    for (const part of nextDocument.score.parts) for (const staff of part.staves) for (const measure of staff.measures) {
+      const previous = staff.measures.filter(m => m.measureNumber < measure.measureNumber).at(-1);
+      for (const event of measure.voices.flatMap(v => v.events)) {
+        if (event.kind !== 'note' || event.writtenAccidental) continue;
+        const old = oldEvents.get(event.id);
+        if (old?.kind === 'note' && JSON.stringify(old.pitch) === JSON.stringify(event.pitch)) continue;
+        const needsReminder = nextDocument.accidentalPolicy === 'always' || previous?.voices.some(v => v.events.some(e => e.kind === 'note'
+          && e.pitch.step === event.pitch.step && e.pitch.octave === event.pitch.octave && e.pitch.alter !== event.pitch.alter));
+        const glyphs = ['double-flat', 'flat', 'natural', 'sharp', 'double-sharp'] as const;
+        const glyph = glyphs[event.pitch.alter + 2];
+        if (needsReminder && glyph) {
+          event.writtenAccidental = glyph;
+          event.accidentalCautionary = true;
+          event.accidentalEnclosure = 'round';
+        }
+      }
+    }
+  }
   applyRhythmSpellingToDocument(nextDocument, rhythmSpellingTargets);
-  rebuildDefaultBeams(nextDocument);
+  rebuildDefaultBeams(nextDocument, currentDocument);
   pruneDanglingTieStarts(nextDocument);
   nextDocument.index = rebuildScoreIndex(nextDocument);
   nextDocument.revision += 1;

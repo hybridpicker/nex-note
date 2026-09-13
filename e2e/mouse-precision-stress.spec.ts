@@ -167,6 +167,7 @@ async function findMeasureOneBassE2BeatOne(page: Page) {
 async function findMeasureOneTreblePitchBeatOne(page: Page, pitch: string, near?: { x: number; y: number }) {
   const readCandidate = async (x: number, y: number) => {
     await page.mouse.move(x, y);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const ghost = await readGhost(page);
     if (
       ghost?.measure === '1'
@@ -411,6 +412,10 @@ test('mouse note entry can build a four-note second cluster without lower notes 
       timeout: 2_500,
       intervals: [100, 150, 250, 500],
     }).toContain(pitch);
+    // The next target must be measured from the newly engraved chord: seconds
+    // alternate notehead columns, so the previous SVG has different X positions.
+    await expect.poll(() => page.getByTestId('score-canvas').evaluate(element => element.dataset.documentRevision === element.dataset.renderedRevision)).toBe(true);
+    await expect(page.getByText('Rendering…', { exact: true })).toHaveCount(0);
   }
 
   const core = await readCurrentCore(page);

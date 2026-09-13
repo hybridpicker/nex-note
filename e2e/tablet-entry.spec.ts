@@ -515,3 +515,20 @@ test.describe('Pencil focus layout', () => {
     expect(await currentXml(page)).toBe(after);
   });
 });
+
+test('window focus loss cancels a captured pen gesture and queued refinement before release', async ({ page }) => {
+  await installPointerCaptureProbe(page);
+  await boot(page);
+  const point = await blankStaffPoint(page);
+  const before = await currentXml(page);
+  await dispatchPointer(page, 'pointerdown', { pointerId: 71, pointerType: 'pen', ...point });
+  await expect(page.getByTestId('score-viewport')).toHaveAttribute('data-tablet-entry-phase', 'contact-preview');
+  await page.getByTestId('score-viewport').evaluate((element, point) => {
+    element.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 71, pointerType: 'pen', clientX: point.x, clientY: point.y - 10, buttons: 1 }));
+    window.dispatchEvent(new Event('blur'));
+  }, point);
+  await expect(page.getByTestId('score-viewport')).toHaveAttribute('data-tablet-entry-phase', 'cancelled');
+  expect(await page.getByTestId('score-viewport').evaluate(el => el.hasPointerCapture(71))).toBe(false);
+  await dispatchPointer(page, 'pointerup', { pointerId: 71, pointerType: 'pen', ...point });
+  expect(await currentXml(page)).toBe(before);
+});

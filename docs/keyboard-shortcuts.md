@@ -199,3 +199,20 @@ Priorisierte Vorschläge:
 - MuseScore Studio Handbook: <https://handbook.musescore.org/appendix/all-keyboard-shortcuts>
 - Finale Simple Entry: <https://finale.jetzt/finalehelp/FinaleWin/Content/Finale/Simple_Entry.htm>
 - Finale Simple Entry Tool Beschreibung: <https://www.frista.se/Finale/Handledning/Finale25Win/Content/Finale/ID_MAINTOOL_SIMPLEENTRY.htm>
+
+
+## September 2026 advanced entry controls
+
+Open **Rhythm, tuplets and MIDI** below the notation toolbar. Select an onset
+before bounded insert/delete/resize, custom tuplets, grace-sequence editing or
+local duration spelling. Scope and stop bar are explicit. These controls use
+one Undo action per accepted operation and display rejected-range feedback.
+
+In Note Input (`N`), `M` enables pitch-before-duration: select/play the pitches,
+then press a duration key. MIDI chords are collected until all physical keys
+are released; sustain is ignored. Choose the MIDI input device in the same
+panel. **Record MIDI** starts the configured count-in/metronome; **Stop take**
+keeps a reviewable take without changing the score. **Apply / requantize take**
+commits it. See [limitations and evidence](note-entry-quality-2026-09-13.md).
+The historical Phase C hardware-MIDI limitation above no longer describes the
+current implementation.

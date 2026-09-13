@@ -1,133 +1,152 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { normalizeMidiChord, parseMidiNoteOn, type MidiPitch } from '@/src/score-input/midi-input';
+import { hasNativeMidi, requestNativeMidiAccess } from '@/src/score-input/native-midi';
+import { MidiStepAccumulator, normalizeMidiChord, type MidiPitch } from '@/src/score-input/midi-input';
 
 export type MidiInputStatus = 'idle' | 'requesting' | 'connected' | 'waiting' | 'unsupported' | 'denied' | 'error';
-
-interface MidiMessageEventLike {
-  data: ArrayLike<number>;
-}
-
-interface MidiInputPortLike {
+interface MidiMessageEventLike { data: ArrayLike<number>; timeStamp?: number }
+export interface MidiInputPortLike {
   id: string;
   name?: string | null;
   manufacturer?: string | null;
   state?: string;
   onmidimessage: ((event: MidiMessageEventLike) => void) | null;
 }
-
 interface MidiAccessLike {
   inputs: Map<string, MidiInputPortLike>;
+  select?: (id: string) => Promise<void>;
+  close?: () => Promise<void>;
   onstatechange: (() => void) | null;
 }
-
 type MidiNavigator = Navigator & {
   requestMIDIAccess?: (options?: { sysex?: boolean; software?: boolean }) => Promise<MidiAccessLike>;
 };
-
 interface UseMidiInputOptions {
   onChord: (pitches: MidiPitch[]) => void;
   preferFlats?: boolean;
-  chordWindowMs?: number;
+  active?: boolean;
+  onMessage?: (data: ArrayLike<number>, timeStamp: number) => boolean;
+  onReset?: () => void;
 }
 
-function portLabel(port: MidiInputPortLike) {
-  return [port.manufacturer, port.name].filter(Boolean).join(' ').trim() || 'MIDI input';
-}
-
-export function useMidiInput({ onChord, preferFlats = false, chordWindowMs = 35 }: UseMidiInputOptions) {
+export function useMidiInput({ onChord, preferFlats = false, active = true, onMessage, onReset }: UseMidiInputOptions) {
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<MidiInputStatus>('idle');
-  const [deviceNames, setDeviceNames] = useState<string[]>([]);
+  const [devices, setDevices] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const selectedRef = useRef('');
+  const boundPortRef = useRef<MidiInputPortLike | null>(null);
   const accessRef = useRef<MidiAccessLike | null>(null);
-  const pendingNotesRef = useRef(new Set<number>());
-  const chordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onChordRef = useRef(onChord);
-  const preferFlatsRef = useRef(preferFlats);
+  const generationRef = useRef(0);
+  const bindingGenerationRef = useRef(0);
+  const focusedRef = useRef(true);
+  const accumulatorRef = useRef(new MidiStepAccumulator());
+  const optionsRef = useRef({ onChord, preferFlats, active, onMessage, onReset });
+  optionsRef.current = { onChord, preferFlats, active, onMessage, onReset };
 
-  useEffect(() => { onChordRef.current = onChord; }, [onChord]);
-  useEffect(() => { preferFlatsRef.current = preferFlats; }, [preferFlats]);
-
-  const flushPendingChord = useCallback(() => {
-    if (chordTimerRef.current) clearTimeout(chordTimerRef.current);
-    chordTimerRef.current = null;
-    const pitches = normalizeMidiChord(pendingNotesRef.current, preferFlatsRef.current);
-    pendingNotesRef.current.clear();
-    if (pitches.length > 0) onChordRef.current(pitches);
-  }, []);
-
-  const handleMidiMessage = useCallback((event: MidiMessageEventLike) => {
-    const noteOn = parseMidiNoteOn(event.data);
-    if (!noteOn) return;
-    pendingNotesRef.current.add(noteOn.note);
-    if (chordTimerRef.current) clearTimeout(chordTimerRef.current);
-    chordTimerRef.current = setTimeout(flushPendingChord, chordWindowMs);
-  }, [chordWindowMs, flushPendingChord]);
-
+  const discard = useCallback(() => accumulatorRef.current.reset(), []);
   const detachPorts = useCallback(() => {
-    const access = accessRef.current;
-    if (!access) return;
-    for (const input of access.inputs.values()) input.onmidimessage = null;
-    access.onstatechange = null;
-  }, []);
-
+    bindingGenerationRef.current++;
+    if (boundPortRef.current) boundPortRef.current.onmidimessage = null;
+    boundPortRef.current = null;
+    optionsRef.current.onReset?.();
+    if (accessRef.current) accessRef.current.onstatechange = null;
+    discard();
+  }, [discard]);
   const refreshPorts = useCallback(() => {
     const access = accessRef.current;
     if (!access) return;
-    const ports = [...access.inputs.values()].filter((port) => port.state !== 'disconnected');
-    for (const input of access.inputs.values()) input.onmidimessage = null;
-    for (const input of ports) input.onmidimessage = handleMidiMessage;
-    setDeviceNames(ports.map(portLabel));
-    setStatus(ports.length > 0 ? 'connected' : 'waiting');
-  }, [handleMidiMessage]);
-
+    const ports = [...access.inputs.values()].filter(port => port.state !== 'disconnected');
+    setDevices(ports.map(port => ({ id: port.id, name: [port.manufacturer, port.name].filter(Boolean).join(' ').trim() || 'MIDI input' })));
+    if (!selectedRef.current && ports[0]) {
+      selectedRef.current = ports[0].id;
+      setSelectedDeviceId(ports[0].id);
+    }
+    const selected = ports.find(port => port.id === selectedRef.current) ?? null;
+    if (boundPortRef.current !== selected) {
+      const binding = ++bindingGenerationRef.current;
+      if (boundPortRef.current) boundPortRef.current.onmidimessage = null;
+      discard();
+      optionsRef.current.onReset?.();
+      boundPortRef.current = selected;
+      if (selected) void access.select?.(selected.id).catch(() => {
+        if (accessRef.current !== access || bindingGenerationRef.current !== binding) return;
+        selected.onmidimessage = null;
+        optionsRef.current.onReset?.();
+        discard(); setStatus('error');
+      });
+    }
+    const binding = bindingGenerationRef.current;
+    if (selected) selected.onmidimessage = event => {
+      if (accessRef.current !== access || boundPortRef.current !== selected || bindingGenerationRef.current !== binding) return;
+      const options = optionsRef.current;
+      if (!options.active || !focusedRef.current || document.visibilityState === 'hidden') { discard(); return; }
+      if (options.onMessage?.(event.data, event.timeStamp ?? performance.now())) { discard(); return; }
+      for (const chord of accumulatorRef.current.accept(event.data)) {
+        optionsRef.current.onChord(normalizeMidiChord(chord, optionsRef.current.preferFlats));
+      }
+    };
+    setStatus(selected ? 'connected' : 'waiting');
+  }, [discard]);
+  const selectDevice = useCallback((id: string) => {
+    selectedRef.current = id;
+    setSelectedDeviceId(id);
+    discard();
+    refreshPorts();
+  }, [discard, refreshPorts]);
   const disable = useCallback(() => {
+    generationRef.current++;
     detachPorts();
-    if (chordTimerRef.current) clearTimeout(chordTimerRef.current);
-    chordTimerRef.current = null;
-    pendingNotesRef.current.clear();
+    void accessRef.current?.close?.();
     accessRef.current = null;
     setEnabled(false);
-    setDeviceNames([]);
+    setDevices([]);
     setStatus('idle');
   }, [detachPorts]);
-
   const enable = useCallback(async () => {
     if (typeof navigator === 'undefined') return;
-    const requestMIDIAccess = (navigator as MidiNavigator).requestMIDIAccess;
-    if (typeof requestMIDIAccess !== 'function') {
-      setEnabled(false);
-      setStatus('unsupported');
-      return;
-    }
-
+    const request = (navigator as MidiNavigator).requestMIDIAccess;
+    const native = hasNativeMidi();
+    if (!request && !native) { setStatus('unsupported'); return; }
+    const generation = ++generationRef.current;
+    detachPorts();
+    const previousAccess = accessRef.current;
+    accessRef.current = null;
     setEnabled(true);
     setStatus('requesting');
     try {
-      const access = await requestMIDIAccess.call(navigator, { sysex: false, software: true });
+      if (previousAccess?.close) await previousAccess.close();
+      if (generation !== generationRef.current) return;
+      const access: MidiAccessLike = native ? await requestNativeMidiAccess() : await request!.call(navigator, { sysex: false, software: true });
+      if (generation !== generationRef.current) { await access.close?.(); return; }
+      detachPorts();
       accessRef.current = access;
       access.onstatechange = refreshPorts;
       refreshPorts();
     } catch (error) {
+      if (generation !== generationRef.current) return;
       setEnabled(false);
-      setDeviceNames([]);
       setStatus(error instanceof DOMException && error.name === 'NotAllowedError' ? 'denied' : 'error');
     }
-  }, [refreshPorts]);
-
-  const toggle = useCallback(async () => {
-    if (enabled) {
-      disable();
-      return;
-    }
-    await enable();
-  }, [disable, enable, enabled]);
-
-  useEffect(() => () => {
-    detachPorts();
-    if (chordTimerRef.current) clearTimeout(chordTimerRef.current);
-  }, [detachPorts]);
-
-  return { enabled, status, deviceNames, enable, disable, toggle };
+  }, [detachPorts, refreshPorts]);
+  const toggle = useCallback(async () => { if (enabled) disable(); else await enable(); }, [disable, enable, enabled]);
+  useEffect(() => { discard(); }, [active, discard]);
+  useEffect(() => {
+    const blur = () => { focusedRef.current = false; discard(); };
+    const focus = () => { focusedRef.current = true; discard(); };
+    const hidden = () => { if (document.visibilityState === 'hidden') blur(); };
+    window.addEventListener('blur', blur);
+    window.addEventListener('focus', focus);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      generationRef.current++;
+      detachPorts();
+      void accessRef.current?.close?.();
+      window.removeEventListener('blur', blur);
+      window.removeEventListener('focus', focus);
+      document.removeEventListener('visibilitychange', hidden);
+    };
+  }, [detachPorts, discard]);
+  return { enabled, status, devices, deviceNames: devices.map(device => device.name), selectedDeviceId, selectDevice, enable, disable, toggle, discard };
 }

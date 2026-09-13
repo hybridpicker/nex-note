@@ -163,7 +163,7 @@ the authoritative pointer-to-history pipeline are tracked in
   - accidental entity identity, copy/paste preservation, paired notation/TAB mirroring, inverse-command restoration, and stale-glyph cleanup after transposition
   - `J` cycles natural, single-, and double-accidental spellings, preserves MIDI/entity identity, expands cross-measure ties, keeps paired TAB fingering, and groups selections into one Undo/Redo transaction
   - grace entry creates a distinct zero-duration semantic event before the selected anchor; the rhythmic anchor retains its identity and duration, paired notation/TAB receives a matching grace entity, and MusicXML cursor advancement uses the main event rather than the grace event
-  - tuplet entry divides one semantic rhythmic slot rather than labeling a pre-existing range: the first note/chord/rest keeps its IDs, remaining equal units are rests ready for entry, the part division grid is rescaled exactly, paired notation/TAB receives a separate same-number span, and unsafe range/tie/nested requests return `tuplet_command_rejected`
+  - tuplet entry divides one semantic rhythmic slot rather than labeling a pre-existing range: the first note/chord/rest keeps its IDs, remaining equal units are rests ready for entry, the part division grid is rescaled exactly, paired notation/TAB receives a separate same-number span, and unsafe range/tie requests return `tuplet_command_rejected`; custom nested ratios and eligible range conversion are described in `note-entry-quality-2026-09-13.md`
   - beat-1 rest plus eighth-note mouse entry keeps visible notehead X and commit X on the same rendered rest snap
   - system-start normalization preserves a safely separated core-backed
     leading rest while continuing to clamp invalid, stale, or
@@ -191,4 +191,37 @@ the authoritative pointer-to-history pipeline are tracked in
 - ambiguous voice targets are intentionally rejected rather than auto-corrected.
 - arbitrary overflow placement remains unsupported for note entry; unsupported overflow attempts are rejected instead of being auto-rewritten into a broken measure state.
 - rest-only internal slots are intentionally narrow: they require real split-rest structure, validator approval, and matching ghost/commit diagnostics before mutation. A single full-measure rest never qualifies.
-- automatic courtesy detection and view-specific concert/transposed `Cmd/Ctrl+J` respelling are not yet modeled; manual cautionary intent and none/round/square enclosure are complete on the semantic command path.
+- broad editorial courtesy rules and view-specific concert/transposed `Cmd/Ctrl+J` respelling remain limited; the September previous-bar/always cautionary policy and explicit accidental glyph/enclosure intent use the semantic command path.
+
+
+## September 2026 command and transport extensions
+
+See [the implementation and evidence report](note-entry-quality-2026-09-13.md).
+Prepared command proposals are baseline/fingerprint checked before history reuse;
+semantic rejection rolls back the entire batch. `editRhythm` supplies bounded
+voice/instrument/score time shifts, `replaceMidiPassage` applies reviewed takes,
+and nested tuplets retain individual ratios with combined sounding duration.
+The clipboard transports complete tuplets/graces with a source division grid.
+
+`useMidiInput` selects one Web MIDI or CoreMIDI-backed port. `MidiStepAccumulator`
+collects physical held keys, while `MidiTakeRecorder` and `useMidiRecording`
+retain/quantize real-time events. Native code only transports device IDs, message
+bytes and timestamp age. Both paths enter the existing shared semantic/history
+pipeline. Opt-in stage metrics contain numeric durations only.
+
+Nested bracket drawing is a bounded OSMD adapter correction: its native
+per-note combined ratio cannot display independent nested ratios. Both the main
+editor and print preview hide only affected native brackets in its render-only XML and draws
+core-ratio brackets using rendered DOM positions converted into SVG coordinates.
+Semantic/export XML is untouched. Browser assertions check both labels and
+in-canvas geometry; ordinary tuplets retain the original rendering path.
+
+
+Finalization keeps the renderer and core boundaries intact. Layout-only print
+controls are projected into the current XML without another musical export.
+VexFlow outline bounds use a bounded pure-geometry cache. Neither optimization
+removes notes or skips commit validation. Printing is gated by the exact rendered
+XML, with scalable SVG view boxes. History stores immutable result snapshots and
+advances its base when the 100-entry window discards a prefix. MIDI access and
+port-binding generations reject stale callbacks; recorder arming consumes input
+before audio permission completes, and take application checks document identity.

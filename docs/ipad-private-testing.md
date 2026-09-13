@@ -232,3 +232,32 @@ Contact/refinement auditions a pitch once; releasing an unchanged Pencil pitch
 does not replay it. Confirm this by listening on the physical device, including
 refinement, rapid repeated notes, cancellation and orientation changes. Browser
 pointer tests and instrument counters cannot certify that physical behavior.
+
+
+## Native MIDI transport (September 2026)
+
+`NexNoteBridgeViewController` registers `NativeMidiPlugin` from the app target.
+It uses CoreMIDI for source enumeration, explicit source selection and MIDI 1
+channel messages. It forwards timestamp age and copied packet bytes to the
+shared TypeScript MIDI entry/recording code. The storyboard class and Xcode
+source membership must survive `ipad:sync`. There are no native quantization or
+score-mutation rules. A successful simulator build is not evidence of physical
+USB/Bluetooth MIDI, Pencil or audio latency. See the dated note-entry report for
+executed checks and pending hardware evidence.
+
+
+The September finalization checks reconnect the paired iPad for device-info
+inspection, but do not establish physical Pencil/touch or CoreMIDI event delivery.
+Simulator compilation succeeds. Signing the current device build needs a valid
+Xcode account for the development team and an `app.nexnote.ipad` development
+profile; local certificates alone are insufficient. Keep team/account details
+local and supply machine-specific build overrides without committing them.
+The shared MIDI hook cancels recording on source replacement and discards stale
+access callbacks. Hardware acceptance must still exercise real connect/reconnect,
+rolled chords, count-in, stop/cancel and re-quantization on the signed app.
+
+Final shared-payload verification passes `ipad:sync`, `ipad:doctor` and Xcode
+simulator plus generic arm64 device compilation with `CODE_SIGNING_ALLOWED=NO`.
+Unsigned device compilation does not permit installation or establish a
+physical notation-entry pass. See the final gate manifest linked from the dated
+note-entry quality report.

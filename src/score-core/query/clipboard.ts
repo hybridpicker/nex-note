@@ -43,7 +43,7 @@ function getTimelineEntryForMeasure(
   return timeline.find((entry) => entry.measure.measureNumber === measureNumber) ?? null;
 }
 
-function buildDirectionEntries(document: ScoreDocumentModel, staffIndices: Set<number>) {
+function buildDirectionEntries(document: ScoreDocumentModel, staffIndices: Set<number>, partId: string) {
   const timedDirectionKinds = new Set(['wedge', 'octave-shift', 'pedal', 'dynamics']);
   const directionEntries: Array<{
     sourceStaffIndex: number;
@@ -51,7 +51,7 @@ function buildDirectionEntries(document: ScoreDocumentModel, staffIndices: Set<n
     direction: DirectionNode;
   }> = [];
 
-  document.score.parts.forEach((part) => {
+  document.score.parts.filter(part => part.id === partId).forEach((part) => {
     part.staves.forEach((staff) => {
       if (!staffIndices.has(staff.staffIndex)) return;
       const timeline = buildStaffTimeline(staff);
@@ -104,6 +104,18 @@ export function buildClipboardPayloadFromSelection(
     .map((locator) => findEventReference(document, locator))
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   if (selectedRefs.length === 0) return null;
+  if (new Set(selectedRefs.map(ref => ref.part.id)).size !== 1) return null;
+  const grids = new Set(selectedRefs.flatMap(ref => ref.staff.measures.map(measure => getEffectiveMeasureTimingFromStaff(ref.staff, { measureNumber: measure.measureNumber })?.divisions ?? 1)));
+  if (grids.size !== 1) return null;
+  const sourceDivisions = [...grids][0]!;
+  const graceIds = new Set(document.graceNotes.map(g => g.eventId));
+  for (const ref of [...selectedRefs]) {
+    if (ref.event.durationDivisions <= 0) continue;
+    for (const grace of ref.voice.events.filter(e => graceIds.has(e.id) && e.timestampNum === ref.event.timestampNum)) {
+      if (!selectedRefs.some(other => other.event.id === grace.id)) selectedRefs.push({ ...ref, event: grace });
+    }
+  }
+
 
   const copiedEvents = selectedRefs.map((ref) => {
     const timeline = buildStaffTimeline(ref.staff);
@@ -129,6 +141,8 @@ export function buildClipboardPayloadFromSelection(
     clipStart,
   );
   const selectedEventIds = new Set(copiedEvents.map((entry) => entry.event.id));
+  if (document.tuplets.some(t => t.eventIds.some(id => selectedEventIds.has(id)) && !t.eventIds.every(id => selectedEventIds.has(id)))) return null;
+
   const selectedStaffIndices = new Set(copiedEvents.map((entry) => entry.sourceStaffIndex));
 
   const noteSpanners = document.slurs
@@ -138,7 +152,7 @@ export function buildClipboardPayloadFromSelection(
     ))
     .map((slur) => structuredClone(slur));
 
-  const timedDirections = buildDirectionEntries(document, selectedStaffIndices)
+  const timedDirections = buildDirectionEntries(document, selectedStaffIndices, selectedRefs[0]!.part.id)
     .filter((entry) => entry.absStart >= clipStart && entry.absStart <= clipEnd)
     .map((entry) => ({
       sourceStaffIndex: entry.sourceStaffIndex,
@@ -162,6 +176,9 @@ export function buildClipboardPayloadFromSelection(
   return {
     kind: 'score-content',
     version: 1,
+    sourceDivisions,
+    tuplets: document.tuplets.filter(t => t.eventIds.every(id => selectedEventIds.has(id))).map(t => structuredClone(t)),
+    graceNotes: document.graceNotes.filter(g => selectedEventIds.has(g.eventId)).map(g => structuredClone(g)),
     durationDivisions: Math.max(1, clipEnd - clipStart),
     lanes: [...lanes].sort((left, right) => (
       left.sourceStaffIndex - right.sourceStaffIndex
@@ -178,8 +195,9 @@ export function buildClipboardPayloadFromSelection(
         left.absStart - right.absStart
         || left.sourceStaffIndex - right.sourceStaffIndex
         || left.sourceVoiceId - right.sourceVoiceId
+        || Number(right.event.durationDivisions === 0) - Number(left.event.durationDivisions === 0)
         || Number(left.event.isChord) - Number(right.event.isChord)
-        || left.event.id.localeCompare(right.event.id)
+        || (left.event.durationDivisions === 0 && right.event.durationDivisions === 0 ? 0 : left.event.id.localeCompare(right.event.id))
       )),
     noteSpanners,
     timedDirections,

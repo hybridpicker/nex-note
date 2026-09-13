@@ -658,7 +658,7 @@ async function waitForDebugReportForLane(page: Page, input: { measure: number; p
   return report;
 }
 
-async function snapDotCenter(page: Page, snap: SnapPoint) {
+async function snapDotCenter(page: Page, snap: SnapPoint, scroll = true) {
   const locator = page.locator(
     [
       `[data-semantic-snap-measure="${snap.measure}"]`,
@@ -669,7 +669,7 @@ async function snapDotCenter(page: Page, snap: SnapPoint) {
     ].join(''),
   ).first();
   await expect(locator, `Missing visible snap dot for ${formatSnap(snap)}`).toBeVisible();
-  await locator.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'center' }));
+  if (scroll) await locator.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'center' }));
   const box = await locator.boundingBox();
   if (!box) throw new Error(`Missing snap dot bounding box for ${formatSnap(snap)}`);
   return { x: box.x + (box.width / 2), y: box.y + (box.height / 2), box };
@@ -875,7 +875,7 @@ async function expectVisibleGhostOnMatchingSnap(page: Page, ghost: GhostSnapshot
     && Math.abs(entry.ratio - ghostRatio) < 1e-6
   ));
   if (!snap) throw new Error(`${context}: visible ghost has no matching snap. ghost=${JSON.stringify(ghost)}`);
-  const snapCenter = await snapDotCenter(page, snap);
+  const snapCenter = await snapDotCenter(page, snap, false);
   const ghostNoteheadX = ghost.box.x + ghost.noteheadCenterX;
   expect(
     Math.abs(ghostNoteheadX - snapCenter.x),

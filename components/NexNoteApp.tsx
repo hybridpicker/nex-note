@@ -2,6 +2,7 @@
 
 import { use, useState, useCallback, useEffect, useLayoutEffect, useRef, startTransition, useMemo, useDeferredValue, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
+import { flushSync } from 'react-dom';
 import ProviderSelector from '@/components/ProviderSelector';
 import AiModelSettingsPanel from '@/components/AiModelSettings';
 import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/BenchmarkPanel';
@@ -51,6 +52,8 @@ import { serializeEditorSelection } from '@/lib/chat-selection';
 import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-recorder';
 import { usePlayback } from '@/hooks/usePlayback';
 import type { PlaybackSampleBank } from '@/lib/playback-sample-bank';
+import { AdvancedNoteInput } from '@/components/AdvancedNoteInput';
+import { useMidiRecording } from '@/hooks/useMidiRecording';
 import { useMidiInput } from '@/hooks/useMidiInput';
 import {
   useMicrophonePitchInput,
@@ -719,6 +722,7 @@ export default function Home({ searchParams }: HomeProps) {
   const [nxnProjectDirectoryLabel, setNxnProjectDirectoryLabel] = useState('');
   const [printView, setPrintView] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [printReadyXml, setPrintReadyXml] = useState<string | null>(null);
   const [newScoreDialogOpen, setNewScoreDialogOpen] = useState(false);
   const [newScoreInitialTab, setNewScoreInitialTab] = useState<DialogTab>('instruments');
   const [userTemplates, setUserTemplates] = useState<UserScoreTemplate[]>([]);
@@ -1071,7 +1075,7 @@ export default function Home({ searchParams }: HomeProps) {
   } = useNoteEditor(
     xml,
     coreDocument,
-    (commands, meta) => applyCommands(commands, { selectionAnchor: meta?.selectionAnchor ?? null }),
+    (commands, meta) => applyCommands(commands, { selectionAnchor: meta?.selectionAnchor ?? null, prepared: meta?.prepared }),
     {
       onNoteInputActivated: () => {
         // Initialize audio in the mode-activation gesture, before a note click
@@ -1111,15 +1115,32 @@ export default function Home({ searchParams }: HomeProps) {
     return preferFlatsForKeySignature(keyFifths);
   }, [activePlaybackNote, coreDocument]);
 
+  const midiRecording = useMidiRecording(noteInputMode, selectedNote, coreDocument);
+  const handleMidiChord = useCallback((pitches: Parameters<typeof insertMidiChord>[0]) => {
+    // CoreMIDI may deliver several attacks in one JavaScript task. Publish each
+    // transaction and its cursor before interpreting the next physical onset.
+    flushSync(() => { insertMidiChord(pitches); });
+  }, [insertMidiChord]);
+
   const {
     enabled: midiInputEnabled,
     status: midiInputStatus,
     deviceNames: midiInputDevices,
+    devices: midiDevices,
+    selectedDeviceId: midiSelectedDeviceId,
+    selectDevice: selectMidiDevice,
     toggle: toggleMidiInput,
   } = useMidiInput({
-    onChord: insertMidiChord,
+    onChord: handleMidiChord,
+    active: noteInputMode,
+    onMessage: midiRecording.onMessage,
+    onReset: midiRecording.cancel,
     preferFlats: preferFlatsForMidiInput,
   });
+
+  useEffect(() => {
+    if (midiInputStatus !== 'connected') midiRecording.cancel();
+  }, [midiInputStatus, midiRecording.cancel]);
 
   const handleMicrophonePitches = useCallback((
     pitches: Parameters<typeof insertMidiChord>[0],
@@ -1771,13 +1792,13 @@ export default function Home({ searchParams }: HomeProps) {
   }, [handleCreateNewScore]);
 
   useEffect(() => {
-    if (!pendingPrint || !printView) return;
-    const timer = window.setTimeout(() => {
+    if (!pendingPrint || !printView || printReadyXml !== xml) return;
+    const frame = window.requestAnimationFrame(() => {
       window.print();
       setPendingPrint(false);
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, [pendingPrint, printView]);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingPrint, printReadyXml, printView, xml]);
 
   useEffect(() => {
     if (!pendingAutoNoteInput || !xml) return;
@@ -2135,6 +2156,7 @@ export default function Home({ searchParams }: HomeProps) {
   }, [filename, handleXmlFileLoaded, xml]);
 
   const handlePrintViewToggle = useCallback(() => {
+    setPrintReadyXml(null);
     setPrintView((current) => !current);
     recordBugReportEvent('workspace', 'toggle-print-view');
   }, []);
@@ -2142,11 +2164,12 @@ export default function Home({ searchParams }: HomeProps) {
   const handlePrintScore = useCallback(() => {
     if (!xml) return;
     if (!printView) {
+      setPrintReadyXml(null);
       setPrintView(true);
       setPendingPrint(true);
       return;
     }
-    window.print();
+    setPendingPrint(true);
     recordBugReportEvent('workspace', 'print-score', {
       fromPrintView: printView,
     });
@@ -5128,6 +5151,11 @@ export default function Home({ searchParams }: HomeProps) {
                   />
                 )}
 
+                {!printView && coreDocument && <AdvancedNoteInput xml={xml} document={coreDocument} selected={selectedNote} selection={selectedNotes}
+                  apply={(commands, prepared) => applyCommands(commands, { prepared, selectionAnchor: currentSelectionAnchor }).applied}
+                  recording={midiRecording}
+                  midi={{ enabled: midiInputEnabled, status: midiInputStatus, toggle: toggleMidiInput, devices: midiDevices, selectedDeviceId: midiSelectedDeviceId, selectDevice: selectMidiDevice }} />}
+
                 {printView ? (
                   <div className="nex-score-stage nex-print-preview-shell flex-1 overflow-auto bg-nex-score-bg p-6">
                     <div className="mx-auto w-full max-w-[980px] rounded-[2rem] border border-nex-border bg-white shadow-[0_24px_80px_-36px_rgba(11,15,20,0.35)]">
@@ -5135,7 +5163,7 @@ export default function Home({ searchParams }: HomeProps) {
                         {t('app.printViewTitle')}
                       </div>
                       <div className="overflow-auto px-6 py-8">
-                        <ScorePreview xml={deferredXml} className="nex-print-preview" />
+                        <ScorePreview xml={deferredXml} className="nex-print-preview" onRendered={setPrintReadyXml} />
                       </div>
                     </div>
                   </div>
