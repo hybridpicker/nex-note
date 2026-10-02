@@ -7,7 +7,9 @@ const path = require('node:path');
 const {
   buildChildProcessEnv,
   decideLocalBuildFreshness,
+  acceleratorMatchesInput,
   isAllowedRendererPermission,
+  parseAccelerator,
   pathExists,
   resolveExecutable,
 } = require('./launch-helpers.cjs');
@@ -15,8 +17,20 @@ const { describeBuildState, getLocalBuildState } = require('./build-state.cjs');
 
 const APP_NAME = 'Nex Note';
 
+const IS_LINUX = process.platform === 'linux';
+// Omarchy/Hyprland is a tiling Wayland compositor: the window manager owns the
+// frame, so use native Wayland and skip Chromium's client-side title bar and
+// native menu bar unless NEX_NOTE_LINUX_FRAME=1 asks for them.
+const LINUX_USE_FRAME = IS_LINUX && process.env.NEX_NOTE_LINUX_FRAME === '1';
+
 app.setName(APP_NAME);
 app.commandLine.appendSwitch('force-renderer-accessibility');
+if (IS_LINUX) {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+  app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,UseOzonePlatform');
+  app.commandLine.appendSwitch('enable-wayland-ime');
+  app.setDesktopName('nex-note.desktop');
+}
 
 let mainWindow = null;
 let nextProcess = null;
@@ -308,7 +322,16 @@ async function openFilesWithNativeDialog() {
   await flushPendingOpenFiles();
 }
 
+// Linux hides the native menu bar, which disables menu accelerators. Commands matching this pattern also
+// get a key handler in the main process; editing keys (undo/copy/paste/delete) stay with the page.
+const LINUX_SHORTCUT_COMMANDS = /^(file:(new|open|save|saveAs|exportPdf)|view:(zoomIn|zoomOut|resetZoom)|help:commandCenter|edit:find)$/;
+let linuxShortcuts = [];
+
 function menuCommand(commandId, options = {}) {
+  if (IS_LINUX && options.accelerator && LINUX_SHORTCUT_COMMANDS.test(commandId)) {
+    const parsed = parseAccelerator(options.accelerator);
+    if (parsed) linuxShortcuts.push({ parsed, commandId, enabled: options.enabled !== false });
+  }
   return {
     ...options,
     click: () => {
@@ -332,6 +355,7 @@ function coreScoreMenuCommand(commandId, options = {}) {
 }
 
 function buildApplicationMenuTemplate() {
+  linuxShortcuts = [];
   const isMac = process.platform === 'darwin';
   const isDev = isElectronDevRuntime();
   const redoAccelerator = isMac ? 'Shift+CommandOrControl+Z' : 'CommandOrControl+Y';
@@ -341,13 +365,7 @@ function buildApplicationMenuTemplate() {
     label: 'File',
     submenu: [
       menuCommand('file:new', { label: 'New Score', accelerator: 'CommandOrControl+N' }),
-      {
-        label: 'Open...',
-        accelerator: 'CommandOrControl+O',
-        click: () => {
-          sendMenuCommand('file:open');
-        },
-      },
+      menuCommand('file:open', { label: 'Open...', accelerator: 'CommandOrControl+O' }),
       { type: 'separator' },
       scoreMenuCommand('file:save', { label: 'Save', accelerator: 'CommandOrControl+S' }),
       scoreMenuCommand('file:saveAs', { label: 'Save As...', accelerator: 'Shift+CommandOrControl+S' }),
@@ -355,6 +373,8 @@ function buildApplicationMenuTemplate() {
       { type: 'separator' },
       scoreMenuCommand('file:exportMxl', { label: 'Export MusicXML / .mxl' }),
       scoreMenuCommand('file:exportAbc', { label: 'Export ABC' }),
+      scoreMenuCommand('file:exportParts', { label: 'Export All Parts (ZIP)' }),
+      scoreMenuCommand('file:exportPdf', { label: 'Export PDF...', accelerator: 'Shift+CommandOrControl+E' }),
       scoreMenuCommand('file:exportPracticePack', { label: 'Export Practice Pack' }),
       { type: 'separator' },
       scoreMenuCommand('file:closeScore', { label: 'Close Score' }),
@@ -401,6 +421,14 @@ function buildApplicationMenuTemplate() {
       scoreMenuCommand('view:continuousVertical', { label: 'Continuous Vertical View', type: 'checkbox', checked: activeViewMode === 'continuous-vertical' }),
       scoreMenuCommand('view:continuousHorizontal', { label: 'Continuous Horizontal View', type: 'checkbox', checked: activeViewMode === 'continuous-horizontal' }),
       scoreMenuCommand('view:togglePrintView', { label: menuState.printView ? 'Edit View' : 'Print View' }),
+      {
+        label: 'Notation Font',
+        submenu: [
+          { label: 'Bravura (default)', value: 'bravura' },
+          { label: 'Petaluma (handwritten)', value: 'petaluma' },
+          { label: 'Gonville', value: 'gonville' },
+        ].map(({ label, value }) => ({ label, click: () => { void setNotationFont(value); } })),
+      },
       ...(isDev
         ? [
             { type: 'separator' },
@@ -814,6 +842,19 @@ function resolveRendererUrl(serverUrl) {
   return url.toString();
 }
 
+async function setNotationFont(value) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!['bravura', 'petaluma', 'gonville'].includes(value)) return;
+  await mainWindow.webContents.executeJavaScript(
+    `localStorage.setItem('nex-note.notationFont', ${JSON.stringify(value)})`,
+  );
+  await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    message: 'Notation font saved',
+    detail: 'Restart Nex Note to apply the new notation font. Unsaved scores are not affected until then.',
+  });
+}
+
 function createApplicationMenu() {
   applicationMenu = Menu.buildFromTemplate(buildApplicationMenuTemplate());
   Menu.setApplicationMenu(applicationMenu);
@@ -841,12 +882,14 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 980,
-    minWidth: 1120,
-    minHeight: 760,
+    // Tiled windows get arbitrary sizes; keep the minimum small on Linux.
+    minWidth: IS_LINUX ? 640 : 1120,
+    minHeight: IS_LINUX ? 480 : 760,
     title: APP_NAME,
     icon,
     backgroundColor: '#0f172a',
     show: false,
+    ...(IS_LINUX ? { frame: LINUX_USE_FRAME, autoHideMenuBar: true } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -862,6 +905,24 @@ async function createWindow() {
   rendererSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     callback(isAllowedRendererPermission(permission, details?.requestingUrl || webContents.getURL(), url, details));
   });
+
+  if (IS_LINUX) mainWindow.setMenuBarVisibility(false);
+
+  if (IS_LINUX) {
+    const quitShortcut = parseAccelerator('CommandOrControl+Q');
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      if (acceleratorMatchesInput(quitShortcut, input)) {
+        event.preventDefault();
+        app.quit();
+        return;
+      }
+      const shortcut = linuxShortcuts.find((entry) => acceleratorMatchesInput(entry.parsed, input));
+      if (!shortcut) return;
+      event.preventDefault();
+      if (shortcut.enabled) sendMenuCommand(shortcut.commandId);
+    });
+  }
 
   mainWindow.on('page-title-updated', (event) => {
     event.preventDefault();
@@ -879,12 +940,43 @@ async function createWindow() {
   });
 
   await mainWindow.loadURL(url);
-  rendererReady = true;
-  await flushPendingOpenFiles();
+  // Files are flushed once the renderer reports that its open-file listener exists
+  // (`nex-note:open-file-ready`); sending right after loadURL can beat React's hydration.
 }
+
+ipcMain.on('nex-note:open-file-ready', (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  rendererReady = true;
+  void flushPendingOpenFiles();
+});
 
 ipcMain.handle('nex-note:open-file-dialog', async () => {
   await openFilesWithNativeDialog();
+});
+
+ipcMain.handle('nex-note:export-pdf', async (_event, payload) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, reason: 'no-window' };
+  const rawName = typeof payload?.suggestedName === 'string' ? payload.suggestedName : 'score';
+  const safeName = path.basename(rawName).replace(/\.[^.]*$/, '').replace(/[^\p{L}\p{N} _.-]+/gu, '_').slice(0, 120) || 'score';
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export PDF',
+    defaultPath: path.join(app.getPath('documents'), `${safeName}.pdf`),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, reason: 'canceled' };
+  try {
+    // Vector output: the score is SVG, fonts are embedded by Chromium; page size comes from the print CSS.
+    const pdf = await mainWindow.webContents.printToPDF({
+      preferCSSPageSize: true,
+      printBackground: true,
+      generateTaggedPDF: true,
+    });
+    await fs.writeFile(result.filePath, pdf);
+    return { ok: true };
+  } catch (error) {
+    console.error('PDF export failed:', error);
+    return { ok: false, reason: 'failed' };
+  }
 });
 
 ipcMain.handle('nex-note:native-edit-command', (_event, command) => {

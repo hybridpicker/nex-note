@@ -18,6 +18,7 @@
     "electron:prep": "node scripts/prepare-electron-package.mjs",
     "electron:build": "npm run build && npm run electron:prep && electron-builder --mac && npm run electron:verify",
     "electron:build:linux": "npm run build && npm run electron:prep && electron-builder --linux dir --publish never -c.directories.output=dist/linux",
+    "electron:build:linux:appimage": "npm run build && npm run electron:prep && electron-builder --linux AppImage --publish never -c.directories.output=dist/linux-appimage",
     "app": "node scripts/refresh-local-electron-app.mjs",
     "electron:local": "node scripts/refresh-local-electron-app.mjs",
     "electron:refresh": "node scripts/refresh-local-electron-app.mjs --no-launch",
@@ -29,6 +30,7 @@
     "ipad:doctor": "node scripts/ipad-doctor.mjs",
     "ipad:open": "npx cap open ios",
     "apps:plan": "node scripts/app-surface-plan.mjs",
+    "soundfonts:fetch": "node scripts/fetch-soundfonts.mjs",
     "hooks:install": "node scripts/install-git-hooks.mjs",
     "start": "next start",
     "test": "node --check electron/main.cjs && node --check electron/launch-helpers.cjs && tsx --test test/**/*.test.ts",
@@ -114,6 +116,11 @@
       "category": "AudioVideo;Audio;Music",
       "icon": "assets/app-icon.png",
       "executableName": "nex-note",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "nex-note"
+        }
+      },
       "target": [
         "dir"
       ]

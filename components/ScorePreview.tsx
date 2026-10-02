@@ -1,5 +1,6 @@
 'use client';
 
+import { applyNotationFont } from '@/lib/notation-font';
 import { useEffect, useRef, useState } from 'react';
 import { resolveMusicXmlMetadataDrawOptions } from '@/lib/musicxml-metadata-display';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
@@ -44,6 +45,7 @@ export default function ScorePreview({ xml, className = '', onRendered }: Props)
             ...metadataDrawOptions,
             drawingParameters: 'default',
         });
+        applyNotationFont(osmd);
         await osmd.load(nestedTupletRenderXml(xml, core));
         if (cancelled) return;
         if (hasNestedTuplets(core)) {

@@ -404,7 +404,7 @@ function SidebarSection({
 }
 
 function withShortcut(label: string, shortcut: string) {
-  return `${label} (${shortcut})`;
+  return `${label} (${formatShortcutHint(shortcut)})`;
 }
 
 function stripShortcutSuffix(label: string) {
@@ -646,7 +646,7 @@ export default function NoteInputToolbar({
           key={interval}
           onClick={() => onAddInterval(interval)}
           disabled={!selectedNote || isRest}
-          title={`Add ${label.toLowerCase()} above (Alt/Option+${interval})`}
+          title={formatShortcutHint(`Add ${label.toLowerCase()} above (Alt/Option+${interval})`)}
           disabledReason={pitchedSelectionDisabledReason}
         >
           <span className="text-[10px] font-semibold tabular-nums">+{interval}</span>
@@ -696,7 +696,7 @@ export default function NoteInputToolbar({
           key={tuplet.actual}
           onClick={() => onAddTuplet(tuplet.actual)}
           disabled={!selectedNote}
-          title={tuplet.title}
+          title={formatShortcutHint(tuplet.title)}
           disabledReason={!selectedNote ? noteRequiredReason : undefined}
           wide
         >
@@ -753,7 +753,7 @@ export default function NoteInputToolbar({
       ))}
       <TBtn
         onClick={onToggleEntryMode}
-        title={`${t('note.entry')}: ${entryMode} (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)`}
+        title={formatShortcutHint(`${t('note.entry')}: ${entryMode} (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)`)}
         active={entryMode === 'overwrite'}
         wide
       >
@@ -761,7 +761,7 @@ export default function NoteInputToolbar({
       </TBtn>
       <TBtn
         onClick={onToggleChordInputMode}
-        title={`${chordInputMode ? t('note.chordInputOn') : t('note.chordInputOff')} (Cmd/Ctrl+Shift+H)`}
+        title={formatShortcutHint(`${chordInputMode ? t('note.chordInputOn') : t('note.chordInputOff')} (Cmd/Ctrl+Shift+H)`)}
         active={chordInputMode}
         wide
       >
@@ -925,7 +925,7 @@ export default function NoteInputToolbar({
         disabled={!selectedNote}
         aria-label={t('note.chordSymbol')}
         placeholder="Cmaj7"
-        title={selectionRequiredTitle(`${t('note.chordSymbol')} (Cmd/Ctrl+K)`)}
+        title={selectionRequiredTitle(formatShortcutHint(`${t('note.chordSymbol')} (Cmd/Ctrl+K)`))}
         className="h-8 w-24 rounded-md border border-nex-border bg-white px-2 text-xs font-semibold text-nex-ink outline-none transition-colors placeholder:text-slate-300 focus:border-nex-accent disabled:bg-nex-surface disabled:text-slate-300"
       />
       <TBtn
@@ -1108,7 +1108,7 @@ export default function NoteInputToolbar({
           <button
             type="button"
             onClick={() => onChangeActiveOctave(-1)}
-            title={`${t('note.lowerOctave')} (Shift+ArrowDown / Cmd/Ctrl+ArrowDown)`}
+            title={formatShortcutHint(`${t('note.lowerOctave')} (Shift+ArrowDown / Cmd/Ctrl+ArrowDown)`)}
             className="h-7 min-w-8 rounded-md px-2 text-[10px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-white hover:text-nex-ink"
           >
             8va-
@@ -1131,7 +1131,7 @@ export default function NoteInputToolbar({
           <button
             type="button"
             onClick={() => onChangeActiveOctave(1)}
-            title={`${t('note.raiseOctave')} (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)`}
+            title={formatShortcutHint(`${t('note.raiseOctave')} (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)`)}
             className="h-7 min-w-8 rounded-md px-2 text-[10px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-white hover:text-nex-ink"
           >
             8va+
@@ -1187,7 +1187,7 @@ export default function NoteInputToolbar({
         <SidebarSection
           title="Intervals"
           summary="1 · 3 · 5 · 8"
-          hoverTitle="Add interval above: Alt/Option+1–9"
+          hoverTitle={formatShortcutHint("Add interval above: Alt/Option+1–9")}
           open={sidebarSections.intervals}
           onToggle={() => toggleSidebarSection('intervals')}
         >

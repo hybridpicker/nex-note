@@ -62,3 +62,6 @@ artifacts/**/*.omr
 
 # AI tool state
 .deepseek/
+
+# Offline playback samples (npm run soundfonts:fetch)
+/public/soundfonts/

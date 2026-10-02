@@ -127,7 +127,36 @@ function isAllowedRendererPermission(permission, requestingUrl, rendererUrl, det
   }
 }
 
+// Linux hides the native menu bar, which also disables menu accelerators. These helpers let the main
+// process match key events against menu accelerators itself.
+function parseAccelerator(accelerator) {
+  if (typeof accelerator !== 'string' || !accelerator) return null;
+  const parsed = { key: '', ctrl: false, shift: false, alt: false };
+  for (const token of accelerator.split('+')) {
+    const lower = token.toLowerCase();
+    if (lower === 'commandorcontrol' || lower === 'cmdorctrl' || lower === 'ctrl' || lower === 'control') parsed.ctrl = true;
+    else if (lower === 'shift') parsed.shift = true;
+    else if (lower === 'alt' || lower === 'option') parsed.alt = true;
+    else parsed.key = lower === 'plus' ? '+' : lower;
+  }
+  // "Ctrl++" splits into empty tokens: treat a trailing empty token as the plus key.
+  if (!parsed.key && accelerator.endsWith('+')) parsed.key = '+';
+  return parsed.key ? parsed : null;
+}
+
+function acceleratorMatchesInput(parsed, input) {
+  if (!parsed || !input || input.type !== 'keyDown') return false;
+  if (Boolean(input.control) !== parsed.ctrl || Boolean(input.alt) !== parsed.alt || input.meta) return false;
+  const key = String(input.key || '').toLowerCase();
+  const symbolKey = ['+', '-', '='].includes(parsed.key);
+  if (!symbolKey && Boolean(input.shift) !== parsed.shift) return false;
+  if (parsed.key === '+') return key === '+' || key === '=';
+  return key === parsed.key;
+}
+
 module.exports = {
+  acceleratorMatchesInput,
+  parseAccelerator,
   buildChildProcessEnv,
   buildExecutablePath,
   decideLocalBuildFreshness,

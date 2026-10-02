@@ -5,6 +5,8 @@ const validMenuCommandPattern = /^(file|edit|view|help):[A-Za-z0-9]+$/;
 function markElectronDocument() {
   if (typeof document === 'undefined' || !document.documentElement) return;
   document.documentElement.classList.add('nex-note-electron');
+  // Linux hides the native menu bar (tiling WM), so the in-app menus must stay visible.
+  if (process.platform === 'linux') document.documentElement.classList.add('nex-note-linux');
 }
 
 markElectronDocument();
@@ -45,6 +47,7 @@ contextBridge.exposeInMainWorld('nexNoteElectron', {
       }
     };
     ipcRenderer.on('nex-note:open-file', listener);
+    ipcRenderer.send('nex-note:open-file-ready');
     return () => ipcRenderer.removeListener('nex-note:open-file', listener);
   },
   openFileDialog() {
@@ -55,6 +58,9 @@ contextBridge.exposeInMainWorld('nexNoteElectron', {
   },
   readUserTemplateSample(payload) {
     return ipcRenderer.invoke('nex-note:read-user-template-sample', payload);
+  },
+  exportPdf(suggestedName) {
+    return ipcRenderer.invoke('nex-note:export-pdf', { suggestedName: String(suggestedName || 'score') });
   },
   performNativeEditCommand(command) {
     return ipcRenderer.invoke('nex-note:native-edit-command', command);

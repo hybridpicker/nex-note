@@ -9,7 +9,7 @@
 :root {
   --background: #f7f8fa;
   --foreground: #0b0f14;
-  --font-geist-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-geist-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", Inter, "Noto Sans", "DejaVu Sans", Helvetica, Arial, sans-serif;
   --font-geist-mono: "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
 }
 
@@ -187,7 +187,7 @@ html.nex-note-native {
   box-shadow: 0 10px 24px -16px rgb(79 70 255 / 0.8);
 }
 
-.nex-note-electron .nex-electron-hidden {
+.nex-note-electron:not(.nex-note-linux) .nex-electron-hidden {
   display: none !important;
 }
 
@@ -580,3 +580,39 @@ html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
 [data-pencil-focus="true"] [data-testid="notation-toolbar"] button { min-width: 48px; min-height: 48px; }
 [data-pencil-focus="true"] [data-testid="workspace-collapsed-rail"] { width: 48px; }
 [data-pencil-focus="true"] [data-testid="workspace-collapsed-rail"] button { width: 44px; height: 48px; }
+
+/* Tiled Linux windows can be narrow: let the header wrap instead of overflowing. */
+@media (max-width: 1100px) {
+  .nex-note-linux .nex-brand-toolbar {
+    height: auto !important;
+    min-height: 3.5rem;
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .nex-note-linux .nex-brand-toolbar .nex-header-action-label {
+    display: none;
+  }
+}
+
+/* PDF/print: A4 with zero page margin (the margin area would otherwise show the window background);
+   the 10mm gutter is body padding instead. */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: auto !important;
+    min-width: 0 !important;
+  }
+
+  body {
+    padding: 10mm !important;
+    box-sizing: border-box !important;
+  }
+}

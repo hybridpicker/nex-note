@@ -602,8 +602,9 @@ test('CommandCenter exposes shortcut and disabled reason in row titles', () => {
   const saveButton = buttons.find((button) => nodeText(button).includes('Save'))!;
   const playButton = buttons.find((button) => nodeText(button).includes('Play score'))!;
 
-  assert.equal(saveButton.props.title, 'Save - Cmd S - Unavailable: Open or create a score first');
-  assert.equal(saveButton.props['aria-label'], 'Save - Cmd S - Unavailable: Open or create a score first');
+  const saveHint = formatShortcutHint('Cmd S');
+  assert.equal(saveButton.props.title, `Save - ${saveHint} - Unavailable: Open or create a score first`);
+  assert.equal(saveButton.props['aria-label'], `Save - ${saveHint} - Unavailable: Open or create a score first`);
   assert.equal(playButton.props.title, 'Play score - Space - Start playback');
   assert.equal(playButton.props['aria-label'], 'Play score - Space - Start playback');
 
@@ -629,7 +630,7 @@ test('NotationToolbar surfaces playback, history, tempo, metronome, and error UI
   const root = renderer!.root;
   const buttons = root.findAllByType('button');
   const titles = buttons.map((button) => button.props.title).filter(Boolean);
-  assert.ok(titles.includes('Undo (Cmd/Ctrl+Z)'));
+  assert.ok(titles.includes(formatShortcutHint('Undo (Cmd/Ctrl+Z)')));
   assert.ok(titles.includes('Pause (Space)'));
   assert.ok(titles.includes('Stop'));
   assert.ok(titles.includes('Metronome on'));
@@ -676,7 +677,7 @@ test('NotationToolbar exposes active-note controls when a note is selected', () 
     && typeof node.props.title === 'string'
     && (
       node.props.title === 'Set active note to C (C)'
-      || node.props.title === 'Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)'
+      || node.props.title === formatShortcutHint('Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)')
     )
   ));
   assert.equal(activeButtons.length, 2);
@@ -817,7 +818,7 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   assert.equal(microphonePicker.props.value, 'built-in');
   const recognitionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Pitch recognition mode' })[0]!;
   assert.equal(recognitionPicker.props.value, 'chord');
-  assert.match(recognitionPicker.props.title, /Alt\/Option\+C/);
+  assert.match(recognitionPicker.props.title, /Alt(?:\/Option)?\+C/);
   const transpositionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Instrument transposition' })[0]!;
   assert.equal(transpositionPicker.props.value, 'guitar');
   assert.match(nodeText(renderer!.root.findByProps({ 'data-testid': 'microphone-signal-status' })), /Signal good.*-28 dB/);
@@ -1011,11 +1012,11 @@ test('NotationToolbar explains selection-required disabled edit buttons', () => 
   const root = renderer!.root;
   const titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
   assert.ok(titles.includes('Toggle slur (S) - Select a note first'));
-  assert.ok(titles.includes('Triplet from selection (Cmd/Ctrl+3) - Select a note first'));
+  assert.ok(titles.includes(formatShortcutHint('Triplet from selection (Cmd/Ctrl+3) - Select a note first')));
   assert.ok(titles.includes('Insert rest (R or 0) - Select a note first'));
 
   const chordInput = root.findAllByProps({ placeholder: 'Cmaj7' })[0];
-  assert.equal(chordInput.props.title, 'Chord symbol (Cmd/Ctrl+K) - Select a note first');
+  assert.equal(chordInput.props.title, formatShortcutHint('Chord symbol (Cmd/Ctrl+K) - Select a note first'));
 
   act(() => {
     renderer?.unmount();
@@ -1087,7 +1088,7 @@ test('NotationToolbar exposes consistent shortcut hints and pitched-note disable
     && title.includes('Long: 9')
     && title.includes('Dotted note: .')
   )));
-  assert.ok(titles.includes('Voice 3 (Cmd/Ctrl+Alt/Option+3)'));
+  assert.ok(titles.includes(formatShortcutHint('Voice 3 (Cmd/Ctrl+Alt/Option+3)')));
   assert.ok(titles.includes('Flat (-)'));
   assert.ok(titles.includes('Toggle slur (S) - Select a pitched note first'));
   assert.ok(titles.includes('Staccato (Shift+S) - Select a pitched note first'));
@@ -1101,7 +1102,7 @@ test('NotationToolbar exposes consistent shortcut hints and pitched-note disable
   root = renderer!.root;
   titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
   assert.ok(titles.includes('Set active note to F (F)'));
-  assert.ok(titles.includes('Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)'));
+  assert.ok(titles.includes(formatShortcutHint('Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)')));
 
   act(() => {
     renderer?.unmount();
@@ -1350,12 +1351,12 @@ test('NotationToolbar exposes MuseScore tuplet buttons 2 through 9', () => {
 
   const root = renderer!.root;
   const titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
-  assert.ok(titles.includes('Duplet 2:3 from selection (Cmd/Ctrl+2)'));
-  assert.ok(titles.includes('Triplet from selection (Cmd/Ctrl+3)'));
-  assert.ok(titles.includes('Nonuplet 9:8 from selection (Cmd/Ctrl+9)'));
+  assert.ok(titles.includes(formatShortcutHint('Duplet 2:3 from selection (Cmd/Ctrl+2)')));
+  assert.ok(titles.includes(formatShortcutHint('Triplet from selection (Cmd/Ctrl+3)')));
+  assert.ok(titles.includes(formatShortcutHint('Nonuplet 9:8 from selection (Cmd/Ctrl+9)')));
 
   act(() => {
-    root.findAllByProps({ title: 'Septuplet 7:4 from selection (Cmd/Ctrl+7)' })[0].props.onClick();
+    root.findAllByProps({ title: formatShortcutHint('Septuplet 7:4 from selection (Cmd/Ctrl+7)') })[0].props.onClick();
   });
 
   assert.deepEqual(tuplets, [7]);
@@ -1379,12 +1380,12 @@ test('NotationToolbar exposes interval entry buttons 1 through 9', () => {
 
   const root = renderer!.root;
   const titles = root.findAllByType('button').map((button) => button.props.title).filter(Boolean);
-  assert.ok(titles.includes('Add unison above (Alt/Option+1)'));
-  assert.ok(titles.includes('Add third above (Alt/Option+3)'));
-  assert.ok(titles.includes('Add ninth above (Alt/Option+9)'));
+  assert.ok(titles.includes(formatShortcutHint('Add unison above (Alt/Option+1)')));
+  assert.ok(titles.includes(formatShortcutHint('Add third above (Alt/Option+3)')));
+  assert.ok(titles.includes(formatShortcutHint('Add ninth above (Alt/Option+9)')));
 
   act(() => {
-    root.findAllByProps({ title: 'Add fifth above (Alt/Option+5)' })[0].props.onClick();
+    root.findAllByProps({ title: formatShortcutHint('Add fifth above (Alt/Option+5)') })[0].props.onClick();
   });
   assert.deepEqual(intervals, [5]);
 

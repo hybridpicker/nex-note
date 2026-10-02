@@ -1,5 +1,8 @@
 'use client';
 
+import PlaybackMixer from '@/components/PlaybackMixer';
+import type { MixerState } from '@/lib/playback-mixer';
+import { formatShortcutHint } from '@/lib/shortcut-hints';
 import NoteInputToolbar from '@/components/NoteInputToolbar';
 import { useI18n } from '@/lib/i18n';
 import type { PlaybackState } from '@/hooks/usePlayback';
@@ -34,6 +37,7 @@ interface Props {
   onTempoChange: (bpm: number) => void;
   onSeek: (beat: number) => void;
   onToggleMetronome: () => void;
+  onMixerChange?: (state: MixerState) => void;
   // Note editing
   noteInputMode: boolean;
   chordInputMode: boolean;
@@ -266,7 +270,7 @@ function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selected
 
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
-  playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome,
+  playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome, onMixerChange,
   noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
   entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleInputAudition, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onSelectMicrophoneInstrumentMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
@@ -383,6 +387,10 @@ export default function NotationToolbar({
           <span className="w-7 text-[11px] font-semibold tabular-nums text-slate-700">{displayTempo}</span>
         </div>
 
+        {onMixerChange && coreDocument && (
+          <PlaybackMixer parts={coreDocument.score.parts} onChange={onMixerChange} />
+        )}
+
         <Divider />
 
         {/* Status */}
@@ -472,7 +480,7 @@ export default function NotationToolbar({
             </span>
             <select
               aria-label="Pitch recognition mode"
-              title="Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Alt/Option+C switches modes"
+              title={formatShortcutHint("Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Alt/Option+C switches modes")}
               value={microphoneDetectionMode}
               onChange={(event) => onSelectMicrophoneDetectionMode(event.target.value as MicrophoneDetectionMode)}
               className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"

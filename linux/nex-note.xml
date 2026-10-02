@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-nex-note-project">
+    <comment>Nex Note project</comment>
+    <glob pattern="*.nxn"/>
+  </mime-type>
+  <mime-type type="application/x-musescore">
+    <comment>MuseScore score</comment>
+    <glob pattern="*.mscz"/>
+  </mime-type>
+  <mime-type type="application/vnd.recordare.musicxml">
+    <comment>Compressed MusicXML</comment>
+    <glob pattern="*.mxl"/>
+  </mime-type>
+  <mime-type type="application/x-guitar-pro">
+    <comment>Guitar Pro tablature</comment>
+    <glob pattern="*.gp"/>
+    <glob pattern="*.gp3"/>
+    <glob pattern="*.gp4"/>
+    <glob pattern="*.gp5"/>
+    <glob pattern="*.gpx"/>
+  </mime-type>
+</mime-info>

@@ -1,5 +1,6 @@
 'use client';
 
+import { channelGainFactor, type MixerState } from '@/lib/playback-mixer';
 import { captureInputMetric, markInputFeedback } from '@/src/score-input/input-metrics';
 import { useRef, useState, useCallback, useEffect, type RefObject } from 'react';
 import { dbg } from '@/lib/debug';
@@ -17,6 +18,11 @@ import {
 import type { SelectedNote } from '@/hooks/useNoteEditor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import type { ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
+
+const LOCAL_SOUNDFONT_OPTIONS = {
+  soundfont: 'FluidR3_GM' as const,
+  nameToUrl: (name: string, soundfont?: string, format?: string) => `/soundfonts/${soundfont ?? 'FluidR3_GM'}/${name}-${format === 'ogg' ? 'ogg' : 'mp3'}.js`,
+};
 
 export type PlaybackState = 'stopped' | 'playing' | 'paused';
 
@@ -1025,6 +1031,8 @@ export function usePlayback(options?: {
   sampleBank?: PlaybackSampleBank | null;
 }) {
   const [playbackState, setPlaybackState] = useState<PlaybackState>('stopped');
+  const mixerRef = useRef<MixerState>({});
+  const setMixer = useCallback((state: MixerState) => { mixerRef.current = state; }, []);
   const [totalBeats, setTotalBeats]           = useState(0);
   const [playbackPosition, setPlaybackPosition] = useState<{
     currentMeasure: number;
@@ -1255,10 +1263,16 @@ export function usePlayback(options?: {
           timeoutId = setTimeout(() => reject(new Error(`soundfont load timed out after ${SOUND_FONT_LOAD_TIMEOUT_MS}ms`)), SOUND_FONT_LOAD_TIMEOUT_MS);
         });
         try {
-          player = await Promise.race([
-            instrument(ac, soundfont as import('soundfont-player').InstrumentName),
-            soundfontTimeout,
-          ]);
+          // Offline-first: samples fetched by `npm run soundfonts:fetch` are served from /soundfonts;
+          // only when they are missing does soundfont-player fall back to its remote default host.
+          const loadInstrument = async () => {
+            try {
+              return await instrument(ac, soundfont as import('soundfont-player').InstrumentName, LOCAL_SOUNDFONT_OPTIONS);
+            } catch {
+              return instrument(ac, soundfont as import('soundfont-player').InstrumentName);
+            }
+          };
+          player = await Promise.race([loadInstrument(), soundfontTimeout]);
         } catch (err) {
           dbg.warn('playback', `soundfont ${soundfont} unavailable, falling back to oscillator playback:`, err);
           player = createOscillatorFallbackPlayer(ac);
@@ -1355,7 +1369,12 @@ export function usePlayback(options?: {
         const startAt = Math.max(noteAcTime, nowAc);
         const multiplicity = Math.max(1, note.multiplicity ?? 1);
         const gainBoost = Math.sqrt(multiplicity);
-        const gain = Math.max(0.05, Math.min(1.5, note.velocity * 0.9 * gainBoost));
+        const mixFactor = channelGainFactor(mixerRef.current, note.partId);
+        if (mixFactor <= 0) {
+          i++;
+          continue;
+        }
+        const gain = Math.max(0.05, Math.min(1.5, note.velocity * 0.9 * gainBoost * mixFactor));
         const sampleBank = sampleBankRef.current;
         let handle: unknown;
         let handleDuration = note.duration / scale;
@@ -2016,6 +2035,6 @@ export function usePlayback(options?: {
     midiLoading, hasMidi, playbackError, tempoOverride, playbackCursorTarget, playhead, currentTimeMs, isPaused,
     metronomeEnabled, setMetronomeEnabled,
     loadMidi, ensureMidiLoaded, preloadMidi, prewarm, play, pause, stop, seek, seekToCursorTarget, startFromNote, previewNote, previewNotes,
-    setTempo,
+    setTempo, setMixer,
   };
 }

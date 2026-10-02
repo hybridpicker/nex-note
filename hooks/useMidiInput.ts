@@ -58,7 +58,13 @@ export function useMidiInput({ onChord, preferFlats = false, active = true, onMe
     const access = accessRef.current;
     if (!access) return;
     const ports = [...access.inputs.values()].filter(port => port.state !== 'disconnected');
-    setDevices(ports.map(port => ({ id: port.id, name: [port.manufacturer, port.name].filter(Boolean).join(' ').trim() || 'MIDI input' })));
+    const nextDevices = ports.map(port => ({ id: port.id, name: [port.manufacturer, port.name].filter(Boolean).join(' ').trim() || 'MIDI input' }));
+    // Avoid re-rendering on every poll tick when nothing changed.
+    setDevices(current => (
+      current.length === nextDevices.length && current.every((device, index) => device.id === nextDevices[index].id && device.name === nextDevices[index].name)
+        ? current
+        : nextDevices
+    ));
     if (!selectedRef.current && ports[0]) {
       selectedRef.current = ports[0].id;
       setSelectedDeviceId(ports[0].id);
@@ -132,6 +138,19 @@ export function useMidiInput({ onChord, preferFlats = false, active = true, onMe
   }, [detachPorts, refreshPorts]);
   const toggle = useCallback(async () => { if (enabled) disable(); else await enable(); }, [disable, enable, enabled]);
   useEffect(() => { discard(); }, [active, discard]);
+  // Chromium on Linux (ALSA/PipeWire) does not reliably fire `statechange` on USB hotplug,
+  // so re-read the port list periodically and when the window regains focus.
+  useEffect(() => {
+    if (!enabled) return;
+    const rescanPorts = () => { if (accessRef.current) refreshPorts(); };
+    const timer = setInterval(rescanPorts, 3000);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    window.addEventListener('focus', rescanPorts);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', rescanPorts);
+    };
+  }, [enabled, refreshPorts]);
   useEffect(() => {
     const blur = () => { focusedRef.current = false; discard(); };
     const focus = () => { focusedRef.current = true; discard(); };
@@ -148,5 +167,5 @@ export function useMidiInput({ onChord, preferFlats = false, active = true, onMe
       document.removeEventListener('visibilitychange', hidden);
     };
   }, [detachPorts, discard]);
-  return { enabled, status, devices, deviceNames: devices.map(device => device.name), selectedDeviceId, selectDevice, enable, disable, toggle, discard };
+  return { enabled, status, devices, deviceNames: devices.map(device => device.name), selectedDeviceId, selectDevice, enable, disable, toggle, discard, rescan: enable };
 }

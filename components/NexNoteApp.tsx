@@ -1,5 +1,7 @@
 'use client';
 
+import { buildPartsArchive } from '@/lib/parts-archive';
+import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { use, useState, useCallback, useEffect, useLayoutEffect, useRef, startTransition, useMemo, useDeferredValue, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { flushSync } from 'react-dom';
@@ -147,6 +149,7 @@ type NexNoteElectronApi = {
     filename: string;
   }) => Promise<ArrayBuffer | Uint8Array>;
   performNativeEditCommand: (command: NativeEditCommand) => Promise<void>;
+  exportPdf?: (suggestedName: string) => Promise<{ ok: boolean; reason?: string }>;
   updateMenuState: (state: {
     hasScore: boolean;
     hasCoreDocument: boolean;
@@ -722,6 +725,7 @@ export default function Home({ searchParams }: HomeProps) {
   const [nxnProjectDirectoryLabel, setNxnProjectDirectoryLabel] = useState('');
   const [printView, setPrintView] = useState(false);
   const [pendingPrint, setPendingPrint] = useState(false);
+  const [pendingPdfExport, setPendingPdfExport] = useState(false);
   const [printReadyXml, setPrintReadyXml] = useState<string | null>(null);
   const [newScoreDialogOpen, setNewScoreDialogOpen] = useState(false);
   const [newScoreInitialTab, setNewScoreInitialTab] = useState<DialogTab>('instruments');
@@ -1053,7 +1057,7 @@ export default function Home({ searchParams }: HomeProps) {
   const {
     playbackState, currentMeasure, currentBeat, totalBeats, midiLoading,
     ensureMidiLoaded, preloadMidi, prewarm, play, pause, stop, seek, seekToCursorTarget, startFromNote, previewNote, previewNotes, setTempo, tempoOverride, hasMidi, playbackError, playbackCursorTarget, playhead,
-    metronomeEnabled, setMetronomeEnabled,
+    metronomeEnabled, setMetronomeEnabled, setMixer,
   } = usePlayback({ coreDocument, selectedNoteRef: playbackSelectedNoteRef, selectedMeasureNumbers, sampleBank: playbackSampleBank });
 
   const markMidiReady = useCallback((loadedXml: string) => {
@@ -1794,11 +1798,17 @@ export default function Home({ searchParams }: HomeProps) {
   useEffect(() => {
     if (!pendingPrint || !printView || printReadyXml !== xml) return;
     const frame = window.requestAnimationFrame(() => {
-      window.print();
+      const electronApi = getNexNoteElectronApi();
+      if (pendingPdfExport && electronApi?.exportPdf) {
+        void electronApi.exportPdf(filename || 'score');
+      } else {
+        window.print();
+      }
       setPendingPrint(false);
+      setPendingPdfExport(false);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [pendingPrint, printReadyXml, printView, xml]);
+  }, [filename, pendingPdfExport, pendingPrint, printReadyXml, printView, xml]);
 
   useEffect(() => {
     if (!pendingAutoNoteInput || !xml) return;
@@ -2174,6 +2184,12 @@ export default function Home({ searchParams }: HomeProps) {
       fromPrintView: printView,
     });
   }, [printView, xml]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!xml) return;
+    setPendingPdfExport(true);
+    handlePrintScore();
+  }, [handlePrintScore, xml]);
 
   const handleOpenFilePicker = useCallback(() => {
     const electronApi = getNexNoteElectronApi();
@@ -3007,6 +3023,18 @@ export default function Home({ searchParams }: HomeProps) {
     recordBugReportEvent('workspace', 'download-abc:success', { filename: downloadName });
   }
 
+  async function handleDownloadParts() {
+    if (!xml) return;
+    try {
+      const { bytes, entries } = await buildPartsArchive(xml, filename);
+      const downloadName = `${filename.replace(/\.[^.]+$/, '') || 'score'}-parts.zip`;
+      downloadBlob(new Blob([bytes as BlobPart], { type: 'application/zip' }), downloadName);
+      recordBugReportEvent('workspace', 'download-parts:success', { filename: downloadName, parts: entries.length });
+    } catch (error) {
+      alert(`Parts export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   async function handleDownloadPracticePack() {
     recordBugReportEvent('workspace', 'download-practice-pack:start', { filename });
     const res = await fetch('/api/export-practice-pack', {
@@ -3343,6 +3371,12 @@ export default function Home({ searchParams }: HomeProps) {
         case 'file:exportAbc':
           void handleDownloadAbc();
           break;
+        case 'file:exportParts':
+          void handleDownloadParts();
+          break;
+        case 'file:exportPdf':
+          handleExportPdf();
+          break;
         case 'file:exportPracticePack':
           void handleDownloadPracticePack();
           break;
@@ -3438,6 +3472,7 @@ export default function Home({ searchParams }: HomeProps) {
     filename,
     handleCloseScore,
     handleDeleteSelection,
+    handleExportPdf,
     handleOpenFilePicker,
     handleOpenNewScoreDialog,
     handlePrintViewToggle,
@@ -4887,14 +4922,14 @@ export default function Home({ searchParams }: HomeProps) {
               source: 'header',
             });
           }}
-          title={`${t('app.searchCommands')} (Cmd/Ctrl+K)`}
+          title={formatShortcutHint(`${t('app.searchCommands')} (Cmd/Ctrl+K)`)}
           className="nex-header-command-center hidden h-8 items-center gap-2 rounded-md border border-nex-border bg-nex-surface px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-nex-ink sm:flex"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" />
           </svg>
           {t('app.searchCommands')}
-          <kbd className="rounded border border-nex-border bg-white px-1 py-0.5 text-[10px] text-slate-400">⌘K</kbd>
+          <kbd className="rounded border border-nex-border bg-white px-1 py-0.5 text-[10px] text-slate-400">{formatShortcutHint('Cmd+K')}</kbd>
         </button>
         <button
           onClick={handleOpenFilePicker}
@@ -5066,6 +5101,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onTempoChange={setTempo}
                     onSeek={seek}
                     onToggleMetronome={() => setMetronomeEnabled(v => !v)}
+                    onMixerChange={setMixer}
                     noteInputMode={noteInputMode}
                     chordInputMode={chordInputMode}
                     stepInputKeyboardMode={stepInputKeyboardMode}

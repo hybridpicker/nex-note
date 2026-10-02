@@ -1,5 +1,6 @@
 'use client';
 
+import { applyNotationFont } from '@/lib/notation-font';
 import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } from '@/src/render-bridge/osmd/nested-tuplets';
 
 import { inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback } from '@/src/score-input/input-metrics';
@@ -608,7 +609,7 @@ function postProcessTabClefs(container: HTMLElement) {
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('dominant-baseline', 'middle');
       text.setAttribute('fill', '#111827');
-      text.setAttribute('font-family', '"Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif');
+      text.setAttribute('font-family', '"Avenir Next", "Segoe UI", "Helvetica Neue", Inter, "Noto Sans", "DejaVu Sans", Arial, sans-serif');
       text.setAttribute('font-size', fontSize.toFixed(2));
       text.setAttribute('font-weight', '650');
       text.setAttribute('letter-spacing', '0');
@@ -12244,6 +12245,7 @@ export default function ScoreEditor({
       renderSingleHorizontalStaffline: viewMode === 'continuous-horizontal',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
+    applyNotationFont(osmd);
     osmdRef.current = osmd;
     return osmd;
   }, [coreDocument, viewMode, zoomPercent]);

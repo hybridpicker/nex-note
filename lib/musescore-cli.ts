@@ -6,7 +6,6 @@ import { cleanMuseScoreStderr } from './musescore-stderr';
 
 const COMMON_MUSESCORE_BINARIES = ['mscore', 'musescore', 'musescore4'];
 const COMMON_MUSESCORE_PATHS = [
-  '/home/jarvis/bin/mscore',
   '/usr/local/bin/mscore',
   '/usr/bin/mscore',
   '/usr/local/bin/musescore',

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { formatShortcutHint } from '@/lib/shortcut-hints';
 
 export const SUPPORTED_LOCALES = ['de', 'en', 'fr', 'es', 'zh'] as const;
 export type Locale = typeof SUPPORTED_LOCALES[number];
@@ -1256,10 +1257,10 @@ export function translate(locale: Locale, key: TranslationKey, values?: Record<s
   if (!dictionaries[locale][key] && locale !== FALLBACK_LOCALE && process.env.NODE_ENV !== 'production') {
     value = `[missing ${locale}:${key}] ${value}`;
   }
-  if (!values) return value;
-  return value.replace(/\{(\w+)\}/g, (match, name) => (
+  if (!values) return formatShortcutHint(value);
+  return formatShortcutHint(value.replace(/\{(\w+)\}/g, (match, name) => (
     Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match
-  ));
+  )));
 }
 
 type I18nContextValue = {
