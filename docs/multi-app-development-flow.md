@@ -10,6 +10,7 @@ surface is considered and the appropriate validation has been run.
 | --- | --- | --- | --- |
 | Next.js | Shared UI, product core, and server routes | `npm run dev` | Fast Refresh |
 | Electron macOS | Existing local packaged Mac app | `npm run app` | Verified rebuild from the current local `devel` worktree |
+| Electron Linux | Omarchy/Hyprland desktop app (`dist/linux`) | `./linux/install.sh` | Rebuild and reinstall from the worktree (`./linux/update.sh` pulls first) |
 | Native iPad | Private signed standalone iPad app | `npm run ipad:sync`; optional `npm run ipad:dev` | Bundled editor for normal installs; Fast Refresh in explicit live mode |
 | Xcode macOS | Planned private native Mac test app | See `macos-xcode-private-testing-prompt.md` | Must adopt the same Fast Refresh plus native rebuild split |
 

@@ -5,7 +5,8 @@
 Nex Note has one shared product core and multiple application surfaces:
 
 1. the Next.js web/development surface;
-2. the existing Electron macOS app;
+2. the existing Electron macOS app and the Electron Linux app (Omarchy;
+   `linux/`, `docs/linux-pro-roadmap.md`);
 3. the native Capacitor iPad app;
 4. the planned Xcode macOS app described in
    `docs/macos-xcode-private-testing-prompt.md`.

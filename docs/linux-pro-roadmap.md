@@ -31,6 +31,14 @@ layout projection, print view.
 - Packaging: `npm run electron:build:linux:appimage` (untested), `linux/update.sh`.
 - Verified live: window class `nex-note`, native Wayland (no XWayland), tiled.
 
+## Verification pass (synthetic score, packaged app, remote debugging)
+- Fixed: command-line / file-manager file open lost to a hydration race (renderer-ready handshake).
+- Fixed: menu accelerators did not fire with the hidden menu bar (main-process key handler; unit-tested matcher);
+  verified with real key chords (zoom, Ctrl+K, Ctrl+Shift+E).
+- Fixed: in-app menus were hidden on Linux (CSS keyed to Electron); header now wraps below 1100 px.
+- Fixed: PDF was US Letter with a dark margin; now A4, zero page margin, vector, tagged. Verified through the export handler.
+- Not verified by hand: saving through the GTK portal dialog, mixer and notation-font menu clicks, real MIDI hardware.
+
 ## Next, in priority order
 1. **Playback sound**: MuseScore_General (MIT) as a better default than FluidR3_GM, pan, optional FluidSynth
    sidecar. No VST/CLAP hosting.

@@ -433,6 +433,10 @@ function isImageFilename(name: string) {
   return isScoreImageFilename(name);
 }
 
+function playbackNoteKey(note: Pick<SelectedNote, 'measureNumber' | 'staffIndex' | 'voiceId' | 'timestampNum' | 'timestampDen'>) {
+  return [note.measureNumber, note.staffIndex, note.voiceId, note.timestampNum, note.timestampDen].join(':');
+}
+
 function fileFromBase64(payload: ElectronOpenFilePayload) {
   const binary = window.atob(payload.base64);
   const bytes = new Uint8Array(binary.length);
@@ -1100,6 +1104,9 @@ export default function Home({ searchParams }: HomeProps) {
   );
 
   const activePlaybackNote = noteInputAnchor ?? selectedNote;
+  const activePlaybackNoteRef = useRef(activePlaybackNote);
+  activePlaybackNoteRef.current = activePlaybackNote;
+  const playbackStartNoteKeyRef = useRef<string | null>(null);
 
   const preferFlatsForMidiInput = useMemo(() => {
     if (!coreDocument || !activePlaybackNote) return false;
@@ -1436,6 +1443,12 @@ export default function Home({ searchParams }: HomeProps) {
         if (playbackState === 'playing') pause();
         else {
           if (!xml) return;
+          // Start at the active note when playback is stopped, or when the selection moved since the
+          // playback started (e.g. arrow-key navigation while paused); otherwise resume where paused.
+          const startNote = activePlaybackNoteRef.current;
+          const startKey = playbackStartNoteKeyRef.current;
+          const noteKey = startNote ? playbackNoteKey(startNote) : null;
+          const fromNote = startNote && (playbackState === 'stopped' || noteKey !== startKey) ? startNote : null;
           void (async () => {
             const [ready] = await Promise.all([
               ensureMidiLoaded(xml),
@@ -1443,7 +1456,9 @@ export default function Home({ searchParams }: HomeProps) {
             ]);
             if (!ready) return;
             markMidiReady(xml);
-            await play();
+            playbackStartNoteKeyRef.current = noteKey;
+            if (fromNote) await startFromNote(fromNote);
+            else await play();
           })();
         }
         return;
@@ -1465,6 +1480,7 @@ export default function Home({ searchParams }: HomeProps) {
     prewarm,
     redo,
     selectMicrophoneDetectionMode,
+    startFromNote,
     undo,
     xml,
   ]);
@@ -3213,6 +3229,7 @@ export default function Home({ searchParams }: HomeProps) {
     ]);
     if (!ready) return;
     markMidiReady(xml);
+    playbackStartNoteKeyRef.current = activePlaybackNote ? playbackNoteKey(activePlaybackNote) : null;
     if (activePlaybackNote) {
       await startFromNote(activePlaybackNote);
       return;

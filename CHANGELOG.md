@@ -2,6 +2,29 @@
 
 All notable changes to nex-note are documented here.
 
+## Unreleased - 2026-10-02
+
+### Added
+
+- Linux (Omarchy/Hyprland) desktop app: native Wayland, tiled frameless window, installer/update/uninstall scripts, `nex-note` launcher, MIME types and icon entry.
+- Vector A4 PDF export (File > Export PDF..., Ctrl+Shift+E) and Export All Parts (ZIP).
+- Per-part playback mixer (volume, mute, solo).
+- Selectable notation font (Bravura default, Petaluma, Gonville), applied at next start.
+- Offline-first playback samples via `npm run soundfonts:fetch` (FluidR3_GM).
+- MIDI port rescan on a 3-second timer and window focus for unreliable ALSA/PipeWire hotplug events.
+
+### Fixed
+
+- Files passed on the command line or opened from the file manager were lost when sent before the renderer had registered its listener; delivery now waits for a renderer-ready signal.
+- Menu accelerators did not fire on Linux with the native menu bar hidden; the main process now handles file, zoom, find and command-center shortcuts.
+- Shortcut labels showed Cmd/Option on Linux in many places; they are now formatted centrally in `translate()`.
+- Print/PDF output used US Letter with a dark page margin; it now uses A4 with zero page margin.
+- Removed a stale machine-specific MuseScore path.
+
+### Validation
+
+- 1,135 unit tests pass. Verified in the packaged Linux app with a synthetic score: window class and native Wayland, command-line file open, key chords reaching the main process, export handler output (A4, tagged, vector). The GTK save dialog and mixer/notation-font menus were not exercised by hand.
+
 ## 0.0.7 - 2026-07-25
 
 ### Changed

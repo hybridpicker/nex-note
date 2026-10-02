@@ -19,6 +19,12 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Cmd/Ctrl+M` | Inspector öffnen und Rehearsal-Mark-Feld fokussieren | Partitur geöffnet |
 | `Space` | Playback starten/pausieren; bei gestoppter Wiedergabe und aktiver Note ab dieser Note starten | global, außer Eingabefelder |
 | `Escape` | Noteneingabe verlassen und Auswahl löschen | Noteneditor |
+| `Cmd/Ctrl+Shift+E` | PDF exportieren (A4, Vektor) | Desktop-App, Partitur geöffnet |
+| `Cmd/Ctrl++` / `Cmd/Ctrl+-` / `Cmd/Ctrl+0` | Zoom vergrößern/verkleinern/zurücksetzen | Desktop-App, Partitur geöffnet |
+
+## Linux (Omarchy)
+
+Unter Linux ist die native Menüleiste ausgeblendet (Kachel-Fenstermanager). Deshalb sind die In-App-Menüs `File`, `Edit` und `View` sichtbar, und der Hauptprozess verarbeitet diese Kürzel selbst: `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+Shift+E`, `Ctrl+F`, `Ctrl+K`, `Ctrl++`, `Ctrl+-`, `Ctrl+0` und `Ctrl+Q`. Bearbeitungstasten (Undo, Kopieren, Einfügen, Entf.) bleiben bei der Seite. Beschriftungen zeigen `Ctrl`/`Alt` statt `Cmd`/`Option`.
 
 ## Header-Menüs
 

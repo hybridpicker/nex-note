@@ -240,6 +240,29 @@ Do not move these rules back into untested inline startup code. Update `test/ele
 
 Current desktop status: useful for local testing and founder alpha builds, not yet a polished signed/notarized distribution. The current package configuration builds macOS `dmg` and `zip` artifacts with `identity: null`, so the output is unsigned/ad-hoc unless a signing identity and notarization workflow are added.
 
+## Linux Desktop App (Omarchy / Hyprland)
+
+The Electron app also runs as a native Linux app, tuned for tiling Wayland desktops such as Omarchy.
+
+```bash
+./linux/install.sh              # build and install to ~/.local/opt/nex-note (no root)
+./linux/install.sh --no-build   # reinstall the existing dist/linux build
+./linux/install.sh --uninstall  # remove app, launcher, icons and MIME entries
+./linux/update.sh               # git pull, rebuild, reinstall
+nex-note score.mxl              # open a file in the running instance
+```
+
+- **Window:** native Wayland (`--ozone-platform-hint=auto`), frameless and tiled; Wayland `app_id`/window class is `nex-note` for Hyprland rules (`hyprctl clients`). Set `NEX_NOTE_LINUX_FRAME=1` for a window frame. The minimum window size is 640x480 so tiles fit; the header wraps in narrow windows.
+- **Menus and shortcuts:** the native menu bar is hidden, so the in-app File/Edit/View menus stay visible and the main process handles the file, zoom, find and command-center shortcuts itself (editing keys stay with the page). Shortcut labels show Ctrl/Alt.
+- **Files:** the installer registers MIME types for `.nxn`, `.mscz`, `.mxl` and Guitar Pro; files opened from the file manager or the command line are delivered once the renderer is ready.
+- **Playback samples:** `npm run soundfonts:fetch` (run by the installer) downloads the FluidR3_GM instruments (MIT, about 53 MB) into `public/soundfonts`; playback uses them first, then the remote host, then oscillator tones.
+- **Export:** File > Export PDF... (Ctrl+Shift+E) writes a vector A4 PDF (tagged, fonts embedded) through Chromium `printToPDF`; File > Export All Parts (ZIP) writes one single-part MusicXML per part.
+- **Notation font:** Bravura (SMuFL) is the default; View > Notation Font offers Petaluma and Gonville, applied at next start.
+- **Mixer and MIDI:** the toolbar "Mixer" sets volume, mute and solo per part; the MIDI port list is re-read every 3 seconds and on window focus because Chromium does not reliably report ALSA/PipeWire hotplug.
+- **AppImage (untested):** `npm run electron:build:linux:appimage`.
+
+Roadmap, verification status and open gaps: [Linux professional-editor roadmap](./docs/linux-pro-roadmap.md). AI provider keys stay per machine (`.env.local.example`).
+
 ## Multi-app Development
 
 Shared Nex Note work must keep the web core, Electron macOS app, native iPad
@@ -394,6 +417,7 @@ Known final-release blockers: notarization, signing identity selection, final ic
 - [Keyboard shortcuts](./docs/keyboard-shortcuts.md)
 - [Documentation guide](./docs/README.md)
 - [Multi-app development flow](./docs/multi-app-development-flow.md)
+- [Linux (Omarchy) roadmap](./docs/linux-pro-roadmap.md)
 - [Private iPad testing](./docs/ipad-private-testing.md)
 - [Native macOS Xcode implementation prompt](./docs/macos-xcode-private-testing-prompt.md)
 - [Release readiness summary](./docs/final-release-readiness-summary.md)
