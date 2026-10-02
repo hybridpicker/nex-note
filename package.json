@@ -17,6 +17,7 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:prep": "node scripts/prepare-electron-package.mjs",
     "electron:build": "npm run build && npm run electron:prep && electron-builder --mac && npm run electron:verify",
+    "electron:build:linux": "npm run build && npm run electron:prep && electron-builder --linux dir --publish never -c.directories.output=dist/linux",
     "app": "node scripts/refresh-local-electron-app.mjs",
     "electron:local": "node scripts/refresh-local-electron-app.mjs",
     "electron:refresh": "node scripts/refresh-local-electron-app.mjs --no-launch",
@@ -107,6 +108,14 @@
       "target": [
         "dmg",
         "zip"
+      ]
+    },
+    "linux": {
+      "category": "AudioVideo;Audio;Music",
+      "icon": "assets/app-icon.png",
+      "executableName": "nex-note",
+      "target": [
+        "dir"
       ]
     },
     "fileAssociations": [
