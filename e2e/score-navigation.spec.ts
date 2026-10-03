@@ -316,10 +316,32 @@ test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page })
     canScrollX: node.scrollWidth > node.clientWidth + 1,
   });
   const before = await viewport.evaluate(measure, offset);
+  const consoleLines: string[] = [];
+  page.on('console', (message) => {
+    if (['error', 'warning'].includes(message.type())) consoleLines.push(`${message.type()}: ${message.text().slice(0, 300)}`);
+  });
+  page.on('pageerror', (error) => consoleLines.push(`pageerror: ${String(error).slice(0, 300)}`));
+  const renderProbe = () => page.evaluate(() => {
+    const canvas = document.querySelector('[data-testid="score-canvas"]');
+    const svg = canvas?.querySelector('svg');
+    const box = svg?.getBoundingClientRect();
+    return {
+      svgCount: canvas?.querySelectorAll('svg').length ?? -1,
+      svgWidth: Math.round(box?.width ?? -1),
+      svgHeight: Math.round(box?.height ?? -1),
+      zoomInput: (document.querySelector('[aria-label="Zoom percent"]') as HTMLInputElement | null)?.value,
+      loading: document.body.innerText.includes('Rendering'),
+    };
+  });
+  const probeBefore = await renderProbe();
 
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -100);
   await page.keyboard.up('Control');
+  await page.waitForTimeout(3000);
+  const probeAfter = await renderProbe();
+  // eslint-disable-next-line no-console
+  console.log('ZOOM-PROBE', JSON.stringify({ probeBefore, probeAfter, consoleLines }));
   await expect(page.getByLabel('Zoom percent')).toHaveValue('110');
   // The zoom rebuilds the score asynchronously; wait for the taller layout, then let scroll settle.
   await expect.poll(
