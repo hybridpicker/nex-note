@@ -12251,8 +12251,6 @@ export default function ScoreEditor({
       renderSingleHorizontalStaffline: viewMode === 'continuous-horizontal',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
-    // OSMD 1.9.9 ignores `zoom` as a constructor option; only the Zoom setter scales the drawing.
-    osmd.Zoom = zoomPercent / 100;
     applyNotationFont(osmd);
     osmdRef.current = osmd;
     return osmd;
@@ -12275,6 +12273,9 @@ export default function ScoreEditor({
     if (signal?.aborted) return null;
     installOsmdGlyphBoundsCache(osmd);
     recordInputMetric('osmd-load', performance.now() - loadStarted);
+    // OSMD ignores `zoom` as a constructor option and load() resets its zoom to 1,
+    // so the scale must be set after load and before render.
+    osmd.Zoom = zoomPercent / 100;
     const renderStarted = performance.now();
     osmd.render();
     const glyphCacheInstalled = installOsmdGlyphBoundsCache(osmd);
@@ -12282,7 +12283,7 @@ export default function ScoreEditor({
     recordInputMetric('osmd-render', performance.now() - renderStarted);
     if (containerRef.current) postProcessTabClefs(containerRef.current);
     return osmd;
-  }, [initializeOsmd, coreDocument]);
+  }, [initializeOsmd, coreDocument, zoomPercent]);
 
   const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (pencilOnlyInput && e.pointerType === 'touch') return;

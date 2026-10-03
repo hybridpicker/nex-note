@@ -316,43 +316,16 @@ test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page })
     canScrollX: node.scrollWidth > node.clientWidth + 1,
   });
   const before = await viewport.evaluate(measure, offset);
-  const consoleLines: string[] = [];
-  page.on('console', (message) => {
-    if (['error', 'warning'].includes(message.type())) consoleLines.push(`${message.type()}: ${message.text().slice(0, 300)}`);
-  });
-  page.on('pageerror', (error) => consoleLines.push(`pageerror: ${String(error).slice(0, 300)}`));
-  const renderProbe = () => page.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="score-canvas"]');
-    const svg = canvas?.querySelector('svg');
-    const box = svg?.getBoundingClientRect();
-    const notehead = canvas?.querySelector('[class*="vf-notehead"]')?.getBoundingClientRect();
-    const marked = svg ? Boolean((svg as unknown as { __zoomProbe?: boolean }).__zoomProbe) : null;
-    if (svg) (svg as unknown as { __zoomProbe?: boolean }).__zoomProbe = true;
-    return {
-      sameSvgAsPreviousProbe: marked,
-      noteheadWidth: Math.round((notehead?.width ?? -1) * 100) / 100,
-      svgViewBox: svg?.getAttribute('viewBox') ?? null,
-      svgCount: canvas?.querySelectorAll('svg').length ?? -1,
-      svgWidth: Math.round(box?.width ?? -1),
-      svgHeight: Math.round(box?.height ?? -1),
-      zoomInput: (document.querySelector('[aria-label="Zoom percent"]') as HTMLInputElement | null)?.value,
-      loading: document.body.innerText.includes('Rendering'),
-    };
-  });
-  const probeBefore = await renderProbe();
+  const noteheadWidth = () => page.evaluate(() => (
+    document.querySelector('[data-testid="score-canvas"] [class*="vf-notehead"]')?.getBoundingClientRect().width ?? -1
+  ));
+  const noteheadBefore = await noteheadWidth();
 
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -100);
   await page.keyboard.up('Control');
-  await page.waitForTimeout(3000);
-  const probeAfter = await renderProbe();
-  // eslint-disable-next-line no-console
-  console.log('ZOOM-PROBE', JSON.stringify({ probeBefore, probeAfter, consoleLines }));
-  await page.getByLabel('Zoom percent').fill('200');
-  await page.waitForTimeout(3000);
-  // eslint-disable-next-line no-console
-  console.log('ZOOM-PROBE-200', JSON.stringify({ probe: await renderProbe(), consoleLines }));
   await expect(page.getByLabel('Zoom percent')).toHaveValue('110');
+  await expect.poll(noteheadWidth, { timeout: 20_000, message: 'zoom must scale the notation' }).toBeGreaterThan(noteheadBefore);
   // The zoom rebuilds the score asynchronously; wait for the taller layout, then let scroll settle.
   await expect.poll(
     () => viewport.evaluate((node) => node.scrollHeight),
