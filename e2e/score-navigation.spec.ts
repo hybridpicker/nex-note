@@ -293,6 +293,7 @@ test('horizontal playback follow does not trigger viewport update depth warnings
 });
 
 test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page }) => {
+  test.setTimeout(90_000);
   await bootWithScore(page, 'long-zoom-anchor.musicxml', buildLongFixtureXml(40));
 
   const viewport = page.getByTestId('score-viewport');
@@ -319,10 +320,15 @@ test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page })
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -100);
   await page.keyboard.up('Control');
-  await page.waitForTimeout(2000);
+  await expect(page.getByLabel('Zoom percent')).toHaveValue('110');
+  // The zoom rebuilds the score asynchronously; wait for the taller layout, then let scroll settle.
+  await expect.poll(
+    () => viewport.evaluate((node) => node.scrollHeight),
+    { timeout: 20_000, message: 'score should re-render taller after zooming in' },
+  ).toBeGreaterThan(before.scrollHeight);
+  await page.waitForTimeout(500);
 
   const after = await viewport.evaluate(measure, offset);
-  expect(after.scrollHeight).toBeGreaterThan(before.scrollHeight);
   // The same relative position of the score stays under the pointer (5 % tolerance for reflow).
   expect(Math.abs(after.fy - before.fy)).toBeLessThan(0.05);
   if (before.canScrollX && after.canScrollX) {
