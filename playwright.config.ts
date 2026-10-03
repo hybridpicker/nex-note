@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 const PORT = Number(process.env.NEX_E2E_PORT ?? 3101);
 const HOST = process.env.NEX_E2E_HOST ?? 'localhost';
 const REUSE_EXISTING = process.env.NEX_E2E_REUSE === '1';
-const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const chromePath = process.env.NEX_E2E_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 export default defineConfig({
   testDir: './e2e',
