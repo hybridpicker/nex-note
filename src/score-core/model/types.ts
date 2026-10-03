@@ -124,6 +124,8 @@ export interface BaseTimedEvent {
   }>;
   preservedXml?: {
     beforePitch?: string[];
+    /** Serialized siblings that follow `<duration>` (for example `<instrument>`). */
+    afterDuration?: string[];
     afterType?: string[];
     notationChildren?: string[];
   };
@@ -150,6 +152,12 @@ export interface NoteEvent extends BaseTimedEvent {
 
 export interface RestEvent extends BaseTimedEvent {
   kind: 'rest';
+  /**
+   * Set when the source note was a MusicXML `<unpitched>` (percussion) note.
+   * Such notes are kept as opaque rest-kind events so import/export stays
+   * lossless; they are not pitched notes and are silent in playback.
+   */
+  unpitched?: { displayStep: string; displayOctave: number };
 }
 
 export interface DirectionNode {

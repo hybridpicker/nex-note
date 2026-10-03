@@ -163,6 +163,7 @@ function modeledOtherTechnicalText(element: XmlElement) {
 
 function collectPreservedNoteXml(note: XmlElement, options?: { omitSlashNotehead?: boolean; omitStem?: string; omitAccidental?: boolean; omitGuitarTechnical?: boolean; omitGuitarSlide?: boolean; omitGuitarVibrato?: boolean }) {
   const beforePitch: string[] = [];
+  const afterDuration: string[] = [];
   const afterType: string[] = [];
   const notationChildren: string[] = [];
 
@@ -172,6 +173,10 @@ function collectPreservedNoteXml(note: XmlElement, options?: { omitSlashNotehead
     const element = child as XmlElement;
     if (element.tagName === 'cue') {
       beforePitch.push(serializeElement(element));
+      continue;
+    }
+    if (element.tagName === 'instrument') {
+      afterDuration.push(serializeElement(element));
       continue;
     }
     if (element.tagName === 'notehead' && options?.omitSlashNotehead && (element.textContent ?? '').trim() === 'slash') {
@@ -233,8 +238,8 @@ function collectPreservedNoteXml(note: XmlElement, options?: { omitSlashNotehead
     }
   }
 
-  if (beforePitch.length === 0 && afterType.length === 0 && notationChildren.length === 0) return undefined;
-  return { beforePitch, afterType, notationChildren };
+  if (beforePitch.length === 0 && afterDuration.length === 0 && afterType.length === 0 && notationChildren.length === 0) return undefined;
+  return { beforePitch, ...(afterDuration.length > 0 ? { afterDuration } : {}), afterType, notationChildren };
 }
 
 function readGuitarTechnical(note: XmlElement): { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: GuitarTechniqueKind[] } | undefined {
@@ -831,6 +836,13 @@ function buildVoices(
     } as const;
 
     const pitch = note.getElementsByTagName('pitch')[0];
+    const unpitchedEl = pitch ? undefined : note.getElementsByTagName('unpitched')[0];
+    const unpitchedDisplay = unpitchedEl
+      ? {
+        displayStep: unpitchedEl.getElementsByTagName('display-step')[0]?.textContent ?? 'C',
+        displayOctave: parseIntSafe(unpitchedEl.getElementsByTagName('display-octave')[0]?.textContent, 4),
+      }
+      : undefined;
     const event: TimedEvent = pitch
       ? {
         ...baseEvent,
@@ -848,6 +860,7 @@ function buildVoices(
       : {
         ...baseEvent,
         kind: 'rest',
+        ...(unpitchedDisplay ? { unpitched: unpitchedDisplay } : {}),
       };
 
     const existing = eventsByVoice.get(voiceId) ?? [];

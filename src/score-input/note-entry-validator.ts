@@ -7,6 +7,7 @@ import type {
   TimedEvent,
   VoiceNode,
 } from '@/src/score-core/model/types';
+import { isPercussionStaffAtMeasure } from '@/src/score-input/staff-pitch';
 import type { ResolvedEditTarget } from '@/src/score-input/types';
 
 interface MeasureContext {
@@ -173,6 +174,18 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
     return {
       target: null,
       rejectionReason: 'measure-context-missing',
+      diagnostics,
+    };
+  }
+
+  if (isPercussionStaffAtMeasure(input.coreDocument, input.target.measureNumber, input.target.staffIndex, {
+    corePartId: input.target.corePartId,
+    measureId: input.target.measureId,
+  })) {
+    diagnostics.push('validation:percussion-staff-pitch-entry-unsupported');
+    return {
+      target: null,
+      rejectionReason: 'percussion-staff-pitch-entry-unsupported',
       diagnostics,
     };
   }

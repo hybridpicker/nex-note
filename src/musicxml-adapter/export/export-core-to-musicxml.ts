@@ -618,7 +618,7 @@ function buildEventElement(
     note.appendChild(graceEl);
   }
   appendPreservedXmlFragments(doc, note, event.preservedXml?.beforePitch);
-  if (chord && event.kind === 'note') note.appendChild(doc.createElement('chord'));
+  if (chord && (event.kind === 'note' || event.unpitched)) note.appendChild(doc.createElement('chord'));
 
   if (event.kind === 'note') {
     const pitch = doc.createElement('pitch');
@@ -626,6 +626,11 @@ function buildEventElement(
     if (event.pitch.alter !== 0) setOrCreateTextElement(doc, pitch, 'alter', String(event.pitch.alter));
     setOrCreateTextElement(doc, pitch, 'octave', String(event.pitch.octave));
     note.appendChild(pitch);
+  } else if (event.unpitched) {
+    const unpitched = doc.createElement('unpitched');
+    setOrCreateTextElement(doc, unpitched, 'display-step', event.unpitched.displayStep);
+    setOrCreateTextElement(doc, unpitched, 'display-octave', String(event.unpitched.displayOctave));
+    note.appendChild(unpitched);
   } else {
     note.appendChild(doc.createElement('rest'));
   }
@@ -633,6 +638,7 @@ function buildEventElement(
   if (!grace) {
     setOrCreateTextElement(doc, note, 'duration', String(event.durationDivisions));
   }
+  appendPreservedXmlFragments(doc, note, event.preservedXml?.afterDuration);
   setOrCreateTextElement(doc, note, 'voice', String(event.voiceId));
   if (event.durationType) setOrCreateTextElement(doc, note, 'type', event.durationType);
   if (event.isDotted) note.appendChild(doc.createElement('dot'));
@@ -1063,7 +1069,7 @@ function isGraceEvent(coreDocument: ScoreDocumentModel, eventId: string) {
 }
 
 function getRenderableEventsAtTimestamp(eventsAtTimestamp: TimedEvent[]) {
-  const notes = eventsAtTimestamp.filter((event): event is Extract<TimedEvent, { kind: 'note' }> => event.kind === 'note');
+  const notes = eventsAtTimestamp.filter((event) => event.kind === 'note' || Boolean(event.unpitched));
   if (notes.length > 0) return notes;
   const primaryEvent = eventsAtTimestamp.find((event) => !event.isChord) ?? eventsAtTimestamp[0];
   return primaryEvent ? [primaryEvent] : [];
@@ -1071,14 +1077,14 @@ function getRenderableEventsAtTimestamp(eventsAtTimestamp: TimedEvent[]) {
 
 function shouldWriteChordMarker(eventsAtTimestamp: TimedEvent[], eventIndex: number, coreDocument: ScoreDocumentModel) {
   const event = eventsAtTimestamp[eventIndex];
-  if (!event || event.kind !== 'note') return false;
+  if (!event || !(event.kind === 'note' || event.unpitched)) return false;
   if (eventIndex === 0) return false;
   if (isGraceEvent(coreDocument, event.id)) return false;
 
   // Grace notes often share the same semantic timestamp as their anchor note,
   // but they must stay sequential in MusicXML rather than becoming a chord.
   return eventsAtTimestamp.slice(0, eventIndex).some((entry) => (
-    entry.kind === 'note' && !isGraceEvent(coreDocument, entry.id)
+    (entry.kind === 'note' || Boolean(entry.unpitched)) && !isGraceEvent(coreDocument, entry.id)
   ));
 }
 

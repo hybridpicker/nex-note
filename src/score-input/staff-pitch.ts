@@ -85,14 +85,40 @@ export function topLineDiatonicIndex(clef: Clef): number {
   return anchorIndex + 2 * (5 - line) + 7 * octaveChange;
 }
 
+type ClefScope = { corePartId?: string | null; measureId?: string | null };
+
 export function resolveClefAtMeasure(
   coreDocument: ScoreDocumentModel | null | undefined,
   measureNumber: number,
   staffIndex: number,
-  scope?: { corePartId?: string | null; measureId?: string | null },
+  scope?: ClefScope,
 ): Clef {
-  const fallback: Clef = { sign: 'G', line: 2 };
-  if (!coreDocument) return fallback;
+  const clef = findLatestClef(coreDocument, measureNumber, staffIndex, scope, false);
+  return clef && clef !== 'percussion' ? clef : { sign: 'G', line: 2 };
+}
+
+/**
+ * True when the latest clef declared for the staff is a percussion clef. Such
+ * staves hold unpitched notes, so a pitch derived from a staff position
+ * would be meaningless and pointer pitch entry must fail closed.
+ */
+export function isPercussionStaffAtMeasure(
+  coreDocument: ScoreDocumentModel | null | undefined,
+  measureNumber: number,
+  staffIndex: number,
+  scope?: ClefScope,
+): boolean {
+  return findLatestClef(coreDocument, measureNumber, staffIndex, scope, true) === 'percussion';
+}
+
+function findLatestClef(
+  coreDocument: ScoreDocumentModel | null | undefined,
+  measureNumber: number,
+  staffIndex: number,
+  scope: ClefScope | undefined,
+  detectPercussion: boolean,
+): Clef | 'percussion' | null {
+  if (!coreDocument) return null;
   const normalizedPartId = scope?.corePartId?.replace(/^part:/, '') ?? null;
   const matchingParts = coreDocument.score.parts.filter((part) => (
     !normalizedPartId
@@ -116,8 +142,10 @@ export function resolveClefAtMeasure(
     for (const measure of sorted) {
       for (const attribute of measure.attributes) {
         const clef = attribute.clefs?.find((entry) => entry.staffIndex === staffIndex);
-        if (!clef?.sign || typeof clef.line !== 'number') continue;
+        if (!clef?.sign) continue;
         const sign = clef.sign.toUpperCase();
+        if (detectPercussion && sign === 'PERCUSSION') return 'percussion';
+        if (typeof clef.line !== 'number') continue;
         if (sign === 'G' || sign === 'F' || sign === 'C') {
           return typeof clef.octaveChange === 'number' && clef.octaveChange !== 0
             ? { sign, line: clef.line, octaveChange: clef.octaveChange }
@@ -126,7 +154,7 @@ export function resolveClefAtMeasure(
       }
     }
   }
-  return fallback;
+  return null;
 }
 
 // staffStep: 0 = top staff line, +1 per half line-space downward
