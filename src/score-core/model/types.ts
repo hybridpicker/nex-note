@@ -179,6 +179,8 @@ export interface MeasureAttributes {
     staffIndex: number;
     sign?: string;
     line?: number;
+    /** MusicXML clef-octave-change (-1 = 8vb, +1 = 8va); omitted when 0. */
+    octaveChange?: number;
   }>;
 }
 

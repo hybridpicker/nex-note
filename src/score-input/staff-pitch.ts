@@ -63,6 +63,8 @@ export function resolvePitchNameEntry(
 export interface Clef {
   sign: 'G' | 'F' | 'C';
   line: number;
+  /** MusicXML clef-octave-change: -1 for an 8vb clef (e.g. tenor treble), +1 for 8va. */
+  octaveChange?: number;
 }
 
 // Pitch that sits on the clef's own line (e.g. G4 on the G-clef line).
@@ -79,7 +81,8 @@ export function topLineDiatonicIndex(clef: Clef): number {
   const anchorIndex = diatonicPitchIndex(anchor.step, anchor.octave);
   const defaultLine = clef.sign === 'G' ? 2 : clef.sign === 'F' ? 4 : 3;
   const line = Number.isFinite(clef.line) && clef.line >= 1 && clef.line <= 5 ? clef.line : defaultLine;
-  return anchorIndex + 2 * (5 - line);
+  const octaveChange = Number.isFinite(clef.octaveChange) ? Math.trunc(clef.octaveChange!) : 0;
+  return anchorIndex + 2 * (5 - line) + 7 * octaveChange;
 }
 
 export function resolveClefAtMeasure(
@@ -116,7 +119,9 @@ export function resolveClefAtMeasure(
         if (!clef?.sign || typeof clef.line !== 'number') continue;
         const sign = clef.sign.toUpperCase();
         if (sign === 'G' || sign === 'F' || sign === 'C') {
-          return { sign, line: clef.line };
+          return typeof clef.octaveChange === 'number' && clef.octaveChange !== 0
+            ? { sign, line: clef.line, octaveChange: clef.octaveChange }
+            : { sign, line: clef.line };
         }
       }
     }

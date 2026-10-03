@@ -488,6 +488,7 @@ function updateAttributes(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
             if (clefData.staffIndex >= 1) clef.setAttribute('number', String(clefData.staffIndex));
             if (clefData.sign) setOrCreateTextElement(doc, clef, 'sign', clefData.sign);
             if (clefData.line != null) setOrCreateTextElement(doc, clef, 'line', String(clefData.line));
+            if (clefData.octaveChange) setOrCreateTextElement(doc, clef, 'clef-octave-change', String(clefData.octaveChange));
             attributes.appendChild(clef);
           }
         }

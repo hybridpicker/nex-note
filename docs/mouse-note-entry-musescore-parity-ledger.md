@@ -1,0 +1,116 @@
+# Mouse Note Entry — MuseScore Parity Ledger
+
+Program prompt: [mouse-note-entry-musescore-parity-prompt.md](mouse-note-entry-musescore-parity-prompt.md).
+Single source of truth for the program. A new session resumes from the iteration log.
+
+Rules: no row is `PASS` without a behavioral test that fails before the fix and
+passes after, plus the surfaces actually run. Browser/device surfaces are run by
+the operator; nothing below claims them as verified.
+
+Evidence legend: "code" = read in this repo on 2026-10-03 (`devel@461aea4`);
+"handbook" = fetched 2026-10-03 from `handbook.musescore.org` (page summaries came
+from a fetch-time summarizer, so exact wording must be re-checked in the audit
+iteration before a row is promoted). "unsurveyed" = not yet inspected; the
+current-behavior cell is a placeholder, not a finding.
+
+## Handbook sources (fetched 2026-10-03)
+
+- Entering notes and rests: <https://handbook.musescore.org/basics/entering-notes-and-rests>
+- Selecting elements: <https://handbook.musescore.org/basics/selecting-elements>
+- Editing notes and rests: <https://handbook.musescore.org/basics/editing-notes-and-rests>
+- Palettes: <https://handbook.musescore.org/basics/using-the-palettes>
+- Multiple voices: <https://handbook.musescore.org/basics/working-with-multiple-voices>
+- Tuplets: <https://handbook.musescore.org/notation/rhythm-meter-and-measures/tuplets>
+- Cross-staff: <https://handbook.musescore.org/idiomatic-notation/keyboard/cross-staff-notation>
+- TAB entry: <https://handbook.musescore.org/idiomatic-notation/guitar/entering-and-editing-tablature-notation>
+- Percussion entry: <https://handbook.musescore.org/idiomatic-notation/percussion/inputting-percussion-notation>
+
+## Decisions needing the operator
+
+1. **Click on an existing note in note-input mode.** Handbook: clicking adds to the
+   chord at that position; Shift+click replaces. Nex Note: plain click replaces;
+   Alt+click is chord placement; Shift+click is insert placement
+   (`docs/keyboard-shortcuts.md:174-176`, `components/ScoreEditor.tsx:2685-2699`).
+   This is a deliberate product difference that predates this program. Changing it
+   would alter existing user workflows and the e2e suites, so it is NOT changed
+   without an explicit decision. Recorded as B2 `PARTIAL`.
+
+## Capability table
+
+Surfaces: W = web, EM = Electron mac, EL = Electron Linux, iP = iPad, X = Xcode mac.
+Surface evidence is `none` everywhere until the operator runs suites.
+
+### A. Precision and targeting
+
+| ID | MuseScore behavior | Current Nex Note behavior | Gap | Tests | Surfaces | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1 | Shadow note, ledger lines, accidental, clef-aware incl. 8va/8vb, transposing | Clef model is `G`/`F`/`C` + line + `octaveChange` (iteration 1: import, model, export and `topLineDiatonicIndex` now honor MusicXML `clef-octave-change`). `percussion` sign still falls back to treble (`src/score-input/staff-pitch.ts`, `resolveClefAtMeasure`). Key-sig/measure-memory accidentals exist (parity matrix). | Percussion staff mapped as pitched; transposing instruments unsurveyed; ghost on an 8vb staff not yet seen in a browser; `lib/new-score.ts` cannot create 8vb clefs | `test/clef-octave-change.test.ts` (6 tests; 5 failed before the fix), `test/staff-pitch.test.ts` | none (browser not run) | PARTIAL |
+| A2 | Snap to intended rhythmic position incl. empty/partial/rests/pickup/repeats | Slot snap via `InteractiveEditMap`; atomic full-measure anchors; rest-only internal slots narrow (architecture doc) | Pickup/final measure and volta classes lack direct pointer matrix | `test/score-input-edit-map.test.ts`, `e2e/exhaustive-mouse-grid.spec.ts`, `e2e/semantic-grid-fuzz.spec.ts` | none | PARTIAL |
+| A3 | Staff disambiguation; between-staves behavior | Staff hysteresis (`ghostStaffHysteresisPx`); explicit staff/voice lock unsurveyed | unsurveyed | `e2e/mouse-precision-stress.spec.ts` | none | TODO |
+| A4 | Stable across zoom/view/HiDPI/resize | Zoom via ctrl/meta wheel is a fixed step, not pointer-anchored (`ScoreEditor.tsx:14709-14713`) | Zoom range/HiDPI/resize unsurveyed; see D1 | `e2e/exhaustive-mouse-grid.spec.ts` (75-200 %) | none | PARTIAL |
+| A5 | Hit-test every element class, overlap priority, px tolerance | Notes/rests/measures selectable (`ScoreEditor.tsx:13773-13960`); other element classes unsurveyed | unsurveyed | `test/rendered-selection-target.test.ts` | none | TODO |
+| A6 | Preview/commit/status/audition/export agree | Ghost bound to resolved target; `data-ghost-*` diagnostics (architecture doc) | Status text content unsurveyed | `test/smart-ghost-note.test.ts`, `e2e/snap-ghost-debug.spec.ts` | none | PARTIAL |
+
+### B. Entering material
+
+| ID | MuseScore behavior | Current Nex Note behavior | Gap | Tests | Surfaces | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| B1 | Click enters note; rest replaced; beyond-measure rules | Implemented via resolver/validator; overflow fails closed | Beyond-measure behavior differs by design (rejects) | `test/score-input-resolvers.test.ts` | none | PARTIAL |
+| B2 | Click adds to chord; Shift replaces; remove chord tone | Inverted modifiers (see Decision 1); one-tone removal unsurveyed | Product decision | `test/smart-ghost-note.test.ts` | none | PARTIAL |
+| B3 | 64th–longa, dots, tuplets, grace, ties, insert/overwrite | Keyboard/toolbar paths per parity matrix; mouse-only palette completeness unsurveyed | unsurveyed | `test/note-entry-advanced.test.ts` | none | TODO |
+| B4 | Pre-entry accidentals, one-shot | One-shot, measure carry, respell `J` (parity matrix PASS rows) | Mouse parity evidence only via shared resolver | `test/staff-pitch.test.ts`, `e2e/notation-tools.spec.ts` | none | PARTIAL |
+| B5 | Voices 1–4, color, stem direction | Cmd/Ctrl+Alt+1..4, `data-ghost-voice` | Cross-staff voice proof pending | `test/user-visible-note-editor.test.ts` | none | PARTIAL |
+| B6 | Grand staff / cross-staff entry | Cross-staff move exists; drag across staves exists (`ScoreEditor.tsx:12355-12406`) | unsurveyed for ranges/warnings | `e2e/app.spec.ts` | none | PARTIAL |
+| B7 | TAB fret on string line; drum pad entry | TAB fret entry follows anchors; **no percussion/unpitched support in `src/` or `components/`** (grep: only playback/MIDI analysis) | Percussion mouse entry absent | `e2e/guitar-tab-sync.spec.ts` | none | TODO |
+| B8 | Meter edge cases reject atomically with reason | Atomic rejection with diagnostics | Visible reason text unsurveyed | `test/rhythm-speller.test.ts` | none | PARTIAL |
+
+### C. Editing with the mouse
+
+| ID | MuseScore behavior | Current Nex Note behavior | Gap | Tests | Surfaces | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| C1 | Click, Shift range, Ctrl list, Shift+drag rectangle, Esc | Click, Shift range, Ctrl/Cmd additive exist; **no rubber-band/marquee** (grep: 0 hits) | Rectangle selection missing | `test/note-editor-selection.test.ts` | none | TODO |
+| C2 | Drag vertical for pitch, cross-staff, cancel | Drag pitch with diatonic/chromatic modes (`transpose-logic.ts:65`), pointer-capture loss cancels (architecture doc) | Handbook silent on drag modifiers: verify in live app; horizontal drag/copy unsurveyed | `test/transpose-logic.test.ts` | none | PARTIAL |
+| C3 | Cut/copy/paste/duplicate/repeat, context menu | Clipboard/duplicate exist; **no `contextmenu` handler in `ScoreEditor.tsx`** | Mouse context menu missing | `test/user-visible-note-editor.test.ts` | none | TODO |
+| C4 | Palette click-apply and drag-drop with drop indicator | Palette click-apply (`EditPalette.tsx`); drag-drop unsurveyed | Drag-drop unsurveyed | `test/user-visible-components.test.ts` | none | TODO |
+| C5 | Spanners via palette/drag, end handles | unsurveyed | unsurveyed | none known | none | TODO |
+| C6 | Handles for stems/beams/ties/slurs/offsets | unsurveyed | unsurveyed | none known | none | TODO |
+| C7 | Context menu per element | Absent (see C3) | Absent | none | none | TODO |
+
+### D. Navigation and feedback
+
+| ID | MuseScore behavior | Current Nex Note behavior | Gap | Tests | Surfaces | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| D1 | Wheel scroll, pointer-anchored zoom, pan | Ctrl/Cmd+wheel zoom steps without a pointer anchor; Shift+wheel horizontal scroll (`ScoreEditor.tsx:14709-14719`) | Not anchored at pointer; middle-drag pan unsurveyed | `e2e/score-navigation.spec.ts` | none | TODO |
+| D2 | Status line detail | Plain-language input-state summary (voice, mode) in toolbar; pitch/MIDI/beat detail unsurveyed | unsurveyed | `test/user-visible-components.test.ts` | none | PARTIAL |
+| D3 | Cursor shapes, color-independent voice/selection | Mode indicators exist; cursor shapes unsurveyed | unsurveyed | none known | none | TODO |
+| D4 | Audition on entry | unsurveyed | unsurveyed | `test/playback-cancellation.test.ts` | none | TODO |
+| D5 | Touch/Pencil share resolver | Shared tablet session (`tablet-entry-session.ts`) | Physical device unrun | `e2e/tablet-entry.spec.ts`, `test/tablet-entry-session.test.ts` | none | PARTIAL |
+
+### E. Robustness
+
+| ID | Requirement | Current Nex Note behavior | Gap | Tests | Surfaces | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| E1 | Zero wrong-target commits on every fixture class | Fixtures: `test/fixtures` has choir, cross-measure tie, leadsheet/repeats/volta, piano, multi-voice; `e2e/fixtures` has simple + guitar TAB | **No fixtures** for tuplets, grace, percussion, transposing, large orchestral | grid/fuzz specs | none | TODO |
+| E2 | p95 preview ≤ 50 ms | Small-score budgets pass; medium/large missed (parity matrix, Sept 2026) | Medium/large over budget | `e2e/note-entry-performance.spec.ts` | none | PARTIAL |
+| E3 | No stale ghost/duplicate commit after change | Blur/hidden cancellation, stale ghost commit rejection (architecture doc) | Undo/resize cases unsurveyed | `e2e/mouse-precision-stress.spec.ts` | none | PARTIAL |
+| E4 | Keyboard parity, a11y for ghost | Keyboard entry complete; ghost SR labels unsurveyed | unsurveyed | none known | none | TODO |
+
+## Gap ranking (severity order from the program prompt)
+
+1. A1 percussion clef mapped as treble, transposing instruments (wrong pitch committed); octave-change clefs fixed in iteration 1 pending browser evidence.
+2. E1 missing fixture classes (blocks proving zero wrong-target commits).
+3. B7 percussion entry absent (blocked workflow).
+4. C1 no rectangle selection, C3/C7 no context menu (blocked workflow).
+5. D1/A4 zoom not pointer-anchored (ambiguity; targets shift under pointer).
+6. Remaining `TODO` rows still need a code survey (A3, A5, B3, C4–C6, D3, D4, E4).
+
+## Iteration log
+
+| # | Commit | Measured | Changed | Gates run | Gates not run | Next |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | (uncommitted) | Code read for A1, A4, B2, B7, C1–C3, D1, E1; handbook pages fetched | Created this ledger | `npm run apps:plan` (reported only "Changed paths: 12", no surface list) | Unit/build/e2e not applicable (docs only) | Iteration 1: A1 clef octave change, failing test first |
+| 1 | (this commit) | `clef-octave-change` was dropped by import and export (a tenor treble-8 staff exported as plain treble: score corruption) and ignored by the mouse pitch resolver (octave-off ghost/commit) | Model field, import, export, resolver; 6 tests, 5 failed first for the intended reason | focused tests 31/31; `node --import tsx --test test/*.test.ts` 1141/1141; `npm run build`; `git diff --check`; `npm run ipad:sync` | `npm run ipad:doctor` fails here (no Xcode, no LAN IPv4; host is Linux); `electron:refresh` not run (macOS packaging, operator); no Playwright/Electron/iPad run; the `npm test` script could not start because the `tsx` CLI's IPC socket is blocked by the sandbox, so `node --import tsx --test` was used | Operator renders a treble-8vb fixture and hovers/clicks; then A1 percussion clef, then E1 fixtures |
+
+Note: two survey subagents were used; the first report never reached this session
+and the second was stopped by the operator, so every "current behavior" cell above
+comes from direct reads/greps, and unsurveyed cells are labeled as such.

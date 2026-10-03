@@ -355,11 +355,15 @@ function buildMeasureAttributes(measure: XmlElement, measureNumber: number): Mea
     const keyFifths = parseIntSafe(attributesEl.getElementsByTagName('fifths')[0]?.textContent, 0);
     const parsedTime = parseTimeSignatureElement(directChildrenByTag(attributesEl, 'time')[0]);
     const hasKey = attributesEl.getElementsByTagName('key').length > 0;
-    const clefs = Array.from(attributesEl.getElementsByTagName('clef')).map((clef, clefIndex) => ({
-      staffIndex: parseIntSafe(clef.getAttribute('number'), clefIndex + 1),
-      sign: clef.getElementsByTagName('sign')[0]?.textContent ?? undefined,
-      line: parseIntSafe(clef.getElementsByTagName('line')[0]?.textContent, 0) || undefined,
-    }));
+    const clefs = Array.from(attributesEl.getElementsByTagName('clef')).map((clef, clefIndex) => {
+      const octaveChange = parseIntSafe(clef.getElementsByTagName('clef-octave-change')[0]?.textContent, 0);
+      return {
+        staffIndex: parseIntSafe(clef.getAttribute('number'), clefIndex + 1),
+        sign: clef.getElementsByTagName('sign')[0]?.textContent ?? undefined,
+        line: parseIntSafe(clef.getElementsByTagName('line')[0]?.textContent, 0) || undefined,
+        ...(octaveChange !== 0 ? { octaveChange } : {}),
+      };
+    });
 
     return {
       id: makeId('attr', measureNumber, index),
