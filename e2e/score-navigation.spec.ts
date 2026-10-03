@@ -325,7 +325,13 @@ test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page })
     const canvas = document.querySelector('[data-testid="score-canvas"]');
     const svg = canvas?.querySelector('svg');
     const box = svg?.getBoundingClientRect();
+    const notehead = canvas?.querySelector('[class*="vf-notehead"]')?.getBoundingClientRect();
+    const marked = svg ? Boolean((svg as unknown as { __zoomProbe?: boolean }).__zoomProbe) : null;
+    if (svg) (svg as unknown as { __zoomProbe?: boolean }).__zoomProbe = true;
     return {
+      sameSvgAsPreviousProbe: marked,
+      noteheadWidth: Math.round((notehead?.width ?? -1) * 100) / 100,
+      svgViewBox: svg?.getAttribute('viewBox') ?? null,
       svgCount: canvas?.querySelectorAll('svg').length ?? -1,
       svgWidth: Math.round(box?.width ?? -1),
       svgHeight: Math.round(box?.height ?? -1),
@@ -342,6 +348,10 @@ test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page })
   const probeAfter = await renderProbe();
   // eslint-disable-next-line no-console
   console.log('ZOOM-PROBE', JSON.stringify({ probeBefore, probeAfter, consoleLines }));
+  await page.getByLabel('Zoom percent').fill('200');
+  await page.waitForTimeout(3000);
+  // eslint-disable-next-line no-console
+  console.log('ZOOM-PROBE-200', JSON.stringify({ probe: await renderProbe(), consoleLines }));
   await expect(page.getByLabel('Zoom percent')).toHaveValue('110');
   // The zoom rebuilds the score asynchronously; wait for the taller layout, then let scroll settle.
   await expect.poll(
