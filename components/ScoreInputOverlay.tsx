@@ -414,7 +414,7 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       {!target.cursorOnly && (
         <div
           data-testid="pitch-chip"
-          aria-label={t('note.pitchPreview', { pitch })}
+          aria-label={t('note.pitchPreviewDetail', { pitch, midi, voice: target.voiceId, staff: target.staffIndex, measure: target.measureNumber })}
           className="absolute whitespace-nowrap rounded-full border border-slate-200/90 bg-white/95 px-2.5 py-1 text-[13px] font-bold tracking-[0.02em] text-slate-900 shadow-md"
           style={{
             left: chipOnLeft
@@ -511,7 +511,7 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
       {showLoupe && (
         <div
           data-testid="pitch-loupe"
-          aria-label={t('note.pitchPreview', { pitch })}
+          aria-label={t('note.pitchPreviewDetail', { pitch, midi, voice: target.voiceId, staff: target.staffIndex, measure: target.measureNumber })}
           data-loupe-placement={`${loupeBelow ? 'below' : 'above'}-${loupeOnLeft ? 'left' : 'right'}`}
           className="absolute overflow-hidden rounded-2xl border border-slate-300/90 bg-white/97 shadow-[0_16px_44px_-14px_rgba(15,23,42,0.45)]"
           style={{

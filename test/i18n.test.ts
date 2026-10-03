@@ -291,3 +291,13 @@ test('new score dialog selects a local user template', async () => {
     renderer?.unmount();
   });
 });
+
+test('ghost note screen-reader detail is translated in every locale and names pitch, MIDI, voice, staff and measure', () => {
+  for (const locale of SUPPORTED_LOCALES) {
+    const value = translate(locale, 'note.pitchPreviewDetail', {
+      pitch: 'C♯4', midi: 61, voice: 2, staff: 1, measure: 7,
+    });
+    assert.doesNotMatch(value, /missing/);
+    for (const part of ['C♯4', '61', '2', '1', '7']) assert.ok(value.includes(part), `${locale}: ${part}`);
+  }
+});
