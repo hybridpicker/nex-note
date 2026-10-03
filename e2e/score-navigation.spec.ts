@@ -291,3 +291,41 @@ test('horizontal playback follow does not trigger viewport update depth warnings
   await page.getByTitle('Stop').click();
   expect(updateDepthErrors).toEqual([]);
 });
+
+test('Ctrl+wheel zoom keeps the score point under the pointer', async ({ page }) => {
+  await bootWithScore(page, 'long-zoom-anchor.musicxml', buildLongFixtureXml(40));
+
+  const viewport = page.getByTestId('score-viewport');
+  await expect(viewport).toBeVisible();
+  await page.waitForTimeout(800);
+  await viewport.evaluate((node) => {
+    node.scrollTop = Math.round((node.scrollHeight - node.clientHeight) / 2);
+  });
+  await page.waitForTimeout(200);
+
+  const box = await viewport.boundingBox();
+  expect(box).not.toBeNull();
+  const offset = { ox: box!.width * 0.35, oy: box!.height * 0.4 };
+  await page.mouse.move(box!.x + offset.ox, box!.y + offset.oy);
+
+  const measure = (node: HTMLElement, o: { ox: number; oy: number }) => ({
+    fx: (node.scrollLeft + o.ox) / node.scrollWidth,
+    fy: (node.scrollTop + o.oy) / node.scrollHeight,
+    scrollHeight: node.scrollHeight,
+    canScrollX: node.scrollWidth > node.clientWidth + 1,
+  });
+  const before = await viewport.evaluate(measure, offset);
+
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(2000);
+
+  const after = await viewport.evaluate(measure, offset);
+  expect(after.scrollHeight).toBeGreaterThan(before.scrollHeight);
+  // The same relative position of the score stays under the pointer (5 % tolerance for reflow).
+  expect(Math.abs(after.fy - before.fy)).toBeLessThan(0.05);
+  if (before.canScrollX && after.canScrollX) {
+    expect(Math.abs(after.fx - before.fx)).toBeLessThan(0.05);
+  }
+});

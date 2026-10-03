@@ -69,6 +69,7 @@ import {
 } from '@/src/score-input/smart-ghost-note';
 import { fretForMidiOnString, resolveGuitarTuning } from '@/src/score-input/guitar-fretboard';
 import { resolveDragTransposePitch, type DragTransposeMode } from '@/src/score-input/transpose-logic';
+import { captureZoomAnchor, resolveAnchoredScroll, type ZoomAnchor } from '@/src/score-input/zoom-anchor';
 import type { ResolvedEditTarget } from '@/src/score-input/types';
 import {
   resolveClefAtMeasure,
@@ -11809,6 +11810,11 @@ export default function ScoreEditor({
   const [renderViewportRevision, setRenderViewportRevision] = useState(0);
   const [viewMode, setViewMode] = useState<ScoreViewMode>(sessionViewMode ?? 'continuous-vertical');
   const [zoomPercent, setZoomPercent] = useState(() => clamp(sessionZoomPercent ?? 100, MIN_ZOOM, MAX_ZOOM));
+  const zoomPercentRef = useRef(zoomPercent);
+  zoomPercentRef.current = zoomPercent;
+  // Zoom of the last completed render, and the pointer anchor waiting for the next one.
+  const renderedZoomRef = useRef(zoomPercent);
+  const pendingZoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const [navigatorVisible, setNavigatorVisible] = useState(false);
   const [findVisible, setFindVisible] = useState(false);
   const [findQuery, setFindQuery] = useState('');
@@ -14205,6 +14211,12 @@ export default function ScoreEditor({
             renderedGhostGridRef.current,
           );
           refreshGeometryProxy(activeOsmd, containerRef.current, refinedMeasureOverlays, renderedGhostGridRef.current);
+          renderedZoomRef.current = zoomPercent;
+          const pendingZoomAnchor = pendingZoomAnchorRef.current;
+          pendingZoomAnchorRef.current = null;
+          if (pendingZoomAnchor && viewportRef.current) {
+            viewportRef.current.scrollTo(resolveAnchoredScroll(pendingZoomAnchor, zoomPercent));
+          }
           setMeasureLayoutOverlays(refinedMeasureOverlays);
           setSystemLayoutOverlays(buildRenderedSystemLayoutOverlays(refinedMeasureOverlays, layoutBridgeRef.current));
           dbg.score(`rendered note map size=${renderedNotesRef.current.length}`);
@@ -14708,7 +14720,20 @@ export default function ScoreEditor({
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
-        adjustZoom(event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+        const step = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+        const zoomWillChange = clamp(zoomPercentRef.current + step, MIN_ZOOM, MAX_ZOOM) !== zoomPercentRef.current;
+        // Keep the first anchor of a wheel burst; later events arrive before the re-render.
+        if (zoomWillChange && !pendingZoomAnchorRef.current) {
+          const viewportRect = viewport.getBoundingClientRect();
+          pendingZoomAnchorRef.current = captureZoomAnchor({
+            scrollLeft: viewport.scrollLeft,
+            scrollTop: viewport.scrollTop,
+            pointerX: event.clientX - viewportRect.left,
+            pointerY: event.clientY - viewportRect.top,
+            renderedZoom: renderedZoomRef.current,
+          });
+        }
+        adjustZoom(step);
         return;
       }
       if (event.shiftKey) {

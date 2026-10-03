@@ -47,6 +47,7 @@ Unter Linux ist die native Menüleiste ausgeblendet (Kachel-Fenstermanager). Des
 | `Cmd/Ctrl+0` | Zoom auf 100 Prozent setzen | Score-Viewport |
 | `Cmd/Ctrl++` / `Cmd/Ctrl+=` | hineinzoomen | Score-Viewport |
 | `Cmd/Ctrl+-` | herauszoomen | Score-Viewport |
+| `Cmd/Ctrl` + Mausrad | am Mauszeiger hinein-/herauszoomen (die Stelle unter dem Zeiger bleibt dort) | Score-Viewport |
 | `PageDown` / `PageUp` | ungefähr eine Bildschirmhöhe scrollen | Score-Viewport |
 | `Cmd/Ctrl+PageDown` / `Cmd/Ctrl+PageUp` | ungefähr eine Viewport-Höhe scrollen | Score-Viewport |
 | `Home` | zum Anfang der Ansicht scrollen | Score-Viewport |
