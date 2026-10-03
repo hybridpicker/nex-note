@@ -16,8 +16,8 @@ async function boot(page: Page, source = syntheticScore(3)) {
   await page.locator('[data-testid="score-canvas"] .vf-notehead').first().click();
   await page.getByTestId('advanced-note-input').locator('summary').click();
 }
-async function undo(page: Page) { await page.locator('button[title="Undo (Cmd/Ctrl+Z)"]:visible').first().click(); }
-async function redo(page: Page) { await page.locator('button[title="Redo (Cmd/Ctrl+Shift+Z)"]:visible').first().click(); }
+async function undo(page: Page) { await page.locator('button[title^="Undo ("]:visible').first().click(); }
+async function redo(page: Page) { await page.locator('button[title^="Redo ("]:visible').first().click(); }
 
 test('custom nested tuplet UI renders both levels and restores one transaction at a time', async ({ page }) => {
   await boot(page);

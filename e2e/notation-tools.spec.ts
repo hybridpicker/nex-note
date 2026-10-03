@@ -653,7 +653,7 @@ test('N duration-first mouse controls prepare chords and rests before an atomic 
     return event ? `${event.kind}:${event.durationType}` : null;
   }).toBe('rest:eighth');
 
-  const undo = page.locator('button[title="Undo (Cmd/Ctrl+Z)"]:visible').first();
+  const undo = page.locator('button[title^="Undo ("]:visible').first();
   await undo.click();
   await expect.poll(async () => readCurrentXml(page)).toBe(chordXml);
   await undo.click();
