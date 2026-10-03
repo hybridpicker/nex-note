@@ -12251,6 +12251,8 @@ export default function ScoreEditor({
       renderSingleHorizontalStaffline: viewMode === 'continuous-horizontal',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
+    // OSMD 1.9.9 ignores `zoom` as a constructor option; only the Zoom setter scales the drawing.
+    osmd.Zoom = zoomPercent / 100;
     applyNotationFont(osmd);
     osmdRef.current = osmd;
     return osmd;
