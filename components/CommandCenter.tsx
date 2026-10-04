@@ -21,6 +21,8 @@ interface Props {
   actions: CommandCenterAction[];
   onClose: () => void;
   onSubmitQuery?: (query: string) => boolean;
+  /** Cheat-sheet mode: list only actions that have a keyboard shortcut. */
+  shortcutsOnly?: boolean;
 }
 
 const INERTED_ATTR = 'data-command-center-inerted';
@@ -132,7 +134,7 @@ function buildActionAssistiveLabel(action: CommandCenterAction, disabledLabel: s
   return parts.join(' - ');
 }
 
-export default function CommandCenter({ open, actions, onClose, onSubmitQuery }: Props) {
+export default function CommandCenter({ open, actions, onClose, onSubmitQuery, shortcutsOnly = false }: Props) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -141,9 +143,11 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery }:
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   const filteredActions = useMemo(() => {
-    const visible = actions.filter((action) => matchesQuery(action, query));
+    const visible = actions.filter((action) => (
+      (!shortcutsOnly || action.shortcut) && matchesQuery(action, query)
+    ));
     return keepGroupsContiguous(visible);
-  }, [actions, query]);
+  }, [actions, query, shortcutsOnly]);
 
   useEffect(() => {
     if (!open) return;
@@ -273,7 +277,8 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery }:
                   runAction(filteredActions[activeIndex]);
                 }
               }}
-              placeholder={t('command.placeholder')}
+              placeholder={shortcutsOnly ? t('command.shortcuts.placeholder') : t('command.placeholder')}
+              aria-label={shortcutsOnly ? t('command.shortcuts.title') : undefined}
               className="h-12 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
             />
             <kbd className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Esc</kbd>

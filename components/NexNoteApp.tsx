@@ -2,6 +2,7 @@
 
 import { buildPartsArchive } from '@/lib/parts-archive';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
+import { resolveWorkspaceShortcut } from '@/lib/workspace-shortcuts';
 import { use, useState, useCallback, useEffect, useLayoutEffect, useRef, startTransition, useMemo, useDeferredValue, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { flushSync } from 'react-dom';
@@ -719,6 +720,7 @@ export default function Home({ searchParams }: HomeProps) {
   const [leftNotationSidebarHydrated, setLeftNotationSidebarHydrated] = useState(false);
   const skipNextLeftNotationSidebarPersistRef = useRef(false);
   const [commandCenterOpen, setCommandCenterOpen] = useState(false);
+  const [shortcutsOnlyMode, setShortcutsOnlyMode] = useState(false);
   const [layoutCleanupLoading, setLayoutCleanupLoading] = useState(false);
   const [importStatus, setImportStatus] = useState('');
   const [importError, setImportError] = useState('');
@@ -1344,6 +1346,16 @@ export default function Home({ searchParams }: HomeProps) {
     }, 0);
   }, []);
 
+  const toggleInspectorPanel = useCallback(() => {
+    if (!xml) return;
+    if (sidebarCollapsed || workspaceTab !== 'inspector') {
+      setSidebarCollapsed(false);
+      setWorkspaceTab('inspector');
+    } else {
+      setSidebarCollapsed(true);
+    }
+  }, [sidebarCollapsed, workspaceTab, xml]);
+
   const focusEditPaletteSection = useCallback((section: EditPaletteSectionId) => {
     setPrintView(false);
     setLeftNotationSidebarCollapsed(false);
@@ -1384,6 +1396,29 @@ export default function Home({ searchParams }: HomeProps) {
         selectMicrophoneDetectionMode(
           microphoneDetectionMode === 'single' ? 'chord' : 'single',
         );
+        return;
+      }
+      const workspaceShortcut = resolveWorkspaceShortcut({
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        isTextEntry,
+      });
+      if (workspaceShortcut) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        if (workspaceShortcut === 'show-shortcuts') {
+          setShortcutsOnlyMode(true);
+          setCommandCenterOpen(true);
+        } else if (workspaceShortcut === 'toggle-inspector') {
+          toggleInspectorPanel();
+        } else if (xml && !printView) {
+          setLeftNotationSidebarCollapsed((collapsed) => !collapsed);
+        }
+        recordBugReportEvent('workspace', 'workspace-shortcut', { source: 'keyboard', action: workspaceShortcut });
         return;
       }
       if (metaKey && isKeyK) {
@@ -1471,6 +1506,8 @@ export default function Home({ searchParams }: HomeProps) {
     ensureMidiLoaded,
     focusInspectorTarget,
     handleKeyDown,
+    printView,
+    toggleInspectorPanel,
     markMidiReady,
     microphoneDetectionMode,
     microphoneInputEnabled,
@@ -3775,6 +3812,40 @@ export default function Home({ searchParams }: HomeProps) {
         onRun: () => dispatchScoreViewCommand('zoom-reset'),
       },
       {
+        id: 'show-shortcuts',
+        title: t('command.shortcuts.title'),
+        description: t('command.shortcuts.description'),
+        group: viewGroup,
+        keywords: ['keyboard', 'shortcuts', 'cheat sheet', 'help', 'keys', 'hotkeys'],
+        shortcut: '?',
+        onRun: () => window.setTimeout(() => {
+          setShortcutsOnlyMode(true);
+          setCommandCenterOpen(true);
+        }, 0),
+      },
+      {
+        id: 'toggle-inspector',
+        title: t('command.view.toggleInspector.title'),
+        description: t('command.view.toggleInspector.description'),
+        group: viewGroup,
+        keywords: ['properties', 'sidebar', 'panel'],
+        shortcut: 'F8',
+        disabled: !hasScore,
+        disabledReason: !hasScore ? scoreRequired : undefined,
+        onRun: toggleInspectorPanel,
+      },
+      {
+        id: 'toggle-palette',
+        title: t('command.view.togglePalette.title'),
+        description: t('command.view.togglePalette.description'),
+        group: viewGroup,
+        keywords: ['tools', 'sidebar', 'panel', 'edit palette'],
+        shortcut: 'F9',
+        disabled: !hasScore || printView,
+        disabledReason: !hasScore ? scoreRequired : undefined,
+        onRun: () => setLeftNotationSidebarCollapsed((collapsed) => !collapsed),
+      },
+      {
         id: 'view-page',
         title: t('command.view.page.title'),
         description: t('command.view.page.description'),
@@ -4332,6 +4403,8 @@ export default function Home({ searchParams }: HomeProps) {
       },
     ];
   }, [
+    printView,
+    toggleInspectorPanel,
     canRedo,
     canUndo,
     activePlaybackNote,
@@ -4806,7 +4879,8 @@ export default function Home({ searchParams }: HomeProps) {
       <CommandCenter
         open={commandCenterOpen}
         actions={commandCenterActions}
-        onClose={() => setCommandCenterOpen(false)}
+        shortcutsOnly={shortcutsOnlyMode}
+        onClose={() => { setCommandCenterOpen(false); setShortcutsOnlyMode(false); }}
         onSubmitQuery={handleCommandCenterQuerySubmit}
       />
       <NewScoreDialog

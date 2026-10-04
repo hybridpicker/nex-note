@@ -39,6 +39,11 @@ layout projection, print view.
 - Fixed: PDF was US Letter with a dark margin; now A4, zero page margin, vector, tagged. Verified through the export handler.
 - Not verified by hand: saving through the GTK portal dialog, mixer and notation-font menu clicks, real MIDI hardware.
 
+## Keyboard pass (2026-10-04, unit-tested; not yet verified by eye in the running app)
+- `?` / `F1` open a searchable shortcut cheat sheet (Command Center filtered to actions with shortcuts).
+- `F8` toggles the inspector, `F9` the notation palette (MuseScore keys; unbound in Omarchy Hyprland defaults).
+- Open: dynamics shortcuts, toolbar focus rings/Tab order, keyboard access for mixer and MIDI panel.
+
 ## Next, in priority order
 1. **Playback sound**: MuseScore_General (MIT) as a better default than FluidR3_GM, pan, optional FluidSynth
    sidecar. No VST/CLAP hosting.

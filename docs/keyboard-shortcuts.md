@@ -26,6 +26,16 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 
 Unter Linux ist die native Menüleiste ausgeblendet (Kachel-Fenstermanager). Deshalb sind die In-App-Menüs `File`, `Edit` und `View` sichtbar, und der Hauptprozess verarbeitet diese Kürzel selbst: `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+Shift+E`, `Ctrl+F`, `Ctrl+K`, `Ctrl++`, `Ctrl+-`, `Ctrl+0` und `Ctrl+Q`. Bearbeitungstasten (Undo, Kopieren, Einfügen, Entf.) bleiben bei der Seite. Beschriftungen zeigen `Ctrl`/`Alt` statt `Cmd`/`Option`.
 
+## Workspace-Tasten ohne Modifier
+
+| Shortcut | Aktion | Kontext |
+| --- | --- | --- |
+| `?` / `F1` | Shortcut-Übersicht öffnen: Command Center, gefiltert auf Aktionen mit Tastaturkürzel und durchsuchbar (`?` nicht in Eingabefeldern) | global |
+| `F8` | Inspector ein-/ausblenden (wie MuseScore) | Partitur geöffnet |
+| `F9` | linke Notationspalette ein-/ausblenden (wie MuseScore) | Partitur geöffnet, nicht in der Druckansicht |
+
+Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/workspace-shortcuts.test.ts`). Die Omarchy-Hyprland-Standardbelegung nutzt keine unmodifizierten F-Tasten.
+
 ## Header-Menüs
 
 | Shortcut | Aktion | Kontext |
