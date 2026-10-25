@@ -1591,7 +1591,9 @@ test('eight-bar keyboard replacement preserves correction and MusicXML reopen', 
   await page.keyboard.press('Control+w');
   await expect.poll(async () => (await readE2EState(page))?.xml).toBe('');
   await page.locator('input[type="file"]').first().setInputFiles(exported);
-  await expect.poll(async () => (await readE2EState(page))?.xml ?? '').not.toBe('');
+  // Reopening .mxl runs convert, layout-cleanup and apply-operations routes in
+  // sequence; on a cold dev server their first compile alone can exceed 5s.
+  await expect.poll(async () => (await readE2EState(page))?.xml ?? '', { timeout: 30_000 }).not.toBe('');
   await expect.poll(readPassage).toEqual(expected);
   await expect.poll(() => readMainVoiceMidi(page)).toEqual(expectedMidi);
   await expectNoDoctorIssues(page, 'eight-bar keyboard passage reopen');
