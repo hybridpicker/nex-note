@@ -23,17 +23,17 @@ test('resolveLanAddress prefers Wi-Fi en0 over other private interfaces', () => 
       mac: '00:00:00:00:00:00',
     }],
     en0: [{
-      address: '192.168.178.46',
+      address: '192.168.1.20',
       family: 'IPv4',
       internal: false,
       netmask: '255.255.255.0',
-      cidr: '192.168.178.46/24',
+      cidr: '192.168.1.20/24',
       mac: '00:00:00:00:00:00',
     }],
   } as ReturnType<typeof networkInterfaces>;
   const address = resolveLanAddress(interfaces, '');
 
-  assert.equal(address, '192.168.178.46');
+  assert.equal(address, '192.168.1.20');
 });
 
 test('resolveLanAddress rejects loopback overrides', () => {

@@ -5,6 +5,7 @@ This directory mixes current status docs, architecture docs, validation material
 ## Start Here
 
 - Repository overview and local setup: [README.md](../README.md)
+- Development guide (configuration, embedding, desktop/iPad apps, testing): [development.md](./development.md)
 - User manual: [Deutsch](./user-manual.md), [English](./user-manual.en.md), [Français](./user-manual.fr.md), [Español](./user-manual.es.md), [中文](./user-manual.zh.md)
 - Language/i18n developer note: [i18n.md](./i18n.md)
 - Keyboard shortcuts: [keyboard-shortcuts.md](./keyboard-shortcuts.md)

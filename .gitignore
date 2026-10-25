@@ -51,9 +51,8 @@ next-env.d.ts
 # nex dev tooling
 .nex/
 
-# generated local artifacts
-artifacts/**/*.log
-artifacts/**/*.omr
+# generated local QA artifacts (kept local, not published)
+/artifacts/
 /.native-ipad/
 
 # private founder/tester score fixtures

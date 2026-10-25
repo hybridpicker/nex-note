@@ -141,7 +141,7 @@ Additional hardening completed on 2026-07-04:
 - `npm run electron:build`: passed; unsigned macOS arm64 zip/DMG artifacts built under `dist/macos`.
 - `npm run smoke:musescore-roundtrip`: exit `0`, verdict `passed-with-local-musescore-limit`; local MuseScore 4.7.3 crashed on some source/baseline and nex-note conversions, so no nex-note-only export failure was isolated on this machine.
 
-QA artifacts for the step-time anchor validation pass are under `artifacts/qa/step-time-anchor-validation/`.
+QA artifacts for the step-time anchor validation pass were captured locally under `artifacts/qa/step-time-anchor-validation/` and are not committed.
 
 ## Milestone 6 Verification 2026-07-29
 

@@ -40,9 +40,9 @@ test('public host headers stay disabled even when the app server URL is localhos
 });
 
 test('signed native app requests can use local AI providers over the LAN', () => {
-  const req = new NextRequest('http://192.168.178.46:3000/api/chat', {
+  const req = new NextRequest('http://192.168.1.20:3000/api/chat', {
     headers: {
-      host: '192.168.178.46:3000',
+      host: '192.168.1.20:3000',
       'user-agent': 'Mozilla/5.0 AppleWebKit/605.1.15 NexNoteNative/0.0.7',
     },
   });
@@ -53,7 +53,7 @@ test('signed native app requests can use local AI providers over the LAN', () =>
 });
 
 test('a generic LAN browser is not treated as the native app', () => {
-  const req = new NextRequest('http://192.168.178.46:3000/api/chat', {
+  const req = new NextRequest('http://192.168.1.20:3000/api/chat', {
     headers: { 'user-agent': 'Mozilla/5.0 AppleWebKit/605.1.15' },
   });
 

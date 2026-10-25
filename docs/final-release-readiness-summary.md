@@ -61,7 +61,7 @@ OpenAI and local-agent evidence produced on 2026-07-26:
 - real runtime click-targeting remains stable on `leadsheet-repeat.musicxml`
 - true multi-voice runtime targeting remains stable on `temp-multi-voice-runtime.musicxml`
 - follow-up note-input ghost calibration now stays anchored to the correct parallel part after entry
-- step-time anchor validation artifacts were captured under `artifacts/qa/step-time-anchor-validation/`, covering whole-rest insertion, rejected invalid internal hovers, and TAB fret mirroring
+- step-time anchor validation artifacts were captured locally under `artifacts/qa/step-time-anchor-validation/` (not committed), covering whole-rest insertion, rejected invalid internal hovers, and TAB fret mirroring
 - the rebuilt packaged app exposes the live MIDI control, grants its own local renderer MIDI access, and reaches the visible “Waiting for a MIDI input device” state; a physical controller was not attached for this pass
 
 ## Acceptable Remaining Limitations

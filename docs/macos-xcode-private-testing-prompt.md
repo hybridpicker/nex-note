@@ -1,6 +1,6 @@
 # Prompt: Native macOS Xcode private-testing app
 
-Work in the existing repository at `/Users/lukasschonsgibl/Coding/nex-note` on
+Work in the existing nex-note repository checkout on
 the current `devel` branch. Build a private, native macOS test app in Xcode for
 the existing Nex Note application. This is not a PWA and must not replace,
 remove, or break the existing Electron app while the Xcode variant is still
