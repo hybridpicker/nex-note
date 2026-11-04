@@ -44,7 +44,7 @@ as not reproduced and dropped.
 | 3 | 1 corruption (**fixed in iteration 2**) | Pedal stop becomes a start on MusicXML reimport | E6 | C |
 | 4 | 1 wrong pitch (**fixed in iteration 3**) | 8va exported as `octave-shift type="up"` | P7 | C |
 | 4b | 1/2 owner request 2026-11-04 (**in progress, iterations 4–7**) | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
-| 5 | 1 data loss (*suspected*) | Double dots collapse to one dot on import | P1 | C |
+| 5 | 1 data loss (**fixed in iteration 9**) | Double dots collapse to one dot on import | P1 | C |
 | 6 | 1 wrong target (**fixed in iteration 8**) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
 | 7 | 1 invalid output (*suspected*) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
 | 8 | 1 wrong onset (*suspected*) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
@@ -494,4 +494,35 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Cross-app tests and builds: run on the iteration 8–11 stack.
 - Documentation updated: `docs/user-manual.en.md`, matrix E1, E7, L1, L2, this ledger.
 - Iteration 5–7 commits pushed: remote `devel` verified at `f8edee1`.
+- Decision: accepted (pending the stack gates).
+
+## Iteration 9 — Double-dotted values keep both dots
+
+- Iteration / date / starting SHA / dirty-tree state: 9 / 2026-11-04 / `6adaf6e` (local).
+- Track and matrix row: C (priority class 1, data loss); P1.
+- Problem and observable baseline:
+  - A double-dotted quarter (14 of 8 divisions) imported as `isDotted: true` and re-exported
+    with one `<dot/>`. Other applications then draw a dotted quarter whose length disagrees with
+    its duration, and nex-note reported `event_duration_notation_mismatch`.
+  - In the browser's strict-Doctor mode, any file with double dots was additionally blocked
+    from editing (`projection_unexportable_duration 14`).
+  - New `test/double-dot-roundtrip.test.ts` passed 1/3 before.
+- Hypothesis and bounded change:
+  - `dotCount` on events (set only for two or more dots), read on import.
+  - Export writes that count only while the stored duration still equals the multi-dotted
+    value. The validator applies the same condition, so a later value change can never write
+    or report a stale double dot.
+  - Rhythm-speller fragments drop `dotCount`. The Doctor projection rule accepts a fragment
+    that is exactly an imported multi-dotted event.
+  - Files: `src/score-core/model/types.ts`, `src/musicxml-adapter/import/import-musicxml.ts`,
+    `src/musicxml-adapter/export/export-core-to-musicxml.ts`,
+    `src/score-core/validation/validate-score-document.ts`, `src/layout/rhythm-speller.ts`,
+    `src/debug/doctor/document-doctor.ts`, `test/double-dot-roundtrip.test.ts` (new),
+    `e2e/notation-tools.spec.ts`.
+  - Not changed: entering double dots from the keyboard or toolbar (P1 stays PARTIAL), and
+    128th notes.
+- Regression evidence before and after: unit 1/3 before, 3/3 after; e2e (Doctor-clean load,
+  neighbour edit keeps four dots) passes; `npm test` passed; build passed.
+- Cross-app tests and builds: run on the iteration 8–11 stack.
+- Documentation updated: matrix P1, this ledger.
 - Decision: accepted (pending the stack gates).

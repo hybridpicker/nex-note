@@ -162,6 +162,19 @@ export function validateProjectionDoctorIssues(input: {
 }): DoctorIssue[] {
   const diagnostics: DocumentDiagnostic[] = [...input.projection.diagnostics];
   const tupletEventIds = buildTupletEventIdSet(input.coreDocument);
+  // Imported values with two or more dots (MusicXML <dot/><dot/>) are exportable as written.
+  const multiDottedDurations = new Map<string, number>();
+  for (const part of input.coreDocument?.score.parts ?? []) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const voice of measure.voices) {
+          for (const event of voice.events) {
+            if ((event.dotCount ?? 0) > 1) multiDottedDurations.set(event.id, event.durationDivisions);
+          }
+        }
+      }
+    }
+  }
 
   for (const voice of input.projection.voices) {
     const fragments = [...voice.fragments].sort((left, right) => (
@@ -171,7 +184,11 @@ export function validateProjectionDoctorIssues(input: {
     ));
 
     for (const fragment of fragments) {
-      if (!tupletEventIds.has(fragment.sourceEventId) && !isRepresentableDuration(fragment.durationDivisions, voice.divisions)) {
+      if (
+        !tupletEventIds.has(fragment.sourceEventId)
+        && multiDottedDurations.get(fragment.sourceEventId) !== fragment.durationDivisions
+        && !isRepresentableDuration(fragment.durationDivisions, voice.divisions)
+      ) {
         diagnostics.push({
           level: 'error',
           code: 'projection_unexportable_duration',

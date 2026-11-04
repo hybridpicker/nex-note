@@ -508,6 +508,26 @@ function updateAttributes(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
   }
 }
 
+const WHOLE_NOTE_FRACTION_BY_TYPE: Record<string, number> = {
+  breve: 2, whole: 1, half: 1 / 2, quarter: 1 / 4, eighth: 1 / 8, '16th': 1 / 16, '32nd': 1 / 32, '64th': 1 / 64, '128th': 1 / 128,
+};
+
+/**
+ * Number of `<dot/>` elements to write. Two or more dots are written only while the stored duration
+ * still equals that dotted value (divisions are the import convention timestampDen / 4), so an
+ * edit that changed the value can never leave a stale double dot.
+ */
+function writtenDotCount(event: TimedEvent) {
+  const single = event.isDotted ? 1 : 0;
+  const count = event.dotCount ?? single;
+  if (count <= 1) return single;
+  const fraction = event.durationType ? WHOLE_NOTE_FRACTION_BY_TYPE[event.durationType] : undefined;
+  const divisions = event.timestampDen / 4;
+  if (!fraction || !Number.isInteger(divisions) || divisions <= 0) return single;
+  const dotted = fraction * divisions * 4 * (2 - 1 / 2 ** count);
+  return Math.abs(dotted - event.durationDivisions) < 1e-9 ? count : single;
+}
+
 function buildForward(doc: XmlDocument, duration: number) {
   const forward = doc.createElement('forward');
   setOrCreateTextElement(doc, forward, 'duration', String(duration));
@@ -641,7 +661,7 @@ function buildEventElement(
   appendPreservedXmlFragments(doc, note, event.preservedXml?.afterDuration);
   setOrCreateTextElement(doc, note, 'voice', String(event.voiceId));
   if (event.durationType) setOrCreateTextElement(doc, note, 'type', event.durationType);
-  if (event.isDotted) note.appendChild(doc.createElement('dot'));
+  for (let dot = 0; dot < writtenDotCount(event); dot += 1) note.appendChild(doc.createElement('dot'));
   if (event.kind === 'note' && event.writtenAccidental) {
     const accidental = setOrCreateTextElement(doc, note, 'accidental', writtenAccidentalToMusicXml(event.writtenAccidental));
     if (event.accidentalCautionary) accidental.setAttribute('cautionary', 'yes');

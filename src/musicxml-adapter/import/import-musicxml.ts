@@ -858,6 +858,9 @@ function buildVoices(
       durationDivisions,
       durationType,
       isDotted: repairedDuration?.dotted ?? (note.getElementsByTagName('dot').length > 0),
+      ...(!repairedDuration && note.getElementsByTagName('dot').length > 1
+        ? { dotCount: note.getElementsByTagName('dot').length }
+        : {}),
       isChord,
       hidden: note.getAttribute('print-object') === 'no' || undefined,
       notehead: noteheadText === 'slash' ? 'slash' : undefined,

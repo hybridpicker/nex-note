@@ -109,6 +109,8 @@ export interface BaseTimedEvent {
   durationDivisions: number;
   durationType?: string;
   isDotted?: boolean;
+  /** Augmentation dots when there are two or more (MusicXML `<dot/>` count). One dot is `isDotted`. */
+  dotCount?: number;
   isChord: boolean;
   notehead?: 'slash';
   stem?: 'none' | 'up' | 'down';

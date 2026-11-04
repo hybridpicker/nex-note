@@ -334,6 +334,8 @@ export function applyRhythmSpellingToDocument(
               next.durationDivisions = fragment.durationDivisions;
               next.durationType = fragment.durationType;
               next.isDotted = fragment.isDotted || undefined;
+              // Spelling fragments are single values; a multi-dot count belongs to the source only.
+              delete next.dotCount;
               next.tieStart = event.kind === 'note' ? fragment.tieStart || undefined : undefined;
               if (index > 0) {
                 next.articulations = [];

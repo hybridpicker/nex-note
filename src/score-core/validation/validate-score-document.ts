@@ -17,7 +17,7 @@ function expectedMeasureDuration(beats: number, beatType: number, divisions: num
   return Math.round((beats * 4 * divisions) / beatType);
 }
 
-function durationTypeToDivisions(durationType: string | undefined, isDotted: boolean | undefined, divisions: number) {
+function durationTypeToDivisions(durationType: string | undefined, isDotted: boolean | undefined, divisions: number, dotCount?: number) {
   const denominatorByType: Record<string, number> = {
     whole: 1,
     half: 2,
@@ -30,7 +30,8 @@ function durationTypeToDivisions(durationType: string | undefined, isDotted: boo
   const denominator = durationType ? denominatorByType[durationType] : undefined;
   if (!denominator) return null;
   const base = (4 * divisions) / denominator;
-  return Math.max(1, Math.round(base * (isDotted ? 1.5 : 1)));
+  const dots = dotCount ?? (isDotted ? 1 : 0);
+  return Math.max(1, Math.round(base * (2 - 1 / 2 ** dots)));
 }
 
 function buildGraceEventIdSet(document: ScoreDocumentModel) {
@@ -358,7 +359,16 @@ export function validateScoreDocument(document: ScoreDocumentModel | null): Docu
               ));
             }
             if (graceEventIds.has(event.id)) continue;
-            const notatedDuration = durationTypeToDivisions(event.durationType, event.isDotted, divisions);
+            const notatedDuration = (() => {
+              // Two or more dots count only while they match the stored duration (as on export);
+              // a stale dotCount after a value change falls back to the single-dot reading.
+              const multiDotted = event.dotCount && event.dotCount > 1
+                ? durationTypeToDivisions(event.durationType, event.isDotted, divisions, event.dotCount)
+                : null;
+              return multiDotted != null && multiDotted === event.durationDivisions
+                ? multiDotted
+                : durationTypeToDivisions(event.durationType, event.isDotted, divisions);
+            })();
             const expectedNotatedDuration = notatedDuration == null
               ? null
               : tupletScaledDuration(document, event.id, notatedDuration);
