@@ -26,6 +26,8 @@ import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score
 import { resolveKeyboardAccidentalShortcut, resolveKeyboardArticulationShortcut, resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut, resolveKeyboardTupletShortcut } from '@/src/score-input/keyboard-resolver';
 import { getActiveKeyboardLayoutContext, isRepeatableNavigationKey, shortcutDigit } from '@/src/score-input/keyboard-layout';
 import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
+import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
+import { buildDurationCandidates, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { MidiPitch } from '@/src/score-input/midi-input';
 import { formatPreparedDurationPitches, prepareDurationPitch, updatePreparedDurationPitches, type PreparedDurationPitch } from '@/src/score-input/input-by-duration';
 import { resolveGuitarFretPitch, resolveGuitarTuning, type GuitarFretPitch, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
@@ -2087,6 +2089,95 @@ export function useNoteEditor(
       isDotted: dotted,
     });
     if (!inspected.target) {
+      // Keyboard step-time entry longer than the rest of the bar (MuseScore): split at the barline
+      // into a note filling this bar tied to the remainder in the next bar, as one action. Pointer
+      // entry keeps rejecting, because its ghost previews a single-bar note.
+      if (
+        noteInputModeRef.current
+        && inspected.rejectionReason === 'overflow-rejected'
+        && target.mode === 'replace'
+        && target.source === 'keyboard'
+        && !input.guitar
+      ) {
+        const reference = findEventReference(coreDocument, {
+          coreMeasureId: target.measureId ?? null,
+          corePartId: target.corePartId ?? null,
+          measureNumber: target.measureNumber,
+          staffIndex: target.staffIndex,
+          voiceId: target.voiceId,
+          timestampNum: target.timestampNum,
+          timestampDen: target.timestampDen,
+        });
+        const timing = reference
+          ? getEffectiveMeasureTimingFromStaff(reference.staff, { measureId: reference.measure.id, measureNumber: reference.measure.measureNumber })
+          : null;
+        const nextMeasure = reference?.staff.measures.find((entry) => entry.measureNumber === reference.measure.measureNumber + 1) ?? null;
+        const nextVoiceStart = nextMeasure?.voices
+          .find((voice) => voice.voiceId === reference?.event.voiceId)
+          ?.events.find((event) => event.timestampNum === 0 && !event.isChord) ?? null;
+        const slotInTuplet = Boolean(reference && coreDocument?.tuplets.some((tuplet) => tuplet.eventIds.includes(reference.event.id)));
+        if (reference && timing && nextMeasure && nextVoiceStart && !slotInTuplet) {
+          const divisions = timing.divisions;
+          const requested = buildDurationCandidates(divisions).find((candidate) => candidate.type === durationType && candidate.dotted === dotted)?.value ?? 0;
+          const slotStart = Math.round((reference.event.timestampNum / Math.max(reference.event.timestampDen, 1)) * divisions * 4);
+          const firstPart = timing.durationDivisions - slotStart;
+          const secondPart = requested - firstPart;
+          if (
+            firstPart > 0
+            && secondPart > 0
+            && isRepresentableDuration(firstPart, divisions)
+            && isRepresentableDuration(secondPart, divisions)
+          ) {
+            const first = describeDuration(firstPart, divisions);
+            const second = describeDuration(secondPart, divisions);
+            const pitchFields = {
+              step: target.step,
+              octave: target.octave,
+              alter: target.alter,
+              ...(input.writtenAccidental ? { writtenAccidental: input.writtenAccidental } : {}),
+            };
+            const thisBar = {
+              coreMeasureId: reference.measure.id,
+              corePartId: reference.part.id,
+              measureNumber: reference.measure.measureNumber,
+              staffIndex: reference.staff.staffIndex,
+              voiceId: reference.event.voiceId,
+              timestampNum: reference.event.timestampNum,
+              timestampDen: reference.event.timestampDen,
+            };
+            const nextBar = {
+              coreMeasureId: nextMeasure.id,
+              corePartId: reference.part.id,
+              measureNumber: nextMeasure.measureNumber,
+              staffIndex: reference.staff.staffIndex,
+              voiceId: reference.event.voiceId,
+              timestampNum: nextVoiceStart.timestampNum,
+              timestampDen: nextVoiceStart.timestampDen,
+            };
+            const splitCommands: ScoreCommand[] = [
+              { type: 'replaceWithRest', coreEntityId: reference.event.id, ...thisBar, durationType: first.type, isDotted: first.dotted },
+              { type: 'insertNoteAt', ...thisBar, ...pitchFields, durationType: first.type, isDotted: first.dotted, asChord: false, preserveOverflow: false },
+              { type: 'replaceWithRest', coreEntityId: nextVoiceStart.id, ...nextBar, durationType: second.type, isDotted: second.dotted },
+              { type: 'insertNoteAt', ...nextBar, ...pitchFields, durationType: second.type, isDotted: second.dotted, asChord: false, preserveOverflow: false },
+              { type: 'toggleTie', coreEntityId: null, ...thisBar, step: target.step, octave: target.octave, alter: target.alter },
+            ];
+            const splitNext = applyEditorCommands(splitCommands);
+            if (splitNext.xml !== xml && !splitNext.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) {
+              commitNoteInputUpdate(splitCommands, splitNext.coreDocument, nextBar, advanceFrom, {
+                isRest: false,
+                step: target.step,
+                octave: target.octave,
+                alter: target.alter,
+              }, {
+                audition: input.audition,
+                advanceCursor: true,
+              });
+              if (input.writtenAccidental) setSelectedAccidentalLive(null);
+              return true;
+            }
+          }
+        }
+      }
       warnRejectedEdit(label, {
         rejectionReason: inspected.rejectionReason,
         diagnostics: inspected.diagnostics,

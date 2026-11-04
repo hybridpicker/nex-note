@@ -63,6 +63,7 @@ as not reproduced and dropped.
 | 21 | 4 partial | Remaining PARTIAL rows in matrix order | all | C |
 | 22 | 5 latency | Medium/large score edit and preview budgets (`scripts/benchmark-note-entry.ts`) | parity matrix | A/B |
 | 23 | 4 hygiene | `tsc --noEmit` reports pre-existing type errors in `e2e/` and `test/` (for example `e2e/dunhill-old-abbey-stress.spec.ts`, `test/electron-launch-helpers.test.ts`) | n/a | — |
+| 24 | 1 to investigate | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -415,3 +416,49 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   `docs/keyboard-shortcuts.md` (Cmd/Ctrl+2..9 row), matrix P2, this ledger.
 - Decision: accepted (pending the stack gates).
 - Next item selected: iteration 7, splitting at the barline.
+
+## Iteration 7 — Keyboard values longer than the bar are split and tied at the barline
+
+- Iteration / date / starting SHA / dirty-tree state: 7 / 2026-11-04 / `5191351` (local).
+  Owner files left unstaged.
+- Track and matrix row: A (keyboard precision); P3, entry matrix.
+- Problem and observable baseline:
+  - A quarter typed on the last eighth of a 4/4 bar was rejected (`overflow-rejected`).
+    MuseScore splits it at the barline and ties it into the next bar.
+  - Entry-matrix scenario "a quarter entered on the last eighth" failed. The new e2e case
+    failed on the old hook.
+- Hypothesis and bounded change:
+  - When keyboard step-time entry in replace mode overflows the bar and both parts (rest of the
+    bar, remainder) are single, possibly dotted values, commit one batch: `replaceWithRest` and
+    `insertNoteAt` for each part, plus `toggleTie`. The cursor advances after the second part.
+  - Other lengths, tuplet slots and the last bar keep the visible rejection.
+  - Product decision: pointer entry keeps rejecting overlong values, because its ghost previews
+    a single-bar note and preview must equal commit. The existing mouse overfill tests are
+    unchanged.
+  - Files: `hooks/useNoteEditor.ts`, `test/entry-matrix.test.ts`,
+    `e2e/notation-tools.spec.ts`.
+- Regression evidence before and after:
+  - Matrix scenarios that now pass: quarter on the last eighth (eighth~eighth), dotted quarter
+    on the last eighth (eighth~quarter), half on beat 3 of 3/4 (quarter~quarter).
+  - A sixteenth-plus-11/16 split is rejected with the document unchanged.
+  - e2e: split, tie, strict Doctor clean, and one Undo restores the bar.
+  - `npm test`: 1,291 passed, 0 `todo`, 0 failed.
+  - `npm run build`: passed; application `tsc` clean.
+- Found while writing the e2e case (not caused by this change, recorded as backlog 24): strict
+  Doctor blocks edits when a later bar holds a whole-bar rest written as `measure="yes"` or as two
+  half rests.
+- Documentation updated: `docs/user-manual.en.md` (values across the barline), matrix P3,
+  this ledger.
+- Cross-app gates for the iteration 5–7 stack, run on `3d9c753` before pushing:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all unit groups passed; browser 86
+    passed, 0 failed.
+  - `npm run test:e2e:doctor`: 5 passed.
+  - `npm run electron:refresh`: 1,291 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; hardware MIDI; the Xcode macOS target, which does not exist.
+- Commit SHAs: iteration 5 `08c14c4`, iteration 6 `5191351`, iteration 7 is this commit. All
+  three were pushed together after these gates; the remote SHA is verified in the iteration 8
+  record.
+- Decision: iterations 5, 6 and 7 accepted.
+- Next item selected: iteration 8, part scope for dynamics, chord symbols, slash fills and
+  staff text (reproduced: they wrote into every part).

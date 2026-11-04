@@ -111,7 +111,6 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'a quarter entered on the last eighth of a bar is tied into the next bar',
-    todo: 'iteration 7: split and tie across the barline',
     xml: FOUR_FOUR,
     script: 'N 4 c d e f g a b 5 c',
     expect: [{
@@ -122,6 +121,39 @@ const SCENARIOS: Scenario[] = [
       ],
     }],
     batches: 8,
+  },
+  {
+    name: 'a dotted quarter on the last eighth is tied to a quarter in the next bar',
+    xml: FOUR_FOUR,
+    script: 'N 4 c d e f g a b 5 . c',
+    expect: [{
+      where: {},
+      events: [...EIGHTH_SCALE.slice(0, 7), 'm1@3.5 C5 eighth~', 'm2@0 C5 quarter', 'm2@1 r quarter', 'm2@2 r half'],
+    }],
+    batches: 8,
+  },
+  {
+    name: 'a half note on beat 3 of a 3/4 bar is tied across the barline',
+    xml: THREE_FOUR,
+    script: 'N 5 c d 6 e',
+    expect: [{ where: {}, events: ['m1@0 C4 quarter', 'm1@1 D4 quarter', 'm1@2 E4 quarter~', 'm2@0 E4 quarter', 'm2@1 r quarter', 'm2@2 r quarter'] }],
+    batches: 3,
+  },
+  {
+    name: 'an overlong value whose remainder is not a single value is rejected without changes',
+    xml: FOUR_FOUR,
+    script: 'N 3 c d e f g a b c d e f g a b c 6 . d',
+    expect: [{
+      where: {},
+      events: [
+        'm1@0 C4 16th', 'm1@0.25 D4 16th', 'm1@0.5 E4 16th', 'm1@0.75 F4 16th',
+        'm1@1 G4 16th', 'm1@1.25 A4 16th', 'm1@1.5 B4 16th', 'm1@1.75 C5 16th',
+        'm1@2 D5 16th', 'm1@2.25 E5 16th', 'm1@2.5 F5 16th', 'm1@2.75 G5 16th',
+        'm1@3 A5 16th', 'm1@3.25 B5 16th', 'm1@3.5 C6 16th', 'm1@3.75 r 16th',
+        'm2@0 r whole',
+      ],
+    }],
+    batches: 15,
   },
   {
     name: 'eighths continue across the barline in 3/4',
