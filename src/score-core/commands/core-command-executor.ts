@@ -407,7 +407,10 @@ function rebuildScoreIndex(document: ScoreDocumentModel): ScoreIndex {
 }
 
 
-function cloneMeasureForInsertion(sourceMeasure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number], nextMeasureNumber: number) {
+function cloneMeasureForInsertion(
+  sourceMeasure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  nextMeasureNumber: number,
+): ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number] {
   return {
     ...structuredClone(sourceMeasure),
     id: `${sourceMeasure.id}:insert:${nextMeasureNumber}`,
@@ -420,11 +423,27 @@ function cloneMeasureForInsertion(sourceMeasure: ScoreDocumentModel['score']['pa
       id: `${voice.id}:insert:${nextMeasureNumber}`,
       events: [],
     })),
+    // A new bar is plain: repeats, endings, special barlines, breaks and measure repeats stay on
+    // the source bar.
+    leftBarline: undefined,
+    rightBarline: undefined,
+    leftEnding: undefined,
+    rightEnding: undefined,
+    print: undefined,
+    measureRepeat: undefined,
+    multiMeasureRest: undefined,
     attributes: sourceMeasure.attributes.map((attribute, index) => ({
       ...structuredClone(attribute),
       id: `${sourceMeasure.id}:attr:${nextMeasureNumber}:${index}`,
     })),
   };
+}
+
+/** Layout hints are keyed by measure number; shift those after an inserted or deleted bar. */
+function shiftLayoutHintsAfterMeasure(document: ScoreDocumentModel, measureNumber: number, delta: 1 | -1) {
+  document.layoutHints = document.layoutHints
+    .filter((hint) => !(delta === -1 && hint.measureNumber === measureNumber))
+    .map((hint) => (hint.measureNumber > measureNumber ? { ...hint, measureNumber: hint.measureNumber + delta } : hint));
 }
 
 function renumberMeasures(document: ScoreDocumentModel) {
@@ -3931,9 +3950,16 @@ export function executeCoreCommands(
             const index = staff.measures.findIndex((measure) => measure.measureNumber === command.measureNumber);
             if (index < 0) return;
             const reference = staff.measures[index];
-            staff.measures.splice(index + 1, 0, cloneMeasureForInsertion(reference, command.measureNumber + 1));
+            const inserted = cloneMeasureForInsertion(reference, command.measureNumber + 1);
+            // Appending after the last bar moves the final barline to the new end.
+            if (index === staff.measures.length - 1 && reference.rightBarline === 'final') {
+              inserted.rightBarline = 'final';
+              reference.rightBarline = undefined;
+            }
+            staff.measures.splice(index + 1, 0, inserted);
           });
         });
+        shiftLayoutHintsAfterMeasure(nextDocument, command.measureNumber, 1);
         renumberMeasures(nextDocument);
         break;
       }
@@ -3946,6 +3972,7 @@ export function executeCoreCommands(
             }
           });
         });
+        shiftLayoutHintsAfterMeasure(nextDocument, command.measureNumber, -1);
         renumberMeasures(nextDocument);
         break;
       }

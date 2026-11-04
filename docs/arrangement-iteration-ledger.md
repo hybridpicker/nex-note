@@ -52,7 +52,7 @@ as not reproduced and dropped.
 | 10 | 1 wrong data (**fixed in iteration 14**) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
 | 11 | 1 data loss (**lyrics fixed in iteration 18**; `<multiple-rest>` did not reproduce) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
 | 12 | 1 wrong pitch (**fixed in iteration 12**) | Transposing parts play back at written pitch | S2 | C |
-| 13 | 1 wrong target (*suspected*) | Inserted measures clone barlines, endings and breaks | T6 | C |
+| 13 | 1 wrong target (**fixed in iteration 19**) | Inserted measures clone barlines, endings and breaks | T6 | C |
 | 14 | 2 precision | Scripted keyboard passage 1 (eight bars, treble) as a fixture with an exact keystroke script on three layouts | parity matrix | A |
 | 15 | 2 precision | Mouse corpus: C-clef, clef change, pickup, dense multi-voice, grand staff with three ledger lines | parity matrix | B |
 | 16 | 3 missing | Beaming control (break/join) | P10 | C |
@@ -837,3 +837,40 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Cross-app tests and builds: run on the iteration 18–19 stack.
 - Documentation updated: matrix L3, this ledger.
 - Decision: accepted (pending the stack gates).
+
+## Iteration 19 — An inserted measure is a plain bar; breaks stay on their bars
+
+- Iteration / date / starting SHA / dirty-tree state: 19 / 2026-11-04 / `6723b9b` (local).
+- Track and matrix row: C (priority class 1, wrong data); T6, T8.
+- Problem and observable baseline:
+  - `insertMeasureAfter` cloned the source bar's repeat barlines, endings, final barline,
+    system and page breaks, and measure-repeat marks. Inserting after a first-ending bar
+    produced two backward repeats and two first-ending starts.
+  - Layout hints are stored by measure number and were not shifted on insert or delete, so a
+    system break moved to a different bar.
+  - Appending after the final bar left the final barline in the middle of the score.
+  - New `test/insert-measure-structure.test.ts`: 0/4 before.
+- Hypothesis and bounded change:
+  - The clone clears barlines, endings, print breaks, measure-repeat and multi-rest flags.
+  - Appending after a final barline moves it to the new last bar.
+  - `shiftLayoutHintsAfterMeasure` shifts hints after an inserted bar, and removes the deleted
+    bar's hints while shifting later ones.
+  - File: `src/score-core/commands/core-command-executor.ts`.
+- Regression evidence before and after: 0/4 before, 5/5 after (including the deletion case);
+  inverse-command and history suites pass; `npm test` 1,333 passed. The first build attempt
+  failed on a narrowed return type (`rightBarline: undefined`), fixed by an explicit annotation;
+  then build passed and application `tsc` was clean.
+- Cross-app tests and builds: run on the iteration 18–19 stack.
+- Documentation updated: matrix T6, this ledger.
+- Decision: accepted (pending the stack gates).
+- Cross-app gates for the iteration 18–19 stack, run before pushing:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all groups passed; browser 92
+    passed, 0 failed.
+  - `npm run electron:refresh`: 1,333 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; the Xcode macOS target, which does not exist.
+- Commit SHAs: iteration 18 `6723b9b`, 19 is this commit; pushed together.
+- Decision: iterations 18 and 19 accepted.
+- Next item selected: backlog 24, now diagnosed. The strict-Doctor strong-beat rule reports
+  every value that fills a whole 4/4 bar (whole rest, whole note), which the rhythm speller
+  deliberately leaves unsplit (`spansFullMeasure`), so strict mode blocks editing of such files.
