@@ -981,6 +981,27 @@ test('voice 2 entry continues into the next bar instead of overwriting the last 
   await expect.poll(voiceTwoNotes).toEqual(['m1:C5', 'm1:D5', 'm1:E5', 'm1:F5', 'm1:G5', 'm1:A5', 'm1:B5', 'm1:C6', 'm2:D6', 'm2:E6']);
 });
 
+test('lyric extenders and elisions survive an edit in the score', async ({ page }) => {
+  const lyricXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Voice</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+<note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>Ah</text><extend type="start"/></lyric></note>
+<note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><lyric number="1"><extend type="stop"/></lyric></note>
+<note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><lyric number="1"><syllabic>end</syllabic><text>ri</text><elision>‿</elision><syllabic>single</syllabic><text>a</text></lyric></note>
+<note><pitch><step>F</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+</measure></part></score-partwise>`;
+  await bootWithScore(page, lyricXml);
+  const initialXml = await readCurrentXml(page);
+  await clickRenderedNotehead(page, 3);
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.step ?? null).toBe('F');
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(async () => readCurrentXml(page)).not.toBe(initialXml);
+  const xml = await readCurrentXml(page);
+  expect(xml).toMatch(/<extend type="start"\/>/);
+  expect(xml).toMatch(/<lyric>\s*<extend type="stop"\/>\s*<\/lyric>/);
+  expect(xml).toMatch(/<text>ri<\/text>\s*<elision>‿<\/elision>\s*<syllabic>single<\/syllabic>\s*<text>a<\/text>/);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

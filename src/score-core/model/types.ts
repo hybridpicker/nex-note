@@ -250,8 +250,13 @@ export interface LyricLine {
   id: string;
   verseNumber: number;
   eventId: string;
+  /** Empty for an extender-only syllable that continues a melisma. */
   text: string;
   syllabic?: 'single' | 'begin' | 'middle' | 'end';
+  /** Further syllables joined by an elision, in order (MusicXML `<elision>`, `<syllabic>`, `<text>`). */
+  elisions?: Array<{ elision: string; syllabic?: 'single' | 'begin' | 'middle' | 'end'; text: string }>;
+  /** Melisma extender line: MusicXML `<extend>` with its type, or `plain` without a type. */
+  extend?: 'start' | 'stop' | 'continue' | 'plain';
 }
 
 export interface LayoutHint {

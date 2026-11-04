@@ -140,7 +140,7 @@ export function normalizeScoreDocument(document: ScoreDocumentModel): ScoreDocum
   next.lyricLines = [...(next.lyricLines ?? [])].map((line) => ({
     ...line,
     text: line.text.trim(),
-  })).filter((line) => line.text);
+  })).filter((line) => line.text || line.extend);
   next.layoutHints = [...(next.layoutHints ?? [])];
   next.index = rebuildIndex(next);
 

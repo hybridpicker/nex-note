@@ -558,15 +558,37 @@ function collectNotationSemantics(
   const notations = note.getElementsByTagName('notations')[0];
 
   for (const lyric of Array.from(note.getElementsByTagName('lyric'))) {
-    const text = lyric.getElementsByTagName('text')[0]?.textContent ?? '';
-    if (!text) continue;
+    // MusicXML lyric: (syllabic?, text), (elision, syllabic?, text)*, extend?  |  extend alone.
+    const parts: Array<{ elision?: string; syllabic?: LyricLine['syllabic']; text: string }> = [];
+    let pendingSyllabic: LyricLine['syllabic'] | undefined;
+    let pendingElision: string | undefined;
+    let extend: LyricLine['extend'];
+    for (let index = 0; index < lyric.childNodes.length; index += 1) {
+      const child = lyric.childNodes[index];
+      if (child.nodeType !== 1) continue;
+      const element = child as XmlElement;
+      if (element.tagName === 'syllabic') pendingSyllabic = (element.textContent ?? '').trim() as LyricLine['syllabic'];
+      else if (element.tagName === 'elision') pendingElision = element.textContent ?? '';
+      else if (element.tagName === 'text') {
+        parts.push({ elision: pendingElision, syllabic: pendingSyllabic, text: element.textContent ?? '' });
+        pendingSyllabic = undefined;
+        pendingElision = undefined;
+      } else if (element.tagName === 'extend') {
+        const type = element.getAttribute('type');
+        extend = type === 'start' || type === 'stop' || type === 'continue' ? type : 'plain';
+      }
+    }
+    const [first, ...rest] = parts;
+    if (!first?.text && !extend) continue;
     const verseNumber = parseIntSafe(lyric.getAttribute('number'), 1) || 1;
     collectors.lyricLines.push({
       id: makeId('lyric', eventId, verseNumber),
       verseNumber,
       eventId,
-      text,
-      syllabic: (lyric.getElementsByTagName('syllabic')[0]?.textContent ?? undefined) as LyricLine['syllabic'],
+      text: first?.text ?? '',
+      syllabic: first?.syllabic,
+      ...(rest.length > 0 ? { elisions: rest.map((part) => ({ elision: part.elision ?? '', syllabic: part.syllabic, text: part.text })) } : {}),
+      ...(extend ? { extend } : {}),
     });
   }
 

@@ -573,6 +573,12 @@ function writtenDotCount(event: TimedEvent) {
   return Math.abs(dotted - event.durationDivisions) < 1e-9 ? count : single;
 }
 
+function textElement(doc: XmlDocument, tag: string, text: string) {
+  const element = doc.createElement(tag);
+  element.textContent = text;
+  return element;
+}
+
 function buildForward(doc: XmlDocument, duration: number) {
   const forward = doc.createElement('forward');
   setOrCreateTextElement(doc, forward, 'duration', String(duration));
@@ -593,8 +599,12 @@ function getEventLyrics(coreDocument: ScoreDocumentModel, event: TimedEvent) {
       verseNumber: line.verseNumber,
       text: line.text,
       syllabic: line.syllabic,
+      elisions: line.elisions,
+      extend: line.extend,
     }));
-  return semanticLyrics.length > 0 ? semanticLyrics : (event.lyrics ?? []);
+  return semanticLyrics.length > 0
+    ? semanticLyrics
+    : (event.lyrics ?? []).map((lyric) => ({ ...lyric, elisions: undefined, extend: undefined }));
 }
 
 function notePitchesEqual(left: TimedEvent | undefined, right: TimedEvent | undefined) {
@@ -915,8 +925,20 @@ function buildEventElement(
   getEventLyrics(coreDocument, event).forEach((lyricData) => {
     const lyric = doc.createElement('lyric');
     if (lyricData.verseNumber != null && lyricData.verseNumber !== 1) lyric.setAttribute('number', String(lyricData.verseNumber));
-    if (lyricData.syllabic) setOrCreateTextElement(doc, lyric, 'syllabic', lyricData.syllabic);
-    setOrCreateTextElement(doc, lyric, 'text', lyricData.text);
+    if (lyricData.text || !lyricData.extend) {
+      if (lyricData.syllabic) lyric.appendChild(textElement(doc, 'syllabic', lyricData.syllabic));
+      lyric.appendChild(textElement(doc, 'text', lyricData.text));
+      for (const part of lyricData.elisions ?? []) {
+        lyric.appendChild(textElement(doc, 'elision', part.elision));
+        if (part.syllabic) lyric.appendChild(textElement(doc, 'syllabic', part.syllabic));
+        lyric.appendChild(textElement(doc, 'text', part.text));
+      }
+    }
+    if (lyricData.extend) {
+      const extend = doc.createElement('extend');
+      if (lyricData.extend !== 'plain') extend.setAttribute('type', lyricData.extend);
+      lyric.appendChild(extend);
+    }
     note.appendChild(lyric);
   });
   setOrCreateTextElement(doc, note, 'staff', String(event.staffIndex));

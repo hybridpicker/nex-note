@@ -50,7 +50,7 @@ as not reproduced and dropped.
 | 8 | 1 wrong onset (**fixed in iteration 2**) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
 | 9 | 1 corruption (**fixed in iteration 11**) | `setCueNote` clears `durationType` | L4 | C |
 | 10 | 1 wrong data (**fixed in iteration 14**) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
-| 11 | 1 data loss (*suspected*) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
+| 11 | 1 data loss (**lyrics fixed in iteration 18**; `<multiple-rest>` did not reproduce) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
 | 12 | 1 wrong pitch (**fixed in iteration 12**) | Transposing parts play back at written pitch | S2 | C |
 | 13 | 1 wrong target (*suspected*) | Inserted measures clone barlines, endings and breaks | T6 | C |
 | 14 | 2 precision | Scripted keyboard passage 1 (eight bars, treble) as a fixture with an exact keystroke script on three layouts | parity matrix | A |
@@ -806,3 +806,34 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Decision: iterations 15–17 accepted.
 - Next item selected: round-trip losses for lyric extenders and elisions, multi-measure rests,
   and the suspected barline and ending cloning when a measure is inserted (backlog 11 and 13).
+
+## Iteration 18 — Lyric melisma extenders and elisions survive round trips and edits
+
+- Iteration / date / starting SHA / dirty-tree state: 18 / 2026-11-04 / `278cd81` (equal to
+  `origin/devel`).
+- Track and matrix row: C (priority class 1, data loss); L3.
+- Problem and observable baseline (probe on a synthetic two-verse bar):
+  - All 4 `<extend>` and the `<elision>` were lost on export.
+  - Extender-only lyrics (a melisma continuing in verse 2) were dropped, so verse-2 lyric
+    elements fell from 3 to 1.
+  - The normalizer also discarded lyric lines with empty text.
+  - `<multiple-rest>` did not reproduce as lost; it is kept in this probe.
+  - New `test/lyric-extend-elision.test.ts`: 0/2 before.
+- Hypothesis and bounded change:
+  - `LyricLine` gains `elisions` (elision, syllabic, text) and `extend`
+    (start/stop/continue/plain).
+  - The importer walks each `<lyric>` in MusicXML order and keeps extender-only syllables.
+  - The exporter writes `syllabic, text, (elision, syllabic, text)*, extend`.
+  - The normalizer keeps lines with an extender.
+  - Files: `src/score-core/model/types.ts`, `src/musicxml-adapter/import/import-musicxml.ts`,
+    `src/musicxml-adapter/export/export-core-to-musicxml.ts`,
+    `src/score-core/normalize/normalize-score-document.ts`,
+    `test/lyric-extend-elision.test.ts` (new), `e2e/notation-tools.spec.ts`.
+  - Still missing: entering extenders and elisions from the Inspector or a lyric entry mode
+    (L3 stays PARTIAL).
+- Regression evidence before and after: unit 0/2 before, 2/2 after; the e2e case (edit next to
+  the lyrics keeps start/stop extenders and the elision) passes; `npm test` 1,328 passed; build
+  passed.
+- Cross-app tests and builds: run on the iteration 18–19 stack.
+- Documentation updated: matrix L3, this ledger.
+- Decision: accepted (pending the stack gates).
