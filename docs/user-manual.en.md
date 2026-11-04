@@ -157,6 +157,8 @@ The Edit Palette can set regular, double, final, start repeat, and end repeat ba
 
 ## Chord Symbols, Lyrics, and Text
 
+Dynamics, chord symbols, slash fills and staff or expression text apply to the instrument and staff of the selected note. Text added without a selection stays score-wide.
+
 With a note selected, `Cmd/Ctrl+K` opens an inline harmony cursor directly at the score position. Existing chord symbols load for quick overwrite, `Enter` applies, and `Escape` cancels. Without a note selection, `Cmd/Ctrl+K` still opens the Command Center. The Inspector adds rehearsal marks, staff text, expressions, dynamics, and lyric lines. Staff text and expression text can be placed above or below the staff, selected-note dynamics now preload both the current semantic value and placement when available, an existing selected articulation or fermata can be placed above or below, an existing selected tie start can be placed above or below, and an existing slur selected as a semantic span can be flipped above or below without leaving the command path. Pressing `Enter` in rehearsal, staff-text, lyric, or dynamic fields still applies the edit directly through the command path.
 
 ## Inspector

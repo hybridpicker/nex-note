@@ -39,8 +39,8 @@ export type LegacyScoreOperation =
   | { type: 'addVolta2' }
   | { type: 'setEnding'; measureNumber: number; number: string; endingType: 'start' | 'stop' | 'discontinue' }
   | { type: 'addChords'; chords: string }
-  | { type: 'setHarmonyAt'; value: string; measureNumber: number; staffIndex?: number; timestampNum: number; timestampDen: number }
-  | { type: 'fillSlashMeasure'; measureNumber: number; staffIndex?: number; voiceId?: number; stem?: 'none' }
+  | { type: 'setHarmonyAt'; value: string; measureNumber: number; staffIndex?: number; timestampNum: number; timestampDen: number; corePartId?: string | null }
+  | { type: 'fillSlashMeasure'; measureNumber: number; staffIndex?: number; voiceId?: number; stem?: 'none'; corePartId?: string | null }
   | ({ type: 'duplicateNote' } & NoteLocatorLike)
   | { type: 'setTimeSignature'; beats: number; beatType: number; beatGroups?: number[]; measureNumber?: number }
   | { type: 'setClef'; sign: 'G' | 'F' | 'C'; line: 1 | 2 | 3 | 4 | 5; measureNumber?: number; staffIndex?: number }
@@ -57,8 +57,8 @@ export type LegacyScoreOperation =
   | ({ type: 'setSlurPlacement'; placement: 'above' | 'below'; stopLocator: NoteLocatorLike } & NoteLocatorLike)
   | { type: 'addRehearsalMark'; text: string; measureNumber: number }
   | { type: 'addRehearsalMarksEvery'; interval: number; startMeasureNumber?: number; endMeasureNumber?: number; style?: 'letters' | 'numbers' }
-  | { type: 'addWords'; text: string; measureNumber: number; placement?: 'above' | 'below' }
-  | { type: 'addExpressionText'; text: string; measureNumber: number; placement?: 'above' | 'below' }
+  | { type: 'addWords'; text: string; measureNumber: number; placement?: 'above' | 'below'; corePartId?: string | null; staffIndex?: number }
+  | { type: 'addExpressionText'; text: string; measureNumber: number; placement?: 'above' | 'below'; corePartId?: string | null; staffIndex?: number }
   | {
       type: 'addAnalysisAnnotation';
       text: string;

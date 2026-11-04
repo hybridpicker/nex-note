@@ -2948,6 +2948,7 @@ export function useNoteEditor(
     const commands: ScoreCommand[] = [{
       type: 'setHarmonyAt',
       value: chord,
+      corePartId: targetNote.corePartId ?? null,
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
       timestampNum: targetNote.timestampNum,
@@ -2970,6 +2971,7 @@ export function useNoteEditor(
     if (!targetNote) return;
     const commands: ScoreCommand[] = [{
       type: 'fillSlashMeasure',
+      corePartId: targetNote.corePartId ?? null,
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
       voiceId: storedInputVoiceAt(targetNote),
@@ -3283,7 +3285,7 @@ export function useNoteEditor(
     const targets = selectedTargets(selectedNote, selectedNotes);
     if (!targets.length) return;
     dbg.editor(`addDynamic ${dynamic} count=${targets.length}`);
-    const commands = targets.map((loc) => ({ type: 'addDynamic' as const, dynamic, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
+    const commands = targets.map((loc) => ({ type: 'addDynamic' as const, dynamic, corePartId: loc.corePartId ?? null, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('addDynamic', commands[0]!);

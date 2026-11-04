@@ -1065,12 +1065,23 @@ function slashPitchForMeasure(
   return { step: 'B', alter: 0, octave: 4 };
 }
 
+/**
+ * Whether a command addressed to `corePartId` targets `part`. Commands without a part keep their
+ * score-wide meaning; with a part (core id "part:P1" or MusicXML id "P1") only that part changes.
+ */
+function commandTargetsPart(part: { id: string; sourcePartId?: string }, corePartId: string | null | undefined) {
+  if (!corePartId) return true;
+  const wanted = corePartId.replace(/^part:/, '');
+  return part.id === corePartId || part.id.replace(/^part:/, '') === wanted || part.sourcePartId === wanted;
+}
+
 function fillMeasureWithSlashes(
   document: ScoreDocumentModel,
   command: Extract<ValidatedScoreCommand, { type: 'fillSlashMeasure' }>,
 ) {
   const targetVoiceId = command.voiceId ?? 1;
   document.score.parts.forEach((part) => {
+    if (!commandTargetsPart(part, command.corePartId)) return;
     part.staves.forEach((staff) => {
       if (command.staffIndex != null && staff.staffIndex !== command.staffIndex) return;
       const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
@@ -4627,6 +4638,7 @@ export function executeCoreCommands(
       }
       case 'addDynamic': {
         for (const part of nextDocument.score.parts) {
+          if (!commandTargetsPart(part, command.corePartId)) continue;
           const staff = part.staves.find((entry) => entry.staffIndex === command.staffIndex);
           const measure = staff?.measures.find((entry) => entry.measureNumber === command.measureNumber);
           if (!measure) continue;
@@ -4696,7 +4708,9 @@ export function executeCoreCommands(
       }
       case 'addWords': {
         nextDocument.score.parts.forEach((part) => {
+          if (!commandTargetsPart(part, command.corePartId)) return;
           part.staves.forEach((staff) => {
+            if (command.staffIndex != null && staff.staffIndex !== command.staffIndex) return;
             const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
             if (!measure) return;
             measure.directions.push({
@@ -4715,7 +4729,9 @@ export function executeCoreCommands(
       }
       case 'addExpressionText': {
         nextDocument.score.parts.forEach((part) => {
+          if (!commandTargetsPart(part, command.corePartId)) return;
           part.staves.forEach((staff) => {
+            if (command.staffIndex != null && staff.staffIndex !== command.staffIndex) return;
             const measure = staff.measures.find((entry) => entry.measureNumber === command.measureNumber);
             if (!measure) return;
             measure.directions.push({
@@ -4825,6 +4841,7 @@ export function executeCoreCommands(
       }
       case 'setHarmonyAt': {
         nextDocument.score.parts.forEach((part) => {
+          if (!commandTargetsPart(part, command.corePartId)) return;
           const partHasTargetStaff = command.staffIndex == null || part.staves.some((staff) => (
             staff.staffIndex === command.staffIndex
             && staff.measures.some((entry) => entry.measureNumber === command.measureNumber)

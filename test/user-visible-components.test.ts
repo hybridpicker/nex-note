@@ -2158,6 +2158,9 @@ test('ScoreInspector exposes safe placement controls for expression text and dyn
       measureNumber: 1,
       text: 'dolce',
       placement: 'below',
+      // Staff text belongs to the selected note's part and staff.
+      corePartId: 'part:P1',
+      staffIndex: 1,
     }],
   });
   assert.deepEqual(calls[1], {
@@ -2166,6 +2169,7 @@ test('ScoreInspector exposes safe placement controls for expression text and dyn
       type: 'addDynamic',
       dynamic: 'ff',
       placement: 'below',
+      corePartId: 'part:P1',
       measureNumber: 1,
       staffIndex: 1,
       voiceId: 1,

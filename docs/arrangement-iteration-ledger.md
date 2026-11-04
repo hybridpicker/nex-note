@@ -45,7 +45,7 @@ as not reproduced and dropped.
 | 4 | 1 wrong pitch (**fixed in iteration 3**) | 8va exported as `octave-shift type="up"` | P7 | C |
 | 4b | 1/2 owner request 2026-11-04 (**in progress, iterations 4–7**) | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
 | 5 | 1 data loss (*suspected*) | Double dots collapse to one dot on import | P1 | C |
-| 6 | 1 wrong target (*suspected*) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
+| 6 | 1 wrong target (**fixed in iteration 8**) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
 | 7 | 1 invalid output (*suspected*) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
 | 8 | 1 wrong onset (*suspected*) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
 | 9 | 1 corruption (*suspected*) | `setCueNote` clears `durationType` | L4 | C |
@@ -462,3 +462,36 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Decision: iterations 5, 6 and 7 accepted.
 - Next item selected: iteration 8, part scope for dynamics, chord symbols, slash fills and
   staff text (reproduced: they wrote into every part).
+
+## Iteration 8 — Dynamics, chord symbols, slash fills and staff text stay in their instrument
+
+- Iteration / date / starting SHA / dirty-tree state: 8 / 2026-11-04 / `f8edee1` (equal to
+  `origin/devel`). Owner files left unstaged.
+- Track and matrix row: C (priority class 1, wrong target); E1, E7, L1, L2.
+- Problem and observable baseline:
+  - In a flute and cello score, `addDynamic`, `setHarmonyAt`, `addWords` and
+    `addExpressionText` aimed at the cello also wrote into the flute.
+  - `fillSlashMeasure` replaced the flute's bar with slashes.
+  - The commands had no part field; the editor and Inspector sent none.
+  - Evidence: new `test/part-scope.test.ts` passed 1/7 before (only the score-wide default
+    case); the new e2e case (palette `F` on the cello) failed on the old code.
+- Hypothesis and bounded change:
+  - Optional `corePartId` (and `staffIndex` for text) on these commands. A
+    `commandTargetsPart` helper accepts the core id ("part:P1") or the MusicXML id ("P1").
+  - Without a part the score-wide meaning is unchanged (AI and system-wide text).
+  - The editor (`addDynamic`, `setHarmonyAtSelection`, `fillSlashMeasure`) and the Inspector
+    (dynamics, staff and expression text) pass the selected note's part, and its staff for
+    text.
+  - Updated assertion: the Inspector component test now expects the part and staff fields in
+    the emitted commands.
+  - Files: `src/score-core/commands/core-command-executor.ts`,
+    `src/shared/schemas/score-command.ts`, `hooks/useNoteEditor.ts`,
+    `components/ScoreInspector.tsx`, `test/part-scope.test.ts` (new),
+    `test/user-visible-components.test.ts`, `e2e/notation-tools.spec.ts`.
+- Regression evidence before and after: part-scope 1/7 before, 7/7 after; e2e failed before,
+  passes after; `npm test` 1,298 passed after the Inspector expectation update; build passed;
+  application `tsc` clean.
+- Cross-app tests and builds: run on the iteration 8–11 stack.
+- Documentation updated: `docs/user-manual.en.md`, matrix E1, E7, L1, L2, this ledger.
+- Iteration 5–7 commits pushed: remote `devel` verified at `f8edee1`.
+- Decision: accepted (pending the stack gates).

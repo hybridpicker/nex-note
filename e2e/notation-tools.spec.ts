@@ -871,6 +871,24 @@ ${'<note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><v
   await expect.poll(async () => readCurrentXml(page)).toBe(beforeSplit);
 });
 
+test('a palette dynamic on the second instrument stays in that instrument', async ({ page }) => {
+  const quarters = (octave: number) => ['C', 'D', 'E', 'F'].map((step) => `<note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>`).join('');
+  const duoXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part><score-part id="P2"><part-name>Cello</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>${quarters(5)}</measure></part>
+<part id="P2"><measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>F</sign><line>4</line></clef></attributes>${quarters(3)}</measure></part>
+</score-partwise>`;
+  await bootWithScore(page, duoXml);
+  await clickRenderedNotehead(page, 4);
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.octave ?? null).toBe(3);
+  const dynamicsPanel = await openPaletteSection(page, 'Dynamics');
+  await dynamicsPanel.getByRole('button', { name: 'F', exact: true }).click();
+  const dynamicsByPart = async () => (await readCurrentCore(page)).score.parts.map((part) => (
+    part.staves[0].measures[0].directions.filter((direction) => direction.kind === 'dynamics').map((direction) => direction.value)
+  ));
+  await expect.poll(dynamicsByPart).toEqual([[], ['f']]);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

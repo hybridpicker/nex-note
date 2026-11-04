@@ -455,6 +455,8 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
       measureNumber: targetMeasure,
       text: staffText.trim(),
       placement: textPlacement,
+      // Staff text belongs to the selected staff; without a selection it stays score-wide.
+      ...(selectedNote ? { corePartId: selectedNote.corePartId ?? null, staffIndex: selectedNote.staffIndex } : {}),
     }], textKind === 'expression' ? 'Expression text' : 'Staff text');
     setStaffText('');
   };
@@ -465,6 +467,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
       type: 'addDynamic',
       dynamic: dynamicMarking,
       placement: dynamicPlacement,
+      corePartId: selectedNote.corePartId ?? null,
       measureNumber: selectedNote.measureNumber,
       staffIndex: selectedNote.staffIndex,
       voiceId: selectedNote.voiceId,
@@ -662,6 +665,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
                 onClick={() => onApplyCommands(buildPerNoteCommands(pitchedSelection, (note) => ({
                   type: 'addDynamic',
                   dynamic: 'mf',
+                  corePartId: note.corePartId ?? null,
                   measureNumber: note.measureNumber,
                   staffIndex: note.staffIndex,
                   voiceId: note.voiceId,
