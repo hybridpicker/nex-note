@@ -70,6 +70,8 @@ as not reproduced and dropped.
 | 30 | 1 invalid output (**fixed in iteration 28**) | `insertMeasureAfter` writes an empty `<measure>` with no rest in any staff | T6 | C |
 | 31 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
 | 29 | 1 data loss (to confirm against MuseScore) | Typing past the last position of the score replaces the last note | parity matrix | A |
+| 32 | 1 wrong onset, wrong target (**fixed in iteration 29**) | A rest typed in a rest-only bar after the last note is erased; left-hand rests in later bars are deleted; a rest in a later part moves the cursor to the first part | P1, S1, parity matrix | A |
+| 33 | 1 wrong target | Audit: every keyboard action in a second part must leave the first part untouched (several hook commands carry no part) | E2, S1 | A |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -1149,4 +1151,31 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   application `tsc` clean.
 - Cross-app tests and builds: run on the iteration 24–29 stack.
 - Documentation updated: this ledger.
+- Decision: accepted.
+
+## Iteration 29 — Rests typed in trailing bars stay, and rests stay in their part
+
+- Iteration / date / starting SHA / dirty-tree state: 29 / 2026-11-04 / `73566f9` (local).
+- Track and matrix row: A, priority class 1 (data loss, wrong onset, wrong target); P1, S1, owner
+  request for eighths and sixteenths across voices and instruments.
+- Problem and observable baseline (found while testing entry past the end of the score):
+  - `pruneTrailingRestOnlyMeasuresForVoice` rewrites every rest-only bar after the last note as a
+    whole-bar rest, including the bar just edited. `c d e f 0 g` lost the rest and G did not land
+    on beat 2 of the next bar. This is a common way to start a bar.
+  - For any voice other than 1 the same function deletes rests. A left-hand staff, whose main
+    voice is stored as 5, lost its rests in every later bar.
+  - `insertRest` resolved the entered rest without its part. After a rest in a later part the
+    cursor jumped to the first part, and the next note went into the wrong instrument.
+  - New `test/entry-rest-in-trailing-bar.test.ts`: 2/9 before.
+- Hypothesis and bounded change:
+  - Duration edits keep the rhythm of the edited bar (`keepMeasureRhythm`); other trailing bars
+    are still rewritten.
+  - The staff's lowest voice in a bar counts as its main voice and keeps a whole-bar rest. Only
+    secondary voices may disappear from a bar.
+  - `insertRest` and its entered locator carry the part and measure.
+  - Files: `src/score-core/commands/core-command-executor.ts`, `hooks/useNoteEditor.ts`.
+- Regression evidence before and after: 2/9 before, 9/9 after; `npm test` passed; build passed;
+  application `tsc` clean.
+- Cross-app tests and builds: run on the iteration 24–30 stack.
+- Documentation updated: `docs/user-manual.en.md`, this ledger.
 - Decision: accepted.

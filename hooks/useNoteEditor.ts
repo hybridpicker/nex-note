@@ -3242,6 +3242,8 @@ export function useNoteEditor(
       }]
       : [{
         type: 'insertRest',
+        coreMeasureId: targetNote.coreMeasureId ?? null,
+        corePartId: targetNote.corePartId ?? null,
         measureNumber: targetNote.measureNumber,
         staffIndex: targetNote.staffIndex,
         voiceId: storedInputVoiceAt(targetNote),
@@ -3292,6 +3294,8 @@ export function useNoteEditor(
       timestampDen: targetNote.timestampDen,
     });
     const enteredLocator = {
+      coreMeasureId: targetNote.coreMeasureId ?? null,
+      corePartId: targetNote.corePartId ?? null,
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
       voiceId: overwriteSlot ? targetNote.voiceId : storedInputVoiceAt(targetNote),

@@ -1320,6 +1320,7 @@ function applyDurationChangeToVoice(
     startMeasureNumber: input.measure.measureNumber,
     endMeasureNumber: input.measure.measureNumber,
     preferExactTailRest: delta < 0 && simultaneousEvents.length > 1,
+    keepMeasureRhythm: true,
   });
   return true;
 }
@@ -2294,6 +2295,7 @@ function dropRestOnlyTimelineForOverflowEstimate(
 function pruneTrailingRestOnlyMeasuresForVoice(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   voiceId: number,
+  options?: { keepMeasureNumber?: number },
 ) {
   let lastNoteMeasureNumber: number | null = null;
 
@@ -2308,7 +2310,11 @@ function pruneTrailingRestOnlyMeasuresForVoice(
 
   for (const measure of staff.measures) {
     if (measure.measureNumber <= lastNoteMeasureNumber) continue;
-    if (voiceId === 1) {
+    // A rest value just written in this bar is the user's rhythm, not filler.
+    if (measure.measureNumber === options?.keepMeasureNumber) continue;
+    // The staff's main voice keeps a whole-bar rest (voice 5 on a left-hand staff); only a
+    // secondary voice may disappear from a bar.
+    if (voiceId === 1 || voiceId <= Math.min(...measure.voices.map((entry) => entry.voiceId))) {
       const timing = resolveMeasureTiming(staff, measure);
       const voice = getOrCreateVoiceForMeasure(measure, voiceId);
       voice.events = buildRestEventsForSpan(
@@ -3369,7 +3375,7 @@ function removeAndPullVoiceTimeline(
 function fillVoiceTimelineGaps(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   voiceId: number,
-  range?: { startMeasureNumber?: number; endMeasureNumber?: number; preferExactTailRest?: boolean },
+  range?: { startMeasureNumber?: number; endMeasureNumber?: number; preferExactTailRest?: boolean; keepMeasureRhythm?: boolean },
 ) {
   for (const measure of staff.measures) {
     if (range?.startMeasureNumber != null && measure.measureNumber < range.startMeasureNumber) continue;
@@ -3449,7 +3455,9 @@ function fillVoiceTimelineGaps(
     ));
   }
 
-  pruneTrailingRestOnlyMeasuresForVoice(staff, voiceId);
+  pruneTrailingRestOnlyMeasuresForVoice(staff, voiceId, {
+    keepMeasureNumber: range?.keepMeasureRhythm ? range.startMeasureNumber : undefined,
+  });
 }
 
 function coalesceAdjacentRestsInMeasure(
