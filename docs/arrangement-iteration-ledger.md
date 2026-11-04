@@ -1064,3 +1064,24 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Cross-app tests and builds: run on the iteration 24–26 stack.
 - Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
 - Decision: accepted.
+
+## Iteration 26 — MIDI keys and `M` commits after a typed letter go to the cursor
+
+- Iteration / date / starting SHA / dirty-tree state: 26 / 2026-11-04 / iteration 25 (local).
+- Track and matrix row: A, priority class 1 (data loss); parity matrix "MIDI input" and
+  "pitch-before-duration".
+- Problem and observable baseline:
+  - `insertMidiChord` targeted the last input. After a typed letter that is the note just
+    entered, not the cursor (it stays the octave reference).
+  - Typing C and then playing D on a MIDI keyboard replaced C. `4 c M d 5` replaced C the same
+    way, and the MIDI chord, voice 2 and off-beat cases lost notes too.
+  - New `test/entry-cursor-target.test.ts`: 1/8 before (MIDI entry on its own).
+- Hypothesis and bounded change: `insertMidiChord` and `commitPreparedDurationPitches` use the
+  input cursor first and the last input only as a fallback. MIDI-only entry is unchanged because
+  it already kept both on the same slot. File: `hooks/useNoteEditor.ts`.
+- Regression evidence before and after: 1/8 before, 8/8 after; `npm test` passed; build passed;
+  application `tsc` clean. Physical MIDI hardware was not used: the tests call the hook's
+  `insertMidiChord` entry point with pitches.
+- Cross-app tests and builds: run on the iteration 24–26 stack.
+- Documentation updated: this ledger.
+- Decision: accepted.

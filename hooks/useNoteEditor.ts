@@ -2556,7 +2556,10 @@ export function useNoteEditor(
       return true;
     }
 
-    const targetNote = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
+    // The input cursor is the target. After a typed letter the last input is the note just
+    // entered (its octave reference), not the cursor, so a MIDI key or an M-mode commit that
+    // followed it used to replace that note.
+    const targetNote = selectedNoteRef.current ?? lastNoteInputRef.current ?? selectedNote;
     if (!targetNote) return false;
     const selectedTiming = resolveEventTimingFromDocument(coreDocument, {
       coreMeasureId: targetNote.coreMeasureId ?? null,
@@ -2717,7 +2720,7 @@ export function useNoteEditor(
   const commitPreparedDurationPitches = useCallback((duration: NoteDuration) => {
     const pitches = preparedDurationPitchesRef.current;
     if (!inputByDurationModeRef.current || pitches.length === 0) return false;
-    const anchor = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
+    const anchor = selectedNoteRef.current ?? lastNoteInputRef.current ?? selectedNote;
     const committed = insertMidiChord(pitches, {
       duration,
       dotted: isDottedRef.current,
