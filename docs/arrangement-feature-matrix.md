@@ -48,9 +48,9 @@ Abbreviations:
 
 | Status | Rows |
 | --- | --- |
-| PASS | 0 |
+| PASS | 1 |
 | PARTIAL | 42 |
-| MISSING | 5 |
+| MISSING | 4 |
 | BLOCKED | 0 |
 | Total | 47 |
 
@@ -129,8 +129,8 @@ Abbreviations:
 
 | # | Capability | Core model | Keyboard path | Mouse path | Undo/Redo | Render | Playback | MusicXML | Automated evidence | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| X1 | Keyboard layout independence (US-QWERTY, German/Austrian QWERTZ, UK) for every documented shortcut | MISSING: shortcuts mix `event.key` and `event.code` without layout data. On QWERTZ, Cmd/Ctrl+Y (Redo) runs Undo in the web and iPad surfaces | n/a | n/a | n/a | n/a | n/a | n/a | none | MISSING | Track A1: layout-aware resolver with three-layout unit tests |
-| X2 | Held keys never repeat entry, edit or transport actions | PARTIAL: Space and workspace keys ignore `repeat`; note-editor keys do not | n/a | n/a | n/a | n/a | n/a | n/a | `e2e/notation-tools` (held Space only) | PARTIAL | Track A1: repeat guard in `handleKeyDown` |
+| X1 | Keyboard layout independence (US-QWERTY, German/Austrian QWERTZ, UK) for every documented shortcut | PARTIAL: `src/score-input/keyboard-layout.ts` (layout map, US/UK/DE tables, stable codes) and layout-aware resolvers in `keyboard-resolver.ts` for letters, accidentals, articulations, digits, tuplets, history and the positional QWERTY piano. Open: macOS QWERTZ `Option+Shift+0` without a layout map (WebKit) | n/a | n/a | n/a | n/a | n/a | n/a | `keyboard-layout` (91 cases: 3 layouts x macOS/PC x with/without map), `user-visible-note-editor` (Shift+7, Option+digit TAB string), `e2e/notation-tools` (QWERTZ sharp, Undo/Redo) | PARTIAL | Run the scripted keyboard passages on all three layouts (backlog 14); the remaining WebKit gap needs a hardware-keyboard check on iPad |
+| X2 | Held keys never repeat entry, edit or transport actions | PASS: `isRepeatableNavigationKey` guard in `useNoteEditor` `handleKeyDown`; Space and workspace keys already ignored `repeat` | n/a | n/a | n/a | n/a | n/a | n/a | `keyboard-layout`, `user-visible-note-editor` (held note/rest/Delete/N), `e2e/notation-tools` (held Space, held QWERTZ note key) | PASS | none |
 | X3 | Measure-repeat signs (one- and two-bar) | PARTIAL: export keeps `measure-repeat` style | MISSING | MISSING | n/a | unverified | unverified | `measure-repeat` preserved | none | PARTIAL | Survey the import path; add a command |
 | X4 | Barline styles (double, final, dashed) at any barline | PARTIAL: `setBarline` double/final/repeat | CC barline actions | PAL barlines | 1 entry (inverse) | unverified | n/a | PASS | `core-command-executor`, `inverse-commands` | PARTIAL | Rendered evidence; dashed/tick styles |
 | X5 | Note visibility, color and size (cue size) per note | PARTIAL: `hidden` flag only | MISSING | MISSING | 1 entry | unverified | hidden notes skipped by fallback | `print-object` PASS | `notation-doctor` | PARTIAL | Shares the P9 visibility command |

@@ -689,6 +689,44 @@ test('A-G letter entry keeps a nearest-octave passage continuous across measures
   await expectNoDoctorIssues(page, 'after A-G closest-octave passage');
 });
 
+async function dispatchLayoutKey(
+  page: Page,
+  init: { key: string; code: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; repeat?: boolean },
+) {
+  // Playwright types through a US layout; QWERTZ presses are dispatched with their real key/code pair.
+  await page.evaluate((eventInit) => {
+    const target = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
+    target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...eventInit }));
+  }, init);
+}
+
+test('QWERTZ keys enter a sharp, ignore a held note key and redo with the printed Y', async ({ page }) => {
+  await bootWithScore(page);
+  const initialXml = await readCurrentXml(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  await dispatchLayoutKey(page, { key: '+', code: 'BracketRight' });
+  await expect.poll(async () => (await readE2EState(page))?.selectedAccidental).toBe('sharp');
+  await dispatchLayoutKey(page, { key: 'c', code: 'KeyC' });
+  await expect.poll(async () => readCurrentXml(page)).not.toBe(initialXml);
+  const editedXml = await readCurrentXml(page);
+
+  await dispatchLayoutKey(page, { key: 'c', code: 'KeyC', repeat: true });
+  await dispatchLayoutKey(page, { key: 'c', code: 'KeyC', repeat: true });
+  await page.waitForTimeout(250);
+  expect(await readCurrentXml(page)).toBe(editedXml);
+
+  // Printed Z on QWERTZ is the physical KeyY; printed Y is the physical KeyZ.
+  await dispatchLayoutKey(page, { key: 'z', code: 'KeyY', ctrlKey: true });
+  await expect.poll(async () => readCurrentXml(page)).toBe(initialXml);
+  await dispatchLayoutKey(page, { key: 'y', code: 'KeyZ', ctrlKey: true });
+  await expect.poll(async () => readCurrentXml(page)).toBe(editedXml);
+  expect((editedXml.match(/<alter>1<\/alter>/g) ?? []).length).toBeGreaterThan(0);
+  await expectNoDoctorIssues(page, 'after QWERTZ entry, undo and redo');
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

@@ -233,3 +233,30 @@ keeps a reviewable take without changing the score. **Apply / requantize take**
 commits it. See [limitations and evidence](note-entry-quality-2026-09-13.md).
 The historical Phase C hardware-MIDI limitation above no longer describes the
 current implementation.
+
+
+## Keyboard layouts (November 2026)
+
+Shortcuts are resolved by `src/score-input/keyboard-layout.ts` and the resolvers in
+`src/score-input/keyboard-resolver.ts`, with unit tests for US-QWERTY, UK and
+German/Austrian QWERTZ on macOS and Windows/Linux, with and without a layout map
+(`test/keyboard-layout.test.ts`).
+
+| Shortcut family | Rule | QWERTZ example |
+| --- | --- | --- |
+| Letters (`A`–`G`, `N`, `T`, `S`, `J`, `Cmd/Ctrl+Z/Y/K/T/M`) | the printed letter; the physical key is used only when the produced character is not a Latin letter (Option glyphs, non-Latin layouts) | `Cmd/Ctrl+Y` (printed Y, physical `KeyZ`) is Redo |
+| Accidentals `-` `=` `+` | the produced character | `-` flat, `Shift+0` natural, `+` (BracketRight) sharp |
+| Double accidentals `Alt/Option+-`, `Alt/Option+=` | the base character of the pressed key, from the layout map, the built-in layout table or the macOS Option glyph | `Option+-`, `Option+Shift+0` |
+| `Shift+.`, `Shift+6`, `Shift+-` | the physical base key | QWERTZ prints `:`, `&`, `_`; `Shift+ß` (`?`) stays the shortcut overview |
+| `/` grace note, `Cmd/Ctrl+/` slash fill | the produced character | `Shift+7` |
+| Durations `1`–`9`, intervals `Alt/Option+1`–`9`, tuplets `Cmd/Ctrl+2`–`9`, TAB strings `Alt/Option+1`–`6` | a produced digit, or the physical digit row when a modifier or the layout replaced the character | plain `Shift+digit` never selects a duration (`Shift+7` is `/`) |
+| QWERTY piano (`P`) | physical positions, named by their US letters | bottom-left key (printed `Y`) is `C4` |
+
+The layout map comes from `navigator.keyboard.getLayoutMap()` (Chromium, Electron) and is
+refreshed when the window gains focus. WebKit (Safari, the iPad app) has no layout map: every
+rule above still works there except `Option+Shift+0` (double sharp) on a QWERTZ Mac keyboard,
+whose Option glyph does not identify the key. Use the toolbar double sharp in that case.
+
+Held keys: only `ArrowLeft/Right/Up/Down`, `PageUp/PageDown` and `Home/End` auto-repeat in the
+note editor. A held note name, rest, `Delete`, `T`, `N` or any other entry or mode key acts once
+per physical press. Held `Space` never restarts playback.

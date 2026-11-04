@@ -477,7 +477,7 @@ const SPLIT_TRAILING_REST_XML = `<?xml version="1.0" encoding="UTF-8"?>
 
 function makeKeyboardEvent(
   key: string,
-  overrides: Partial<Record<'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey', boolean>> & { code?: string } = {},
+  overrides: Partial<Record<'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'repeat', boolean>> & { code?: string } = {},
 ) {
   return {
     key,
@@ -7657,5 +7657,73 @@ test('tablet takeoff suppresses only its own audition, including no-change repla
   assert.equal(hook.previewedNoteGroups.length, before + 1);
   act(() => { hook.current.placeNoteAt({ ...target, timestampNum: 1 }); });
   assert.equal(hook.previewedNoteGroups.length, before + 2);
+  hook.unmount();
+});
+
+test('held entry keys commit once; auto-repeat only moves navigation keys', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+
+  act(() => {
+    hook.current.handleNoteClick(notes[0]);
+    hook.current.toggleNoteInput();
+  });
+  const before = hook.appliedCommands.length;
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('e'));
+  });
+  hook.rerender();
+  const afterFirst = hook.appliedCommands.length;
+  assert.equal(afterFirst, before + 1);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('e', { repeat: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('e', { repeat: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('0', { repeat: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('Backspace', { repeat: true }));
+    hook.current.handleKeyDown(makeKeyboardEvent('N', { repeat: true }));
+  });
+  hook.rerender();
+  assert.equal(hook.appliedCommands.length, afterFirst);
+  assert.equal(hook.current.noteInputMode, true);
+
+  const anchor = hook.current.selectedNote;
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('ArrowLeft', { repeat: true }));
+  });
+  hook.rerender();
+  assert.notEqual(hook.current.selectedNote?.timestampNum, anchor?.timestampNum);
+  hook.unmount();
+});
+
+test('QWERTZ Shift+7 types a slash and never selects a whole note', () => {
+  const hook = renderHook(SAMPLE_XML);
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('5'));
+    hook.current.handleKeyDown(makeKeyboardEvent('/', { shiftKey: true, code: 'Digit7' }));
+    hook.current.handleKeyDown(makeKeyboardEvent('!', { shiftKey: true, code: 'Digit1' }));
+  });
+
+  assert.equal(hook.current.selectedDuration, '4');
+  hook.unmount();
+});
+
+test('macOS Option+digit selects the TAB string instead of entering a fret', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+
+  act(() => {
+    hook.current.handleNoteClick(notes[0]);
+    hook.current.toggleGuitarInputMode();
+  });
+  const before = hook.appliedCommands.length;
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('£', { altKey: true, code: 'Digit3' }));
+  });
+
+  assert.equal(hook.current.selectedGuitarString, 3);
+  assert.equal(hook.current.guitarFretBuffer, '');
+  assert.equal(hook.appliedCommands.length, before);
   hook.unmount();
 });

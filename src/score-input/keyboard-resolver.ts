@@ -1,6 +1,16 @@
 import { clampVoiceId, type EditPlacementMode, type ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration } from '@/src/score-session/types';
 import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
+import type { WrittenAccidental } from '@/src/shared/music/accidentals';
+import {
+  UNKNOWN_KEYBOARD_LAYOUT,
+  matchesShiftedBaseKey,
+  shortcutCharacter,
+  shortcutDigit,
+  shortcutLetter,
+  type KeyboardLayoutContext,
+  type ShortcutKeyEvent,
+} from '@/src/score-input/keyboard-layout';
 
 export type KeyboardEntryMode = 'insert' | 'overwrite';
 export type KeyboardDeleteAction = 'delete' | 'rippleDelete' | 'clearMeasureVoice';
@@ -71,7 +81,15 @@ export interface ResolveKeyboardChordInputShortcutInput {
 export interface ResolveKeyboardDurationShortcutInput {
   key: string;
   code?: string;
+  shiftKey?: boolean;
+  altKey?: boolean;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
 }
+
+export type KeyboardArticulationShortcut = 'staccato' | 'accent' | 'strong-accent' | 'tenuto';
+export type KeyboardHistoryShortcut = 'undo' | 'redo';
+export type KeyboardTupletShortcut = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export interface ResolveKeyboardIntervalShortcutInput {
   key: string;
@@ -99,9 +117,15 @@ function normalizeStep(step: string) {
   return /^[A-G]$/.test(normalized) ? normalized : null;
 }
 
-function resolveKeyboardDigit(input: Pick<ResolveKeyboardDurationShortcutInput, 'key' | 'code'>) {
-  if (/^[0-9]$/.test(input.key)) return input.key;
-  return /^(?:Digit|Numpad)([0-9])$/.exec(input.code ?? '')?.[1] ?? null;
+function resolveKeyboardDigit(input: ResolveKeyboardDurationShortcutInput) {
+  return shortcutDigit({
+    key: input.key,
+    code: input.code,
+    shiftKey: Boolean(input.shiftKey),
+    altKey: Boolean(input.altKey),
+    metaKey: Boolean(input.metaKey),
+    ctrlKey: Boolean(input.ctrlKey),
+  });
 }
 
 function resolveKeyboardPlacementMode(input: ResolveKeyboardEditTargetInput): EditPlacementMode {
@@ -151,6 +175,8 @@ export function resolveKeyboardChordInputShortcut(
 export function resolveKeyboardDurationShortcut(
   input: ResolveKeyboardDurationShortcutInput,
 ): KeyboardDurationShortcutAction | null {
+  // Alt/Option+digit adds an interval (or selects a TAB string) and Cmd/Ctrl+digit makes a tuplet.
+  if (input.altKey || input.metaKey || input.ctrlKey) return null;
   const digit = resolveKeyboardDigit(input);
   if (!digit) return null;
 
@@ -167,6 +193,58 @@ export function resolveKeyboardIntervalShortcut(
   const digit = resolveKeyboardDigit(input);
   const interval = digit ? Number(digit) : 0;
   return interval >= 1 && interval <= 9 ? interval as DiatonicIntervalNumber : null;
+}
+
+/**
+ * One-shot accidental keys. The plain keys follow the produced character (`-` flat, `=` natural,
+ * `+` sharp), so German/Austrian `+` (BracketRight) and `=` (Shift+0) work; Alt/Option adds the
+ * double accidental of the same key.
+ */
+export function resolveKeyboardAccidentalShortcut(
+  event: ShortcutKeyEvent,
+  layout: KeyboardLayoutContext = UNKNOWN_KEYBOARD_LAYOUT,
+): WrittenAccidental | null {
+  if (event.metaKey || event.ctrlKey) return null;
+  const character = shortcutCharacter(event, layout);
+  if (event.altKey) {
+    if (character === '-') return 'double-flat';
+    if (character === '=') return 'double-sharp';
+    return null;
+  }
+  if (character === '-') return 'flat';
+  if (character === '=') return 'natural';
+  if (character === '+') return 'sharp';
+  return null;
+}
+
+/** Shift+S, Shift+. , Shift+6 and Shift+- as documented, measured on the physical key. */
+export function resolveKeyboardArticulationShortcut(
+  event: ShortcutKeyEvent,
+  layout: KeyboardLayoutContext = UNKNOWN_KEYBOARD_LAYOUT,
+): KeyboardArticulationShortcut | null {
+  if (event.metaKey || event.ctrlKey || event.altKey || !event.shiftKey) return null;
+  if (shortcutLetter(event) === 'S') return 'staccato';
+  if (matchesShiftedBaseKey(event, '.', layout)) return 'accent';
+  if (matchesShiftedBaseKey(event, '6', layout)) return 'strong-accent';
+  if (event.key === '\u2212' || matchesShiftedBaseKey(event, '-', layout)) return 'tenuto';
+  return null;
+}
+
+/** Cmd/Ctrl+2..9 tuplets on the physical digit row. */
+export function resolveKeyboardTupletShortcut(event: ShortcutKeyEvent): KeyboardTupletShortcut | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const digit = shortcutDigit(event);
+  const value = digit ? Number(digit) : 0;
+  return value >= 2 && value <= 9 ? value as KeyboardTupletShortcut : null;
+}
+
+/** Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z and Cmd/Ctrl+Y redo, following the printed letters. */
+export function resolveKeyboardHistoryShortcut(event: ShortcutKeyEvent): KeyboardHistoryShortcut | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const letter = shortcutLetter(event);
+  if (letter === 'Z') return event.shiftKey ? 'redo' : 'undo';
+  if (letter === 'Y' && !event.shiftKey) return 'redo';
+  return null;
 }
 
 export function resolveKeyboardEditTarget(input: ResolveKeyboardEditTargetInput): ResolvedEditTarget | null {

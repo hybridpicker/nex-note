@@ -1,5 +1,7 @@
 'use client';
 
+import { refreshActiveKeyboardLayout, shortcutLetter } from '@/src/score-input/keyboard-layout';
+import { resolveKeyboardHistoryShortcut } from '@/src/score-input/keyboard-resolver';
 import { buildPartsArchive } from '@/lib/parts-archive';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { resolveWorkspaceShortcut } from '@/lib/workspace-shortcuts';
@@ -1368,17 +1370,26 @@ export default function Home({ searchParams }: HomeProps) {
     window.dispatchEvent(new CustomEvent('nex-note:score-view-command', { detail: { action, viewMode } }));
   }, []);
 
+  // Keyboard layout map (Chromium/Electron) for layout-aware shortcuts; refreshed on focus because
+  // the user can switch input sources while the app runs.
+  useEffect(() => {
+    void refreshActiveKeyboardLayout();
+    const onFocus = () => { void refreshActiveKeyboardLayout(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   // Global keyboard handler for note editing
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const metaKey = e.metaKey || e.ctrlKey;
-      const normalizedKey = e.key.toLowerCase();
-      const isKeyZ = normalizedKey === 'z' || e.code === 'KeyZ';
-      const isKeyY = normalizedKey === 'y' || e.code === 'KeyY';
-      const isKeyK = normalizedKey === 'k' || e.code === 'KeyK';
-      const isKeyT = normalizedKey === 't' || e.code === 'KeyT';
-      const isKeyM = normalizedKey === 'm' || e.code === 'KeyM';
-      const isKeyC = normalizedKey === 'c' || e.code === 'KeyC';
+      // Letters follow the printed key (QWERTZ Z/Y); see src/score-input/keyboard-layout.ts.
+      const letter = shortcutLetter(e);
+      const historyShortcut = resolveKeyboardHistoryShortcut(e);
+      const isKeyK = letter === 'K';
+      const isKeyT = letter === 'T';
+      const isKeyM = letter === 'M';
+      const isKeyC = letter === 'C';
       const target = e.target as HTMLElement | null;
       const isTextEntry = target instanceof HTMLInputElement
         || target instanceof HTMLTextAreaElement
@@ -1458,14 +1469,14 @@ export default function Home({ searchParams }: HomeProps) {
         });
         return;
       }
-      if (!getNexNoteElectronApi() && !isTextEntry && metaKey && isKeyZ && !e.shiftKey) {
+      if (!getNexNoteElectronApi() && !isTextEntry && historyShortcut === 'undo') {
         e.preventDefault();
         e.stopPropagation();
         recordBugReportEvent('commands', 'undo');
         undo();
         return;
       }
-      if (!getNexNoteElectronApi() && !isTextEntry && metaKey && (isKeyY || (isKeyZ && e.shiftKey))) {
+      if (!getNexNoteElectronApi() && !isTextEntry && historyShortcut === 'redo') {
         e.preventDefault();
         e.stopPropagation();
         recordBugReportEvent('commands', 'redo');

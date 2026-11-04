@@ -23,11 +23,12 @@ import {
 } from '@/src/score-core/query/note-editor';
 import { buildClipboardPayloadFromSelection } from '@/src/score-core/query/clipboard';
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score-input/commit-resolver';
-import { resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut } from '@/src/score-input/keyboard-resolver';
+import { resolveKeyboardAccidentalShortcut, resolveKeyboardArticulationShortcut, resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut, resolveKeyboardTupletShortcut } from '@/src/score-input/keyboard-resolver';
+import { getActiveKeyboardLayoutContext, isRepeatableNavigationKey, shortcutDigit } from '@/src/score-input/keyboard-layout';
 import type { MidiPitch } from '@/src/score-input/midi-input';
 import { formatPreparedDurationPitches, prepareDurationPitch, updatePreparedDurationPitches, type PreparedDurationPitch } from '@/src/score-input/input-by-duration';
 import { resolveGuitarFretPitch, resolveGuitarTuning, type GuitarFretPitch, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
-import { resolveQwertyPianoKey } from '@/src/score-input/repitch-mode';
+import { resolveQwertyPianoKeyEvent } from '@/src/score-input/repitch-mode';
 import { inspectResolvedEditTarget } from '@/src/score-input/note-entry-validator';
 import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
@@ -740,28 +741,6 @@ function resolveDurationState(
     duration: mappedDuration,
     dotted: Boolean(note?.isDotted),
   };
-}
-
-function resolveArticulationShortcut(e: KeyboardEvent): ArticulationKind | null {
-  if (e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return null;
-  if (e.key === 'S') return 'staccato';
-  if (e.key === '>' || e.code === 'Period') return 'accent';
-  if (e.key === '^' || e.code === 'Digit6') return 'strong-accent';
-  if (e.key === '_' || e.key === '−' || e.code === 'Minus') return 'tenuto';
-  return null;
-}
-
-function resolveAccidentalShortcut(e: KeyboardEvent): AccidentalChoice {
-  if (e.metaKey || e.ctrlKey) return null;
-  if (e.altKey) {
-    if (e.code === 'Minus' || e.key === '-') return 'double-flat';
-    if (e.code === 'Equal' || e.key === '=') return 'double-sharp';
-    return null;
-  }
-  if (e.key === '-') return 'flat';
-  if (e.key === '=') return 'natural';
-  if (e.key === '+') return 'sharp';
-  return null;
 }
 
 function transposeSelectedPitch(note: SelectedNote, semitones: number) {
@@ -3835,8 +3814,16 @@ export function useNoteEditor(
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
+    // A held key repeats navigation only. Entry, edit and mode keys act once per physical press,
+    // so a held note name, rest, Delete or N never commits or toggles again.
+    if (e.repeat && !isRepeatableNavigationKey(e.key)) {
+      e.preventDefault();
+      return;
+    }
+
     const key = e.key.toUpperCase();
     const metaKey = e.metaKey || e.ctrlKey;
+    const keyboardLayout = getActiveKeyboardLayoutContext();
 
     // Electron owns the platform quit accelerator. Never let Cmd/Ctrl+Q fall
     // through to the bare Q notation action if the renderer receives it.
@@ -3913,7 +3900,7 @@ export function useNoteEditor(
       && !e.altKey
       && !e.shiftKey
     ) {
-      const qwertyPitch = resolveQwertyPianoKey(e.key);
+      const qwertyPitch = resolveQwertyPianoKeyEvent(e);
       if (qwertyPitch) {
         const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
         if (currentSelectedNote) {
@@ -4050,7 +4037,7 @@ export function useNoteEditor(
       return;
     }
 
-    const accidentalShortcut = resolveAccidentalShortcut(e);
+    const accidentalShortcut = resolveKeyboardAccidentalShortcut(e, keyboardLayout);
     if (accidentalShortcut) {
       e.preventDefault();
       applyAccidentalChoice(accidentalShortcut, true);
@@ -4076,7 +4063,7 @@ export function useNoteEditor(
       return;
     }
 
-    const articulationShortcut = resolveArticulationShortcut(e);
+    const articulationShortcut = resolveKeyboardArticulationShortcut(e, keyboardLayout);
     if (articulationShortcut) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
@@ -4090,14 +4077,11 @@ export function useNoteEditor(
       return;
     }
 
-    const tupletCodeMatch = /^(?:Digit|Numpad)([2-9])$/.exec(e.code);
-    const tupletShortcut = metaKey
-      ? (tupletCodeMatch?.[1] ?? (/^[2-9]$/.test(e.key) ? e.key : null))
-      : null;
+    const tupletShortcut = resolveKeyboardTupletShortcut(e);
     if (tupletShortcut) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
-        addTupletToSelection(Number(tupletShortcut) as TupletNumber);
+        addTupletToSelection(tupletShortcut as TupletNumber);
       }
       return;
     }
@@ -4113,8 +4097,11 @@ export function useNoteEditor(
       return;
     }
 
-    const guitarStringShortcut = /^[1-6]$/.test(e.key) ? Number(e.key) as GuitarStringNumber : null;
-    if (guitarInputModeRef.current && e.altKey && guitarStringShortcut) {
+    const guitarStringDigit = e.altKey && !metaKey ? shortcutDigit(e) : null;
+    const guitarStringShortcut = guitarStringDigit && /^[1-6]$/.test(guitarStringDigit)
+      ? Number(guitarStringDigit) as GuitarStringNumber
+      : null;
+    if (guitarInputModeRef.current && guitarStringShortcut) {
       e.preventDefault();
       setSelectedGuitarStringLive(guitarStringShortcut);
       return;
@@ -4139,9 +4126,8 @@ export function useNoteEditor(
       return;
     }
 
-    const guitarFretCodeMatch = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
-    const guitarFretShortcut = guitarInputModeRef.current && noteInputModeRef.current
-      ? (/^[0-9]$/.test(e.key) ? e.key : guitarFretCodeMatch?.[1] ?? null)
+    const guitarFretShortcut = guitarInputModeRef.current && noteInputModeRef.current && !e.altKey && !metaKey
+      ? shortcutDigit(e)
       : null;
     if (guitarFretShortcut !== null && guitarFretShortcut !== undefined) {
       const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
@@ -4164,6 +4150,10 @@ export function useNoteEditor(
     const durationShortcut = resolveKeyboardDurationShortcut({
       key: e.key,
       code: e.code,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
     });
 
     // Duration shortcuts - MuseScore layout: 1=64th ... 7=whole, 8=breve, 9=longa.

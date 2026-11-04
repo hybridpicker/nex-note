@@ -40,6 +40,7 @@ as not reproduced and dropped.
 | --- | --- | --- | --- | --- |
 | 1 | 1 wrong mutation | QWERTZ Cmd/Ctrl+Y runs Undo instead of Redo (web, iPad) | X1 | A |
 | 2 | 2 precision | Layout-aware resolver for accidentals, articulations, digits, grace and the QWERTY piano on US, UK, QWERTZ; held-key repeat guard; Alt/Option+1–6 TAB string on macOS | X1, X2 | A |
+| 2a | 1 data loss (**reproduced** in iteration 1) | Any core edit of a grand-staff score deletes every lower-staff dynamic and pedal: core export writes beat-0 directions only from the first staff's measure; mid-measure directions import without a position | E1, E6, E7 | C |
 | 3 | 1 corruption (*suspected*) | Pedal stop becomes a start on MusicXML reimport | E6 | C |
 | 4 | 1 wrong pitch (*suspected*) | 8va exported as `octave-shift type="up"` | P7 | C |
 | 5 | 1 data loss (*suspected*) | Double dots collapse to one dot on import | P1 | C |
@@ -99,3 +100,61 @@ as not reproduced and dropped.
   because a commit cannot contain its own SHA.
 - Decision: accepted.
 - Next item selected: backlog order 1 and 2 (Track A1, layout-aware shortcut identity).
+
+## Iteration 1 — Layout-aware shortcut identity (QWERTZ Redo ran Undo)
+
+- Iteration / date / starting SHA / dirty-tree state: 1 / 2026-11-04 / `02b4be7` (verified
+  equal to `origin/devel` after the iteration 0 push). Owner files `docs/README.md` and
+  `docs/arrangement-note-entry-iteration-prompt.md` left unstaged.
+- Track and matrix row: A (keyboard precision); X1, X2.
+- Problem and observable baseline:
+  - `NexNoteApp` matched letters as `key === 'z' || code === 'KeyZ'`. On QWERTZ the printed Y is
+    the physical `KeyZ`, so Cmd/Ctrl+Y (Redo) ran **Undo** in the web and iPad surfaces. Electron
+    uses menu accelerators and was not affected.
+  - Held keys auto-repeated every note-editor action. New hook test: a held `e` committed 4
+    extra batches (`actual: 5, expected: 1`).
+  - Duration digits fell back to the physical digit row even with Shift, so QWERTZ Shift+7 (`/`)
+    and US Shift+1 (`!`) selected durations (`actual: '64', expected: '4'`).
+  - macOS `Option+3` in TAB mode entered fret 3 instead of selecting string 3
+    (`actual: 1, expected: 3`).
+  - QWERTZ Shift+ß (`?`) matched tenuto through `code === 'Minus'`.
+  - The new e2e case failed on the old code at the held-key assertion
+    (`e2e/notation-tools.spec.ts`, QWERTZ case).
+- Hypothesis and bounded change:
+  - Letter shortcuts follow the printed character. Symbol shortcuts follow the produced
+    character. `Shift+<key>` and Alt/Option shortcuts use the physical base key, taken from
+    `navigator.keyboard.getLayoutMap()` where available, then built-in US/UK/DE tables, then
+    codes that are stable across all three layouts.
+  - Only navigation keys may auto-repeat.
+  - Files: `src/score-input/keyboard-layout.ts` (new), `src/score-input/keyboard-resolver.ts`,
+    `src/score-input/repitch-mode.ts`, `hooks/useNoteEditor.ts`, `components/NexNoteApp.tsx`,
+    `test/keyboard-layout.test.ts` (new), `test/user-visible-note-editor.test.ts`,
+    `e2e/notation-tools.spec.ts`.
+  - Product decision: the QWERTY piano is positional (US letter names), so on QWERTZ the
+    printed-Y key plays C4.
+  - Product decision: Delete/Backspace no longer auto-repeat in the note editor. This
+    protects against accidental mass deletion, unlike MuseScore. Revisit if users ask for
+    held Backspace.
+- Regression evidence before and after:
+  - Three hook tests and the QWERTZ e2e case failed before the change and pass after.
+  - `test/keyboard-layout.test.ts`: 91 passed.
+  - Focused keyboard suites: 377 passed.
+  - `npm test`: 1,255 passed, 0 failed.
+  - `npm run build`: passed.
+  - `npm run test:e2e:notation-tools`: 35 passed.
+- Cross-app tests and builds actually run:
+  - `npm run electron:refresh`: unit, build and packaged arm64 app verified as current.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: interactive keyboard smoke in the packaged Electron window (no automation channel
+    for physical layouts); physical iPad with a hardware QWERTZ keyboard; the Xcode macOS
+    target, which does not exist.
+- Documentation updated: `docs/keyboard-shortcuts.md` (new "Keyboard layouts" section),
+  `docs/user-manual.en.md` (Note Input), feature matrix X1 and X2, this ledger.
+- Iteration 0 commit: `02b4be7`, pushed; `origin/devel` verified equal to local `HEAD`.
+- Commit SHA / push result / verified remote devel SHA: recorded in the iteration 2 record.
+- Decision: accepted. X2 is PASS. X1 stays PARTIAL until the scripted passages run on all
+  three layouts and the WebKit `Option+Shift+0` gap is checked on hardware.
+- Next item selected: backlog 2a. It was found during iteration-2 research with a probe
+  script: on an imported grand-staff fixture, one `changeNotePitch` on staff 1 removed all
+  staff-2 `<dynamics>` and `<pedal>` elements from the document. It is priority class 1 and
+  ahead of every other item.

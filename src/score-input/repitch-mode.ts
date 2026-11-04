@@ -219,3 +219,14 @@ export function resolveQwertyPianoKey(key: string): RepitchPitchIntent | null {
 
   return { step: mapped.step, octave: mapped.octave, alter: mapped.alter };
 }
+
+/**
+ * QWERTY piano by physical key position, so the two-row piano keeps its shape on every layout:
+ * on German/Austrian QWERTZ the bottom-left key (printed Y) still plays C4. Falls back to the
+ * produced character when the platform reports no physical code.
+ */
+export function resolveQwertyPianoKeyEvent(event: { key: string; code?: string }): RepitchPitchIntent | null {
+  const physical = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(event.code ?? '');
+  if (physical) return resolveQwertyPianoKey(physical[1] ?? physical[2]!);
+  return resolveQwertyPianoKey(event.key);
+}
