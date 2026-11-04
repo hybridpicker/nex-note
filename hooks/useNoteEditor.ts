@@ -1991,6 +1991,7 @@ export function useNoteEditor(
       && (!currentSelectedNote || !selectedNotesEqual(currentSelectedNote, lastNoteInputRef.current))
     ) {
       setSelectedDurationLive(duration);
+      setIsDottedLive(false);
       return;
     }
     if (currentSelectedNote) {
@@ -1999,7 +2000,8 @@ export function useNoteEditor(
       return;
     }
     setSelectedDurationLive(duration);
-  }, [changeNoteDuration, selectedNote, setSelectedDurationLive]);
+    setIsDottedLive(false);
+  }, [changeNoteDuration, selectedNote, setIsDottedLive, setSelectedDurationLive]);
 
   const commitResolvedNoteEntry = useCallback((input: {
     target: ResolvedEditTarget;
@@ -4165,7 +4167,12 @@ export function useNoteEditor(
       e.preventDefault();
       if (durationShortcut.type === 'selectDuration') {
         if (inputByDurationModeRef.current) commitPreparedDurationInput(durationShortcut.duration);
-        else setSelectedDurationLive(durationShortcut.duration);
+        else {
+          // As in MuseScore, choosing a note value clears the augmentation dot; duration-first
+          // input (M) keeps it because the dot is set before the committing duration key.
+          setSelectedDurationLive(durationShortcut.duration);
+          setIsDottedLive(false);
+        }
       }
       return;
     }

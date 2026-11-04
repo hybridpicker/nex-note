@@ -88,7 +88,7 @@ Turn note input on with the toolbar button or `N`.
 | Feature | Description |
 | --- | --- |
 | Durations | `1` to `9` select 64th through longa; `8` is breve/double whole and `9` is longa. |
-| Dotted notes | `.` toggles dotted duration. |
+| Dotted notes | `.` toggles dotted duration. Choosing a new note value (`1`–`9` or the toolbar) clears the dot, as in MuseScore; in duration-first input (`M`) the dot stays with the prepared pitch. |
 | Pitch entry | `A` to `G` enter or change notes. |
 | Rests | `R` or `0` inserts a rest using the active duration. |
 | Repeat last input | `R` repeats the last entered note when note input has an active previous note. |

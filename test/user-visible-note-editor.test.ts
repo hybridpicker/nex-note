@@ -5684,7 +5684,10 @@ test('MuseScore-style keyboard entry supports repeat, octave, and voice shortcut
   const repeatedHalfDottedC = hook.xml.match(/<note>[\s\S]*?<pitch><step>C<\/step><octave>4<\/octave><\/pitch>[\s\S]*?<voice>2<\/voice>[\s\S]*?<type>half<\/type>[\s\S]*?<dot\/>[\s\S]*?<\/note>/g) ?? [];
   assert.equal(repeatedHalfDottedC.length >= 1, true);
   assert.equal(hook.current.selectedDuration, '16');
-  assert.equal(hook.current.isDotted, true);
+  // MuseScore clears the augmentation dot when a new note value is chosen in step-time entry
+  // (src/engraving/editing/noteinput.cpp, NoteInput::setDuration calls setDots(0); only
+  // by-duration entry restores it).
+  assert.equal(hook.current.isDotted, false);
 
   act(() => {
     hook.current.handleNoteClick(makeSelectedNotes(hook.xml)[0]);
@@ -7725,5 +7728,24 @@ test('macOS Option+digit selects the TAB string instead of entering a fret', () 
   assert.equal(hook.current.selectedGuitarString, 3);
   assert.equal(hook.current.guitarFretBuffer, '');
   assert.equal(hook.appliedCommands.length, before);
+  hook.unmount();
+});
+
+test('choosing a note value from the toolbar during note input clears the dot', () => {
+  const hook = renderHook(SAMPLE_XML);
+  const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);
+  act(() => {
+    hook.current.handleNoteClick(notes[0]);
+    hook.current.toggleNoteInput();
+  });
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('.'));
+  });
+  assert.equal(hook.current.isDotted, true);
+  act(() => {
+    hook.current.setDuration('8');
+  });
+  assert.equal(hook.current.selectedDuration, '8');
+  assert.equal(hook.current.isDotted, false);
   hook.unmount();
 });

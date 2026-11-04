@@ -342,3 +342,40 @@ matrix, not a nex-note export failure. The steps that completed:
 
 The stop elements of the octave lines did not appear in the MuseScore re-exports scanned. Visual
 confirmation of the brackets in MuseScore was not possible headless; this remains open under P7.
+
+## Iteration 5 — A new note value clears the augmentation dot
+
+- Iteration / date / starting SHA / dirty-tree state: 5 / 2026-11-04 / `b929eec` (equal to
+  `origin/devel`). Owner files left unstaged.
+- Track and matrix row: A (keyboard precision); P1.
+- Problem and observable baseline:
+  - `4 . c 3 d 4 . e` produced a dotted sixteenth D (spelled 16th tied to 32nd) and an
+    undotted eighth E, because the dot survived the duration change and the second `.` turned
+    it off.
+  - Entry-matrix scenario "dotted eighth and sixteenth pairs" failed.
+- Reference: MuseScore `src/engraving/editing/noteinput.cpp` (branch `main`),
+  `NoteInput::setDuration` calls `is.setDots(0)`; only by-duration and rhythm entry restore the
+  previous dots. The handbook does not state the rule. It was read from source on 2026-11-04 via
+  the GitHub API.
+- Hypothesis and bounded change:
+  - Step-time duration keys and the toolbar entry-duration path clear the dot.
+  - Duration-first input (`M`) is unchanged: its dot is set before the committing duration key.
+  - Corrected assertion: `MuseScore-style keyboard entry supports repeat, octave, and voice
+    shortcuts` expected the dot to stay after `6 . C 3`; it now expects `false`, with the
+    MuseScore source reference in the test.
+  - Files: `hooks/useNoteEditor.ts`, `test/user-visible-note-editor.test.ts`,
+    `test/entry-matrix.test.ts`.
+- Regression evidence before and after:
+  - Dotted-pair scenario: failed before, passes after.
+  - New toolbar dot test passes.
+  - New matrix scenario "duration-first input (M) keeps a dot" passes; it also passed on the
+    old code, as a guard.
+  - `npm test`: 1,284 passed, 2 `todo`, 0 failed.
+  - `npm run build`: passed.
+- Cross-app tests and builds: run once on the iteration 5–7 stack before pushing; see the
+  iteration 7 record.
+- Documentation updated: `docs/user-manual.en.md`, `docs/keyboard-shortcuts.md` (`.` row),
+  this ledger.
+- Iteration 4 commit: `b929eec`, pushed; remote verified equal.
+- Decision: accepted (pending the stack gates).
+- Next item selected: iteration 6, tuplets during note input.

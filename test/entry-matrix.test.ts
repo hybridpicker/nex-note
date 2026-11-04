@@ -76,11 +76,17 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'dotted eighth and sixteenth pairs (a new duration clears the dot)',
-    todo: 'iteration 5: the dot survives a duration change',
     xml: FOUR_FOUR,
     script: 'N 4 . c 3 d 4 . e 3 f',
     expect: [{ where: {}, events: ['m1@0 C4 eighth.', 'm1@0.75 D4 16th', 'm1@1 E4 eighth.', 'm1@1.75 F4 16th', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 4,
+  },
+  {
+    name: 'duration-first input (M) keeps a dot set before the duration key',
+    xml: FOUR_FOUR,
+    script: 'N M e . 5',
+    expect: [{ where: {}, events: ['m1@0 E4 quarter.', 'm1@1.5 r eighth', 'm1@2 r half', 'm2@0 r whole'] }],
+    batches: 1,
   },
   {
     name: 'eighth triplet from a quarter and Cmd+3, then plain eighths',

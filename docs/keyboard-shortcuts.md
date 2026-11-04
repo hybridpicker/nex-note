@@ -103,7 +103,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `7` | Ganze wählen | Noteneditor |
 | `8` | Breve/Doppelganze wählen | Noteneditor |
 | `9` | Longa wählen | Noteneditor |
-| `.` | Punktierung ein-/ausschalten | Noteneditor |
+| `.` | Punktierung ein-/ausschalten; eine neu gewählte Dauer (`1`–`9`, Toolbar) setzt den Punkt zurück (wie MuseScore), im Duration-first-Modus `M` bleibt er erhalten | Noteneditor |
 | `Q` | Dauer halbieren | Noteneditor |
 | `W` | Dauer verdoppeln | Noteneditor |
 | `Shift+Q` | punktierte Dauer eine Stufe kleiner | Noteneditor |
