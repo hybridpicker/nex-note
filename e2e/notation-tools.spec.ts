@@ -727,6 +727,39 @@ test('QWERTZ keys enter a sharp, ignore a held note key and redo with the printe
   await expectNoDoctorIssues(page, 'after QWERTZ entry, undo and redo');
 });
 
+test('editing a right-hand note keeps left-hand dynamics and pedal marks in the document', async ({ page }) => {
+  const lowerStaffDirection = (body: string) => `<direction placement="below"><direction-type>${body}</direction-type><staff>2</staff></direction>`;
+  const pianoXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+<note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+<backup><duration>8</duration></backup>
+${lowerStaffDirection('<pedal type="start" line="yes"/>')}${lowerStaffDirection('<dynamics><mf/></dynamics>')}
+<note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+${lowerStaffDirection('<pedal type="stop" line="yes"/>')}
+<note><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+</measure></part></score-partwise>`;
+  await bootWithScore(page, pianoXml);
+  const initialXml = await readCurrentXml(page);
+
+  await clickRenderedNotehead(page, 0);
+  await expect.poll(async () => {
+    const selected = (await readE2EState(page))?.selectedNote;
+    return selected ? `${selected.staffIndex}:${selected.step}${selected.octave}` : null;
+  }).toBe('1:C5');
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(async () => readCurrentXml(page)).not.toBe(initialXml);
+
+  const editedXml = await readCurrentXml(page);
+  expect(editedXml).toMatch(/<dynamics>\s*<mf\/>\s*<\/dynamics>/);
+  expect((editedXml.match(/<pedal\b[^>]*type="start"/g) ?? []).length).toBe(1);
+  expect((editedXml.match(/<pedal\b[^>]*type="stop"/g) ?? []).length).toBe(1);
+  const lowerStaff = (await readCurrentCore(page)).score.parts[0].staves[1].measures[0].directions;
+  const pedalStop = lowerStaff.find((entry) => entry.kind === 'pedal' && entry.value === 'stop');
+  expect(pedalStop && (pedalStop.timestampNum ?? 0) / (pedalStop.timestampDen ?? 1)).toBe(0.5);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

@@ -508,7 +508,7 @@ test.describe('Pencil focus layout', () => {
     await page.getByRole('button', { name: /^Measures barlines$/i }).tap();
     await page.getByRole('button', { name: 'Double barline', exact: true }).tap();
     await expect.poll(() => currentXml(page)).not.toBe(after);
-    await page.getByRole('button', { name: 'Undo (Cmd/Ctrl+Z)', exact: true }).click();
+    await page.locator('button[title^="Undo ("]:visible').first().click();
     await expect.poll(() => currentXml(page)).toBe(after);
     await page.getByTestId('workspace-collapsed-rail').getByRole('button').click();
     await expect(page.getByTestId('workspace-panel')).toBeVisible();

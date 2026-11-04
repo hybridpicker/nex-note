@@ -1,5 +1,5 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/xmldom';
-import type { MeasureNode, PartNode, ScoreDocumentModel, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
+import type { DirectionNode, MeasureNode, PartNode, ScoreDocumentModel, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { writtenAccidentalToMusicXml } from '@/src/shared/music/accidentals';
 
@@ -1189,23 +1189,60 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
         if (swingDirection) xmlMeasure.appendChild(swingDirection);
       }
 
-      measureRef.directions
-        .filter((direction) => direction.timestampNum == null || direction.timestampNum === 0)
-        .forEach((direction) => {
-          xmlMeasure.appendChild(buildDirectionElement(
-            doc,
-            direction.kind,
-            direction.value ?? '',
-            direction.staffIndex ?? 1,
-            direction.placement,
-            direction.number,
-            {
-              timestampNum: direction.timestampNum,
-              timestampDen: direction.timestampDen,
-              divisions: measureDivisions,
-            },
-          ));
-        });
+      // Directions live on the measure of the staff they belong to. A staff-less direction is
+      // imported into every staff of the part under one id, so the union is de-duplicated by id.
+      const partMeasureDirections = new Map<string, DirectionNode>();
+      for (const staff of partNode.staves) {
+        const staffMeasure = staff.measures.find((entry) => entry.measureNumber === measureRef.measureNumber);
+        for (const direction of staffMeasure?.directions ?? []) {
+          if (!partMeasureDirections.has(direction.id)) partMeasureDirections.set(direction.id, direction);
+        }
+      }
+      const directionPosition = (direction: DirectionNode) => (
+        typeof direction.timestampNum === 'number' && direction.timestampNum > 0
+          ? Math.max(0, Math.round((direction.timestampNum / Math.max(direction.timestampDen ?? 1, 1)) * measureDivisions * 4))
+          : 0
+      );
+      const orderedDirections = [...partMeasureDirections.values()]
+        .map((direction, order) => ({ direction, order, position: directionPosition(direction) }))
+        .sort((left, right) => left.position - right.position || left.order - right.order);
+
+      for (const { direction, position } of orderedDirections) {
+        if (position !== 0) continue;
+        xmlMeasure.appendChild(buildDirectionElement(
+          doc,
+          direction.kind,
+          direction.value ?? '',
+          direction.staffIndex ?? 1,
+          direction.placement,
+          direction.number,
+          {
+            timestampNum: direction.timestampNum,
+            timestampDen: direction.timestampDen,
+            divisions: measureDivisions,
+          },
+        ));
+      }
+
+      // Mid-measure directions are written once each at their exact position: <forward> to the
+      // position, the direction, then one <backup> to the measure start before the voices.
+      let directionCursor = 0;
+      for (const { direction, position } of orderedDirections) {
+        if (position === 0) continue;
+        if (position > directionCursor) {
+          xmlMeasure.appendChild(buildForward(doc, position - directionCursor));
+          directionCursor = position;
+        }
+        xmlMeasure.appendChild(buildDirectionElement(
+          doc,
+          direction.kind,
+          direction.value ?? '',
+          direction.staffIndex ?? 1,
+          direction.placement,
+          direction.number,
+        ));
+      }
+      if (directionCursor > 0) xmlMeasure.appendChild(buildBackup(doc, directionCursor));
 
       const measureDuration = maxMeasureDuration(coreDocument, partIndex, measureRef.measureNumber);
       let firstSequence = true;
@@ -1221,34 +1258,13 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
 
           let cursor = 0;
           const eventGroups = new Map(groupEventsByTimestamp(voice));
-          const directionTimestamps = measure.directions
-            .filter((direction) => typeof direction.timestampNum === 'number' && direction.timestampNum !== 0 && (!direction.staffIndex || direction.staffIndex === staff.staffIndex))
-            .map((direction) => direction.timestampNum!);
-          const timestamps = [...new Set([...eventGroups.keys(), ...directionTimestamps])].sort((a, b) => a - b);
+          const timestamps = [...eventGroups.keys()].sort((a, b) => a - b);
           for (const timestamp of timestamps) {
             const events = eventGroups.get(timestamp) ?? [];
             if (timestamp > cursor) {
               xmlMeasure.appendChild(buildForward(doc, timestamp - cursor));
               cursor = timestamp;
             }
-
-            measure.directions
-              .filter((direction) => direction.timestampNum === timestamp && timestamp !== 0 && (!direction.staffIndex || direction.staffIndex === staff.staffIndex))
-              .forEach((direction) => {
-                xmlMeasure.appendChild(buildDirectionElement(
-                  doc,
-                  direction.kind,
-                  direction.value ?? '',
-                  direction.staffIndex ?? staff.staffIndex,
-                  direction.placement,
-                  direction.number,
-                  {
-                    timestampNum: direction.timestampNum,
-                    timestampDen: direction.timestampDen,
-                    divisions: measureDivisions,
-                  },
-                ));
-            });
 
             const renderableEvents = getRenderableEventsAtTimestamp(events);
             renderableEvents.forEach((event, index) => {

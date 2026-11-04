@@ -41,8 +41,9 @@ as not reproduced and dropped.
 | 1 | 1 wrong mutation | QWERTZ Cmd/Ctrl+Y runs Undo instead of Redo (web, iPad) | X1 | A |
 | 2 | 2 precision | Layout-aware resolver for accidentals, articulations, digits, grace and the QWERTY piano on US, UK, QWERTZ; held-key repeat guard; Alt/Option+1–6 TAB string on macOS | X1, X2 | A |
 | 2a | 1 data loss (**reproduced** in iteration 1) | Any core edit of a grand-staff score deletes every lower-staff dynamic and pedal: core export writes beat-0 directions only from the first staff's measure; mid-measure directions import without a position | E1, E6, E7 | C |
-| 3 | 1 corruption (*suspected*) | Pedal stop becomes a start on MusicXML reimport | E6 | C |
+| 3 | 1 corruption (**fixed in iteration 2**) | Pedal stop becomes a start on MusicXML reimport | E6 | C |
 | 4 | 1 wrong pitch (*suspected*) | 8va exported as `octave-shift type="up"` | P7 | C |
+| 4b | 1/2 owner request 2026-11-04 | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
 | 5 | 1 data loss (*suspected*) | Double dots collapse to one dot on import | P1 | C |
 | 6 | 1 wrong target (*suspected*) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
 | 7 | 1 invalid output (*suspected*) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
@@ -158,3 +159,62 @@ as not reproduced and dropped.
   script: on an imported grand-staff fixture, one `changeNotePitch` on staff 1 removed all
   staff-2 `<dynamics>` and `<pedal>` elements from the document. It is priority class 1 and
   ahead of every other item.
+
+## Iteration 2 — Lower-staff directions survive edits and round trips
+
+- Iteration / date / starting SHA / dirty-tree state: 2 / 2026-11-04 / `1405c73` (equal to
+  `origin/devel`). Owner files left unstaged as before.
+- Track and matrix row: C; E1 (dynamics), E6 (pedal), E7 (text), L1 (chord symbol onset).
+- Problem and observable baseline:
+  - On a synthetic grand-staff bar, one `changeNotePitch` on staff 1 removed every staff-2
+    `<dynamics>` and `<pedal>` from the document. Core export wrote beat-0 directions only from
+    the first staff's measure.
+  - Import gave mid-measure directions and harmonies no position. They counted only
+    `<offset>` and ignored the measure cursor, so a pedal change on beat 3 moved to beat 1.
+  - `<pedal>` imported with an empty value and no number, so every stop re-exported as
+    `type="start"`.
+  - `addPedalSpan` on staff 2 reported success but wrote nothing.
+  - The export loop emitted each mid-measure direction once per voice of its staff.
+  - Evidence: all five new tests in `test/direction-staff-roundtrip.test.ts` failed. The new
+    e2e case failed on the old adapters at `toMatch(/<dynamics>…<mf\/>/)`.
+- Hypothesis and bounded change:
+  - Import: a measure-cursor walk (notes advance it, chord tones and grace notes do not,
+    `<backup>` and `<forward>` move it) gives each `<direction>` and `<harmony>` its musical
+    position. `<offset>` stays visual, as MusicXML 4.0 defines it; earlier nex-note files wrote
+    position plus an equal offset, and a compatibility test proves those still reimport at the
+    same beat. `<pedal>` keeps its `type` and `number`.
+  - Export: directions come from every staff's measure, de-duplicated by id. Beat-0 directions
+    are written at the measure start. Mid-measure directions are written once each at their
+    exact position (`<forward>`, the direction, one `<backup>`), and no longer per voice.
+  - Files: `src/musicxml-adapter/import/import-musicxml.ts`,
+    `src/musicxml-adapter/export/export-core-to-musicxml.ts`,
+    `test/direction-staff-roundtrip.test.ts` (new), `test/score-architecture.test.ts`,
+    `e2e/notation-tools.spec.ts`.
+  - Changed assertion: the sync-point test asserted the old `<offset>2</offset>` encoding. It
+    now asserts the reimported musical position (2/4). This is stricter about behavior and
+    independent of the encoding.
+- Regression evidence before and after:
+  - 6 direction tests: 0 of 5 passed before; 6 of 6 after, including the compatibility case.
+  - `npm test`: 1,261 passed, 0 failed.
+  - New grand-staff e2e case: failed before, passed after.
+  - `npm run build`: passed.
+  - `node scripts/notation-quality-cycle.mjs --browser`: keyboard, mouse, tablet, playback
+    and formatting passed. Browser: 82 passed, 1 failed. The failure was
+    `tablet-entry.spec.ts` "Pencil focus layout": it looked for the unformatted
+    `Undo (Cmd/Ctrl+Z)`, while macOS shows `Undo (Cmd+Z)`. This is the same platform-label class
+    as iteration 0 and not caused by this change. It now uses the title-prefix locator from
+    `2f3b431` and passes.
+- Cross-app tests and builds actually run:
+  - `npm run electron:refresh`: unit, build and packaged arm64 app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: MuseScore CLI reopen of the new grand-staff fixture (scheduled with the entry-matrix
+    fixtures); physical iPad; the Xcode macOS target, which does not exist.
+- Documentation updated: matrix E1, E6, E7 and L1; this ledger.
+- Iteration 1 commit: `1405c73`, pushed; remote verified equal.
+- Commit SHA / push result / verified remote devel SHA: recorded in the iteration 3 record.
+- Decision: accepted.
+- Next item selected: backlog 4 (8va direction), then 4b (entry matrix). The entry-matrix
+  exploration has already reproduced four entry defects; see iteration 3.
+- Owner request recorded (2026-11-04, mid-iteration): "pay attention to correct entry of
+  eighths and sixteenths in many settings: voices, multi-voice, several and different
+  instruments; make it really solid." Scheduled as backlog 4b, directly after the 8va fix.

@@ -410,7 +410,51 @@ function readSwingPlayback(doc: XmlDocument): Pick<ScoreDocumentModel, 'swingRat
   return {};
 }
 
+/**
+ * MusicXML positions a direction or harmony by the running cursor of the measure: notes advance it
+ * (chord tones and grace notes do not), `<backup>` and `<forward>` move it. Returns that position in
+ * divisions for every direction and harmony child.
+ */
+function measureChildCursorPositions(measure: XmlElement) {
+  const positions = new Map<XmlElement, number>();
+  let cursor = 0;
+  for (let i = 0; i < measure.childNodes.length; i++) {
+    const child = measure.childNodes[i];
+    if (child.nodeType !== 1) continue;
+    const element = child as XmlElement;
+    const duration = () => parseIntSafe(element.getElementsByTagName('duration')[0]?.textContent, 0);
+    if (element.tagName === 'backup') {
+      cursor = Math.max(0, cursor - duration());
+    } else if (element.tagName === 'forward') {
+      cursor += duration();
+    } else if (element.tagName === 'note') {
+      const isChord = element.getElementsByTagName('chord').length > 0;
+      const isGrace = element.getElementsByTagName('grace').length > 0;
+      if (!isChord && !isGrace) cursor += duration();
+    } else if (element.tagName === 'direction' || element.tagName === 'harmony') {
+      positions.set(element, cursor);
+    }
+  }
+  return positions;
+}
+
+/**
+ * Musical position of a direction/harmony: the measure cursor where it appears. MusicXML 4.0 defines
+ * `<offset>` as a visual displacement from that position (it changes playback only with
+ * `sound="yes"`), and earlier nex-note exports wrote the cursor position and an equal offset, so
+ * adding the offset would double those positions. Null keeps the historical "measure start" meaning.
+ */
+function directionTimestamp(element: XmlElement, cursorPositions: Map<XmlElement, number>, divisions: number) {
+  const position = cursorPositions.get(element) ?? 0;
+  if (position === 0) {
+    const offsetElement = directChildrenByTag(element, 'offset')[0];
+    return offsetElement ? fractionFromOffset(0, divisions) : null;
+  }
+  return fractionFromOffset(position, divisions);
+}
+
 function buildDirections(measure: XmlElement, measureNumber: number, divisions: number): DirectionNode[] {
+  const cursorPositions = measureChildCursorPositions(measure);
   const directions = directChildrenByTag(measure, 'direction').map((direction, index): DirectionNode | null => {
     const directionType = direction.getElementsByTagName('direction-type')[0];
     const firstChild = firstElementChild(directionType);
@@ -438,13 +482,15 @@ function buildDirections(measure: XmlElement, measureNumber: number, divisions: 
       const shiftSize = firstChild?.getAttribute('size') ?? '8';
       value = `${shiftType}:${shiftSize}`;
       spanNumber = parseIntSafe(firstChild?.getAttribute('number'), 0) || undefined;
+    } else if (kind === 'pedal') {
+      // value carries the MusicXML pedal type: start, stop, change, continue, ...
+      value = firstChild?.getAttribute('type') ?? 'start';
+      spanNumber = parseIntSafe(firstChild?.getAttribute('number'), 0) || undefined;
     } else {
       value = firstChild?.textContent ?? undefined;
     }
     const staffIndex = parseIntSafe(direction.getElementsByTagName('staff')[0]?.textContent, 0) || undefined;
-    const offsetElement = direction.getElementsByTagName('offset')[0];
-    const offset = parseIntSafe(offsetElement?.textContent, 0);
-    const timestamp = offsetElement ? fractionFromOffset(offset, divisions) : null;
+    const timestamp = directionTimestamp(direction, cursorPositions, divisions);
     return {
       id: makeId('dir', measureNumber, index),
       kind,
@@ -472,11 +518,13 @@ function buildDirections(measure: XmlElement, measureNumber: number, divisions: 
       : harmony.getElementsByTagName('bass-alter')[0]?.textContent === '-1'
         ? 'b'
         : '';
+    const timestamp = directionTimestamp(harmony, cursorPositions, divisions);
     return {
       id: makeId('harmony', measureNumber, index),
       kind: 'harmony',
       value: `${rootStep}${rootAlter}${kindText}${bassStep ? `/${bassStep}${bassAlter}` : ''}`,
       measureNumber,
+      ...(timestamp ? { timestampNum: timestamp.timestampNum, timestampDen: timestamp.timestampDen } : {}),
     };
   });
 

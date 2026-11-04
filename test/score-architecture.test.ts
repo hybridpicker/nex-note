@@ -2412,8 +2412,13 @@ test('applyDocumentCommands adds sync points with timecode, label, and scoring i
     },
   ]);
 
-  assert.match(result.xml, /<offset>2<\/offset>/);
+  // The sync point sits at the half-bar: written at that measure position (not as a visual
+  // <offset>), so it reimports at 2/4 of a whole note.
   assert.match(result.xml, /<words>Sync 01:02:03:12 door slam: accent the hit and leave dialogue space<\/words>/);
+  const sync = importMusicXmlToCore(result.xml).score.parts[0]!.staves[0]!.measures[0]!.directions
+    .find((direction) => direction.value?.startsWith('Sync 01:02:03:12'));
+  assert.ok(sync);
+  assert.equal((sync.timestampNum ?? 0) / (sync.timestampDen ?? 1), 2 / 4);
 });
 
 test('applyDocumentCommands adds orchestration notes across a measure span', () => {
