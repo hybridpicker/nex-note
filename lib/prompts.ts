@@ -98,7 +98,7 @@ Commands:
 - {"type":"addOrnament","measureNumber":1,"staffIndex":1,"voiceId":1,"timestampNum":0,"timestampDen":4,"ornament":"trill-mark"}
 - {"type":"addWedge","kind":"crescendo","staffIndex":1,"startMeasureNumber":1,"startTimestampNum":0,"startTimestampDen":4,"stopMeasureNumber":2,"stopTimestampNum":0,"stopTimestampDen":4,"placement":"below"}
 - {"type":"addPedalSpan","staffIndex":1,"startMeasureNumber":1,"startTimestampNum":0,"startTimestampDen":4,"stopMeasureNumber":2,"stopTimestampNum":0,"stopTimestampDen":4}
-- {"type":"addOttava","kind":"8va","staffIndex":1,"startMeasureNumber":1,"startTimestampNum":0,"startTimestampDen":4,"stopMeasureNumber":2,"stopTimestampNum":0,"stopTimestampDen":4,"placement":"above"}
+- {"type":"addOttava","kind":"8va","staffIndex":1,"startMeasureNumber":1,"startTimestampNum":0,"startTimestampDen":4,"stopMeasureNumber":2,"stopTimestampNum":0,"stopTimestampDen":4,"placement":"above"} — kind is "8va", "8vb", "15ma" or "15mb"; placement defaults to above for 8va/15ma and below for 8vb/15mb
 - {"type":"addRehearsalMarksEvery","interval":4,"style":"letters"}
 - {"type":"fitRangeOctaves","minMidi":60,"maxMidi":84,"staffIndex":1,"voiceId":1}
 - {"type":"applyPracticeProfile","profile":"rehearsal","startMeasureNumber":1}

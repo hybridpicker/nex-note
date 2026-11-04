@@ -165,7 +165,7 @@ export type LegacyScoreOperation =
     }
   | {
       type: 'addOttava';
-      kind: '8va' | '8vb';
+      kind: '8va' | '8vb' | '15ma' | '15mb';
       staffIndex: number;
       startMeasureNumber: number;
       startTimestampNum: number;
@@ -919,7 +919,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       ensureNumber(command, 'stopTimestampDen', issues, { min: 1 });
       break;
     case 'addOttava':
-      if (!['8va', '8vb'].includes(String(command.kind ?? ''))) issues.push('kind must be 8va or 8vb');
+      if (!['8va', '8vb', '15ma', '15mb'].includes(String(command.kind ?? ''))) issues.push('kind must be 8va, 8vb, 15ma or 15mb');
       ensureNumber(command, 'staffIndex', issues, { min: 1 });
       ensureNumber(command, 'startMeasureNumber', issues, { min: 0 });
       ensureNumber(command, 'startTimestampNum', issues, { min: 0 });

@@ -42,7 +42,7 @@ as not reproduced and dropped.
 | 2 | 2 precision | Layout-aware resolver for accidentals, articulations, digits, grace and the QWERTY piano on US, UK, QWERTZ; held-key repeat guard; Alt/Option+1–6 TAB string on macOS | X1, X2 | A |
 | 2a | 1 data loss (**reproduced** in iteration 1) | Any core edit of a grand-staff score deletes every lower-staff dynamic and pedal: core export writes beat-0 directions only from the first staff's measure; mid-measure directions import without a position | E1, E6, E7 | C |
 | 3 | 1 corruption (**fixed in iteration 2**) | Pedal stop becomes a start on MusicXML reimport | E6 | C |
-| 4 | 1 wrong pitch (*suspected*) | 8va exported as `octave-shift type="up"` | P7 | C |
+| 4 | 1 wrong pitch (**fixed in iteration 3**) | 8va exported as `octave-shift type="up"` | P7 | C |
 | 4b | 1/2 owner request 2026-11-04 | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
 | 5 | 1 data loss (*suspected*) | Double dots collapse to one dot on import | P1 | C |
 | 6 | 1 wrong target (*suspected*) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
@@ -218,3 +218,52 @@ as not reproduced and dropped.
 - Owner request recorded (2026-11-04, mid-iteration): "pay attention to correct entry of
   eighths and sixteenths in many settings: voices, multi-voice, several and different
   instruments; make it really solid." Scheduled as backlog 4b, directly after the 8va fix.
+
+## Iteration 3 — Octave lines use the MusicXML direction; 15ma and 15mb
+
+- Iteration / date / starting SHA / dirty-tree state: 3 / 2026-11-04 / `7b7d333` (equal to
+  `origin/devel`). Owner files and the iteration-4 work file `src/score-input/voice-mapping.ts`
+  left unstaged.
+- Track and matrix row: C; P7.
+- Problem and observable baseline:
+  - `addOttava` wrote 8va as `octave-shift type="up"` and 8vb as `"down"`. MusicXML 4.0 defines
+    `octave-shift` from the written pitch data: notes printed an octave higher (8va) are a shift
+    "down". The importer already defaulted to that meaning, so an 8va added in nex-note rendered
+    and exported as an 8vb, and other applications displaced the notes two octaves from the
+    intent.
+  - 15ma/15mb were not accepted.
+  - `test/score-roundtrip-golden.test.ts` asserted the reversed `type="up"`.
+  - New `test/ottava-direction.test.ts`: 6 of 7 failed before the change.
+- Hypothesis and bounded change:
+  - Map 8va/15ma to `down` and 8vb/15mb to `up`, with size 8 or 15 and a matching stop.
+  - Default placement is above for 8va/15ma and below for 8vb/15mb.
+  - The schema accepts 15ma/15mb; the AI command catalog in `lib/prompts.ts` documents the
+    kinds.
+  - Corrected assertion: the golden test now expects `type="down"` for 8va and asserts that no
+    `type="up"` is written. This corrects a wrong expectation against the MusicXML definition
+    and is stricter than before.
+  - Files: `src/score-core/commands/core-command-executor.ts`,
+    `src/shared/schemas/score-command.ts`, `lib/prompts.ts`,
+    `test/score-roundtrip-golden.test.ts`, `test/ottava-direction.test.ts` (new).
+- Regression evidence before and after: ottava tests 1/7 before, 7/7 after; golden suite
+  passes; `npm test` 1,268 passed, 0 failed.
+- Cross-app tests and builds actually run:
+  - `npm run build`: passed.
+  - `npm run test:e2e:notation-tools`: 36 passed.
+  - `npm run electron:refresh`: 1,268 unit tests, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: rendered visual check of an octave bracket (there is no UI path yet; P7 keyboard
+    and mouse are MISSING); MuseScore CLI reopen; physical iPad; the Xcode macOS target, which
+    does not exist.
+- Documentation updated: matrix P7, `lib/prompts.ts` command catalog, this ledger.
+- Iteration 2 commit: `7b7d333`, pushed; remote verified equal.
+- Commit SHA / push result / verified remote devel SHA: recorded in the iteration 4 record.
+- Decision: accepted.
+- Next item selected: backlog 4b, entry matrix. Exploration with `test/entry-matrix.test.ts`
+  reproduced four entry defects:
+  1. wrong voice on MuseScore/Finale piano left hands (stored voice 5);
+  2. the dot survives a duration change;
+  3. Cmd/Ctrl+3 during entry ignores the active duration, and typing into a tuplet slot
+     corrupts the group;
+  4. a value longer than the rest of the bar is rejected instead of split and tied.
+  The wrong-voice defect is priority 1 and goes first.

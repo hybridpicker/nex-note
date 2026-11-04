@@ -950,9 +950,11 @@ test('addOttava command inserts octave-shift start and stop directions through c
     },
   ]);
   const m1 = result.coreDocument?.score.parts[0].staves[0].measures[0];
-  assert.ok(m1?.directions.some((d) => d.kind === 'octave-shift' && d.value === 'up:8'));
+  // MusicXML 4.0 encodes 8va (notes printed an octave higher) as an octave-shift "down".
+  assert.ok(m1?.directions.some((d) => d.kind === 'octave-shift' && d.value === 'down:8'));
   assert.ok(m1?.directions.some((d) => d.kind === 'octave-shift' && d.value === 'stop:8'));
-  assert.match(result.xml, /octave-shift type="up" size="8"/);
+  assert.match(result.xml, /octave-shift type="down" size="8"/);
+  assert.doesNotMatch(result.xml, /octave-shift type="up"/);
   assert.ok(result.diagnostics.some((d) => d.code === 'core_execution'));
 });
 

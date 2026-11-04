@@ -5543,15 +5543,20 @@ export function executeCoreCommands(
           .filter((d) => d.kind === 'octave-shift' && d.number != null)
           .map((d) => d.number!);
         const ottavaNumber = usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
+        // MusicXML 4.0: notes printed an octave higher (8va, 15ma) are an octave-shift "down" from
+        // the sounding pitch data; 8vb and 15mb are "up". Size is 8 or 15.
+        const ottavaUp = command.kind === '8va' || command.kind === '15ma';
+        const ottavaSize = command.kind === '15ma' || command.kind === '15mb' ? 15 : 8;
+        const ottavaPlacement = command.placement ?? (ottavaUp ? 'above' : 'below');
         const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
         const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `ottava:${ottavaNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
             kind: 'octave-shift',
-            value: `${command.kind === '8vb' ? 'down' : 'up'}:8`,
+            value: `${ottavaUp ? 'down' : 'up'}:${ottavaSize}`,
             number: ottavaNumber,
-            placement: command.placement ?? 'above',
+            placement: ottavaPlacement,
             measureNumber: command.startMeasureNumber,
             staffIndex: command.staffIndex,
             timestampNum: command.startTimestampNum,
@@ -5562,9 +5567,9 @@ export function executeCoreCommands(
           stopAdded.measure.directions.push({
             id: `ottava:${ottavaNumber}:stop:${command.stopMeasureNumber}:${Date.now()}`,
             kind: 'octave-shift',
-            value: 'stop:8',
+            value: `stop:${ottavaSize}`,
             number: ottavaNumber,
-            placement: command.placement ?? 'above',
+            placement: ottavaPlacement,
             measureNumber: command.stopMeasureNumber,
             staffIndex: command.staffIndex,
             timestampNum: command.stopTimestampNum,
