@@ -99,7 +99,7 @@ const SCENARIOS: Scenario[] = [
     name: 'duration-first input (M) keeps a dot set before the duration key',
     xml: FOUR_FOUR,
     script: 'N M e . 5',
-    expect: [{ where: {}, events: ['m1@0 E4 quarter.', 'm1@1.5 r eighth', 'm1@2 r half', 'm2@0 r whole'] }],
+    expect: [{ where: {}, events: ['m1@0 E5 quarter.', 'm1@1.5 r eighth', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 1,
   },
   {

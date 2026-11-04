@@ -66,8 +66,9 @@ as not reproduced and dropped.
 | 24 | **fixed in iteration 20** (Doctor false positive) | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
 | 25 | 2 precision (**fixed in iteration 24**) | Range selection with Shift+Arrow after an entry starts at the cursor slot instead of the note just entered (slur ranges start one slot late versus MuseScore) | E5 | A |
 | 26 | 1 data loss (**fixed in iteration 26**) | A MIDI key or `M`-mode commit after a typed letter replaces the note just entered instead of writing at the cursor | parity matrix | A |
-| 27 | 1 wrong pitch | First `M`-mode pitch ignores the clef-middle-line rule; step-time entry after a voice change takes its octave from the other voice (MuseScore looks only in the entry voice) | parity matrix | A |
+| 27 | 1 wrong pitch (**fixed in iteration 27**) | First `M`-mode pitch ignores the clef-middle-line rule; step-time entry after a voice change takes its octave from the other voice (MuseScore looks only in the entry voice) | parity matrix | A |
 | 28 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
+| 29 | 1 data loss (to confirm against MuseScore) | Typing past the last position of the score replaces the last note | parity matrix | A |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -1084,4 +1085,49 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   `insertMidiChord` entry point with pitches.
 - Cross-app tests and builds: run on the iteration 24–26 stack.
 - Documentation updated: this ledger.
+- Decision: accepted.
+
+## Iteration 27 — Typed letters take their register from the entry voice
+
+- Iteration / date / starting SHA / dirty-tree state: 27 / 2026-11-04 / iteration 26 (local).
+- Track and matrix row: A, priority class 1 (wrong pitch); parity matrix "A-G pitch input",
+  "pitch-before-duration", voices.
+- Problem and observable baseline:
+  - Step-time entry after a voice change resolved the letter against the last input, which is
+    a note in the other voice. With voice 1 at C4, the first C in an empty voice 2 was C4.
+  - `M` started from a fixed C4 on a rest, so `N M d 5` gave D4 in treble and in bass clef.
+  - MuseScore (`NoteInput::resolveNoteInputParams`, read from the source) looks for the previous
+    chord in the entry track only and otherwise uses the clef's reference line.
+  - New `test/entry-m-register.test.ts` failed before.
+  - Found with the first test: the voice switched back to could not be entered at all when the
+    kept cursor fell inside one of its longer rests. Notes were rejected (`target-inside-rest`), a
+    rest left the cursor in place so the next note started a beat early, and a value longer than
+    the bar could not tie over (also for voice 2 when the next bar has no voice 2 yet).
+- Hypothesis and bounded change: new `laneRegisterReference`: the preceding pitched note in the
+  entry voice, else the clef's middle line. Step-time letters use it when the last input is a
+  rest or not in the entry voice. `M` uses it for its first prepared pitch, for letters without
+  a prepared pitch, for the cursor arrows and when leaving a prepared rest. Shift chord tones are
+  unchanged (they go to the note just entered).
+  - Cross-voice cursor: keyboard targets carry `keyboard-cross-voice-cursor`, which the validator
+    accepts inside a rest, including a whole-bar rest. Pointer entry is unchanged.
+  - A rest over silence changes nothing in the document and moves the cursor past the value
+    (`findCursorAfterSilentValue`); if no event starts there, the cursor keeps its lane at that
+    onset.
+  - The barline split also runs from a cross-voice cursor and creates a missing next-bar voice.
+  - Files: `hooks/useNoteEditor.ts`, `src/score-input/keyboard-resolver.ts`,
+    `src/score-input/note-entry-validator.ts`, `test/entry-cross-voice-cursor.test.ts` (new).
+- Corrected existing assertions (exact values, no loosening; the source above is the evidence):
+  - `test/user-visible-note-editor.test.ts`, "duration-first three-note entry stays atomic and
+    isolated in voice 2": voice 2 is empty, so C4 E4 G4 becomes C5 E5 G5. The isolation, duration
+    and one-Undo-entry assertions are unchanged.
+  - Same file, "note input can insert pitched notes, rests, and overwrite the selected slot": B
+    in empty voice 2 is B4, so the octave key gives B5, not B4.
+  - `test/entry-matrix.test.ts`, `N M e . 5`: E4 becomes E5 (`N 5 e` already gave E5).
+- Regression evidence before and after: new tests pass (the register and cross-voice cases failed
+  before); `npm test` 1,381 passed; build passed; application `tsc` clean. New browser case in
+  `e2e/notation-tools.spec.ts` passes under strict Doctor.
+- Found and not changed (new backlog 29): typing past the last position of the score replaces the
+  last note. MuseScore's rule still has to be read before changing it.
+- Cross-app tests and builds: run on the iteration 24–27 stack.
+- Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
 - Decision: accepted.

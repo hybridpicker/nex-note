@@ -267,7 +267,9 @@ the next bar even when the active voice does not exist there yet. A plain letter
 resolved nearest to the chord's lowest note.
 First note of a passage: with no earlier note in the voice, `A`–`G` resolve nearest to the
 middle line of the effective clef (treble B4, bass D3, alto C4, tenor A3), as MuseScore does, so
-the first `C` is C5 in treble and C3 in bass clef.
+the first `C` is C5 in treble and C3 in bass clef. Only notes of the entry voice set the
+register: after a voice change a letter follows that voice's previous note, or the clef's middle
+line when it has none, never the note in the other voice. `M` starts from the same pitch.
 
 Values that cross a beat: the rhythm speller writes them as tied notes or as several rests (an
 off-beat quarter is eighth–tie–eighth). After such a value the cursor moves past all of its

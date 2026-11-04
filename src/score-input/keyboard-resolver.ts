@@ -278,6 +278,10 @@ export function resolveKeyboardEditTarget(input: ResolveKeyboardEditTargetInput)
     diagnostics.push('x-resolved-from-anchor-duration');
   } else {
     diagnostics.push('x-resolved-from-anchor-slot');
+    // The cursor position came from another voice, so it may fall inside a rest of this one.
+    if (mode === 'insert' && input.insertAtCursor && selectedVoice !== anchor.voiceId) {
+      diagnostics.push('keyboard-cross-voice-cursor');
+    }
   }
 
   return {

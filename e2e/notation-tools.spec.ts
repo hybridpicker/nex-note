@@ -1066,6 +1066,28 @@ test('off-beat values keep their tied tail and the next entry follows them', asy
   await expectNoDoctorIssues(page, 'after off-beat entry');
 });
 
+test('switching voices keeps each voice register and enters inside a longer rest', async ({ page }) => {
+  const fluteXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+<note><rest measure="yes"/><duration>16</duration><voice>1</voice><type>whole</type></note></measure>
+</part></score-partwise>`;
+  await bootWithScore(page, fluteXml, { strictDoctor: true });
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('N');
+  for (const key of ['5', 'c', 'd', 'Control+Alt+2', 'e', 'Control+Alt+1', 'f']) await page.keyboard.press(key);
+  const summary = async (voiceId: number) => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices.find((voice) => voice.voiceId === voiceId)?.events ?? []).map((event) => {
+      const onset = (event.timestampNum / event.timestampDen) * 4;
+      return event.kind === 'note' ? `${onset}:${event.pitch.step}${event.pitch.octave}` : `${onset}:r`;
+    });
+  };
+  await expect.poll(() => summary(1)).toEqual(['0:C5', '1:D5', '2:r', '3:F5']);
+  expect(await summary(2)).toEqual(['0:r', '2:E5', '3:r']);
+  await expectNoDoctorIssues(page, 'after voice switches');
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

@@ -219,10 +219,15 @@ export function inspectResolvedEditTarget(input: InspectResolvedEditTargetInput)
   const isPreservedInternalRestSlot = input.target.mode === 'insert'
     && input.target.allowOccupiedInsert
     && spanningRest
-    && !spanningRestIsSingleFullMeasureEvent
     && (
-      input.target.diagnostics.includes('rest-only-internal-slot-preserved')
-      || input.target.diagnostics.includes('rest-only-quantized-internal-slot')
+      input.target.diagnostics.includes('keyboard-cross-voice-cursor')
+      || (
+        !spanningRestIsSingleFullMeasureEvent
+        && (
+          input.target.diagnostics.includes('rest-only-internal-slot-preserved')
+          || input.target.diagnostics.includes('rest-only-quantized-internal-slot')
+        )
+      )
     );
 
   if (startOffset >= context.measureDurationDivisions) {

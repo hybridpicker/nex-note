@@ -5106,9 +5106,11 @@ test('note input can insert pitched notes, rests, and overwrite the selected slo
 
   const octaveShiftedVoiceEvents = flattenVoiceEvents(hook.xml).filter((event) => event.voiceId === 2);
   const shiftedInput = octaveShiftedVoiceEvents.find((event) => event.kind === 'note' && event.pitch.step === 'B');
+  // Voice 2 is empty, so B starts from the clef's middle line (B4), not voice 1's C4, and the
+  // octave key raises it to B5.
   assert.equal(hook.current.noteInputAnchor?.step, 'B');
-  assert.equal(hook.current.noteInputAnchor?.octave, 4);
-  assert.equal(shiftedInput?.kind === 'note' ? shiftedInput.pitch.octave : null, 4);
+  assert.equal(hook.current.noteInputAnchor?.octave, 5);
+  assert.equal(shiftedInput?.kind === 'note' ? shiftedInput.pitch.octave : null, 5);
 
   act(() => {
     hook.current.handleNoteClick(makeSelectedNotes(hook.xml)[0]);
@@ -6429,10 +6431,12 @@ test('duration-first three-note entry stays atomic and isolated in voice 2', () 
   const voiceOne = onset.filter((event) => event.voiceId === 1);
   const voiceTwo = onset.filter((event) => event.voiceId === 2);
   assert.deepEqual(voiceOne.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), ['C4']);
+  // Voice 2 has no earlier note, so its register is the clef's middle line, as in step-time entry
+  // and MuseScore (the previous chord is looked up in the entry voice only).
   assert.deepEqual(voiceTwo.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
-    'C4',
-    'E4',
-    'G4',
+    'C5',
+    'E5',
+    'G5',
   ]);
   assert.equal(voiceTwo.every((event) => event.durationType === 'quarter'), true);
   assert.equal(hook.appliedCommands.length, 1);

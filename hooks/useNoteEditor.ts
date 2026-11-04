@@ -461,6 +461,63 @@ function clefMiddleLineReference(document: ScoreDocumentModel | null | undefined
   return { ...rest, step: middle.step, octave: middle.octave, alter: 0, isRest: false };
 }
 
+/**
+ * The note a typed letter is resolved against at this position in the entry voice: the preceding
+ * pitched note of that voice, else the clef's middle line. MuseScore looks up the previous chord in
+ * the entry track only (NoteInput::resolveNoteInputParams), so other voices never set the register
+ * and a rest's stored placeholder pitch does not either.
+ */
+function laneRegisterReference(document: ScoreDocumentModel | null | undefined, position: SelectedNote, voiceId: number): SelectedNote {
+  const lanePosition = { ...position, voiceId };
+  return getSemanticNoteOrder(document)
+    .filter((note) => !note.isRest && matchesSelectionLane(note, lanePosition) && compareSelectedNotes(note, lanePosition) < 0)
+    .at(-1) ?? clefMiddleLineReference(document, position);
+}
+
+/**
+ * Where the cursor goes after a rest typed over silence in another voice. The document does not
+ * change (a rest over a rest is the same music), but the cursor still moves past the value, as in
+ * MuseScore. Returns null when the voice is not silent there or the value leaves the bar.
+ */
+function findCursorAfterSilentValue(
+  document: ScoreDocumentModel | null | undefined,
+  cursor: SelectedNote,
+  voiceId: number,
+  value: { duration: NoteDuration; dotted: boolean },
+): SelectedNote | null {
+  if (!document) return null;
+  const part = document.score.parts.find((entry) => !cursor.corePartId || entry.id === cursor.corePartId);
+  const staff = part?.staves.find((entry) => entry.staffIndex === cursor.staffIndex);
+  const measure = staff?.measures.find((entry) => entry.measureNumber === cursor.measureNumber);
+  if (!staff || !measure) return null;
+  const timing = getEffectiveMeasureTimingFromStaff(staff, { measureId: measure.id, measureNumber: measure.measureNumber });
+  if (!timing) return null;
+  const onsetOf = (event: { timestampNum: number; timestampDen: number }) => event.timestampNum / Math.max(event.timestampDen, 1);
+  const start = onsetOf(cursor);
+  const end = start + inputValueWholeNotes(value.duration, value.dotted);
+  const barEnd = timing.durationDivisions / Math.max(timing.divisions * 4, 1);
+  if (end > barEnd + ONSET_EPSILON) return null;
+  const voice = measure.voices.find((entry) => entry.voiceId === voiceId);
+  const occupied = (voice?.events ?? []).some((event) => (
+    event.kind === 'note'
+    && onsetOf(event) < end - ONSET_EPSILON
+    && onsetOf(event) + event.durationDivisions / Math.max(timing.divisions * 4, 1) > start + ONSET_EPSILON
+  ));
+  if (occupied) return null;
+  const onStaff = getSemanticNoteOrder(document).filter((entry) => entry.corePartId === cursor.corePartId && entry.staffIndex === cursor.staffIndex);
+  const atEnd = onStaff.filter((entry) => entry.measureNumber === cursor.measureNumber && Math.abs(onsetOf(entry) - end) < ONSET_EPSILON);
+  const exact = atEnd.find((entry) => entry.voiceId === voiceId) ?? atEnd[0];
+  if (exact) return exact;
+  if (end < barEnd - ONSET_EPSILON) {
+    // No event starts there in any voice (the value ends inside a longer rest). The cursor keeps
+    // its lane, so the next entry still resolves through the cross-voice path at this onset.
+    const timestampDen = Math.max(timing.divisions * 4, 1);
+    return { ...cursor, coreEntityId: null, graphicalNote: null, isRest: true, timestampNum: Math.round(end * timestampDen), timestampDen };
+  }
+  const nextBar = onStaff.filter((entry) => isNextBarStartOnStaff(cursor, entry));
+  return nextBar.find((entry) => entry.voiceId === voiceId) ?? nextBar[0] ?? null;
+}
+
 function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote, skipThroughOnset: number | null = null) {
   const ordered = getSelectionLaneOrder(document, current);
   const currentIndex = findSelectionIndex(ordered, current);
@@ -2193,11 +2250,11 @@ export function useNoteEditor(
       if (
         noteInputModeRef.current
         && inspected.rejectionReason === 'overflow-rejected'
-        && target.mode === 'replace'
+        && (target.mode === 'replace' || target.diagnostics.includes('keyboard-cross-voice-cursor'))
         && target.source === 'keyboard'
         && !input.guitar
       ) {
-        const reference = findEventReference(coreDocument, {
+        const slotReference = findEventReference(coreDocument, {
           coreMeasureId: target.measureId ?? null,
           corePartId: target.corePartId ?? null,
           measureNumber: target.measureNumber,
@@ -2206,18 +2263,31 @@ export function useNoteEditor(
           timestampNum: target.timestampNum,
           timestampDen: target.timestampDen,
         });
+        // A cursor from another voice may sit inside a rest of this one, with no event at its onset.
+        const exactSlot = slotReference?.event.voiceId === target.voiceId
+          && timestampsEqual(slotReference.event.timestampNum, slotReference.event.timestampDen, target.timestampNum, target.timestampDen)
+          ? slotReference.event
+          : null;
+        const reference = slotReference ?? (() => {
+          const part = coreDocument?.score.parts.find((entry) => entry.id === target.corePartId);
+          const staff = part?.staves.find((entry) => entry.staffIndex === target.staffIndex);
+          const measure = staff?.measures.find((entry) => entry.measureNumber === target.measureNumber);
+          return part && staff && measure ? { part, staff, measure } : null;
+        })();
         const timing = reference
           ? getEffectiveMeasureTimingFromStaff(reference.staff, { measureId: reference.measure.id, measureNumber: reference.measure.measureNumber })
           : null;
         const nextMeasure = reference?.staff.measures.find((entry) => entry.measureNumber === reference.measure.measureNumber + 1) ?? null;
         const nextVoiceStart = nextMeasure?.voices
-          .find((voice) => voice.voiceId === reference?.event.voiceId)
+          .find((voice) => voice.voiceId === target.voiceId)
           ?.events.find((event) => event.timestampNum === 0 && !event.isChord) ?? null;
-        const slotInTuplet = Boolean(reference && coreDocument?.tuplets.some((tuplet) => tuplet.eventIds.includes(reference.event.id)));
-        if (reference && timing && nextMeasure && nextVoiceStart && !slotInTuplet) {
+        const slotInTuplet = Boolean(exactSlot && coreDocument?.tuplets.some((tuplet) => tuplet.eventIds.includes(exactSlot.id)));
+        // A voice with no event in the next bar yet (voice 2 started in this bar) is created by the
+        // insert. A replace-mode slot keeps requiring the event it overwrites.
+        if (reference && timing && nextMeasure && (exactSlot || target.mode !== 'replace') && !slotInTuplet) {
           const divisions = timing.divisions;
           const requested = buildDurationCandidates(divisions).find((candidate) => candidate.type === durationType && candidate.dotted === dotted)?.value ?? 0;
-          const slotStart = Math.round((reference.event.timestampNum / Math.max(reference.event.timestampDen, 1)) * divisions * 4);
+          const slotStart = Math.round((target.timestampNum / Math.max(target.timestampDen, 1)) * divisions * 4);
           const firstPart = timing.durationDivisions - slotStart;
           const secondPart = requested - firstPart;
           if (
@@ -2239,23 +2309,23 @@ export function useNoteEditor(
               corePartId: reference.part.id,
               measureNumber: reference.measure.measureNumber,
               staffIndex: reference.staff.staffIndex,
-              voiceId: reference.event.voiceId,
-              timestampNum: reference.event.timestampNum,
-              timestampDen: reference.event.timestampDen,
+              voiceId: target.voiceId,
+              timestampNum: target.timestampNum,
+              timestampDen: target.timestampDen,
             };
             const nextBar = {
               coreMeasureId: nextMeasure.id,
               corePartId: reference.part.id,
               measureNumber: nextMeasure.measureNumber,
               staffIndex: reference.staff.staffIndex,
-              voiceId: reference.event.voiceId,
-              timestampNum: nextVoiceStart.timestampNum,
-              timestampDen: nextVoiceStart.timestampDen,
+              voiceId: target.voiceId,
+              timestampNum: 0,
+              timestampDen: nextVoiceStart?.timestampDen ?? Math.max(divisions * 4, 1),
             };
             const splitCommands: ScoreCommand[] = [
-              { type: 'replaceWithRest', coreEntityId: reference.event.id, ...thisBar, durationType: first.type, isDotted: first.dotted },
+              ...(exactSlot ? [{ type: 'replaceWithRest' as const, coreEntityId: exactSlot.id, ...thisBar, durationType: first.type, isDotted: first.dotted }] : []),
               { type: 'insertNoteAt', ...thisBar, ...pitchFields, durationType: first.type, isDotted: first.dotted, asChord: false, preserveOverflow: false },
-              { type: 'replaceWithRest', coreEntityId: nextVoiceStart.id, ...nextBar, durationType: second.type, isDotted: second.dotted },
+              ...(nextVoiceStart ? [{ type: 'replaceWithRest' as const, coreEntityId: nextVoiceStart.id, ...nextBar, durationType: second.type, isDotted: second.dotted }] : []),
               { type: 'insertNoteAt', ...nextBar, ...pitchFields, durationType: second.type, isDotted: second.dotted, asChord: false, preserveOverflow: false },
               { type: 'toggleTie', coreEntityId: null, ...thisBar, step: target.step, octave: target.octave, alter: target.alter },
             ];
@@ -3182,6 +3252,13 @@ export function useNoteEditor(
       }];
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
+      if (crossVoiceAtCursor) {
+        const afterSilence = findCursorAfterSilentValue(coreDocument, targetNote, storedInputVoiceAt(targetNote), { duration: selectedDurationRef.current, dotted: isDottedRef.current });
+        if (afterSilence) {
+          selectSingleNote(afterSilence, { visualOnly: false, text: null, measureNumber: afterSilence.measureNumber, staffIndex: afterSilence.staffIndex });
+          return true;
+        }
+      }
       const enteredRest = overwriteSlot
         ? resolveRecentInputFromDocument(coreDocument, {
           coreEntityId: targetNote.coreEntityId ?? null,
@@ -3277,16 +3354,21 @@ export function useNoteEditor(
       setNoteInputModeLive(true);
       setStepInputKeyboardModeLive(false);
       const anchor = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote;
+      const cursor = selectedNoteRef.current ?? selectedNote ?? anchor;
       if (!preparedDurationRestRef.current && preparedDurationPitchesRef.current.length === 0) {
+        const entryVoice = cursor ? storedInputVoiceAt(cursor) : selectedVoiceRef.current;
+        const pitchSource = anchor && cursor && !anchor.isRest && matchesSelectionLane(anchor, { ...cursor, voiceId: entryVoice })
+          ? anchor
+          : cursor ? laneRegisterReference(coreDocument, cursor, entryVoice) : null;
         setPreparedDurationPitchesLive([
-          prepareDurationPitch(anchor && !anchor.isRest
-            ? { step: anchor.step, octave: anchor.octave, alter: anchor.alter }
+          prepareDurationPitch(pitchSource
+            ? { step: pitchSource.step, octave: pitchSource.octave, alter: pitchSource.alter }
             : { step: 'C', octave: 4, alter: 0 }),
         ]);
       }
     }
     setInputByDurationModeLive(next);
-  }, [ensureNoteInputAnchor, selectedNote, setInputByDurationModeLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive]);
+  }, [coreDocument, ensureNoteInputAnchor, selectedNote, setInputByDurationModeLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, storedInputVoiceAt]);
 
   const toggleStepInputKeyboardMode = useCallback(() => {
     const next = !stepInputKeyboardModeRef.current;
@@ -4118,7 +4200,7 @@ export function useNoteEditor(
     ), null);
     const reference: SelectedNote = highestPreparedPitch
       ? { ...anchor, ...highestPreparedPitch, isRest: false }
-      : anchor;
+      : anchor.isRest ? laneRegisterReference(coreDocument, anchor, storedInputVoiceAt(anchor)) : anchor;
     const resolved = resolvePitchNameEntry(normalizedStep, 0, reference, addToChord ? 'above' : 'closest');
     const alter = selectedAccidentalRef.current
       ? writtenAccidentalToAlter(selectedAccidentalRef.current)
@@ -4141,16 +4223,16 @@ export function useNoteEditor(
       addToChord ? 'add' : 'replace',
     ));
     if (selectedAccidentalRef.current) setSelectedAccidentalLive(null);
-  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, setSelectedAccidentalLive]);
+  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, setSelectedAccidentalLive, storedInputVoiceAt]);
 
   const moveInputByDurationPitchCursor = useCallback((direction: 1 | -1) => {
     const anchor = selectedNoteRef.current ?? selectedNote;
     if (!anchor) return;
     const current = preparedDurationPitchesRef.current;
     const active = current[current.length - 1]
-      ?? prepareDurationPitch(anchor.isRest
-        ? { step: 'C', octave: 4, alter: 0 }
-        : { step: anchor.step, octave: anchor.octave, alter: anchor.alter });
+      ?? prepareDurationPitch((({ step, octave, alter }) => ({ step, octave, alter }))(
+        anchor.isRest ? laneRegisterReference(coreDocument, anchor, storedInputVoiceAt(anchor)) : anchor,
+      ));
     const semitones = (active.midi === 0 && direction < 0) || (active.midi === 127 && direction > 0)
       ? 0
       : direction;
@@ -4164,21 +4246,22 @@ export function useNoteEditor(
     setPreparedDurationRestLive(false);
     setPreparedDurationPitchesLive([...new Map(next.map((pitch) => [pitch.midi, pitch])).values()]
       .sort((left, right) => left.midi - right.midi));
-  }, [selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
+  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, storedInputVoiceAt]);
 
   const removeLastPreparedDurationTone = useCallback(() => {
     if (preparedDurationRestRef.current) {
       setPreparedDurationRestLive(false);
       const anchor = selectedNoteRef.current ?? selectedNote;
-      setPreparedDurationPitchesLive([prepareDurationPitch(anchor && !anchor.isRest
-        ? { step: anchor.step, octave: anchor.octave, alter: anchor.alter }
+      const pitchSource = anchor?.isRest ? laneRegisterReference(coreDocument, anchor, storedInputVoiceAt(anchor)) : anchor;
+      setPreparedDurationPitchesLive([prepareDurationPitch(pitchSource
+        ? { step: pitchSource.step, octave: pitchSource.octave, alter: pitchSource.alter }
         : { step: 'C', octave: 4, alter: 0 })]);
       return true;
     }
     if (preparedDurationPitchesRef.current.length <= 1) return false;
     setPreparedDurationPitchesLive(preparedDurationPitchesRef.current.slice(0, -1));
     return true;
-  }, [selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive]);
+  }, [coreDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, storedInputVoiceAt]);
 
   const changeInputByDurationOctave = useCallback((direction: 1 | -1) => {
     if (!inputByDurationModeRef.current) {
@@ -4669,13 +4752,12 @@ export function useNoteEditor(
       if (noteInputModeRef.current && currentSelectedNote) {
         const addingChordTone = e.shiftKey || chordInputModeRef.current;
         const inputReference = lastNoteInputRef.current ?? currentSelectedNote;
-        // Rests carry a placeholder pitch, not a new melodic register. Resolve
-        // the preceding pitch from the current lane so Undo and navigation
-        // cannot leave a stale cached octave behind.
-        const precedingNote = inputReference.isRest
-          ? getSelectionLaneOrder(coreDocument, inputReference)
-            .filter((note) => !note.isRest && compareSelectedNotes(note, inputReference) < 0)
-            .at(-1) ?? clefMiddleLineReference(coreDocument, inputReference)
+        // Rests carry a placeholder pitch, not a new melodic register, and another voice's note
+        // does not set this voice's register. Resolve the preceding pitch from the entry voice
+        // so a voice change, Undo and navigation cannot leave a stale octave behind.
+        const entryVoice = storedInputVoiceAt(currentSelectedNote);
+        const precedingNote = inputReference.isRest || !matchesSelectionLane(inputReference, { ...currentSelectedNote, voiceId: entryVoice })
+          ? laneRegisterReference(coreDocument, inputReference.isRest ? inputReference : currentSelectedNote, entryVoice)
           : inputReference;
         // MuseScore resolves a plain letter nearest to the lowest note of the previous chord
         // (NoteInput::resolveNoteInputParams uses downNote()).
