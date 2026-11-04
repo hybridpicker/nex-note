@@ -1376,7 +1376,13 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
               cursor = timestamp;
             }
 
-            const renderableEvents = getRenderableEventsAtTimestamp(events);
+            // A MusicXML grace note belongs to the note after it, so graces precede the main note
+            // and its chord tones at the same onset (stable, keeping the grace order).
+            const atOnset = getRenderableEventsAtTimestamp(events);
+            const renderableEvents = [
+              ...atOnset.filter((event) => isGraceEvent(coreDocument, event.id)),
+              ...atOnset.filter((event) => !isGraceEvent(coreDocument, event.id)),
+            ];
             renderableEvents.forEach((event, index) => {
               xmlMeasure.appendChild(buildEventElement(
                 doc,

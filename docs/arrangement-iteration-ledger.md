@@ -950,3 +950,23 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Next item selected: probe which note the articulation, grace, slur and respell keys act on
   right after an entry in note input. MuseScore selects the note just entered; nex-note's
   selection is the next slot.
+
+## Iteration 22 — Grace notes stay with their main note after later edits
+
+- Iteration / date / starting SHA / dirty-tree state: 22 / 2026-11-04 / `d32b138` (equal to
+  `origin/devel`). In-progress iteration-23 hook changes were stashed while this iteration was
+  verified.
+- Track and matrix row: C (priority class 1, wrong data); P4.
+- Problem and observable baseline:
+  - Found while probing note-input commands. After a grace note was added before C, a later
+    entry in the same bar (`insertNoteAt` D) re-sorted the voice by id within the onset, and
+    export wrote the grace after C.
+  - A MusicXML grace belongs to the following note, so on reimport the grace moved to D.
+  - New `test/grace-order-export.test.ts` failed (`C before D`).
+- Hypothesis and bounded change: within one onset, export writes grace events before the main
+  note and its chord tones, keeping the graces' order. File:
+  `src/musicxml-adapter/export/export-core-to-musicxml.ts`.
+- Regression evidence before and after: failed before, passes after; grace, executor and golden
+  suites pass; `npm test` passed; build passed.
+- Cross-app tests and builds: run on the iteration 22–23 stack.
+- Documentation updated: this ledger.
