@@ -818,7 +818,7 @@ test('NotationToolbar exposes microphone Instrument Record detection and keeps M
   assert.equal(microphonePicker.props.value, 'built-in');
   const recognitionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Pitch recognition mode' })[0]!;
   assert.equal(recognitionPicker.props.value, 'chord');
-  assert.match(recognitionPicker.props.title, /Alt(?:\/Option)?\+C/);
+  assert.ok(recognitionPicker.props.title.includes(formatShortcutHint('Alt/Option+C switches modes')));
   const transpositionPicker = renderer!.root.findAllByProps({ 'aria-label': 'Instrument transposition' })[0]!;
   assert.equal(transpositionPicker.props.value, 'guitar');
   assert.match(nodeText(renderer!.root.findByProps({ 'data-testid': 'microphone-signal-status' })), /Signal good.*-28 dB/);

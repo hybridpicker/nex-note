@@ -4,6 +4,13 @@ import { Midi } from '@tonejs/midi';
 
 import { writeFailureArtifacts } from './support/failure-artifacts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
+import { formatShortcutHint } from '../lib/shortcut-hints.ts';
+
+// Tooltips name the host platform's modifiers; headless Chrome runs on the host OS.
+const hostShortcutHint = (shortcut: string) => formatShortcutHint(
+  shortcut,
+  process.platform === 'darwin' ? 'MacIntel' : process.platform === 'win32' ? 'Win32' : 'Linux x86_64',
+);
 
 const DYNAMICS = ['pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'sfz'] as const;
 const ARTICULATIONS = ['staccato', 'staccatissimo', 'accent', 'strong-accent', 'tenuto', 'fermata'] as const;
@@ -396,9 +403,9 @@ test('notation toolbar states active voice and entry intent in plain language', 
   await expect(summary).toHaveAttribute('aria-live', 'off');
 
   await page.getByTitle('Toggle note input (N)').click();
-  await page.getByTitle('Voice 3 (Cmd/Ctrl+Alt/Option+3)').click();
-  await page.getByTitle('Entry: insert (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)').click();
-  await page.getByTitle('Multi-voice input off (Cmd/Ctrl+Shift+H)').click();
+  await page.getByTitle(hostShortcutHint('Voice 3 (Cmd/Ctrl+Alt/Option+3)'), { exact: true }).click();
+  await page.getByTitle(hostShortcutHint('Entry: insert (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)'), { exact: true }).click();
+  await page.getByTitle(hostShortcutHint('Multi-voice input off (Cmd/Ctrl+Shift+H)'), { exact: true }).click();
 
   await expect(summary).toHaveText('Note Input · Voice 3 · Replace · Chord');
   await expect(summary).toHaveAttribute('data-active-voice', '3');
