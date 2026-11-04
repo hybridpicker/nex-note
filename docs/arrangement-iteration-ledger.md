@@ -645,3 +645,27 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Next item selected: iteration 13. A probe found a priority-1 corruption: a violin trill line
   (`<wavy-line>`) imported as guitar string 1, fret 0, exported a fabricated `<technical>`, and
   after an edit turned the wavy-line stop into a second start.
+
+## Iteration 13 — Ornament lines and standard-notation marks are not TAB data
+
+- Iteration / date / starting SHA / dirty-tree state: 13 / 2026-11-04 / `f0815e5` (equal to
+  `origin/devel`).
+- Track and matrix row: C (priority class 1, corruption); E4, L5.
+- Problem and observable baseline:
+  - `readGuitarTechnical` created guitar data (string 1, fret 0) whenever a note had any
+    technique and no string or fret. A violin trill line (`<wavy-line>`) counted as vibrato, so
+    the note exported a fabricated `<technical><string>1</string><fret>0</fret>`.
+  - After any edit, the wavy-line stop became a second start, breaking the trill line.
+  - Standard-notation hammer-on and bowing marks were affected the same way.
+  - New `test/ornament-guitar-separation.test.ts`: 1/3 before (only the real-TAB case passed).
+- Hypothesis and bounded change: guitar data requires a real string (1–6) and fret. Without
+  them the techniques stay in the preserved notation XML, which already round-trips
+  `<ornaments>` and `<technical>` verbatim. File:
+  `src/musicxml-adapter/import/import-musicxml.ts`.
+- Regression evidence before and after: 1/3 before, 3/3 after; the guitar suites (TAB
+  semantics, Guitar Pro import, repitch, fretboard, golden, architecture) pass; `npm test`
+  1,315 passed; build passed.
+- Cross-app tests and builds: run on the iteration 13–14 stack.
+- Documentation updated: this ledger.
+- Iteration 12 pushed: remote `devel` verified at `f0815e5`.
+- Decision: accepted (pending the stack gates).

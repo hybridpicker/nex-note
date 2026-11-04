@@ -272,9 +272,12 @@ function readGuitarTechnical(note: XmlElement): { string: 1 | 2 | 3 | 4 | 5 | 6;
   }
   if (note.getElementsByTagName('slide').length > 0) techniques.add('slide');
   if (note.getElementsByTagName('wavy-line').length > 0) techniques.add('vibrato');
-  if ((stringValue < 1 || stringValue > 6 || fretValue < 0) && techniques.size === 0) return undefined;
+  // Guitar data needs a real string and fret. Without them the techniques stay in the preserved
+  // notation XML: a violin trill line (<wavy-line>) or a hammer-on mark in standard notation must
+  // not become string 1, fret 0.
+  if (stringValue < 1 || stringValue > 6 || fretValue < 0) return undefined;
   return {
-    string: (stringValue >= 1 && stringValue <= 6 ? stringValue : 1) as 1 | 2 | 3 | 4 | 5 | 6,
+    string: stringValue as 1 | 2 | 3 | 4 | 5 | 6,
     fret: Math.max(0, Math.min(24, fretValue)),
     techniques: [...techniques],
   };
