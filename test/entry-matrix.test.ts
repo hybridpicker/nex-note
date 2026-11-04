@@ -292,7 +292,6 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'Shift adds chord tones to the note just entered in voice 2 (MuseScore)',
-    todo: 'iteration 17: Shift chord tones go to the last entered chord',
     xml: QUARTERS_IN_VOICE_ONE,
     script: 'N Cmd+Alt+2 5 c Shift+e g Shift+b',
     expect: [{ where: { voice: 2 }, events: ['m1@0 C5 quarter', 'm1@0 E5(chord) quarter', 'm1@1 G4 quarter', 'm1@1 B4(chord) quarter', 'm1@2 r half'] }],

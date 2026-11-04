@@ -113,7 +113,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `J` | Ausgewählte Note(n) enharmonisch umdeuten; wiederholtes Drücken durchläuft alle Standard-Schreibweisen bei unveränderter klingender Tonhöhe | Noteneditor oder Noteneingabe, QWERTY-Step-Keyboard inaktiv |
 | `Cmd/Ctrl+Shift+H` | Chord Input Mode ein-/ausschalten | Noteneingabe |
 | `P` | QWERTY-Step-Keyboard ein-/ausblenden; aktiviert bei Bedarf zugleich die Noteneingabe | Noteneditor |
-| `Shift+A` ... `Shift+G` | Akkordton oberhalb des höchsten Tons der aktiven Stimme am aktuellen Einsatz hinzufügen | Noteneingabe |
+| `Shift+A` ... `Shift+G` | Akkordton oberhalb des höchsten Tons zur zuletzt eingegebenen Note hinzufügen (wie MuseScore); der Eingabecursor bleibt auf dem nächsten Einsatz. Ohne vorherige Eingabe gilt die ausgewählte Note | Noteneingabe |
 | `Alt/Option+1` ... `9` | diatonisches Intervall (Prime bis None) über der aktiven Note als Akkordton hinzufügen; Tonart und physische Zifferntaste werden berücksichtigt | Noteneditor oder Noteneingabe, Tonhöhe ausgewählt |
 | `Cmd/Ctrl+Shift+A` ... `G` | Note explizit am Cursor einfügen | Noteneingabe |
 | `Z` `S` `X` `D` `C` `V` `G` `B` `H` `N` `J` `M` | QWERTY-Piano: `C4` bis `B4` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |
@@ -260,3 +260,8 @@ whose Option glyph does not identify the key. Use the toolbar double sharp in th
 Held keys: only `ArrowLeft/Right/Up/Down`, `PageUp/PageDown` and `Home/End` auto-repeat in the
 note editor. A held note name, rest, `Delete`, `T`, `N` or any other entry or mode key acts once
 per physical press. Held `Space` never restarts playback.
+
+Voice changes and chords (November 2026, MuseScore parity): changing the voice keeps the input
+position, so the next note or rest in the new voice starts at the cursor. Entry continues into
+the next bar even when the active voice does not exist there yet. A plain letter after a chord is
+resolved nearest to the chord's lowest note.

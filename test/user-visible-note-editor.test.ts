@@ -6036,16 +6036,21 @@ test('A-G note input chooses the closest octave and Shift+A-G stacks above the c
   });
   hook.rerender();
 
+  // MuseScore adds Shift chord tones to the note just entered (NoteInput::addPitch with addFlag
+  // uses the selection, which after an entry is that note), above its highest tone; the input
+  // cursor stays on the next slot.
   events = flattenVoiceEvents(hook.xml).filter((event) => (
-    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 2 && event.kind === 'note'
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 1 && event.kind === 'note'
   ));
   assert.deepEqual(events.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), [
-    'D4',
-    'B4',
-    'C5',
+    'A3',
+    'B3',
+    'C4',
   ]);
-  assert.equal(hook.current.selectedNote?.step, 'C');
-  assert.equal(hook.current.selectedNote?.octave, 5);
+  const nextSlot = flattenVoiceEvents(hook.xml).filter((event) => (
+    event.measureNumber === 1 && event.voiceId === 1 && event.timestampNum === 2 && event.kind === 'note'
+  ));
+  assert.deepEqual(nextSlot.map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null), ['D4']);
   assert.equal(hook.current.selectedNote?.timestampNum, 2);
   hook.unmount();
 });

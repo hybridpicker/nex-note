@@ -761,3 +761,48 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Cross-app tests and builds: run on the iteration 15–17 stack.
 - Documentation updated: this ledger.
 - Decision: accepted (pending the stack gates).
+
+## Iteration 17 — Shift chord tones and the octave after a chord follow MuseScore
+
+- Iteration / date / starting SHA / dirty-tree state: 17 / 2026-11-04 / `6b26a9d` (local).
+- Track and matrix row: A (keyboard precision, MuseScore parity); P5, parity "A-G pitch input".
+- Problem and observable baseline:
+  - Shift+A–G added the tone to the note at the cursor, which is the *next* slot after an entry.
+    Typing `c Shift+e` into empty bars therefore failed with `chord-missing-anchor`, and over
+    existing notes the tone landed on the following note.
+  - MuseScore (`src/engraving/editing/noteinput.cpp`, branch `main`):
+    - `NoteInput::addPitch(step, addFlag)` adds to `score->selection().element()`, which after
+      an entry is the note just entered;
+    - `resolveNoteInputParams` places it above that chord's `upNote()`;
+    - a plain letter is resolved nearest to the previous chord's `downNote()`.
+  - The voice-2 Shift scenario in the matrix failed.
+- Hypothesis and bounded change:
+  - Shift chord tones use the last entered note (`lastNoteInputRef`, which is the clicked note
+    before any entry) as the chord anchor, and the selection is put back on the input cursor
+    afterwards.
+  - The octave reference for a plain letter after a chord is the chord's lowest same-voice note.
+  - Explicit chord-input mode and Cmd/Ctrl+Shift insertion are unchanged.
+  - Corrected assertions, now with the source reference: the unit test "A-G note input chooses
+    the closest octave and Shift+A-G stacks above the chord" and the e2e "letter-name input …
+    stacks Shift pitches" asserted the old next-slot behavior (D4/E4 + B4 + C5 on beat 3). They
+    now assert A3 + B3 + C4 on beat 2, beat 3 unchanged, and the cursor on beat 3.
+  - Files: `hooks/useNoteEditor.ts`, `test/entry-matrix.test.ts`,
+    `test/user-visible-note-editor.test.ts`, `e2e/notation-tools.spec.ts`.
+- Regression evidence before and after: the matrix voice-2 chord scenario passes (C5+E5,
+  G4+B4); `npm test` 1,326 passed, 0 `todo`; build passed; application `tsc` clean.
+- Cross-app tests and builds: run on the iteration 15–17 stack.
+- Documentation updated: `docs/keyboard-shortcuts.md` (Shift+A–G row, voice-change note),
+  `docs/user-manual.en.md` (chords, voices while entering), parity matrix "A-G pitch input",
+  this ledger.
+- Decision: accepted (pending the stack gates).
+- Cross-app gates for the iteration 15–17 stack, run before pushing:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all groups passed; browser 91
+    passed, 0 failed.
+  - `npm run test:e2e:doctor`: 5 passed.
+  - `npm run electron:refresh`: 1,326 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad hardware keyboard; the Xcode macOS target, which does not exist.
+- Commit SHAs: iteration 15 `de7602c`, 16 `6b26a9d`, 17 is this commit; pushed together.
+- Decision: iterations 15–17 accepted.
+- Next item selected: round-trip losses for lyric extenders and elisions, multi-measure rests,
+  and the suspected barline and ending cloning when a measure is inserted (backlog 11 and 13).

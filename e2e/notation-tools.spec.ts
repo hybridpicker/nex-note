@@ -562,18 +562,22 @@ test('letter-name input chooses the closest octave and stacks Shift pitches abov
       .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null);
   }).toEqual(['B3', 'A3']);
 
+  // MuseScore: Shift chord tones go to the note just entered (A3), above its highest tone; the
+  // input cursor stays on the next slot (E4).
   await page.keyboard.press('Shift+B');
   await page.keyboard.press('Shift+C');
-  await expect.poll(async () => {
+  const notesAt = async (timestampNum: number) => {
     const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
     return (measure.voices[0]?.events ?? [])
-      .filter((event) => event.kind === 'note' && event.timestampNum === 2)
+      .filter((event) => event.kind === 'note' && event.timestampNum === timestampNum)
       .map((event) => event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : null);
-  }).toEqual(['E4', 'B4', 'C5']);
+  };
+  await expect.poll(() => notesAt(1)).toEqual(['A3', 'B3', 'C4']);
+  expect(await notesAt(2)).toEqual(['E4']);
   await expect.poll(async () => {
     const selected = (await readE2EState(page))?.selectedNote;
     return selected ? `${selected.step}${selected.octave}@${selected.timestampNum}` : null;
-  }).toBe('C5@2');
+  }).toBe('E4@2');
   await expect(page.locator('[data-testid="score-canvas"] .vf-notehead')).toHaveCount(10);
   await expectNoDoctorIssues(page, 'after closest-octave letter and chord entry');
 });

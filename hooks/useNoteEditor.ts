@@ -4545,14 +4545,32 @@ export function useNoteEditor(
         // Rests carry a placeholder pitch, not a new melodic register. Resolve
         // the preceding pitch from the current lane so Undo and navigation
         // cannot leave a stale cached octave behind.
-        const melodicReference = inputReference.isRest
+        const precedingNote = inputReference.isRest
           ? getSelectionLaneOrder(coreDocument, inputReference)
             .filter((note) => !note.isRest && compareSelectedNotes(note, inputReference) < 0)
             .at(-1) ?? inputReference
           : inputReference;
+        // MuseScore resolves a plain letter nearest to the lowest note of the previous chord
+        // (NoteInput::resolveNoteInputParams uses downNote()).
+        const precedingChord = precedingNote.isRest
+          ? []
+          : getSimultaneousPitchedNotes(coreDocument, precedingNote).filter((note) => note.voiceId === precedingNote.voiceId);
+        const melodicReference = precedingChord.length > 1
+          ? precedingChord.reduce((lowest, note) => (
+            diatonicPitchIndex(note.step, note.octave) < diatonicPitchIndex(lowest.step, lowest.octave) ? note : lowest
+          ), precedingChord[0]!)
+          : precedingNote;
+        // MuseScore adds a Shift chord tone to the current selection, which after an entry is the
+        // note just entered (NoteInput::addPitch with addFlag). nex-note's selection is the next
+        // slot, so the chord anchor is the last entered note; the cursor stays where it is.
+        const shiftChordAnchor = e.shiftKey && !metaKey && !chordInputModeRef.current
+          && lastNoteInputRef.current && !lastNoteInputRef.current.isRest
+          ? lastNoteInputRef.current
+          : null;
+        const chordReferenceNote = shiftChordAnchor ?? currentSelectedNote;
         const sameVoiceChord = addingChordTone
-          ? getSimultaneousPitchedNotes(coreDocument, currentSelectedNote)
-            .filter((note) => note.voiceId === currentSelectedNote.voiceId)
+          ? getSimultaneousPitchedNotes(coreDocument, chordReferenceNote)
+            .filter((note) => note.voiceId === chordReferenceNote.voiceId)
           : [];
         const pitchReference = sameVoiceChord.length > 0
           ? sameVoiceChord.slice(1).reduce((highest, note) => (
@@ -4565,6 +4583,17 @@ export function useNoteEditor(
         const writtenAccidental = selectedAccidentalRef.current ?? undefined;
         if (metaKey && e.shiftKey) {
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true, asChord: true });
+        } else if (e.shiftKey && shiftChordAnchor) {
+          const cursor = currentSelectedNote;
+          insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, asChord: true, target: shiftChordAnchor });
+          if (!selectedNotesPositionallyEqual(cursor, shiftChordAnchor)) {
+            selectSingleNote(cursor, {
+              visualOnly: false,
+              text: null,
+              measureNumber: cursor.measureNumber,
+              staffIndex: cursor.staffIndex,
+            });
+          }
         } else if (e.shiftKey) {
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, asChord: true });
         } else if (storedInputVoiceAt(currentSelectedNote) !== currentSelectedNote.voiceId) {
