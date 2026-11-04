@@ -3228,8 +3228,32 @@ export function useNoteEditor(
     setStepInputKeyboardModeLive(next);
   }, [ensureNoteInputAnchor, selectedNote, setInputByDurationModeLive, setNoteInputModeLive, setStepInputKeyboardModeLive]);
 
+  /**
+   * Targets of selection commands. In MuseScore the note just entered is selected while the input
+   * cursor sits after it, so articulation, grace, respell, stem and notehead keys act on that note.
+   * nex-note's selection is the cursor slot; in note input with a single (cursor) selection the
+   * last entered note is the target instead. Explicit range selections are kept.
+   */
+  const resolveEditTargets = useCallback((): { note: SelectedNote | null; notes: SelectedNote[] } => {
+    const current = selectedNoteRef.current ?? selectedNote;
+    const currentNotes = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
+    const entered = lastNoteInputRef.current;
+    if (
+      noteInputModeRef.current
+      && entered
+      && !entered.isRest
+      && current
+      && currentNotes.length <= 1
+      && !selectedNotesPositionallyEqual(current, entered)
+    ) {
+      return { note: entered, notes: [] };
+    }
+    return { note: current, notes: currentNotes };
+  }, [selectedNote, selectedNotes]);
+
   const toggleArticulation = useCallback((articulation: ArticulationKind) => {
-    const targets = selectedTargets(selectedNote, selectedNotes);
+    const editTargets = resolveEditTargets();
+    const targets = selectedTargets(editTargets.note, editTargets.notes);
     if (!targets.length) return;
     dbg.editor(`toggleArticulation ${articulation} count=${targets.length}`);
     const commands = targets.map((loc) => ({ type: 'toggleArticulation' as const, articulation, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
@@ -3239,7 +3263,7 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml, resolveEditTargets]);
 
   const setAccidentalDisplay = useCallback((cautionary: boolean, enclosure: AccidentalEnclosure) => {
     const targets = selectedTargets(selectedNote, selectedNotes)
@@ -3268,7 +3292,8 @@ export function useNoteEditor(
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
   const toggleStemDirection = useCallback(() => {
-    const targets = selectedTargets(selectedNote, selectedNotes).filter((entry) => !entry.isRest);
+    const editTargets = resolveEditTargets();
+    const targets = selectedTargets(editTargets.note, editTargets.notes).filter((entry) => !entry.isRest);
     if (!targets.length) return;
     dbg.editor(`toggleStemDirection count=${targets.length}`);
     const commands = targets.map((loc) => ({
@@ -3285,10 +3310,11 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml, resolveEditTargets]);
 
   const toggleSlashNotehead = useCallback(() => {
-    const targets = selectedTargets(selectedNote, selectedNotes).filter((entry) => !entry.isRest);
+    const editTargets = resolveEditTargets();
+    const targets = selectedTargets(editTargets.note, editTargets.notes).filter((entry) => !entry.isRest);
     if (!targets.length) return;
     dbg.editor(`toggleSlashNotehead count=${targets.length}`);
     const commands = targets.map((loc) => {
@@ -3310,7 +3336,7 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, coreDocument, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+  }, [selectedNote, selectedNotes, coreDocument, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml, resolveEditTargets]);
 
   const clearArticulations = useCallback(() => {
     const targets = selectedTargets(selectedNote, selectedNotes);
@@ -3434,8 +3460,9 @@ export function useNoteEditor(
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
   const respellEnharmonically = useCallback(() => {
-    const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
-    const currentSelectedNotes = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
+    const editTargets = resolveEditTargets();
+    const currentSelectedNote = editTargets.note;
+    const currentSelectedNotes = editTargets.notes;
     const originalRangeAnchorId = lastSelectedRef.current?.coreEntityId;
     const originalTargets = selectedTargets(currentSelectedNote, currentSelectedNotes).filter((entry) => !entry.isRest);
     const semanticTargets = originalTargets
@@ -3486,7 +3513,7 @@ export function useNoteEditor(
       if (noteInputModeRef.current) lastNoteInputRef.current = resolvedAnchor;
     }
     setSelectedAccidentalLive(null);
-  }, [applyEditorCommands, coreDocument, onApplyCommands, resolveSelectionByEntityId, selectedNote, selectedNotes, setSelectedAccidentalLive, setSelectedNoteLive, warnNoOpEdit, xml]);
+  }, [applyEditorCommands, coreDocument, onApplyCommands, resolveSelectionByEntityId, selectedNote, selectedNotes, setSelectedAccidentalLive, setSelectedNoteLive, warnNoOpEdit, xml, resolveEditTargets]);
 
   const setBarline = useCallback((barline: BarlineKind, measureNumberOverride?: number | null) => {
     const measureNumber = measureNumberOverride ?? selectedVisual?.measureNumber ?? selectedNote?.measureNumber ?? null;
@@ -3506,6 +3533,7 @@ export function useNoteEditor(
   }, [selectedNote, selectedNotes, selectedVisual, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
   const addGraceNoteAtSelection = useCallback(() => {
+    const selectedNote = resolveEditTargets().note;
     if (!selectedNote) return;
     dbg.editor(`addGraceNote m.${selectedNote.measureNumber} ts=${selectedNote.timestampNum}/${selectedNote.timestampDen}`);
     const commands: ScoreCommand[] = [{
@@ -3526,7 +3554,7 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, xml, applyEditorCommands, onApplyCommands, warnNoOpEdit]);
+  }, [selectedNote, selectedNotes, xml, applyEditorCommands, onApplyCommands, warnNoOpEdit, resolveEditTargets]);
 
   const addTupletToSelection = useCallback((preset: TupletPreset) => {
     const targets = selectedTargets(selectedNote, selectedNotes);
@@ -4104,6 +4132,15 @@ export function useNoteEditor(
     const key = e.key.toUpperCase();
     const metaKey = e.metaKey || e.ctrlKey;
     const keyboardLayout = getActiveKeyboardLayoutContext();
+    // Selection commands in note input act on the note just entered; the cursor stays put.
+    const keepingInputCursor = (action: () => void) => {
+      const cursor = selectedNoteRef.current ?? selectedNote;
+      const actsOnEnteredNote = Boolean(cursor && resolveEditTargets().note !== cursor);
+      action();
+      if (actsOnEnteredNote && cursor) {
+        selectSingleNote(cursor, { visualOnly: false, text: null, measureNumber: cursor.measureNumber, staffIndex: cursor.staffIndex });
+      }
+    };
 
     // Electron owns the platform quit accelerator. Never let Cmd/Ctrl+Q fall
     // through to the bare Q notation action if the renderer receives it.
@@ -4202,7 +4239,7 @@ export function useNoteEditor(
     if (key === 'J' && !metaKey && !e.altKey && !e.shiftKey) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
-        respellEnharmonically();
+        keepingInputCursor(respellEnharmonically);
       }
       return;
     }
@@ -4326,12 +4363,12 @@ export function useNoteEditor(
 
     // Tie and slur — standard shortcuts matching MuseScore
     if (key === 'X' && e.shiftKey && !metaKey && !e.altKey) {
-      if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); toggleSlashNotehead(); }
+      if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); keepingInputCursor(toggleSlashNotehead); }
       return;
     }
 
     if (key === 'X' && !e.shiftKey && !metaKey && !e.altKey) {
-      if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); toggleStemDirection(); }
+      if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); keepingInputCursor(toggleStemDirection); }
       return;
     }
 
@@ -4347,7 +4384,7 @@ export function useNoteEditor(
     if (articulationShortcut) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
-        toggleArticulation(articulationShortcut);
+        keepingInputCursor(() => toggleArticulation(articulationShortcut));
       }
       return;
     }
@@ -4373,7 +4410,7 @@ export function useNoteEditor(
         return;
       }
       e.preventDefault();
-      addGraceNoteAtSelection();
+      keepingInputCursor(addGraceNoteAtSelection);
       return;
     }
 
@@ -4635,7 +4672,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive]);
+  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote]);
 
   return {
     selection: {

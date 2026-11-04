@@ -268,3 +268,8 @@ resolved nearest to the chord's lowest note.
 First note of a passage: with no earlier note in the voice, `A`–`G` resolve nearest to the
 middle line of the effective clef (treble B4, bass D3, alto C4, tenor A3), as MuseScore does, so
 the first `C` is C5 in treble and C3 in bass clef.
+
+Selection keys during note input (MuseScore parity): after entering a note, the articulation
+keys (`Shift+S`, `Shift+.`, `Shift+6`, `Shift+-`), `/` (grace note), `J` (respell), `X` (stem)
+and `Shift+X` (slash notehead) act on the note just entered, as in MuseScore, while the input
+cursor stays on the next position. An explicit range selection is used as selected.

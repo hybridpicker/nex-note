@@ -64,6 +64,7 @@ as not reproduced and dropped.
 | 22 | 5 latency | Medium/large score edit and preview budgets (`scripts/benchmark-note-entry.ts`) | parity matrix | A/B |
 | 23 | 4 hygiene | `tsc --noEmit` reports pre-existing type errors in `e2e/` and `test/` (for example `e2e/dunhill-old-abbey-stress.spec.ts`, `test/electron-launch-helpers.test.ts`) | n/a | — |
 | 24 | **fixed in iteration 20** (Doctor false positive) | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
+| 25 | 2 precision | Range selection with Shift+Arrow after an entry starts at the cursor slot instead of the note just entered (slur ranges start one slot late versus MuseScore) | E5 | A |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -970,3 +971,40 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   suites pass; `npm test` passed; build passed.
 - Cross-app tests and builds: run on the iteration 22–23 stack.
 - Documentation updated: this ledger.
+
+## Iteration 23 — In note input, selection keys act on the note just entered
+
+- Iteration / date / starting SHA / dirty-tree state: 23 / 2026-11-04 / `f937cb7` (local).
+- Track and matrix row: A (keyboard precision, MuseScore parity); E2, P4, P6.
+- Problem and observable baseline (probe):
+  - After `c`, `Shift+.` accented nothing (the cursor is a rest).
+  - After `c d`, `Shift+s` put staccato on the following rest.
+  - After `c`, `/` added no grace note.
+  - `+ c j` did not respell.
+  - MuseScore selects the note just entered (see iteration 17), so these keys act on it. New
+    `test/note-input-selection-targets.test.ts`: 0/5 before.
+- Hypothesis and bounded change:
+  - `resolveEditTargets` returns the last entered note when, in note input, the selection is
+    just the input cursor; explicit range selections are kept.
+  - `toggleArticulation`, `addGraceNoteAtSelection`, `respellEnharmonically`,
+    `toggleStemDirection` and `toggleSlashNotehead` use it.
+  - The key handler restores the cursor selection afterwards.
+  - The harness now derives US key and code for punctuation (`Shift+.` gives `>` / `Period`).
+  - Files: `hooks/useNoteEditor.ts`, `test/support/entry-harness.ts`,
+    `test/note-input-selection-targets.test.ts` (new).
+  - Not changed: a Shift+Arrow range built after an entry still starts at the cursor slot
+    (slur ranges therefore start one slot later than in MuseScore); recorded as open work.
+- Regression evidence before and after: 0/5 before, 5/5 after; `npm test` 1,341 passed;
+  `npm run test:e2e:notation-tools` 47 passed; build passed; application `tsc` clean.
+- Cross-app tests and builds: run on the iteration 22–23 stack.
+- Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Cross-app gates for the iteration 22–23 stack, run before pushing:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all automated groups passed; browser
+    94 passed, 0 failed.
+  - `npm run test:e2e:doctor`: 5 passed.
+  - `npm run electron:refresh`: 1,341 tests passed; build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; the Xcode macOS target, which does not exist.
+- Commit SHA / push result: iterations 22 and 23 pushed to `origin/devel` after these gates.
+- Decision: accepted.
+- Next item selected: backlog 25 (Shift+Arrow range after an entry).

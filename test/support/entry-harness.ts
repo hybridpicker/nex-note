@@ -91,8 +91,21 @@ export function keyEvent(token: string) {
   const base = token === '+' ? '+' : parts.pop()!;
   const modifiers = new Set(parts.map((part) => part.toLowerCase()));
   const shift = modifiers.has('shift');
-  const key = base.length === 1 && /[a-z]/i.test(base) ? (shift ? base.toUpperCase() : base) : base;
-  const code = /^[0-9]$/.test(base) ? `Digit${base}` : /^[a-z]$/i.test(base) ? `Key${base.toUpperCase()}` : '';
+  // US layout: physical code and shifted character for digits and punctuation.
+  const usPunctuation: Record<string, [code: string, shifted: string]> = {
+    '.': ['Period', '>'], ',': ['Comma', '<'], '/': ['Slash', '?'], '-': ['Minus', '_'], '=': ['Equal', '+'],
+    ';': ['Semicolon', ':'], "'": ['Quote', '"'], '[': ['BracketLeft', '{'], ']': ['BracketRight', '}'],
+  };
+  const usDigitShifted = ')!@#$%^&*(';
+  let key = base.length === 1 && /[a-z]/i.test(base) ? (shift ? base.toUpperCase() : base) : base;
+  let code = /^[0-9]$/.test(base) ? `Digit${base}` : /^[a-z]$/i.test(base) ? `Key${base.toUpperCase()}` : '';
+  if (usPunctuation[base]) {
+    code = usPunctuation[base]![0];
+    if (shift) key = usPunctuation[base]![1];
+  } else if (/^[0-9]$/.test(base) && shift) {
+    key = usDigitShifted[Number(base)]!;
+  }
+  if (base === '+') code = 'Equal';
   return {
     key,
     code,
