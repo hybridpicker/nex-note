@@ -9,7 +9,7 @@ import { TREBLE, scoreXml } from './support/entry-fixtures.ts';
  * In MuseScore the note just entered is selected while the input cursor sits after it, so the
  * articulation, grace, respell and stem keys act on that note. nex-note's selection is the cursor
  * slot; in note input these keys now act on the last entered note and the cursor stays put
- * (iteration 23).
+ * (iteration 23). A Shift+Arrow range after an entry also starts at that note (iteration 24).
  */
 
 function marks(xml: string) {
@@ -64,4 +64,32 @@ test('X flips the stem of the note just entered', () => {
   const result = run('N 5 c x');
   assert.equal(result.marks[0]!.startsWith('0:C5[stem-'), true, result.marks.join(' '));
   assert.equal(result.marks[1], '1:r');
+});
+
+function slurs(xml: string) {
+  const core = importMusicXmlToCore(xml);
+  const events = core.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events;
+  const label = (id: string | undefined) => {
+    const event = events.find((entry) => entry.id === id);
+    return event && event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : '?';
+  };
+  return core.slurs.map((slur) => `${label(slur.startEventId)}-${label(slur.stopEventId)}`);
+}
+
+test('Shift+Left after an entry grows the range from the note just entered (slur C to E)', () => {
+  const harness = mountEditor(scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [TREBLE] }));
+  clickFirstEvent(harness, {});
+  harness.press('N 4 c d e Shift+ArrowLeft Shift+ArrowLeft s');
+  harness.rerender();
+  assert.deepEqual(slurs(harness.xml), ['C5-E5']);
+  harness.unmount();
+});
+
+test('one Shift+Left after an entry selects the last two entered notes', () => {
+  const harness = mountEditor(scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [TREBLE] }));
+  clickFirstEvent(harness, {});
+  harness.press('N 4 c d e Shift+ArrowLeft');
+  harness.rerender();
+  assert.deepEqual(harness.current.selectedNotes.map((note) => `${note.step}${note.octave}`), ['D5', 'E5']);
+  harness.unmount();
 });

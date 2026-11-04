@@ -3681,12 +3681,18 @@ export function useNoteEditor(
   // Extend or shrink the selection by one note in the given direction.
   // The anchor (lastSelectedRef) stays fixed; selectedNote acts as the moving focus.
   const extendSelection = useCallback((direction: 'prev' | 'next') => {
+    // MuseScore: during note input the note just entered is the selection, so a range grows
+    // from it (after "c d e", two Shift+Left select C to E), not from the cursor slot.
+    const entered = resolveEditTargets().note;
+    const cursor = selectedNoteRef.current ?? selectedNote;
+    const startsFromEntered = Boolean(noteInputModeRef.current && entered && cursor && entered !== cursor);
+    if (startsFromEntered) lastSelectedRef.current = entered;
     const anchor = lastSelectedRef.current;
     if (!anchor) {
       navigateNote(direction);
       return;
     }
-    const focus = selectedNote ?? anchor;
+    const focus = startsFromEntered && entered ? entered : (selectedNote ?? anchor);
     const adjacent = findAdjacentSelection(coreDocument, focus, direction);
     if (!adjacent) return;
     dbg.editor(`extendSelection ${direction} anchor=m.${anchor.measureNumber}/ts=${anchor.timestampNum} focus=m.${focus.measureNumber}/ts=${focus.timestampNum} → m.${adjacent.measureNumber}/ts=${adjacent.timestampNum}`);
@@ -3695,7 +3701,7 @@ export function useNoteEditor(
     setSelectedNotes(rangeNotes);
     setSelectedNote(adjacent);
     // lastSelectedRef stays as the anchor — do not update it here
-  }, [coreDocument, selectedNote, navigateNote]);
+  }, [coreDocument, selectedNote, navigateNote, resolveEditTargets]);
 
   // Jump to the first note of the previous or next measure (within the same staff+voice).
   const navigateToMeasureBoundary = useCallback((direction: 'prev' | 'next') => {

@@ -64,7 +64,7 @@ as not reproduced and dropped.
 | 22 | 5 latency | Medium/large score edit and preview budgets (`scripts/benchmark-note-entry.ts`) | parity matrix | A/B |
 | 23 | 4 hygiene | `tsc --noEmit` reports pre-existing type errors in `e2e/` and `test/` (for example `e2e/dunhill-old-abbey-stress.spec.ts`, `test/electron-launch-helpers.test.ts`) | n/a | — |
 | 24 | **fixed in iteration 20** (Doctor false positive) | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
-| 25 | 2 precision | Range selection with Shift+Arrow after an entry starts at the cursor slot instead of the note just entered (slur ranges start one slot late versus MuseScore) | E5 | A |
+| 25 | 2 precision (**fixed in iteration 24**) | Range selection with Shift+Arrow after an entry starts at the cursor slot instead of the note just entered (slur ranges start one slot late versus MuseScore) | E5 | A |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -1008,3 +1008,21 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Commit SHA / push result: iterations 22 and 23 pushed to `origin/devel` after these gates.
 - Decision: accepted.
 - Next item selected: backlog 25 (Shift+Arrow range after an entry).
+
+## Iteration 24 — Shift+Arrow ranges after an entry start at the note just entered
+
+- Iteration / date / starting SHA / dirty-tree state: 24 / 2026-11-04 / `cc97cd6` (pushed).
+  Dirty tree: only the owner files `docs/README.md` and the untracked program prompt.
+- Track and matrix row: A (keyboard precision, MuseScore parity); E5.
+- Problem and observable baseline: after `c d e`, two `Shift+Left` and `S` slurred D to E
+  instead of C to E; one `Shift+Left` selected E and the cursor rest. MuseScore extends the
+  selection from the note just entered. Two new cases in
+  `test/note-input-selection-targets.test.ts` failed (`D5-E5`; `['E5', 'C4']`).
+- Hypothesis and bounded change: in note input, when the edit target is the note just entered
+  (not the cursor slot), the first `Shift+Arrow` makes that note the range anchor and focus.
+  File: `hooks/useNoteEditor.ts` (`extendSelection`).
+- Regression evidence before and after: 0/2 before, 2/2 after; `npm test` passed; application
+  `tsc` clean.
+- Cross-app tests and builds: run on the iteration 24–25 stack.
+- Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.

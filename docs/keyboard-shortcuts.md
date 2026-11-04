@@ -273,3 +273,5 @@ Selection keys during note input (MuseScore parity): after entering a note, the 
 keys (`Shift+S`, `Shift+.`, `Shift+6`, `Shift+-`), `/` (grace note), `J` (respell), `X` (stem)
 and `Shift+X` (slash notehead) act on the note just entered, as in MuseScore, while the input
 cursor stays on the next position. An explicit range selection is used as selected.
+`Shift+Left`/`Shift+Right` right after an entry start the range at the note just entered, so
+`C D E` followed by two `Shift+Left` and `S` slurs C to E, as in MuseScore.
