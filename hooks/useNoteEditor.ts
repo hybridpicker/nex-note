@@ -460,9 +460,27 @@ function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefin
   )) ?? null;
 }
 
+/**
+ * The next input position after an entry. The active voice may not exist in the next bar yet (a
+ * second voice written only in this bar); the position is then the start of the next bar on the
+ * same staff, and the voice-aware entry path writes into the active voice at that onset.
+ */
+function findNextInputPosition(document: ScoreDocumentModel | null | undefined, current: SelectedNote) {
+  const sameLane = findNextRhythmicSelection(document, current);
+  if (sameLane) return sameLane;
+  return getSemanticNoteOrder(document).find((entry) => isNextBarStartOnStaff(current, entry)) ?? null;
+}
+
+function isNextBarStartOnStaff(current: SelectedNote, candidate: SelectedNote) {
+  return candidate.corePartId === current.corePartId
+    && candidate.staffIndex === current.staffIndex
+    && candidate.measureNumber === current.measureNumber + 1
+    && candidate.timestampNum === 0;
+}
+
 function isLocalNoteInputAdvance(current: SelectedNote, candidate: SelectedNote | null) {
   if (!candidate) return false;
-  if (!matchesSelectionLane(candidate, current)) return false;
+  if (!matchesSelectionLane(candidate, current)) return isNextBarStartOnStaff(current, candidate);
   return compareSelectedNotes(candidate, current) > 0;
 }
 
@@ -1880,7 +1898,7 @@ export function useNoteEditor(
 
     const rawNextSelection = behavior?.advanceCursor !== false
       && noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && enteredNote
-      ? findNextRhythmicSelection(nextDocument, enteredNote)
+      ? findNextInputPosition(nextDocument, enteredNote)
       : null;
     const nextSelection = enteredNote && isLocalNoteInputAdvance(enteredNote, rawNextSelection)
       ? rawNextSelection
@@ -2221,7 +2239,7 @@ export function useNoteEditor(
           isDotted: enteredNote.isDotted ?? dotted,
         };
         const rawNextSelection = successfulNoChangeReplace
-          ? findNextRhythmicSelection(coreDocument, enteredNote)
+          ? findNextInputPosition(coreDocument, enteredNote)
           : null;
         const nextSelection = isLocalNoteInputAdvance(enteredNote, rawNextSelection)
           ? rawNextSelection
@@ -3001,7 +3019,7 @@ export function useNoteEditor(
         isDotted: enteredRest.isDotted ?? isDottedRef.current,
       };
       const rawNextSelection = shouldAdvance
-        ? findNextRhythmicSelection(coreDocument, enteredRest)
+        ? findNextInputPosition(coreDocument, enteredRest)
         : null;
       const nextSelection = isLocalNoteInputAdvance(enteredRest, rawNextSelection)
         ? rawNextSelection

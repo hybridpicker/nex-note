@@ -956,6 +956,27 @@ test('entry in voice 2 starts at the input cursor, not at the last entered note'
   expect(voiceOne).toEqual(['C5', 'D5', 'E5', 'F5']);
 });
 
+test('voice 2 entry continues into the next bar instead of overwriting the last eighth', async ({ page }) => {
+  const quarters = ['C', 'D', 'E', 'F'].map((step) => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>`).join('');
+  const twoBars = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>${quarters}</measure><measure number="2">${quarters}</measure></part>
+</score-partwise>`;
+  await bootWithScore(page, twoBars);
+  await clickRenderedNotehead(page, 0);
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.step ?? null).toBe('C');
+  await page.keyboard.press('N');
+  await page.keyboard.press('Control+Alt+2');
+  await page.keyboard.press('4');
+  for (const key of ['c', 'd', 'e', 'f', 'g', 'a', 'b', 'c', 'd', 'e']) await page.keyboard.press(key);
+  const voiceTwoNotes = async () => (await readCurrentCore(page)).score.parts[0].staves[0].measures.flatMap((measure) => (
+    (measure.voices.find((voice) => voice.voiceId === 2)?.events ?? [])
+      .filter((event) => event.kind === 'note')
+      .map((event) => `m${measure.measureNumber}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : ''}`)
+  ));
+  await expect.poll(voiceTwoNotes).toEqual(['m1:C5', 'm1:D5', 'm1:E5', 'm1:F5', 'm1:G5', 'm1:A5', 'm1:B5', 'm1:C6', 'm2:D6', 'm2:E6']);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

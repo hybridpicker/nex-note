@@ -281,7 +281,6 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'voice 2 eighths continue into the next bar',
-    todo: 'iteration 16: advance into a bar where the voice does not exist yet',
     xml: QUARTERS_IN_TWO_BARS,
     script: 'N Cmd+Alt+2 4 c d e f g a b c d e',
     expect: [{

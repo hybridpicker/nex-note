@@ -743,3 +743,21 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   17. For 17, MuseScore source `NoteInput::addPitch(step, addFlag)` adds a Shift chord tone to
   `score->selection().element()`, which after an entry is the note just entered; nex-note's
   selection is the next slot instead.
+
+## Iteration 16 — Entry continues into a bar where the active voice does not exist yet
+
+- Iteration / date / starting SHA / dirty-tree state: 16 / 2026-11-04 / `de7602c` (local).
+- Track and matrix row: A (priority class 1, data loss); P5.
+- Problem and observable baseline: voice-2 eighths typed past the end of bar 1 stayed on the
+  last eighth, because bar 2 had no voice 2 and the advance stayed in the same lane. Each
+  further key overwrote that eighth (`c d e` ended as E6 on beat 4.5). The matrix scenario
+  failed (todo), and the new e2e case failed on the old hook.
+- Hypothesis and bounded change: `findNextInputPosition` falls back to the start of the next bar
+  on the same staff when the active voice has no next slot; `isLocalNoteInputAdvance` accepts
+  that position. The cross-voice path from iteration 15 then writes into the active voice at
+  that onset. File: `hooks/useNoteEditor.ts`.
+- Regression evidence before and after: scenario passes (todo removed); e2e failed before,
+  passes after; `npm test` 1,325 passed, 1 `todo`; build passed.
+- Cross-app tests and builds: run on the iteration 15–17 stack.
+- Documentation updated: this ledger.
+- Decision: accepted (pending the stack gates).
