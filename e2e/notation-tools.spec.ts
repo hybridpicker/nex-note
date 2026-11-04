@@ -1088,6 +1088,31 @@ test('switching voices keeps each voice register and enters inside a longer rest
   await expectNoDoctorIssues(page, 'after voice switches');
 });
 
+test('Delete and articulations on a second instrument leave the first instrument alone', async ({ page }) => {
+  const quarters = ['C', 'D', 'E', 'F']
+    .map((step) => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>`)
+    .join('');
+  const head = '<attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>';
+  const duet = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part><score-part id="P2"><part-name>Oboe</part-name></score-part></part-list>
+<part id="P1"><measure number="1">${head}${quarters}</measure></part>
+<part id="P2"><measure number="1">${head}${quarters}</measure></part>
+</score-partwise>`;
+  await bootWithScore(page, duet, { strictDoctor: true });
+  const part = async (partIndex: number) => ((await readCurrentCore(page)).score.parts[partIndex].staves[0].measures[0].voices[0]?.events ?? [])
+    .map((event) => (event.kind === 'note' ? `${event.pitch.step}${(event.articulations ?? []).join('+')}` : 'r'));
+  // Noteheads render part by part: 0 to 3 are the flute, 4 to 7 the oboe.
+  await clickRenderedNotehead(page, 5);
+  await page.keyboard.press('Shift+S');
+  await expect.poll(() => part(1)).toEqual(['C', 'Dstaccato', 'E', 'F']);
+  expect(await part(0)).toEqual(['C', 'D', 'E', 'F']);
+  await clickRenderedNotehead(page, 6);
+  await page.keyboard.press('Delete');
+  await expect.poll(() => part(1)).toEqual(['C', 'Dstaccato', 'r', 'F']);
+  expect(await part(0)).toEqual(['C', 'D', 'E', 'F']);
+  await expectNoDoctorIssues(page, 'after edits in the second instrument');
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

@@ -1422,6 +1422,8 @@ export function useNoteEditor(
     if (matchingLyric) {
       return {
         type: 'removeLyricLine',
+        coreMeasureId: selectedNote.coreMeasureId ?? null,
+        corePartId: selectedNote.corePartId ?? null,
         measureNumber: selectedNote.measureNumber,
         staffIndex: selectedNote.staffIndex,
         voiceId: selectedNote.voiceId,
@@ -1465,6 +1467,8 @@ export function useNoteEditor(
         octave: note.isRest ? undefined : note.octave,
         alter: note.isRest ? undefined : note.alter,
         isRest: note.isRest,
+        coreMeasureId: note.coreMeasureId ?? null,
+        corePartId: note.corePartId ?? null,
         measureNumber: note.measureNumber,
         staffIndex: note.staffIndex,
         voiceId: note.voiceId,
@@ -1494,6 +1498,8 @@ export function useNoteEditor(
       ? [{ type: 'rippleDeleteRange', range }]
       : [{
         type: 'rippleDelete',
+        coreMeasureId: targetNote.coreMeasureId ?? null,
+        corePartId: targetNote.corePartId ?? null,
         measureNumber: targetNote.measureNumber,
         staffIndex: targetNote.staffIndex,
         voiceId: targetNote.voiceId,
@@ -1547,6 +1553,8 @@ export function useNoteEditor(
     dbg.editor(`duplicateSelection count=${targets.length}`);
     const commands = targets.map((note) => ({
       type: 'duplicateNote' as const,
+      coreMeasureId: note.coreMeasureId ?? null,
+      corePartId: note.corePartId ?? null,
       measureNumber: note.measureNumber,
       staffIndex: note.staffIndex,
       voiceId: note.voiceId,
@@ -1914,6 +1922,7 @@ export function useNoteEditor(
 
     const command: ScoreCommand = {
       type: 'clearMeasureVoice',
+      corePartId: targetNote.corePartId ?? null,
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
       voiceId: targetNote.voiceId,
@@ -3092,6 +3101,8 @@ export function useNoteEditor(
     if (!targetNote || targetNote.isRest) return;
     const commands: ScoreCommand[] = [{
       type: 'toggleGuitarTechnique',
+      coreMeasureId: targetNote.coreMeasureId ?? null,
+      corePartId: targetNote.corePartId ?? null,
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
       voiceId: targetNote.voiceId,
@@ -3415,7 +3426,7 @@ export function useNoteEditor(
     const targets = selectedTargets(editTargets.note, editTargets.notes);
     if (!targets.length) return;
     dbg.editor(`toggleArticulation ${articulation} count=${targets.length}`);
-    const commands = targets.map((loc) => ({ type: 'toggleArticulation' as const, articulation, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
+    const commands = targets.map((loc) => ({ type: 'toggleArticulation' as const, articulation, coreMeasureId: loc.coreMeasureId ?? null, corePartId: loc.corePartId ?? null, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('toggleArticulation', commands[0]!);
@@ -3457,6 +3468,8 @@ export function useNoteEditor(
     dbg.editor(`toggleStemDirection count=${targets.length}`);
     const commands = targets.map((loc) => ({
       type: 'toggleStemDirection' as const,
+      coreMeasureId: loc.coreMeasureId ?? null,
+      corePartId: loc.corePartId ?? null,
       measureNumber: loc.measureNumber,
       staffIndex: loc.staffIndex,
       voiceId: loc.voiceId,
@@ -3480,6 +3493,8 @@ export function useNoteEditor(
       const event = findEventReference(coreDocument, loc)?.event;
       return {
         type: 'setNoteStyle' as const,
+        coreMeasureId: loc.coreMeasureId ?? null,
+        corePartId: loc.corePartId ?? null,
         measureNumber: loc.measureNumber,
         staffIndex: loc.staffIndex,
         voiceId: loc.voiceId,
@@ -3504,7 +3519,7 @@ export function useNoteEditor(
     const range = selectionRange(targets);
     const commands = range
       ? [{ type: 'clearRangeArticulations' as const, range }]
-      : targets.map((loc) => ({ type: 'clearArticulations' as const, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
+      : targets.map((loc) => ({ type: 'clearArticulations' as const, coreMeasureId: loc.coreMeasureId ?? null, corePartId: loc.corePartId ?? null, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('clearArticulations', commands[0]!);
@@ -3566,6 +3581,8 @@ export function useNoteEditor(
     dbg.editor(`toggleSlur count=${targets.length}`);
     const commands: ScoreCommand[] = [{
       type: 'toggleSlur' as const,
+      coreMeasureId: first.coreMeasureId ?? null,
+      corePartId: first.corePartId ?? null,
       measureNumber: first.measureNumber,
       staffIndex: first.staffIndex,
       voiceId: first.voiceId,
@@ -4019,6 +4036,8 @@ export function useNoteEditor(
         octave: source.isRest ? undefined : source.octave,
         alter: source.isRest ? undefined : source.alter,
         isRest: source.isRest,
+        coreMeasureId: source.coreMeasureId ?? null,
+        corePartId: source.corePartId ?? null,
         measureNumber: source.measureNumber,
         staffIndex: source.staffIndex,
         voiceId: source.voiceId,
@@ -4026,6 +4045,7 @@ export function useNoteEditor(
         timestampDen: source.timestampDen,
       }, {
         type: 'insertNoteAt',
+        corePartId: source.corePartId ?? null,
         measureNumber: source.measureNumber,
         staffIndex: resolvedMove.target.staffIndex,
         voiceId: source.voiceId,

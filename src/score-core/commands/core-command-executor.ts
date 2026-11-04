@@ -674,6 +674,11 @@ function clampDurationToMeasure(
   return Math.max(1, Math.min(requestedDurationDivisions, remaining));
 }
 
+/** The part and measure a command or locator names, when it names one. */
+function commandScope(command: object) {
+  return command as { coreMeasureId?: string | null; corePartId?: string | null };
+}
+
 function resolveVoiceScope(
   document: ScoreDocumentModel,
   scope?: { coreMeasureId?: string | null; corePartId?: string | null } | null,
@@ -995,10 +1000,12 @@ function matchesLocator(
 function findNextNoteEvent(
   document: ScoreDocumentModel,
   locator: { measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number },
+  corePartId?: string | null,
 ) {
   const candidates: Array<{ event: TimedEvent; locator: typeof locator }> = [];
 
   document.score.parts.forEach((part) => {
+    if (!commandTargetsPart(part, corePartId)) return;
     part.staves.forEach((staff) => {
       if (staff.staffIndex !== locator.staffIndex) return;
       staff.measures.forEach((measure) => {
@@ -1325,8 +1332,14 @@ function applyDurationChangeToVoice(
   return true;
 }
 
-function ensureMeasure(document: ScoreDocumentModel, measureNumber: number, staffIndex?: number) {
+function ensureMeasure(
+  document: ScoreDocumentModel,
+  measureNumber: number,
+  staffIndex?: number,
+  scope?: { corePartId?: string | null },
+) {
   for (const part of document.score.parts) {
+    if (!commandTargetsPart(part, scope?.corePartId)) continue;
     const staff = part.staves.find((entry) => entry.staffIndex === (staffIndex ?? 1));
     const measure = staff?.measures.find((entry) => entry.measureNumber === measureNumber);
     if (part && staff && measure) return { part, staff, measure };
@@ -2438,6 +2451,33 @@ function computeContiguousRestAbsorption(
   return Math.max(requestedDurationDivisions - remaining, 0);
 }
 
+/**
+ * A new bar holds a whole-bar rest in the staff's first voice. An empty <measure> has no duration
+ * and nothing to select or enter into.
+ */
+function buildAppendedBar(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  reference: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  measureNumber: number,
+) {
+  const inserted = cloneMeasureForInsertion(reference, measureNumber);
+  const timing = resolveMeasureTiming(staff, reference);
+  const firstVoice = [...inserted.voices].sort((a, b) => a.voiceId - b.voiceId)[0];
+  if (firstVoice) {
+    firstVoice.events = buildRestEventsForSpan(
+      inserted,
+      timing.divisions,
+      staff.staffIndex,
+      firstVoice.voiceId,
+      0,
+      timing.durationDivisions,
+      timing.durationDivisions,
+    );
+    inserted.voices = [firstVoice];
+  }
+  return inserted;
+}
+
 function ensureStaffTimelineDuration(
   document: ScoreDocumentModel,
   partId: string,
@@ -2457,9 +2497,7 @@ function ensureStaffTimelineDuration(
       candidatePart.staves.forEach((candidateStaff) => {
         const reference = candidateStaff.measures[candidateStaff.measures.length - 1];
         if (!reference) return;
-        candidateStaff.measures.push(
-          cloneMeasureForInsertion(reference, reference.measureNumber + 1),
-        );
+        candidateStaff.measures.push(buildAppendedBar(candidateStaff, reference, reference.measureNumber + 1));
       });
     });
     renumberMeasures(document);
@@ -3958,23 +3996,7 @@ export function executeCoreCommands(
             const index = staff.measures.findIndex((measure) => measure.measureNumber === command.measureNumber);
             if (index < 0) return;
             const reference = staff.measures[index];
-            const inserted = cloneMeasureForInsertion(reference, command.measureNumber + 1);
-            // A new bar holds a whole-bar rest in the staff's first voice. An empty <measure> has
-            // no duration and nothing to select or enter into.
-            const timing = resolveMeasureTiming(staff, reference);
-            const firstVoice = [...inserted.voices].sort((a, b) => a.voiceId - b.voiceId)[0];
-            if (firstVoice) {
-              firstVoice.events = buildRestEventsForSpan(
-                inserted,
-                timing.divisions,
-                staff.staffIndex,
-                firstVoice.voiceId,
-                0,
-                timing.durationDivisions,
-                timing.durationDivisions,
-              );
-              inserted.voices = [firstVoice];
-            }
+            const inserted = buildAppendedBar(staff, reference, command.measureNumber + 1);
             // Appending after the last bar moves the final barline to the new end.
             if (index === staff.measures.length - 1 && reference.rightBarline === 'final') {
               inserted.rightBarline = 'final';
@@ -4288,7 +4310,7 @@ export function executeCoreCommands(
         break;
       }
       case 'setNoteStyle': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           event.notehead = command.notehead;
@@ -4297,7 +4319,7 @@ export function executeCoreCommands(
         break;
       }
       case 'toggleStemDirection': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event?.kind === 'note') {
           const current = event.stem === 'up' || event.stem === 'down'
@@ -4375,7 +4397,7 @@ export function executeCoreCommands(
         break;
       }
       case 'toggleGuitarTechnique': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event && event.kind === 'note') {
           const current = event.guitar ?? { string: 1 as const, fret: 0 };
@@ -4438,7 +4460,7 @@ export function executeCoreCommands(
         break;
       }
       case 'rippleDelete': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         if (!found) break;
         const eventIdsToRemove = found.voice.events
           .filter((event) => timestampsEqual(event.timestampNum, event.timestampDen, command.timestampNum, command.timestampDen))
@@ -4456,7 +4478,7 @@ export function executeCoreCommands(
         if (!range) break;
         const start = compareLocators(range.start, range.end) <= 0 ? range.start : range.end;
         const end = start === range.start ? range.end : range.start;
-        const found = findVoice(nextDocument, start.measureNumber, start.staffIndex, start.voiceId);
+        const found = findVoice(nextDocument, start.measureNumber, start.staffIndex, start.voiceId, commandScope(start));
         if (!found) break;
         const flattened = flattenVoiceEventsToAbsoluteTimeline(found.staff, start.voiceId);
         const staffTimeline = buildStaffTimeline(found.staff);
@@ -4539,7 +4561,7 @@ export function executeCoreCommands(
         break;
       }
       case 'toggleArticulation': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           if (command.articulation === 'fermata') {
@@ -4569,7 +4591,7 @@ export function executeCoreCommands(
         break;
       }
       case 'setArticulationPlacement': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (!event) break;
         const articulationExists = command.articulation === 'fermata'
@@ -4581,7 +4603,7 @@ export function executeCoreCommands(
         break;
       }
       case 'clearArticulations': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) clearEventArticulations(nextDocument, event);
         break;
@@ -4621,13 +4643,13 @@ export function executeCoreCommands(
         break;
       }
       case 'setTiePlacement': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event?.kind === 'note' && event.tieStart) event.tiePlacement = command.placement;
         break;
       }
       case 'toggleSlur': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event?.kind !== 'note') break;
 
@@ -4636,7 +4658,7 @@ export function executeCoreCommands(
           : null;
         const stopEvent = stopLocator
           ? (() => {
-              const stopFound = findVoice(nextDocument, stopLocator.measureNumber, stopLocator.staffIndex, stopLocator.voiceId);
+              const stopFound = findVoice(nextDocument, stopLocator.measureNumber, stopLocator.staffIndex, stopLocator.voiceId, commandScope(command));
               const resolved = stopFound?.voice.events[findEventIndex(stopFound.voice, stopLocator.timestampNum, stopLocator.timestampDen)];
               return resolved?.kind === 'note' ? resolved : null;
             })()
@@ -4646,7 +4668,7 @@ export function executeCoreCommands(
               voiceId: command.voiceId,
               timestampNum: command.timestampNum,
               timestampDen: command.timestampDen,
-            });
+            }, commandScope(command).corePartId);
 
         if (!stopEvent || stopEvent.id === event.id) break;
 
@@ -4667,7 +4689,7 @@ export function executeCoreCommands(
         break;
       }
       case 'setSlurPlacement': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event?.kind !== 'note') break;
 
@@ -5037,7 +5059,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addLyric': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           event.lyrics = [{
@@ -5050,7 +5072,7 @@ export function executeCoreCommands(
         break;
       }
       case 'setLyricLine': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           const lyrics = [...(event.lyrics ?? [])].filter((lyric) => (lyric.verseNumber ?? 1) !== command.verseNumber);
@@ -5065,7 +5087,7 @@ export function executeCoreCommands(
         break;
       }
       case 'removeLyricLine': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           event.lyrics = (event.lyrics ?? []).filter((lyric) => (lyric.verseNumber ?? 1) !== command.verseNumber);
@@ -5511,7 +5533,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addFingering': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event && event.kind === 'note') {
           ensureNotationFragment(event, 'technical', `<fingering>${command.fingering}</fingering>`);
@@ -5519,7 +5541,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addOrnament': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event && event.kind === 'note') {
           ensureNotationFragment(event, 'ornaments', `<${command.ornament}/>`);
@@ -5535,8 +5557,8 @@ export function executeCoreCommands(
           .filter((d) => d.kind === 'wedge' && d.number != null)
           .map((d) => d.number!);
         const wedgeNumber = usedWedgeNumbers.length > 0 ? Math.max(...usedWedgeNumbers) + 1 : 1;
-        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
-        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
+        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex, commandScope(command));
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandScope(command));
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `wedge:${wedgeNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
@@ -5573,8 +5595,8 @@ export function executeCoreCommands(
           .filter((d) => d.kind === 'pedal' && d.number != null)
           .map((d) => d.number!);
         const pedalNumber = usedPedalNumbers.length > 0 ? Math.max(...usedPedalNumbers) + 1 : 1;
-        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
-        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
+        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex, commandScope(command));
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandScope(command));
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `pedal:${pedalNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
@@ -5616,8 +5638,8 @@ export function executeCoreCommands(
         const ottavaUp = command.kind === '8va' || command.kind === '15ma';
         const ottavaSize = command.kind === '15ma' || command.kind === '15mb' ? 15 : 8;
         const ottavaPlacement = command.placement ?? (ottavaUp ? 'above' : 'below');
-        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex);
-        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex);
+        const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex, commandScope(command));
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandScope(command));
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `ottava:${ottavaNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
@@ -6027,7 +6049,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addFermata': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           nextDocument.fermataEventIds.add(event.id);
@@ -6038,7 +6060,7 @@ export function executeCoreCommands(
         break;
       }
       case 'removeFermata': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           nextDocument.fermataEventIds.delete(event.id);
@@ -6047,7 +6069,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addTremolo': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           nextDocument.tremolos = nextDocument.tremolos.filter((t) => t.eventId !== event!.id);
@@ -6061,9 +6083,9 @@ export function executeCoreCommands(
         break;
       }
       case 'addGlissando': {
-        const startFound = findVoice(nextDocument, command.start.measureNumber, command.start.staffIndex, command.start.voiceId);
+        const startFound = findVoice(nextDocument, command.start.measureNumber, command.start.staffIndex, command.start.voiceId, commandScope(command.start));
         const startEvent = startFound?.voice.events[findEventIndex(startFound.voice, command.start.timestampNum, command.start.timestampDen)];
-        const stopFound = findVoice(nextDocument, command.stop.measureNumber, command.stop.staffIndex, command.stop.voiceId);
+        const stopFound = findVoice(nextDocument, command.stop.measureNumber, command.stop.staffIndex, command.stop.voiceId, commandScope(command.stop));
         const stopEvent = stopFound?.voice.events[findEventIndex(stopFound.voice, command.stop.timestampNum, command.stop.timestampDen)];
         if (startEvent && stopEvent) {
           const nextNumber = (nextDocument.glissandos.reduce((max, g) => Math.max(max, g.number), 0)) + 1;
@@ -6079,7 +6101,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addArpeggio': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (event) {
           nextDocument.arpeggios = nextDocument.arpeggios.filter((a) => a.eventId !== event!.id);
@@ -6242,7 +6264,7 @@ export function executeCoreCommands(
         break;
       }
       case 'setCueNote': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         // A cue note keeps its value and duration; MusicXML marks it with <cue/> before the pitch,
         // the same fragment the importer preserves. Grace notes cannot also be cue notes.
@@ -6273,7 +6295,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addGuitarBend': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         // Bends belong to a fretted note; inventing string 1, fret 0 would contradict its pitch.
         if (!event || event.kind !== 'note' || !event.guitar) {
@@ -6290,7 +6312,7 @@ export function executeCoreCommands(
         break;
       }
       case 'addGuitarTap': {
-        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
+        const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, commandScope(command));
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
         if (!event || event.kind !== 'note' || !event.guitar) {
           diagnostics.push({ level: 'warning', code: 'guitar_command_rejected', message: 'Select a TAB note with a string and fret to add a tap.' });

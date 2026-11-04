@@ -71,7 +71,8 @@ as not reproduced and dropped.
 | 31 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
 | 29 | 1 data loss (to confirm against MuseScore) | Typing past the last position of the score replaces the last note | parity matrix | A |
 | 32 | 1 wrong onset, wrong target (**fixed in iteration 29**) | A rest typed in a rest-only bar after the last note is erased; left-hand rests in later bars are deleted; a rest in a later part moves the cursor to the first part | P1, S1, parity matrix | A |
-| 33 | 1 wrong target | Audit: every keyboard action in a second part must leave the first part untouched (several hook commands carry no part) | E2, S1 | A |
+| 33 | 1 wrong target (**fixed in iteration 30**) | Audit: every keyboard action in a second part must leave the first part untouched (several hook commands carry no part) | E2, S1 | A |
+| 34 | 1 wrong target | Removing a text direction removes the same text from every part; the visual selection does not carry its part, so the click must pass it | E7, S1 | C |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -1178,4 +1179,38 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   application `tsc` clean.
 - Cross-app tests and builds: run on the iteration 24–30 stack.
 - Documentation updated: `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.
+
+## Iteration 30 — Note commands stay in their part
+
+- Iteration / date / starting SHA / dirty-tree state: 30 / 2026-11-04 / `3bf273a` (local).
+- Track and matrix row: A and C, priority class 1 (data loss, wrong target); E2, S1, owner request
+  for several and different instruments.
+- Problem and observable baseline: a keyboard audit in a second part of a two-part score.
+  - Accent, staccato, tenuto, marcato, stem, slash notehead, Delete, ripple delete, clear voice and
+    slurs all changed the first part and left the second untouched. Delete on an oboe note deleted
+    the flute's note.
+  - Cause in two layers: 12 hook commands and `toggleSlur` sent no part, and the executor looked up
+    22 command types plus wedges, pedals, ottavas and glissandos in the first part with that bar
+    number, even when a part was given.
+  - The Inspector's lyric, articulation, tie and slur commands sent no part either.
+  - "Clear selected measures" looped over every part but sent unscoped deletes, so other parts were
+    not cleared.
+  - A bar appended by an overflowing edit (`duplicate`) had no rest in the other parts.
+  - New `test/entry-second-part-audit.test.ts` covers 38 keyboard actions and 11 commands.
+- Hypothesis and bounded change: the executor passes the command's scope in every lookup
+  (`commandScope`), and `ensureMeasure` and `findNextNoteEvent` honour a part. The hook, Inspector
+  and app send the part. Appended bars share `buildAppendedBar`. Commands without a part keep their
+  first-part meaning for existing callers. Files: `src/score-core/commands/core-command-executor.ts`,
+  `hooks/useNoteEditor.ts`, `components/ScoreInspector.tsx`, `components/NexNoteApp.tsx`.
+- Corrected existing assertions (added strictness, nothing loosened): the exact Inspector commands in
+  `test/user-visible-components.test.ts` (`setLyricLine`, `setArticulationPlacement`,
+  `setTiePlacement`, `setSlurPlacement`) now include `corePartId: 'part:P1'`.
+- Regression evidence before and after: audit run before the fix showed the leaks listed above; all
+  cases pass after; `npm test` passed; build passed; application `tsc` clean. New browser case in
+  `e2e/notation-tools.spec.ts` passes under strict Doctor.
+- Found and not changed (new backlog 34): removing a text direction removes the same text from every
+  part. The selection of a text does not know its part yet.
+- Cross-app tests and builds: run on the iteration 24–31 stack.
+- Documentation updated: this ledger.
 - Decision: accepted.

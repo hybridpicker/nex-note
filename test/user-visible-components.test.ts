@@ -2070,6 +2070,7 @@ test('ScoreInspector prefills lyric and dynamic fields from the selected note an
   assert.equal(calls[0]?.label, 'Add lyric');
   assert.deepEqual(calls[0]?.commands, [{
     type: 'setLyricLine',
+    corePartId: 'part:P1',
     verseNumber: 1,
     text: 'La',
     syllabic: 'single',
@@ -2245,6 +2246,7 @@ test('ScoreInspector exposes slur placement only for an existing selected slur s
     label: 'Set slur below',
     commands: [{
       type: 'setSlurPlacement',
+      corePartId: 'part:P1',
       placement: 'below',
       measureNumber: 1,
       staffIndex: 1,
@@ -2330,6 +2332,7 @@ test('ScoreInspector exposes tie placement for an existing selected tie start', 
     label: 'Set tie below',
     commands: [{
       type: 'setTiePlacement',
+      corePartId: 'part:P1',
       placement: 'below',
       measureNumber: 1,
       staffIndex: 1,
@@ -2399,6 +2402,7 @@ test('ScoreInspector exposes articulation placement for an existing selected art
     label: 'Set Accent below',
     commands: [{
       type: 'setArticulationPlacement',
+      corePartId: 'part:P1',
       articulation: 'accent',
       placement: 'below',
       measureNumber: 1,

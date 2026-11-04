@@ -1261,6 +1261,8 @@ export default function Home({ searchParams }: HomeProps) {
         .filter((measure) => targetMeasures.has(measure.measureNumber))
         .flatMap((measure) => measure.voices.flatMap((voice) => voice.events.map((event) => ({
           type: 'deleteNote' as const,
+          corePartId: part.id,
+          coreEntityId: event.id,
           measureNumber: event.measureNumber,
           staffIndex: event.staffIndex,
           voiceId: event.voiceId,

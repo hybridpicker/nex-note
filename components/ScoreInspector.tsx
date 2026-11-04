@@ -318,6 +318,11 @@ function InspectorSection({
   );
 }
 
+
+function partScope(note: { corePartId?: string | null }) {
+  return note.corePartId ? { corePartId: note.corePartId } : {};
+}
+
 export default function ScoreInspector({ xml, coreDocument, selection, selectedNote, selectedNotes, currentMeasure, onApplyCommands, onOpenExtractedPart }: Props) {
   const { t } = useI18n();
   const [lyricText, setLyricText] = useState('');
@@ -480,6 +485,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
     if (!selectedNote || !lyricText.trim()) return;
     onApplyCommands([{
       type: 'setLyricLine',
+      ...partScope(selectedNote),
       verseNumber: Math.max(1, Number(lyricVerse) || 1),
       text: lyricText.trim(),
       syllabic: 'single',
@@ -636,6 +642,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
               <button
                 onClick={() => onApplyCommands(buildPerNoteCommands(selectedNotes, (note) => ({
                   type: 'toggleArticulation',
+                  ...partScope(note),
                   articulation: 'staccato',
                   measureNumber: note.measureNumber,
                   staffIndex: note.staffIndex,
@@ -650,6 +657,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
               <button
                 onClick={() => onApplyCommands(buildPerNoteCommands(selectedNotes, (note) => ({
                   type: 'toggleArticulation',
+                  ...partScope(note),
                   articulation: 'accent',
                   measureNumber: note.measureNumber,
                   staffIndex: note.staffIndex,
@@ -718,6 +726,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
                   <button
                     onClick={() => onApplyCommands([{
                       type: 'setSlurPlacement',
+                      ...partScope(selectedSlur.start),
                       placement: slurPlacement,
                       measureNumber: selectedSlur.start.measureNumber,
                       staffIndex: selectedSlur.start.staffIndex,
@@ -826,6 +835,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
                   if (!articulationPlacementKind) return;
                   onApplyCommands([{
                     type: 'setArticulationPlacement',
+                    ...partScope(selectedNote),
                     articulation: articulationPlacementKind,
                     placement: articulationPlacement,
                     measureNumber: selectedNote.measureNumber,
@@ -856,6 +866,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
               <button
                 onClick={() => onApplyCommands([{
                   type: 'setTiePlacement',
+                  ...partScope(selectedTie.note),
                   placement: tiePlacement,
                   measureNumber: selectedTie.note.measureNumber,
                   staffIndex: selectedTie.note.staffIndex,
