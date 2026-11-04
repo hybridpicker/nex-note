@@ -63,7 +63,7 @@ as not reproduced and dropped.
 | 21 | 4 partial | Remaining PARTIAL rows in matrix order | all | C |
 | 22 | 5 latency | Medium/large score edit and preview budgets (`scripts/benchmark-note-entry.ts`) | parity matrix | A/B |
 | 23 | 4 hygiene | `tsc --noEmit` reports pre-existing type errors in `e2e/` and `test/` (for example `e2e/dunhill-old-abbey-stress.spec.ts`, `test/electron-launch-helpers.test.ts`) | n/a | — |
-| 24 | 1 to investigate | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
+| 24 | **fixed in iteration 20** (Doctor false positive) | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -874,3 +874,35 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Next item selected: backlog 24, now diagnosed. The strict-Doctor strong-beat rule reports
   every value that fills a whole 4/4 bar (whole rest, whole note), which the rhythm speller
   deliberately leaves unsplit (`spansFullMeasure`), so strict mode blocks editing of such files.
+
+## Iteration 20 — Strict Doctor accepts whole-bar notes and rests
+
+- Iteration / date / starting SHA / dirty-tree state: 20 / 2026-11-04 / `02860eb` (equal to
+  `origin/devel`).
+- Track and matrix row: tooling correctness (backlog 24); T7, P9.
+- Problem and observable baseline:
+  - `projection.strong-beat-visible` reported any projection fragment crossing the 4/4 half-bar,
+    including values that fill the whole bar. The rhythm speller deliberately leaves those
+    unsplit (`spansFullMeasure`).
+  - So every whole-bar rest or whole note was a strict-Doctor error, and in strict mode
+    (`?doctor=strict`, used by the e2e suite) any edit next to one was blocked.
+  - The new unit test (whole-bar case) failed; the new e2e case failed on the old Doctor.
+- Hypothesis and bounded change: the rule skips fragments that start at 0 and span the
+  measure, mirroring the speller. A fragment that crosses the half-bar inside the bar is still
+  reported (guard test). File: `src/debug/doctor/document-doctor.ts`.
+- Regression evidence before and after: unit 1/2 before, 2/2 after; existing Doctor suite
+  passes; e2e (Doctor-clean load and edit next to a whole-bar rest) failed before, passes
+  after; `npm test` 1,335 passed; build passed.
+- Documentation updated: this ledger.
+- Cross-app tests and builds actually run:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all groups passed; browser 93
+    passed, 0 failed.
+  - `npm run electron:refresh`: 1,335 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; the Xcode macOS target, which does not exist.
+- Commit SHA / push result: this commit, pushed after the gates.
+- Decision: accepted.
+- Next item selected: the first-note register by clef. A rest's octave reference is a fixed C4
+  placeholder, so with no earlier note in the voice the first letter resolves against C4 on
+  every staff (C4 on a bass staff). MuseScore (`resolveNoteInputParams`) uses the clef's middle
+  line when no previous chord exists.

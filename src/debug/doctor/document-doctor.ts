@@ -230,9 +230,12 @@ export function validateProjectionDoctorIssues(input: {
     }
 
     for (const strongPoint of strongProjectionSplitPoints(voice)) {
+      // A value filling the whole bar (whole rest, whole note) is correct notation; the rhythm
+      // speller leaves it unsplit (spansFullMeasure), so it does not hide the half-bar.
       const hiddenByFragment = fragments.find((fragment) => (
         fragment.startDivisions < strongPoint
         && fragment.startDivisions + fragment.durationDivisions > strongPoint
+        && !(fragment.startDivisions === 0 && fragment.durationDivisions === voice.measureDurationDivisions)
       ));
       if (hiddenByFragment) {
         diagnostics.push({

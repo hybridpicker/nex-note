@@ -1002,6 +1002,22 @@ test('lyric extenders and elisions survive an edit in the score', async ({ page 
   expect(xml).toMatch(/<text>ri<\/text>\s*<elision>‿<\/elision>\s*<syllabic>single<\/syllabic>\s*<text>a<\/text>/);
 });
 
+test('whole-bar rests do not block editing in strict Doctor mode', async ({ page }) => {
+  const restBars = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+${'<note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>'.repeat(4)}</measure>
+<measure number="2"><note><rest measure="yes"/><duration>8</duration><voice>1</voice><type>whole</type></note></measure>
+</part></score-partwise>`;
+  await bootWithScore(page, restBars);
+  await expectNoDoctorIssues(page, 'whole-bar rest fixture load');
+  const initialXml = await readCurrentXml(page);
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(async () => readCurrentXml(page)).not.toBe(initialXml);
+  await expectNoDoctorIssues(page, 'after editing next to a whole-bar rest');
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);
