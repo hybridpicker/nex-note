@@ -67,7 +67,8 @@ as not reproduced and dropped.
 | 25 | 2 precision (**fixed in iteration 24**) | Range selection with Shift+Arrow after an entry starts at the cursor slot instead of the note just entered (slur ranges start one slot late versus MuseScore) | E5 | A |
 | 26 | 1 data loss (**fixed in iteration 26**) | A MIDI key or `M`-mode commit after a typed letter replaces the note just entered instead of writing at the cursor | parity matrix | A |
 | 27 | 1 wrong pitch (**fixed in iteration 27**) | First `M`-mode pitch ignores the clef-middle-line rule; step-time entry after a voice change takes its octave from the other voice (MuseScore looks only in the entry voice) | parity matrix | A |
-| 28 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
+| 30 | 1 invalid output (**fixed in iteration 28**) | `insertMeasureAfter` writes an empty `<measure>` with no rest in any staff | T6 | C |
+| 31 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
 | 29 | 1 data loss (to confirm against MuseScore) | Typing past the last position of the score replaces the last note | parity matrix | A |
 
 ## Iteration 0 — Feature matrix and baseline
@@ -1130,4 +1131,22 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   last note. MuseScore's rule still has to be read before changing it.
 - Cross-app tests and builds: run on the iteration 24–27 stack.
 - Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.
+
+## Iteration 28 — Inserted measures hold a whole-bar rest
+
+- Iteration / date / starting SHA / dirty-tree state: 28 / 2026-11-04 / `5ad52d4` (local).
+- Track and matrix row: C, priority class 1 (invalid output); T6.
+- Problem and observable baseline: found while probing entry past the end of the score.
+  `insertMeasureAfter` wrote `<measure>` with attributes and no note or rest, in every staff. The
+  bar had no duration, nothing to select, and second voices stayed as empty lanes. The existing
+  tests only counted notes, so they passed. Four new cases in
+  `test/insert-measure-structure.test.ts` cover this.
+- Hypothesis and bounded change: each staff of the new bar gets a whole-bar rest in its first voice
+  (voice 5 on a left-hand staff) and no other voice, using the existing `buildRestEventsForSpan`.
+  File: `src/score-core/commands/core-command-executor.ts`.
+- Regression evidence before and after: new cases pass; `npm test` 1,385 passed; build passed;
+  application `tsc` clean.
+- Cross-app tests and builds: run on the iteration 24–29 stack.
+- Documentation updated: this ledger.
 - Decision: accepted.

@@ -3951,6 +3951,22 @@ export function executeCoreCommands(
             if (index < 0) return;
             const reference = staff.measures[index];
             const inserted = cloneMeasureForInsertion(reference, command.measureNumber + 1);
+            // A new bar holds a whole-bar rest in the staff's first voice. An empty <measure> has
+            // no duration and nothing to select or enter into.
+            const timing = resolveMeasureTiming(staff, reference);
+            const firstVoice = [...inserted.voices].sort((a, b) => a.voiceId - b.voiceId)[0];
+            if (firstVoice) {
+              firstVoice.events = buildRestEventsForSpan(
+                inserted,
+                timing.divisions,
+                staff.staffIndex,
+                firstVoice.voiceId,
+                0,
+                timing.durationDivisions,
+                timing.durationDivisions,
+              );
+              inserted.voices = [firstVoice];
+            }
             // Appending after the last bar moves the final barline to the new end.
             if (index === staff.measures.length - 1 && reference.rightBarline === 'final') {
               inserted.rightBarline = 'final';

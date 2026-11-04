@@ -62,3 +62,60 @@ test('the system break stays on its bar when an earlier measure is deleted', () 
   const result = bars(applyDocumentCommands(buildDocumentState(SCORE), [{ type: 'deleteMeasure', measureNumber: 1 } as never]).xml);
   assert.deepEqual(result.map((bar) => bar.newSystem), [false, true]);
 });
+
+function restsInBar(xml: string, measureNumber: number) {
+  const core = importMusicXmlToCore(xml);
+  return core.score.parts.map((part) => part.staves.map((staff) => {
+    const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber)!;
+    return measure.voices.flatMap((voice) => voice.events.map((event) => `v${voice.voiceId}:${event.kind}:${event.durationType ?? ''}:${event.durationDivisions}`));
+  }));
+}
+
+const insertInto = (xml: string, measureNumber: number) => (
+  applyDocumentCommands(buildDocumentState(xml), [{ type: 'insertMeasureAfter', measureNumber } as never]).xml
+);
+
+const emptyBar = (attributes: string, body: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>A</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>4</divisions>${attributes}</attributes>${body}</measure></part></score-partwise>`;
+
+test('an inserted measure holds a whole-bar rest, not an empty measure', () => {
+  const xml = insertInto(SCORE, 1);
+  assert.match(xml.slice(xml.indexOf('<measure number="2"')), /<note>\s*<rest/);
+  const [[rests]] = restsInBar(xml, 2) as string[][][];
+  assert.equal(rests!.length, 1, JSON.stringify(rests));
+  assert.match(rests![0]!, /^v1:rest:/);
+});
+
+test('an inserted measure in 3/4 holds a rest of the full bar length', () => {
+  const xml = insertInto(emptyBar(
+    '<time><beats>3</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef>',
+    '<note><pitch><step>C</step><octave>5</octave></pitch><duration>12</duration><voice>1</voice><type>half</type><dot/></note>',
+  ), 1);
+  const [[rests]] = restsInBar(xml, 2) as string[][][];
+  assert.equal(rests!.length, 1, JSON.stringify(rests));
+  assert.match(rests![0]!, /:12$/);
+});
+
+test('every staff of a grand staff gets its own whole-bar rest in its own voice', () => {
+  const grand = emptyBar(
+    '<time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef>',
+    '<note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type><staff>1</staff></note><backup><duration>16</duration></backup><note><pitch><step>C</step><octave>3</octave></pitch><duration>16</duration><voice>5</voice><type>whole</type><staff>2</staff></note>',
+  );
+  const staves = restsInBar(insertInto(grand, 1), 2)[0]!;
+  assert.equal(staves.length, 2);
+  assert.match(staves[0]![0]!, /^v1:rest:/);
+  assert.match(staves[1]![0]!, /^v5:rest:/);
+  assert.equal(staves[0]!.length, 1);
+  assert.equal(staves[1]!.length, 1);
+});
+
+test('second voices are not copied into an inserted measure', () => {
+  const twoVoices = emptyBar(
+    '<time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef>',
+    '<note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><voice>1</voice><type>whole</type></note><backup><duration>16</duration></backup><note><pitch><step>E</step><octave>4</octave></pitch><duration>16</duration><voice>2</voice><type>whole</type></note>',
+  );
+  const [[rests]] = restsInBar(insertInto(twoVoices, 1), 2) as string[][][];
+  assert.equal(rests!.length, 1, JSON.stringify(rests));
+  assert.match(rests![0]!, /^v1:rest:/);
+});
