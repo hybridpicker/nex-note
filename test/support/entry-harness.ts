@@ -86,8 +86,9 @@ export function mountEditor(initialXml: string): EntryHarness {
  * ("Cmd+3", "Cmd+Alt+2", "Shift+e"). Digits carry their physical code like a US keyboard.
  */
 export function keyEvent(token: string) {
-  const parts = token.split('+');
-  const base = parts.pop()!;
+  // "+" alone (sharp) and a trailing "+" ("Shift++") are the plus key, not a separator.
+  const parts = token === '+' ? [''] : token.endsWith('++') ? [...token.slice(0, -2).split('+'), '+'] : token.split('+');
+  const base = token === '+' ? '+' : parts.pop()!;
   const modifiers = new Set(parts.map((part) => part.toLowerCase()));
   const shift = modifiers.has('shift');
   const key = base.length === 1 && /[a-z]/i.test(base) ? (shift ? base.toUpperCase() : base) : base;

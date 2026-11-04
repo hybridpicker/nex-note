@@ -710,3 +710,36 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Next item selected: entry-matrix batch 2 (owner request): chords in voice 2, voices 3 and 4,
   accidental carry across voices, the middle instrument of three, rests and triplets in voice 2,
   a left-hand second voice in sixteenths, voice 2 across the barline.
+
+## Iteration 15 — Entry in another voice starts at the input cursor
+
+- Iteration / date / starting SHA / dirty-tree state: 15 / 2026-11-04 / `4a4946e` (equal to
+  `origin/devel`).
+- Track and matrix row: A (keyboard precision, priority class 1, wrong onset); P5.
+- Problem and observable baseline (entry-matrix batch 2):
+  - After entering a note, the cursor (selection) correctly moves to the next slot. But when the
+    active voice had no note there, a pitch fell back to `insertNote(insertAtCursor)`, which
+    used `lastNoteInputRef`, the note just entered. Examples: after `c d` in voice 3, voice 4
+    started at beat 1.5 instead of 2; a piano left-hand second voice typed after a quarter
+    started at beat 1.
+  - A rest typed in another voice was inserted after the anchor (`insertRest` with
+    `afterTimestamp`), one slot late.
+  - Four new matrix scenarios failed on the old hook; the new e2e case failed on the old hook.
+- Hypothesis and bounded change:
+  - The cross-voice pitch path passes the cursor as the explicit entry target.
+  - A cross-voice rest uses `insertRestAt` at the cursor's onset in the stored voice; its
+    advance locator uses that onset.
+  - This is MuseScore's rule: the input position does not change when the voice changes.
+  - File: `hooks/useNoteEditor.ts`. Tests: `test/entry-matrix.test.ts` (voices 3 and 4, voice-2
+    rest and triplet, piano left-hand second voice, accidental carry across voices, middle of
+    three instruments), `test/support/entry-harness.ts` (the `+` key is no longer parsed as a
+    modifier separator), `e2e/notation-tools.spec.ts`.
+- Regression evidence before and after: 4 matrix scenarios failed before and pass after; e2e
+  failed before, passes after; `npm test` 1,324 passed, 2 `todo`; build passed.
+- Cross-app tests and builds: run on the iteration 15–17 stack.
+- Documentation updated: this ledger.
+- Decision: accepted (pending the stack gates).
+- Next: iteration 16 (advance into a bar where the active voice does not exist), then iteration
+  17. For 17, MuseScore source `NoteInput::addPitch(step, addFlag)` adds a Shift chord tone to
+  `score->selection().element()`, which after an entry is the note just entered; nex-note's
+  selection is the next slot instead.

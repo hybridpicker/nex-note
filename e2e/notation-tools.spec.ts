@@ -931,6 +931,31 @@ test('inline chord entry writes N.C. and 6/9 as valid MusicXML harmonies', async
   expect(harmonies).toEqual(expect.arrayContaining(['N.C.', 'C6/9']));
 });
 
+test('entry in voice 2 starts at the input cursor, not at the last entered note', async ({ page }) => {
+  const quarters = ['C', 'D', 'E', 'F'].map((step) => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>`).join('');
+  const voiceXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>${quarters}</measure></part>
+</score-partwise>`;
+  await bootWithScore(page, voiceXml);
+  await clickRenderedNotehead(page, 0);
+  await expect.poll(async () => (await readE2EState(page))?.selectedNote?.step ?? null).toBe('C');
+  await page.keyboard.press('N');
+  await page.keyboard.press('Control+Alt+2');
+  await page.keyboard.press('5');
+  await page.keyboard.press('0');
+  await page.keyboard.press('a');
+  const voiceTwo = async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices.find((voice) => voice.voiceId === 2)?.events ?? [])
+      .map((event) => `${event.kind === 'note' ? event.pitch.step : 'r'}@${(event.timestampNum / event.timestampDen) * 4}:${event.durationType}`);
+  };
+  await expect.poll(voiceTwo).toEqual(['r@0:quarter', 'A@1:quarter', 'r@2:half']);
+  const voiceOne = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices.find((voice) => voice.voiceId === 1)!.events
+    .map((event) => (event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'r'));
+  expect(voiceOne).toEqual(['C5', 'D5', 'E5', 'F5']);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

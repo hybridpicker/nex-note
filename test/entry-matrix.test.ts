@@ -32,6 +32,13 @@ const FOUR_FOUR = scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [TREBLE]
 const THREE_FOUR = scoreXml({ beats: 3, beatType: 4, measures: 2, parts: [TREBLE] });
 const SIX_EIGHT = scoreXml({ beats: 6, beatType: 8, measures: 2, parts: [TREBLE] });
 const PIANO_TWO_BARS = scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [PIANO] });
+const PIANO_ONE_BAR = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [PIANO] });
+const quarterRun = (octave: number) => ['C', 'D', 'E', 'F']
+  .map((step) => `<note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>`)
+  .join('');
+const LOW_QUARTERS_IN_VOICE_ONE = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [{ ...TREBLE, content: { '1:1': quarterRun(4) } }] });
+const QUARTERS_IN_TWO_BARS = scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [{ ...TREBLE, content: { '1:1': quarterRun(5), '2:1': quarterRun(5) } }] });
+const FLUTE_CLARINET_CELLO = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [TREBLE, CLARINET_BB, { ...BASS, id: 'P3' }] });
 const FLUTE_AND_CELLO = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [TREBLE, BASS] });
 const FLUTE_AND_CLARINET = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [TREBLE, CLARINET_BB] });
 const QUARTERS_IN_VOICE_ONE = scoreXml({
@@ -221,6 +228,77 @@ const SCENARIOS: Scenario[] = [
     expect: [{ where: { partIndex: 1 }, events: EIGHTH_SCALE }],
     untouched: [{ partIndex: 0 }],
     batches: 8,
+  },
+  {
+    name: 'switching to voices 3 and 4 keeps the cursor position',
+    xml: QUARTERS_IN_VOICE_ONE,
+    script: 'N Cmd+Alt+3 4 c d Cmd+Alt+4 3 e f g a',
+    expect: [
+      { where: { voice: 3 }, events: ['m1@0 C5 eighth', 'm1@0.5 D5 eighth', 'm1@1 r quarter', 'm1@2 r half'] },
+      { where: { voice: 4 }, events: ['m1@0 r quarter', 'm1@1 E5 16th', 'm1@1.25 F5 16th', 'm1@1.5 G5 16th', 'm1@1.75 A5 16th', 'm1@2 r half'] },
+    ],
+    untouched: [{ voice: 1 }],
+    batches: 6,
+  },
+  {
+    name: 'a rest and a triplet in voice 2 start at the cursor',
+    xml: QUARTERS_IN_VOICE_ONE,
+    script: 'N Cmd+Alt+2 5 0 Cmd+3 c d e 5 0',
+    expect: [{ where: { voice: 2 }, events: ['m1@0 r quarter', 'm1@1 C4 eighth', 'm1@1.333 D4 eighth', 'm1@1.667 E4 eighth', 'm1@2 r quarter', 'm1@3 r quarter'] }],
+    untouched: [{ voice: 1 }],
+    batches: 6,
+  },
+  {
+    name: 'piano left hand: a second voice after a quarter starts at the cursor',
+    xml: PIANO_ONE_BAR,
+    click: { staff: 2, voice: 5 },
+    script: 'N 5 c Cmd+Alt+2 3 e f g a',
+    expect: [
+      { where: { staff: 2, voice: 5 }, events: ['m1@0 C4 quarter', 'm1@1 r quarter', 'm1@2 r half'] },
+      { where: { staff: 2, voice: 6 }, events: ['m1@0 r quarter', 'm1@1 E4 16th', 'm1@1.25 F4 16th', 'm1@1.5 G4 16th', 'm1@1.75 A4 16th', 'm1@2 r half'] },
+    ],
+    untouched: [{ staff: 1, voice: 1 }],
+    batches: 5,
+  },
+  {
+    name: 'an accidental carries to the same pitch in another voice of the bar',
+    xml: LOW_QUARTERS_IN_VOICE_ONE,
+    script: 'N + f Cmd+Alt+2 5 f',
+    expect: [
+      { where: { voice: 1 }, events: ['m1@0 F#4 quarter', 'm1@1 D4 quarter', 'm1@2 E4 quarter', 'm1@3 F4 quarter'] },
+      { where: { voice: 2 }, events: ['m1@0 r quarter', 'm1@1 F#4 quarter', 'm1@2 r half'] },
+    ],
+    batches: 2,
+  },
+  {
+    name: 'the middle of three instruments receives the notes; an overlong last value is rejected',
+    xml: FLUTE_CLARINET_CELLO,
+    click: { partIndex: 1 },
+    script: 'N 3 c d e f 4 g a 5 b 6 c',
+    expect: [{ where: { partIndex: 1 }, events: ['m1@0 C4 16th', 'm1@0.25 D4 16th', 'm1@0.5 E4 16th', 'm1@0.75 F4 16th', 'm1@1 G4 eighth', 'm1@1.5 A4 eighth', 'm1@2 B4 quarter', 'm1@3 r quarter'] }],
+    untouched: [{ partIndex: 0 }, { partIndex: 2 }],
+    batches: 7,
+  },
+  {
+    name: 'voice 2 eighths continue into the next bar',
+    todo: 'iteration 16: advance into a bar where the voice does not exist yet',
+    xml: QUARTERS_IN_TWO_BARS,
+    script: 'N Cmd+Alt+2 4 c d e f g a b c d e',
+    expect: [{
+      where: { voice: 2 },
+      events: ['m1@0 C5 eighth', 'm1@0.5 D5 eighth', 'm1@1 E5 eighth', 'm1@1.5 F5 eighth', 'm1@2 G5 eighth', 'm1@2.5 A5 eighth', 'm1@3 B5 eighth', 'm1@3.5 C6 eighth', 'm2@0 D6 eighth', 'm2@0.5 E6 eighth', 'm2@1 r quarter', 'm2@2 r half'],
+    }],
+    untouched: [{ voice: 1 }],
+    batches: 10,
+  },
+  {
+    name: 'Shift adds chord tones to the note just entered in voice 2 (MuseScore)',
+    todo: 'iteration 17: Shift chord tones go to the last entered chord',
+    xml: QUARTERS_IN_VOICE_ONE,
+    script: 'N Cmd+Alt+2 5 c Shift+e g Shift+b',
+    expect: [{ where: { voice: 2 }, events: ['m1@0 C5 quarter', 'm1@0 E5(chord) quarter', 'm1@1 G4 quarter', 'm1@1 B4(chord) quarter', 'm1@2 r half'] }],
+    untouched: [{ voice: 1 }],
+    batches: 4,
   },
 ];
 

@@ -2346,6 +2346,8 @@ export function useNoteEditor(
     alter?: number;
     asChord?: boolean;
     insertAtCursor?: boolean;
+    /** Entry position to use instead of the selection (the input cursor in another voice). */
+    target?: SelectedNote | null;
     duration?: NoteDuration;
     dotted?: boolean;
     notehead?: 'slash';
@@ -2358,9 +2360,10 @@ export function useNoteEditor(
     const alter = options?.alter ?? writtenAccidentalToAlter(selectedAccidentalRef.current);
     const forceChord = options?.asChord ?? false;
     const insertAtCursor = options?.insertAtCursor ?? false;
-    const targetNote = insertAtCursor && noteInputModeRef.current
-      ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
-      : (selectedNoteRef.current ?? selectedNote);
+    const targetNote = options?.target
+      ?? (insertAtCursor && noteInputModeRef.current
+        ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
+        : (selectedNoteRef.current ?? selectedNote));
     if (!targetNote) return;
     const selectedTiming = resolveEventTimingFromDocument(coreDocument, {
       coreMeasureId: targetNote.coreMeasureId ?? null,
@@ -3036,7 +3039,22 @@ export function useNoteEditor(
       advanceFromEnteredRest(canonicalRest, noteInputModeRef.current);
       return true;
     }
-    const commands: ScoreCommand[] = overwriteSlot
+    // A rest typed in another voice goes to the cursor's onset in that voice.
+    const crossVoiceAtCursor = !overwriteSlot && noteInputModeRef.current && storedInputVoiceAt(targetNote) !== targetNote.voiceId;
+    const commands: ScoreCommand[] = crossVoiceAtCursor
+      ? [{
+        type: 'insertRestAt',
+        coreMeasureId: targetNote.coreMeasureId ?? null,
+        corePartId: targetNote.corePartId ?? null,
+        measureNumber: targetNote.measureNumber,
+        staffIndex: targetNote.staffIndex,
+        voiceId: storedInputVoiceAt(targetNote),
+        timestampNum: targetNote.timestampNum,
+        timestampDen: targetNote.timestampDen,
+        durationType: selectedDurationType,
+        isDotted: isDottedRef.current,
+      }]
+      : overwriteSlot
       ? [{
         type: 'replaceWithRest',
         coreEntityId: targetNote.coreEntityId ?? null,
@@ -3098,8 +3116,8 @@ export function useNoteEditor(
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
       voiceId: overwriteSlot ? targetNote.voiceId : storedInputVoiceAt(targetNote),
-      timestampNum: overwriteSlot ? targetNote.timestampNum : ((selectedTiming?.timestampNum ?? targetNote.timestampNum) + (selectedTiming?.durationDivisions ?? 1)),
-      timestampDen: selectedTiming?.timestampDen ?? targetNote.timestampDen,
+      timestampNum: overwriteSlot || crossVoiceAtCursor ? targetNote.timestampNum : ((selectedTiming?.timestampNum ?? targetNote.timestampNum) + (selectedTiming?.durationDivisions ?? 1)),
+      timestampDen: overwriteSlot || crossVoiceAtCursor ? targetNote.timestampDen : (selectedTiming?.timestampDen ?? targetNote.timestampDen),
     };
     commitNoteInputUpdate(commands, next.coreDocument, enteredLocator, targetNote, { isRest: true });
     return true;
@@ -4540,7 +4558,9 @@ export function useNoteEditor(
             pitch.alter,
             writtenAccidental,
           );
-          if (!replacedSelectedVoice) insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true });
+          // The active voice has no note at the cursor yet: enter it at the cursor's onset (MuseScore
+          // keeps the input position when the voice changes), not at the last entered note.
+          if (!replacedSelectedVoice) insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true, target: currentSelectedNote });
         } else {
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental });
         }
