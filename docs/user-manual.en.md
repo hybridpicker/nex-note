@@ -99,6 +99,7 @@ Turn note input on with the toolbar button or `N`.
 | Chords | `Shift+A...G` adds a chord tone above the highest tone of the note you just entered, as in MuseScore; the cursor stays on the next position. Chord input mode keeps the cursor on the chord instead. |
 | Marking while entering | Articulation keys, `/` (grace), `J` (respell), `X` and `Shift+X` act on the note you just entered, as in MuseScore; the next letter still goes to the next position. `Shift+Left`/`Shift+Right` start a range at that note. |
 | Voices while entering | Changing the voice keeps the input position: the next note or rest starts at the cursor in the new voice, also in a bar where that voice does not exist yet. |
+| Values across beats | A value that crosses a beat is written as tied notes, or as several rests (an off-beat quarter becomes eighth–tie–eighth). The whole value is kept and the cursor moves past it, so the next note never replaces its tied tail. |
 | Tied notes and chords | In Note Input, choose the second duration and press `T`; nex-note creates the next same-pitch note or complete chord, ties every tone, and advances once. Outside Note Input, `T` toggles ties on the selection. |
 | Accidentals | Flat, natural, sharp, double-flat, and double-sharp are one-shot tools for the next successful pitched entry; normal measure carry applies afterward. |
 | Enharmonic spelling | `J` cycles selected notes through equivalent standard spellings without changing playback pitch. |

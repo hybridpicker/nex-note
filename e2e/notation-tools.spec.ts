@@ -1035,6 +1035,37 @@ test('the first note in an empty bass staff is resolved from the clef, as in Mus
   await expect.poll(pitches).toEqual(['C3', 'D3', 'E3']);
 });
 
+test('off-beat values keep their tied tail and the next entry follows them', async ({ page }) => {
+  const fluteXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+<note><rest measure="yes"/><duration>16</duration><voice>1</voice><type>whole</type></note></measure>
+</part></score-partwise>`;
+  await bootWithScore(page, fluteXml, { strictDoctor: true });
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('N');
+  // An eighth, an off-beat quarter, then a quarter rest that is also off the beat.
+  for (const key of ['4', 'c', '5', 'd', '0', 'e']) await page.keyboard.press(key);
+  const summary = async () => ((await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0]?.events ?? [])
+    .map((event) => {
+      const onset = (event.timestampNum / event.timestampDen) * 4;
+      return event.kind === 'note'
+        ? `${onset}:${event.pitch.step}${event.pitch.octave}:${event.durationType}${event.tieStart ? '~' : ''}`
+        : `${onset}:r:${event.durationType}`;
+    });
+  await expect.poll(summary).toEqual([
+    '0:C5:eighth',
+    '0.5:D5:eighth~',
+    '1:D5:eighth',
+    '1.5:r:eighth',
+    '2:r:eighth',
+    '2.5:E5:eighth~',
+    '3:E5:eighth',
+    '3.5:r:eighth',
+  ]);
+  await expectNoDoctorIssues(page, 'after off-beat entry');
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

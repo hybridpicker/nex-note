@@ -461,14 +461,76 @@ function clefMiddleLineReference(document: ScoreDocumentModel | null | undefined
   return { ...rest, step: middle.step, octave: middle.octave, alter: 0, isRest: false };
 }
 
-function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote) {
+function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote, skipThroughOnset: number | null = null) {
   const ordered = getSelectionLaneOrder(document, current);
   const currentIndex = findSelectionIndex(ordered, current);
   if (currentIndex < 0) return null;
   return ordered.slice(currentIndex + 1).find((entry) => (
     entry.measureNumber !== current.measureNumber
-    || !timestampsEqual(entry.timestampNum, entry.timestampDen, current.timestampNum, current.timestampDen)
+    || (
+      !timestampsEqual(entry.timestampNum, entry.timestampDen, current.timestampNum, current.timestampDen)
+      && (skipThroughOnset === null || entry.timestampNum / Math.max(entry.timestampDen, 1) > skipThroughOnset + ONSET_EPSILON)
+    )
   )) ?? null;
+}
+
+const ONSET_EPSILON = 1e-9;
+
+/** Written length in whole notes of an input value (single dot only, as note input sets it). */
+function inputValueWholeNotes(duration: NoteDuration, dotted: boolean) {
+  const base = duration === 'breve' ? 2 : duration === 'long' ? 4 : 1 / Number(duration);
+  return base * (dotted ? 1.5 : 1);
+}
+
+/**
+ * The onset of the last fragment of the value just entered. The rhythm speller writes a value
+ * that crosses a beat as several notes or rests (an off-beat quarter becomes two tied eighths, a
+ * quarter rest after an eighth two eighth rests). The next input position comes after all of
+ * them, never on the entered value's own tail, which the next entry would otherwise overwrite.
+ * Only the entered value's own fragments are followed: tied notes of the same pitch, or rests,
+ * that start before the value's nominal end in the same bar. Tuplet members are never split.
+ */
+function enteredValueLastFragmentOnset(
+  document: ScoreDocumentModel | null | undefined,
+  entered: SelectedNote,
+  value: { duration: NoteDuration; dotted: boolean },
+): number | null {
+  const enteredId = entered.coreEntityId;
+  if (!document || !enteredId) return null;
+  if (document.tuplets.some((tuplet) => tuplet.eventIds.includes(enteredId))) return null;
+  const graceIds = new Set(document.graceNotes.map((grace) => grace.eventId));
+  for (const part of document.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const voice of measure.voices) {
+          const first = voice.events.find((event) => event.id === enteredId);
+          if (!first) continue;
+          const onsetOf = (event: TimedEvent) => event.timestampNum / Math.max(event.timestampDen, 1);
+          const lane = voice.events
+            .filter((event) => !event.isChord && !graceIds.has(event.id))
+            .sort((a, b) => onsetOf(a) - onsetOf(b));
+          const nominalEnd = onsetOf(first) + inputValueWholeNotes(value.duration, value.dotted) - ONSET_EPSILON;
+          let previous: TimedEvent = first;
+          let lastOnset: number | null = null;
+          for (const event of lane) {
+            if (onsetOf(event) <= onsetOf(first) + ONSET_EPSILON) continue;
+            if (onsetOf(event) >= nominalEnd) break;
+            const continues = first.kind === 'rest'
+              ? event.kind === 'rest'
+              : event.kind === 'note' && previous.kind === 'note' && Boolean(previous.tieStart)
+                && event.pitch.step === previous.pitch.step
+                && event.pitch.octave === previous.pitch.octave
+                && event.pitch.alter === previous.pitch.alter;
+            if (!continues) break;
+            previous = event;
+            lastOnset = onsetOf(event);
+          }
+          return lastOnset;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -476,8 +538,13 @@ function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefin
  * second voice written only in this bar); the position is then the start of the next bar on the
  * same staff, and the voice-aware entry path writes into the active voice at that onset.
  */
-function findNextInputPosition(document: ScoreDocumentModel | null | undefined, current: SelectedNote) {
-  const sameLane = findNextRhythmicSelection(document, current);
+function findNextInputPosition(
+  document: ScoreDocumentModel | null | undefined,
+  current: SelectedNote,
+  enteredValue?: { duration: NoteDuration; dotted: boolean },
+) {
+  const skipThroughOnset = enteredValue ? enteredValueLastFragmentOnset(document, current, enteredValue) : null;
+  const sameLane = findNextRhythmicSelection(document, current, skipThroughOnset);
   if (sameLane) return sameLane;
   return getSemanticNoteOrder(document).find((entry) => isNextBarStartOnStaff(current, entry)) ?? null;
 }
@@ -1897,6 +1964,8 @@ export function useNoteEditor(
       advanceCursor?: boolean;
       useAdvancedSelectionAsInputAnchor?: boolean;
       skipHistory?: boolean;
+      /** The value just entered, when it is not the selected duration (pitch-before-duration). */
+      enteredValue?: { duration: NoteDuration; dotted: boolean };
     },
   ) => {
     setEditorError(null);
@@ -1909,7 +1978,7 @@ export function useNoteEditor(
 
     const rawNextSelection = behavior?.advanceCursor !== false
       && noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && enteredNote
-      ? findNextInputPosition(nextDocument, enteredNote)
+      ? findNextInputPosition(nextDocument, enteredNote, behavior?.enteredValue ?? { duration: selectedDurationRef.current, dotted: isDottedRef.current })
       : null;
     const nextSelection = enteredNote && isLocalNoteInputAdvance(enteredNote, rawNextSelection)
       ? rawNextSelection
@@ -2637,6 +2706,7 @@ export function useNoteEditor(
       {
         advanceCursor: inputOptions?.advanceCursor !== false,
         useAdvancedSelectionAsInputAnchor: inputOptions?.advanceCursor !== false,
+        enteredValue: { duration, dotted },
         // Confirming the pitch already at this onset is still a performed MIDI
         // input. Advance/audition it without inventing an Undo transaction.
         skipHistory: next.xml === xml,
@@ -3030,7 +3100,7 @@ export function useNoteEditor(
         isDotted: enteredRest.isDotted ?? isDottedRef.current,
       };
       const rawNextSelection = shouldAdvance
-        ? findNextInputPosition(coreDocument, enteredRest)
+        ? findNextInputPosition(coreDocument, enteredRest, { duration: selectedDurationRef.current, dotted: isDottedRef.current })
         : null;
       const nextSelection = isLocalNoteInputAdvance(enteredRest, rawNextSelection)
         ? rawNextSelection

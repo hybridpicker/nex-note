@@ -65,6 +65,9 @@ as not reproduced and dropped.
 | 23 | 4 hygiene | `tsc --noEmit` reports pre-existing type errors in `e2e/` and `test/` (for example `e2e/dunhill-old-abbey-stress.spec.ts`, `test/electron-launch-helpers.test.ts`) | n/a | — |
 | 24 | **fixed in iteration 20** (Doctor false positive) | In strict-Doctor mode an edit in bar 1 is blocked by a new "projection fragment crosses strong beat" error on a following bar whose rests are `<rest measure="yes"/>` with `<type>whole</type>`, or two half rests. Decide whether this is a Doctor false positive or a re-spelling defect; normal mode does not block | T7, P9 | C |
 | 25 | 2 precision (**fixed in iteration 24**) | Range selection with Shift+Arrow after an entry starts at the cursor slot instead of the note just entered (slur ranges start one slot late versus MuseScore) | E5 | A |
+| 26 | 1 data loss (**fixed in iteration 26**) | A MIDI key or `M`-mode commit after a typed letter replaces the note just entered instead of writing at the cursor | parity matrix | A |
+| 27 | 1 wrong pitch | First `M`-mode pitch ignores the clef-middle-line rule; step-time entry after a voice change takes its octave from the other voice (MuseScore looks only in the entry voice) | parity matrix | A |
+| 28 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -1023,6 +1026,41 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   File: `hooks/useNoteEditor.ts` (`extendSelection`).
 - Regression evidence before and after: 0/2 before, 2/2 after; `npm test` passed; application
   `tsc` clean.
-- Cross-app tests and builds: run on the iteration 24–25 stack.
+- Cross-app tests and builds: run on the iteration 24–26 stack.
+- Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.
+
+## Iteration 25 — Values split by the rhythm speller keep their full length
+
+- Iteration / date / starting SHA / dirty-tree state: 25 / 2026-11-04 / iteration 24 (local).
+- Track and matrix row: A, priority class 1 (data loss, wrong onset); P1, P2, P5 and the
+  owner request for eighths and sixteenths in every setting (backlog 4b).
+- Problem and observable baseline (probe while scripting passage 1):
+  - The speller writes a value that crosses a beat as tied notes or several rests. The input
+    cursor then moved to the value's own tail, and the next entry overwrote it.
+  - `4 c 5 d e` gave an eighth D and put E on beat 2; `3 c 5 d e` turned the quarter D into
+    an untied dotted eighth; `4 c 5 0 d` shortened the quarter rest to an eighth; `4 c 6 d e`
+    rejected E.
+  - The same happened in voice 2, in the piano left hand, in a transposing middle part, in
+    3/4 and in pitch-before-duration (`M`) mode.
+  - Barline splits and tuplet members were already correct.
+  - New `test/entry-split-values.test.ts`: 3/16 before (the three already-correct cases).
+- Hypothesis and bounded change:
+  - After an entry, the next input position skips the entered value's own fragments: tied
+    same-pitch notes, or rests, that start before the value's nominal end in the same bar.
+  - Tuplet members are not followed (the speller never splits them).
+  - `M` mode passes its explicit duration.
+  - File: `hooks/useNoteEditor.ts` (`findNextInputPosition`,
+    `enteredValueLastFragmentOnset`, `commitNoteInputUpdate`, `insertMidiChord`,
+    `insertRest`).
+- Regression evidence before and after: 3/16 before, 16/16 after; `npm test` 1,359 passed; build
+  passed; application `tsc` clean. New browser case in `e2e/notation-tools.spec.ts` passes under
+  strict Doctor.
+- Found and not changed (new backlog 26, 27):
+  - A MIDI key or `M`-mode commit after a typed letter replaces the note just entered
+    (`4 c M d 5` replaces C).
+  - The first `M`-mode pitch ignores the clef-middle-line rule of iteration 21 (D4 instead of
+    D5 in treble).
+- Cross-app tests and builds: run on the iteration 24–26 stack.
 - Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
 - Decision: accepted.
