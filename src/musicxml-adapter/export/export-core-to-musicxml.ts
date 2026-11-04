@@ -426,10 +426,27 @@ function updateTranspose(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
     const firstMeasure = xmlPart && firstMeasureRef ? getMeasureForCoreMeasure(xmlPart as XmlEl, firstMeasureRef) : null;
     if (!firstMeasure) continue;
     const attributes = getOrCreateDirectChild(doc, firstMeasure as XmlEl, 'attributes');
-    if (partNode.chromaticTranspose == null && partNode.diatonicTranspose == null) continue;
+    if (partNode.chromaticTranspose == null && partNode.diatonicTranspose == null && partNode.transposeOctaveChange == null) continue;
     const transpose = getOrCreateDirectChild(doc, attributes, 'transpose');
-    if (partNode.chromaticTranspose != null) setOrCreateTextElement(doc, transpose, 'chromatic', String(partNode.chromaticTranspose));
-    if (partNode.diatonicTranspose != null) setOrCreateTextElement(doc, transpose, 'diatonic', String(partNode.diatonicTranspose));
+    // MusicXML order: diatonic?, chromatic, octave-change?, double?. Rebuild the modeled
+    // children in that order and keep anything else (such as <double/>) after them.
+    const readExisting = (tag: string) => transpose.getElementsByTagName(tag)[0]?.textContent ?? null;
+    const values: Array<[string, string | null]> = [
+      ['diatonic', partNode.diatonicTranspose != null ? String(partNode.diatonicTranspose) : readExisting('diatonic')],
+      ['chromatic', partNode.chromaticTranspose != null ? String(partNode.chromaticTranspose) : (readExisting('chromatic') ?? '0')],
+      ['octave-change', partNode.transposeOctaveChange != null ? String(partNode.transposeOctaveChange) : readExisting('octave-change')],
+    ];
+    const others = Array.from(transpose.childNodes).filter((child) => (
+      child.nodeType === 1 && !['diatonic', 'chromatic', 'octave-change'].includes((child as XmlEl).tagName)
+    ));
+    while (transpose.firstChild) transpose.removeChild(transpose.firstChild);
+    for (const [tag, value] of values) {
+      if (value == null) continue;
+      const element = doc.createElement(tag);
+      element.textContent = value;
+      transpose.appendChild(element);
+    }
+    others.forEach((child) => transpose.appendChild(child));
   }
 }
 

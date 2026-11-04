@@ -154,7 +154,8 @@ function stripPlaybackMetadata(doc: XmlDocument) {
       ? directChildrenByTag(firstMeasure, 'attributes')[0]
       : undefined;
     if (!attributes) continue;
-    removedTranspose += removeDirectChildrenByTag(attributes, 'transpose');
+    // <transpose> stays: MuseScore renders written pitch plus transpose as sounding pitch (a
+    // B-flat clarinet's written D5 is MIDI 72 with it and 74 without it).
   }
 
   return {
@@ -328,6 +329,9 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
 
   for (const part of core.score.parts) {
     const playbackInstrument = resolveMidiInstrumentSound(resolvePartInstrumentId(part));
+    // Written pitch to sounding pitch for transposing instruments.
+    const soundingOffset = (part.chromaticTranspose ?? 0) + 12 * (part.transposeOctaveChange ?? 0);
+    const soundingMidi = (pitch: Parameters<typeof pitchToMidiNumber>[0]) => pitchToMidiNumber(pitch) + soundingOffset;
     for (const staff of part.staves) {
       const playableEvents = staff.measures.flatMap((measure) => (
         measure.voices.flatMap((voice) => voice.events.filter((event) => event.kind === 'note' && !event.hidden))
@@ -361,12 +365,12 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
           graces.forEach((entry, index) => {
             const start = Math.round(index * budget / graces.length);
             const end = Math.round((index + 1) * budget / graces.length);
-            rendered.push({ midi: pitchToMidiNumber(entry.event.pitch), ticks: ticks + start, durationTicks: end - start, velocity: .65 });
+            rendered.push({ midi: soundingMidi(entry.event.pitch), ticks: ticks + start, durationTicks: end - start, velocity: .65 });
           });
         }
         for (const { event, ticks } of entries) {
           if (event.durationDivisions === 0) continue;
-          const pitch = pitchToMidiNumber(event.pitch);
+          const pitch = soundingMidi(event.pitch);
           // Round absolute endpoints, so unusual tuplets do not accumulate tick drift.
           const durationTicks = Math.max(1, fractionToTicks(event.timestampNum + event.durationDivisions, event.timestampDen) - eventOffsetTicks(event));
           const tied = pendingTies.get(pitch);

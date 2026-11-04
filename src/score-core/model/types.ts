@@ -41,6 +41,8 @@ export interface PartNode {
   instrumentName?: string;
   chromaticTranspose?: number;
   diatonicTranspose?: number;
+  /** MusicXML `<transpose><octave-change>`: whole octaves between written and sounding pitch. */
+  transposeOctaveChange?: number;
   staves: StaffNode[];
 }
 

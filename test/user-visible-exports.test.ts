@@ -71,11 +71,12 @@ test('sanitizeXmlForMidiExport refreshes playable instrument metadata and malfor
   assert.equal(sanitized.renamedParts[0]?.to, undefined);
   assert.equal(sanitized.renamedInstruments[0]?.to, undefined);
   assert.equal(sanitized.removedMalformedTieStarts, 1);
-  assert.equal(sanitized.strippedPlaybackMetadata.removedTranspose, 1);
+  // <transpose> is kept: MuseScore needs it to render sounding pitch (see transposing-playback).
+  assert.equal(sanitized.strippedPlaybackMetadata.removedTranspose, 0);
   assert.equal(sanitized.strippedPlaybackMetadata.removedInstrumentSound, 1);
   assert.equal(sanitized.strippedPlaybackMetadata.removedMidiDevice, 1);
   assert.equal(sanitized.strippedPlaybackMetadata.removedMidiInstrument, 1);
-  assert.doesNotMatch(sanitized.xml, /<transpose>/);
+  assert.match(sanitized.xml, /<transpose>/);
   assert.doesNotMatch(sanitized.xml, /instrument-sound/);
   assert.doesNotMatch(sanitized.xml, /midi-device/);
   assert.doesNotMatch(sanitized.xml, /tie type="start"/);
@@ -157,7 +158,8 @@ test('buildFallbackMidiFromMusicXml renders sanitized MusicXML into playable MID
   assert.equal(midi.header.tempos[0]?.bpm, 96);
   assert.deepEqual(midi.header.timeSignatures[0]?.timeSignature, [4, 4]);
   assert.equal(midi.tracks[0]?.instrument.number, 71);
-  assert.equal(midi.tracks[0]?.notes[0]?.midi, 65);
+  // Written E#4 (65) in a part with <transpose><chromatic>2</chromatic> sounds a whole tone higher.
+  assert.equal(midi.tracks[0]?.notes[0]?.midi, 67);
   assert.equal(midi.tracks[0]?.notes[0]?.durationTicks, 480);
 });
 

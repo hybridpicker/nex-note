@@ -1134,6 +1134,7 @@ function buildParts(doc: XmlDocument, collectors: SemanticCollectors): PartNode[
       instrumentName: scorePart?.getElementsByTagName('instrument-name')[0]?.textContent ?? undefined,
       chromaticTranspose: transpose ? parseIntSafe(transpose.getElementsByTagName('chromatic')[0]?.textContent, 0) || undefined : undefined,
       diatonicTranspose: transpose ? parseIntSafe(transpose.getElementsByTagName('diatonic')[0]?.textContent, 0) || undefined : undefined,
+      transposeOctaveChange: transpose ? parseIntSafe(transpose.getElementsByTagName('octave-change')[0]?.textContent, 0) || undefined : undefined,
       staves: buildStaffs(part, collectors),
     };
   });

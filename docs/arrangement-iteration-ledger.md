@@ -51,7 +51,7 @@ as not reproduced and dropped.
 | 9 | 1 corruption (**fixed in iteration 11**) | `setCueNote` clears `durationType` | L4 | C |
 | 10 | 1 wrong data (*suspected*) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
 | 11 | 1 data loss (*suspected*) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
-| 12 | 1 wrong pitch (*suspected*) | Transposing parts play back at written pitch | S2 | C |
+| 12 | 1 wrong pitch (**fixed in iteration 12**) | Transposing parts play back at written pitch | S2 | C |
 | 13 | 1 wrong target (*suspected*) | Inserted measures clone barlines, endings and breaks | T6 | C |
 | 14 | 2 precision | Scripted keyboard passage 1 (eight bars, treble) as a fixture with an exact keystroke script on three layouts | parity matrix | A |
 | 15 | 2 precision | Mouse corpus: C-clef, clef change, pickup, dense multi-voice, grand staff with three ledger lines | parity matrix | B |
@@ -592,3 +592,56 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Next item selected: iteration 12, transposing parts and playback pitch (S2). Before changing
   anything, the local MuseScore CLI will render a B-flat clarinet to MIDI with and without
   `<transpose>`.
+
+## Iteration 12 — Transposing instruments play back at sounding pitch
+
+- Iteration / date / starting SHA / dirty-tree state: 12 / 2026-11-04 / `9f24cc3` (equal to
+  `origin/devel`). Owner files left unstaged.
+- Track and matrix row: C (priority class 1, wrong audible pitch); S2, W4.
+- Problem and observable baseline, measured with the local MuseScore 4.7.3 CLI:
+  - A B-flat clarinet's written D5 renders as MIDI 72 (correct sounding C5) with
+    `<transpose>`, and as 74 without it.
+  - `sanitizeXmlForMidiExport` stripped `<transpose>` before rendering, so the app played 74.
+  - The fallback MIDI builder ignored transposition entirely (74; a guitar's `octave-change -1`
+    was also ignored).
+  - The importer did not model `<octave-change>`, and a transposition created by nex-note was
+    written as `<chromatic>` before `<diatonic>`, which violates MusicXML element order.
+  - The stripping came with the initial relaunch commit and had no recorded reason; the
+    MuseScore run shows no double transposition when the element is kept.
+  - New `test/transposing-playback.test.ts`: 0/4 before.
+- Hypothesis and bounded change:
+  - Keep `<transpose>` in the playback XML.
+  - Model `transposeOctaveChange` on parts.
+  - The fallback MIDI plays written + chromatic + 12 × octave-change.
+  - Export rebuilds `<transpose>` children in schema order (diatonic, chromatic,
+    octave-change) and keeps any others.
+  - Corrected assertions in `test/user-visible-exports.test.ts`: the sanitizer test asserted
+    that `<transpose>` was removed, and the fallback test expected written pitch 65 for a part
+    with chromatic +2; both now assert sounding behavior (kept element, 67).
+  - Files: `lib/midi-export.ts`, `src/score-core/model/types.ts`,
+    `src/musicxml-adapter/import/import-musicxml.ts`,
+    `src/musicxml-adapter/export/export-core-to-musicxml.ts`,
+    `test/transposing-playback.test.ts` (new), `test/user-visible-exports.test.ts`.
+- Regression evidence before and after:
+  - Unit 0/4 before, 4/4 after.
+  - After the change, the MuseScore CLI renders the app's sanitized XML as 72, and the fallback
+    builder gives 72.
+  - `npm test`: 1,312 passed.
+  - `npm run build`: passed.
+- Not verified: audible output on speakers (this needs the owner's listening check; see the
+  participation guide).
+- Documentation updated: matrix S2, this ledger.
+- Cross-app tests and builds actually run:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all groups passed; browser 89
+    passed, 0 failed.
+  - `npm run electron:refresh`: 1,312 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: listening test on speakers; physical iPad; the Xcode macOS target, which does not
+    exist.
+- Iteration 8–11 commits pushed: remote `devel` verified at `9f24cc3`.
+- Commit SHA / push result: this commit, pushed after the gates; the remote SHA is recorded in
+  the iteration 13 record.
+- Decision: accepted.
+- Next item selected: iteration 13. A probe found a priority-1 corruption: a violin trill line
+  (`<wavy-line>`) imported as guitar string 1, fret 0, exported a fabricated `<technical>`, and
+  after an edit turned the wavy-line stop into a second start.
