@@ -760,6 +760,66 @@ ${lowerStaffDirection('<pedal type="stop" line="yes"/>')}
   expect(pedalStop && (pedalStop.timestampNum ?? 0) / (pedalStop.timestampDen ?? 1)).toBe(0.5);
 });
 
+test('MuseScore-numbered piano left hand (voice 5) receives keyboard and mouse entry in that voice', async ({ page }) => {
+  // MuseScore and Finale export the lower piano staff as MusicXML voice 5.
+  const upper = ['C', 'D', 'E', 'F'].map((step) => `<note><pitch><step>${step}</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>`).join('');
+  const pianoXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+${upper}<backup><duration>8</duration></backup>
+<note><rest/><duration>4</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+<note><rest/><duration>4</duration><voice>5</voice><type>half</type><staff>2</staff></note>
+</measure></part></score-partwise>`;
+  await bootWithScore(page, pianoXml);
+  const lowerStaffVoices = async () => {
+    const staff = (await readCurrentCore(page)).score.parts[0].staves[1];
+    return staff.measures[0].voices
+      .filter((voice) => voice.events.length > 0)
+      .map((voice) => `${voice.voiceId}:${voice.events.map((event) => event.kind === 'note' ? `${event.pitch.step}@${event.timestampNum}/${event.timestampDen}` : 'r').join(',')}`);
+  };
+
+  // Keyboard: select the right-hand C, move down to the left-hand rest, enter an eighth.
+  await clickRenderedNotehead(page, 0);
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(async () => {
+    const selected = (await readE2EState(page))?.selectedNote;
+    return selected ? `${selected.staffIndex}:${selected.voiceId}` : null;
+  }).toBe('2:5');
+  await page.keyboard.press('N');
+  await page.keyboard.press('4');
+  await page.keyboard.press('c');
+  await expect.poll(lowerStaffVoices).toEqual([expect.stringMatching(/^5:C@0\//)]);
+
+  // Mouse: hover the lower staff in the second half of the bar and click the ghost.
+  const boxes = await page.locator('[data-measure-number="1"]').evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  }));
+  let committed: { voice: string | null; timestamp: string | null } | null = null;
+  outer: for (const box of boxes) {
+    for (let yStep = 0; yStep <= 24; yStep += 1) {
+      const y = box.y + (box.height * yStep) / 24;
+      for (const xRatio of [0.72, 0.78, 0.84]) {
+        await page.mouse.move(box.x + box.width * xRatio, y);
+        const ghost = await page.evaluate(() => {
+          const element = document.querySelector<HTMLElement>('[data-testid="ghost-note-preview"]');
+          if (!element || element.offsetParent === null) return null;
+          return { staff: element.dataset.ghostCommitStaff ?? element.dataset.ghostStaff ?? null, voice: element.dataset.ghostCommitVoice ?? element.dataset.ghostVoice ?? null, timestamp: element.dataset.ghostCommitTimestamp ?? null };
+        });
+        if (ghost?.staff === '2') {
+          expect(ghost.voice).toBe('5');
+          committed = ghost;
+          await page.mouse.click(box.x + box.width * xRatio, y);
+          break outer;
+        }
+      }
+    }
+  }
+  expect(committed, 'a lower-staff ghost was found').not.toBeNull();
+  await expect.poll(async () => (await lowerStaffVoices()).length).toBe(1);
+  await expect.poll(async () => (await lowerStaffVoices())[0]).toMatch(/^5:C@0\/\d+,.*[A-G]@/);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

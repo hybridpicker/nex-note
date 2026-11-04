@@ -1,5 +1,7 @@
 'use client';
 
+import { storedVoiceFor } from '@/src/score-input/voice-mapping';
+
 import { applyNotationFont } from '@/lib/notation-font';
 import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } from '@/src/render-bridge/osmd/nested-tuplets';
 
@@ -4517,6 +4519,23 @@ function estimateTabletSlotSpacing(
     .map((x, index) => x - xs[index]!)
     .filter((gap) => gap > 1);
   return median(gaps) ?? Math.max(target.previewWidth * 1.5, 24);
+}
+
+
+/**
+ * The stored voice of the active input voice on the staff under the pointer. MuseScore and Finale
+ * store a piano left hand as voices 5-8; the pointer must address those, not create voice 1.
+ */
+function resolveStoredInputVoiceAtPoint(
+  overlays: RenderedMeasureLayoutOverlay[],
+  domPoint: PointLike,
+  coreDocument: ScoreDocumentModel | null | undefined,
+  inputVoice: number,
+) {
+  const overlay = findMeasureOverlayForPoint(overlays, domPoint);
+  const detail = overlay ? findNearestStaffDetail(overlay.staffDetails ?? [], null, domPoint.y, null) : null;
+  if (!detail) return inputVoice;
+  return storedVoiceFor(coreDocument, { corePartId: detail.corePartId ?? null, staffIndex: detail.staffIndex }, inputVoice);
 }
 
 function findNearestStaffDetail(
@@ -12495,6 +12514,7 @@ export default function ScoreEditor({
       tabletEntrySessionRef.current = refinedSession;
       domPoint = refinedSession.effectivePoint;
     }
+    const pointerInputVoice = resolveStoredInputVoiceAtPoint(measureLayoutOverlaysRef.current, domPoint, coreDocument, selectedVoice);
     const pointerPath = typeof e.nativeEvent.composedPath === 'function' ? e.nativeEvent.composedPath() : [];
     const pointerPathNodes = pointerPath.filter((entry): entry is Node => entry instanceof Node);
     const directlyHoveredRendered = findDirectRenderedNoteHit(renderedNotesRef.current, pointerPathNodes)
@@ -12502,7 +12522,7 @@ export default function ScoreEditor({
     const crossVoiceDirectNotehead = Boolean(
       directlyHoveredRendered?.note
       && !directlyHoveredRendered.note.isRest
-      && directlyHoveredRendered.note.voiceId !== selectedVoice,
+      && directlyHoveredRendered.note.voiceId !== pointerInputVoice,
     );
     const overlayAtPoint = findMeasureOverlayForPoint(measureLayoutOverlaysRef.current, domPoint);
     const resolvedGhost = retargetGhostToDirectCrossVoiceNotehead(
@@ -12521,14 +12541,14 @@ export default function ScoreEditor({
         selectedDuration,
         selectedAccidental,
         isDotted,
-        selectedVoice,
+        pointerInputVoice,
         lastGhostStaffIndexRef.current,
         ghostStaffHysteresisPx(zoomPercent, false),
         staffDetailsByMeasureRef.current,
         { allowLeadingProtectedArea: crossVoiceDirectNotehead },
       ),
       crossVoiceDirectNotehead ? directlyHoveredRendered?.note : null,
-      selectedVoice,
+      pointerInputVoice,
     );
     const nextGhostCandidate = shouldStickToAdvancedAnchor({
       anchor: selectedNote,
@@ -12551,7 +12571,7 @@ export default function ScoreEditor({
             applyPointerModifiersToGhostTarget(nextGhostCandidate, e),
             entryMode,
             chordInputMode,
-            selectedVoice,
+            pointerInputVoice,
             selectedNote,
             noteInputAnchor,
             lastNoteInputCommitTargetRef.current,
@@ -12612,7 +12632,7 @@ export default function ScoreEditor({
           selectedDuration,
           selectedAccidental,
           isDotted,
-          selectedVoice,
+          pointerInputVoice,
           staffDetailsByMeasureRef.current,
         )
       : null;
@@ -12869,6 +12889,7 @@ export default function ScoreEditor({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
     };
+    const pointerInputVoice = resolveStoredInputVoiceAtPoint(measureLayoutOverlaysRef.current, domPoint, coreDocument, selectedVoice);
     const clickedVisualTargets = collectClickedVisualTargets(eventPathNodes);
     const visualText = extractVisualText(clickedVisualTargets);
     const measureOverlayAtPointer = findMeasureOverlayForPoint(measureLayoutOverlaysRef.current, domPoint);
@@ -12912,7 +12933,7 @@ export default function ScoreEditor({
       container,
       eventPathNodes,
       domPoint,
-      selectedVoice,
+      selectedVoice: pointerInputVoice,
       selectedPartId: selectedNote?.corePartId ?? null,
       hitTolerancePx: e.pointerType === 'touch' ? 32 : 24,
     });
@@ -13005,7 +13026,7 @@ export default function ScoreEditor({
     const crossVoicePathHitRendered = !directlyHitRendered
       && pathHitRendered?.note
       && !pathHitRendered.note.isRest
-      && pathHitRendered.note.voiceId !== selectedVoice
+      && pathHitRendered.note.voiceId !== pointerInputVoice
       ? pathHitRendered
       : null;
     const geometryHitRendered = directlyHitRendered
@@ -13018,7 +13039,7 @@ export default function ScoreEditor({
         : null;
     const crossVoiceGeometryHitRendered = geometryHitRendered?.note
       && !geometryHitRendered.note.isRest
-      && geometryHitRendered.note.voiceId !== selectedVoice
+      && geometryHitRendered.note.voiceId !== pointerInputVoice
       ? geometryHitRendered
       : null;
     const clickedNoteheadPath = eventPathNodes.some((entry) => (
@@ -13198,18 +13219,18 @@ export default function ScoreEditor({
     const forcedGhostCommitTarget = e.altKey && rawForcedGhostCommitTarget
       ? {
           ...rawForcedGhostCommitTarget,
-          voiceId: selectedVoice,
-          placementMode: directNote && !directNote.isRest && directNote.voiceId !== selectedVoice
+          voiceId: pointerInputVoice,
+          placementMode: directNote && !directNote.isRest && directNote.voiceId !== pointerInputVoice
             ? 'insert'
             : rawForcedGhostCommitTarget.placementMode,
           resolvedTarget: rawForcedGhostCommitTarget.resolvedTarget
             ? {
                 ...rawForcedGhostCommitTarget.resolvedTarget,
-                voiceId: selectedVoice,
-                mode: directNote && !directNote.isRest && directNote.voiceId !== selectedVoice
+                voiceId: pointerInputVoice,
+                mode: directNote && !directNote.isRest && directNote.voiceId !== pointerInputVoice
                   ? 'insert'
                   : rawForcedGhostCommitTarget.resolvedTarget.mode,
-                allowOccupiedInsert: directNote && !directNote.isRest && directNote.voiceId !== selectedVoice
+                allowOccupiedInsert: directNote && !directNote.isRest && directNote.voiceId !== pointerInputVoice
                   ? true
                   : rawForcedGhostCommitTarget.resolvedTarget.allowOccupiedInsert,
                 diagnostics: [
@@ -13226,7 +13247,7 @@ export default function ScoreEditor({
       && !directNote.isRest
       && !ghostCommitAtPointer
       && !chordInputMode
-      && (directNote.voiceId === selectedVoice || directNoteheadHit)
+      && (directNote.voiceId === pointerInputVoice || directNoteheadHit)
     ) {
       if (!inputByDurationMode && e.button === 0 && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
         startDirectNoteDrag(directNote);
@@ -13265,7 +13286,7 @@ export default function ScoreEditor({
       const directCrossVoiceNotehead = Boolean(
         directNote
         && !directNote.isRest
-        && directNote.voiceId !== selectedVoice
+        && directNote.voiceId !== pointerInputVoice
         && (directlyHitRendered || crossVoicePathHitRendered || crossVoiceGeometryHitRendered || clickedNoteheadPath)
       );
       const resolvedGhostCandidate = retargetGhostToDirectCrossVoiceNotehead(
@@ -13284,14 +13305,14 @@ export default function ScoreEditor({
           selectedDuration,
           selectedAccidental,
           isDotted,
-          selectedVoice,
+          pointerInputVoice,
           lastGhostStaffIndexRef.current,
           ghostStaffHysteresisPx(zoomPercent, false),
           staffDetailsByMeasureRef.current,
           { allowLeadingProtectedArea: directCrossVoiceNotehead },
         ),
         directCrossVoiceNotehead ? directNote : null,
-        selectedVoice,
+        pointerInputVoice,
       );
       const clickedRestGhostCandidate = directNote?.isRest
         ? resolveClickedRestAnchorGhostTarget(
@@ -13302,7 +13323,7 @@ export default function ScoreEditor({
             domPoint,
             selectedDuration,
             selectedAccidental,
-            selectedVoice,
+            pointerInputVoice,
             staffDetailsByMeasureRef.current,
           )
         : null;
@@ -13311,7 +13332,7 @@ export default function ScoreEditor({
           applyPointerModifiersToGhostTarget(candidate, e),
           entryMode,
           chordInputMode,
-          selectedVoice,
+          pointerInputVoice,
           selectedNote,
           noteInputAnchor,
           lastNoteInputCommitTargetRef.current,
@@ -13430,7 +13451,7 @@ export default function ScoreEditor({
             zoomPercent,
             selectedDuration,
             isDotted,
-            selectedVoice,
+            pointerInputVoice,
             entryMode,
             chordInputMode,
             containerRect: rectDebug(rect),
@@ -13660,7 +13681,7 @@ export default function ScoreEditor({
         container,
         eventPathNodes,
         domPoint,
-        selectedVoice,
+        selectedVoice: pointerInputVoice,
         selectedPartId: selectedNote?.corePartId ?? null,
         hitTolerancePx: e.pointerType === 'touch' ? 32 : 24,
       });
@@ -14429,6 +14450,7 @@ export default function ScoreEditor({
       x: lastPointer.x - rect.left,
       y: lastPointer.y - rect.top,
     };
+    const pointerInputVoice = resolveStoredInputVoiceAtPoint(measureLayoutOverlaysRef.current, domPoint, coreDocument, selectedVoice);
     const overlayAtPoint = findMeasureOverlayForPoint(measureLayoutOverlaysRef.current, domPoint);
     const resolvedGhost = resolveGhostNoteTarget(
       geometryProxyRef.current,
@@ -14445,7 +14467,7 @@ export default function ScoreEditor({
       selectedDuration,
       selectedAccidental,
       isDotted,
-      selectedVoice,
+      pointerInputVoice,
       lastGhostStaffIndexRef.current,
       ghostStaffHysteresisPx(zoomPercent, false),
       staffDetailsByMeasureRef.current,
@@ -14471,7 +14493,7 @@ export default function ScoreEditor({
             nextGhostCandidate,
             entryMode,
             chordInputMode,
-            selectedVoice,
+            pointerInputVoice,
             selectedNote,
             noteInputAnchor,
             lastNoteInputCommitTargetRef.current,
@@ -14524,7 +14546,7 @@ export default function ScoreEditor({
           selectedDuration,
           selectedAccidental,
           isDotted,
-          selectedVoice,
+          pointerInputVoice,
           staffDetailsByMeasureRef.current,
         )
       : null;

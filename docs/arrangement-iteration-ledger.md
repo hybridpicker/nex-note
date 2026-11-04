@@ -43,7 +43,7 @@ as not reproduced and dropped.
 | 2a | 1 data loss (**reproduced** in iteration 1) | Any core edit of a grand-staff score deletes every lower-staff dynamic and pedal: core export writes beat-0 directions only from the first staff's measure; mid-measure directions import without a position | E1, E6, E7 | C |
 | 3 | 1 corruption (**fixed in iteration 2**) | Pedal stop becomes a start on MusicXML reimport | E6 | C |
 | 4 | 1 wrong pitch (**fixed in iteration 3**) | 8va exported as `octave-shift type="up"` | P7 | C |
-| 4b | 1/2 owner request 2026-11-04 | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
+| 4b | 1/2 owner request 2026-11-04 (**in progress, iterations 4–7**) | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
 | 5 | 1 data loss (*suspected*) | Double dots collapse to one dot on import | P1 | C |
 | 6 | 1 wrong target (*suspected*) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
 | 7 | 1 invalid output (*suspected*) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
@@ -62,6 +62,7 @@ as not reproduced and dropped.
 | 20 | 4 partial | Key change at any measure, per part (T1); full key list | T1 | C |
 | 21 | 4 partial | Remaining PARTIAL rows in matrix order | all | C |
 | 22 | 5 latency | Medium/large score edit and preview budgets (`scripts/benchmark-note-entry.ts`) | parity matrix | A/B |
+| 23 | 4 hygiene | `tsc --noEmit` reports pre-existing type errors in `e2e/` and `test/` (for example `e2e/dunhill-old-abbey-stress.spec.ts`, `test/electron-launch-helpers.test.ts`) | n/a | — |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -267,3 +268,77 @@ as not reproduced and dropped.
      corrupts the group;
   4. a value longer than the rest of the bar is rejected instead of split and tied.
   The wrong-voice defect is priority 1 and goes first.
+
+## Iteration 4 — Staff-relative input voices (MuseScore/Finale piano left hand)
+
+- Iteration / date / starting SHA / dirty-tree state: 4 / 2026-11-04 / `e90d784` (equal to
+  `origin/devel`). Owner files left unstaged.
+- Track and matrix row: A and B (keyboard and mouse precision, priority class 1, wrong voice);
+  P5, parity matrix "voices 1-4".
+- Problem and observable baseline:
+  - MuseScore and Finale export a piano left hand as MusicXML voice 5 (staff n uses voices
+    4(n−1)+1 … 4n). nex-note set the input voice from a click only for stored voices 1–4, and used
+    the input voice directly as the stored voice.
+  - Effect: typing or clicking on such a lower staff created a new voice 1 beside the existing
+    voice 5, so every bar gained a second voice.
+  - Evidence: in the entry matrix, the scenarios "piano left hand stored as MusicXML voice 5"
+    and "second voice is stored as MusicXML voice 6" failed. The new e2e case failed on the old
+    code with two lower-staff voices (`Expected - 1, Received + 2`).
+- Hypothesis and bounded change:
+  - New `src/score-input/voice-mapping.ts`: `inputVoiceOf(stored)` and
+    `storedVoiceFor(document, staff, inputVoice)`. The latter uses the voice that already
+    represents the input voice on that staff, else the staff's numbering band, else the input
+    voice.
+  - The core model and export keep the stored numbers, so files round-trip unchanged.
+  - `useNoteEditor`: clicks set the input voice through `inputVoiceOf`; every keyboard target
+    (notes, rests, chords, slash fill, pitch replacement in another voice) uses
+    `storedInputVoiceAt(anchor)`.
+  - `ScoreEditor`: hover, click and ghost-refresh translate the input voice once, from the staff
+    under the pointer (`resolveStoredInputVoiceAtPoint`).
+  - For staves numbered 1–4 the mapping is the identity, so existing fixtures behave exactly as
+    before.
+  - New tests: `test/voice-mapping.test.ts`, `test/entry-matrix.test.ts` with the harness in
+    `test/support/` (12 keyboard scenarios; 3 open defects marked `todo` with their iteration),
+    and an e2e case for keyboard and mouse entry on a voice-5 left hand.
+- Regression evidence before and after:
+  - Entry matrix voice scenarios: failed before, pass after.
+  - e2e voice-5 case: failed before, passes after.
+  - `npm test`: passed.
+  - `npm run build`: passed.
+  - `tsc --noEmit` for application sources: clean. Pre-existing type errors remain in `e2e/` and
+    `test/` files that the production build does not compile; recorded as backlog item 23.
+- Cross-app tests and builds actually run:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all five unit groups passed; browser
+    84 passed, 0 failed (includes mouse-precision-stress, snap-ghost-debug, tablet-entry and
+    the semantic-grid fuzz).
+  - `npm run test:e2e:doctor` (exhaustive mouse grid and fuzz): 5 passed.
+  - `npm run electron:refresh`: 1,284 tests (1,281 passed, 3 `todo`, 0 failed), build and
+    packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad Pencil entry on a voice-5 left hand; the Xcode macOS target, which
+    does not exist.
+- Documentation updated: matrix P5, parity matrix "voices 1-4", this ledger.
+- Iteration 3 commit: `e90d784`, pushed; remote verified equal.
+- Commit SHA / push result / verified remote devel SHA: recorded in the iteration 5 record.
+- Decision: accepted.
+- Next item selected: iteration 5, the dot reset (MuseScore reference verified in its source).
+
+### External MuseScore evidence for iterations 2 and 3 (2026-11-04)
+
+Command: `npx tsx scripts/musescore-roundtrip-smoke.ts` with three synthetic fixtures:
+- a grand-staff file after a right-hand edit, with left-hand pedal start/change/stop and a
+  dynamic;
+- octave lines 8va, 8vb, 15ma and 15mb;
+- an empty MuseScore-numbered piano.
+
+Local MuseScore 4.7.3 again aborted nondeterministically in several conversion steps
+(`SIGABRT: mutex lock failed`). This is the local crash class already classified in the parity
+matrix, not a nex-note export failure. The steps that completed:
+- MuseScore's re-exports of the edited grand-staff file (from MusicXML, MXL and MSCZ) keep the
+  pedal `start`, `change` and `stop` and the lower-staff dynamic.
+- MuseScore's re-export of the octave-line file writes the opening `octave-shift` of 8va, 8vb,
+  15ma and 15mb as `down 8`, `up 8`, `down 15`, `up 15`. That is the same direction convention
+  as nex-note since iteration 3.
+
+The stop elements of the octave lines did not appear in the MuseScore re-exports scanned. Visual
+confirmation of the brackets in MuseScore was not possible headless; this remains open under P7.

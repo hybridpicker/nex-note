@@ -25,6 +25,7 @@ import { buildClipboardPayloadFromSelection } from '@/src/score-core/query/clipb
 import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score-input/commit-resolver';
 import { resolveKeyboardAccidentalShortcut, resolveKeyboardArticulationShortcut, resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut, resolveKeyboardTupletShortcut } from '@/src/score-input/keyboard-resolver';
 import { getActiveKeyboardLayoutContext, isRepeatableNavigationKey, shortcutDigit } from '@/src/score-input/keyboard-layout';
+import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
 import type { MidiPitch } from '@/src/score-input/midi-input';
 import { formatPreparedDurationPitches, prepareDurationPitch, updatePreparedDurationPitches, type PreparedDurationPitch } from '@/src/score-input/input-by-duration';
 import { resolveGuitarFretPitch, resolveGuitarTuning, type GuitarFretPitch, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
@@ -981,6 +982,14 @@ export function useNoteEditor(
   useEffect(() => { selectedAccidentalRef.current = selectedAccidental; }, [selectedAccidental]);
   useEffect(() => { isDottedRef.current = isDotted; }, [isDotted]);
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
+  const coreDocumentForVoicesRef = useRef(coreDocument);
+  coreDocumentForVoicesRef.current = coreDocument;
+  /** The stored voice number of the active input voice on the staff of `anchor`. */
+  const storedInputVoiceAt = useCallback((anchor: { corePartId?: string | null; staffIndex: number } | null | undefined) => (
+    anchor
+      ? storedVoiceFor(coreDocumentForVoicesRef.current, { corePartId: anchor.corePartId, staffIndex: anchor.staffIndex }, selectedVoiceRef.current)
+      : selectedVoiceRef.current
+  ), []);
   useEffect(() => { entryModeRef.current = entryMode; }, [entryMode]);
   useEffect(() => { chordInputModeRef.current = chordInputMode; }, [chordInputMode]);
   useEffect(() => { stepInputKeyboardModeRef.current = stepInputKeyboardMode; }, [stepInputKeyboardMode]);
@@ -1064,9 +1073,7 @@ export function useNoteEditor(
       // (a 3/4 whole-measure rest is stored as a dotted half), and silently
       // latching it makes the next entry dotted when no dot was ever shown.
       setIsDottedLive(Boolean(!selectedNote.isRest && selectedNote.isDotted));
-      if (selectedNote.voiceId >= 1 && selectedNote.voiceId <= 4) {
-        setSelectedVoiceLive(selectedNote.voiceId as 1 | 2 | 3 | 4);
-      }
+      setSelectedVoiceLive(inputVoiceOf(selectedNote.voiceId));
       if (selectedNote.guitar) {
         setSelectedGuitarStringLive(selectedNote.guitar.string);
         setSelectedGuitarFretLive(selectedNote.guitar.fret);
@@ -1139,13 +1146,9 @@ export function useNoteEditor(
     if (noteInputModeRef.current) {
       lastNoteInputRef.current = note;
       options?.onActiveNotePreview?.(note);
-      if (
-        !clickOptions?.additive
-        && !clickOptions?.range
-        && note.voiceId >= 1
-        && note.voiceId <= 4
-      ) {
-        setSelectedVoiceLive(note.voiceId as 1 | 2 | 3 | 4);
+      if (!clickOptions?.additive && !clickOptions?.range) {
+        // A MuseScore/Finale left hand is stored as voice 5-8; it is input voice 1-4.
+        setSelectedVoiceLive(inputVoiceOf(note.voiceId));
       }
     }
     const current = selectedNotesRef.current;
@@ -1552,7 +1555,8 @@ export function useNoteEditor(
 
   const replaceSelectedVoicePitchAtAnchor = useCallback((
     anchor: SelectedNote,
-    voiceId: 1 | 2 | 3 | 4,
+    /** Stored voice number on the anchor's staff (5-8 on a MuseScore/Finale lower staff). */
+    voiceId: number,
     step: string,
     octave: number,
     alter: number,
@@ -2229,7 +2233,7 @@ export function useNoteEditor(
       entryMode: entryModeRef.current,
       noteInputMode: noteInputModeRef.current,
       chordInputMode: chordInputModeRef.current,
-      selectedVoice: selectedVoiceRef.current,
+      selectedVoice: storedInputVoiceAt(targetNote),
       selectedTiming: selectedTiming ? {
         timestampNum: selectedTiming.timestampNum,
         timestampDen: selectedTiming.timestampDen,
@@ -2324,7 +2328,7 @@ export function useNoteEditor(
       entryMode: entryModeRef.current,
       noteInputMode: true,
       chordInputMode: false,
-      selectedVoice: selectedVoiceRef.current,
+      selectedVoice: storedInputVoiceAt(targetNote),
       selectedTiming: selectedTiming ? {
         timestampNum: selectedTiming.timestampNum,
         timestampDen: selectedTiming.timestampDen,
@@ -2460,7 +2464,7 @@ export function useNoteEditor(
       duration,
       dotted: isDottedRef.current,
       addToMatchingChord: true,
-      insertAtCursor: Boolean(anchor && selectedVoiceRef.current !== anchor.voiceId),
+      insertAtCursor: Boolean(anchor && storedInputVoiceAt(anchor) !== anchor.voiceId),
     });
     if (committed) setSelectedDurationLive(duration);
     return committed;
@@ -2812,7 +2816,7 @@ export function useNoteEditor(
       type: 'fillSlashMeasure',
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
-      voiceId: selectedVoiceRef.current,
+      voiceId: storedInputVoiceAt(targetNote),
       stem: 'none',
     }];
     const next = applyEditorCommands(commands);
@@ -2827,7 +2831,7 @@ export function useNoteEditor(
     const targetNote = selectedNoteRef.current ?? selectedNote;
     if (!targetNote) return false;
     dbg.editor(`insertRest mode=${entryModeRef.current} dur=${DURATION_TYPE_MAP[selectedDurationRef.current]} dotted=${isDottedRef.current} voice=${selectedVoiceRef.current} after m.${targetNote.measureNumber} ts=${targetNote.timestampNum}/${targetNote.timestampDen}`);
-    const overwriteSlot = entryModeRef.current === 'overwrite' || (noteInputModeRef.current && selectedVoiceRef.current === targetNote.voiceId);
+    const overwriteSlot = entryModeRef.current === 'overwrite' || (noteInputModeRef.current && storedInputVoiceAt(targetNote) === targetNote.voiceId);
     const selectedDurationType = DURATION_TYPE_MAP[selectedDurationRef.current];
     const advanceFromEnteredRest = (enteredRest: SelectedNote, shouldAdvance: boolean) => {
       lastNoteInputRef.current = {
@@ -2892,7 +2896,7 @@ export function useNoteEditor(
         type: 'insertRest',
         measureNumber: targetNote.measureNumber,
         staffIndex: targetNote.staffIndex,
-        voiceId: selectedVoiceRef.current,
+        voiceId: storedInputVoiceAt(targetNote),
         afterTimestampNum: targetNote.timestampNum,
         afterTimestampDen: targetNote.timestampDen,
         durationType: selectedDurationType,
@@ -2920,7 +2924,7 @@ export function useNoteEditor(
     const diagnosticTarget = {
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
-      voiceId: overwriteSlot ? targetNote.voiceId : selectedVoiceRef.current,
+      voiceId: overwriteSlot ? targetNote.voiceId : storedInputVoiceAt(targetNote),
     };
     warnPostCommitDiagnostics('insertRest', validateScoreDocument(coreDocument), next.diagnostics, diagnosticTarget, commands);
     const selectedTiming = resolveEventTimingFromDocument(coreDocument, {
@@ -2935,7 +2939,7 @@ export function useNoteEditor(
     const enteredLocator = {
       measureNumber: targetNote.measureNumber,
       staffIndex: targetNote.staffIndex,
-      voiceId: overwriteSlot ? targetNote.voiceId : selectedVoiceRef.current,
+      voiceId: overwriteSlot ? targetNote.voiceId : storedInputVoiceAt(targetNote),
       timestampNum: overwriteSlot ? targetNote.timestampNum : ((selectedTiming?.timestampNum ?? targetNote.timestampNum) + (selectedTiming?.durationDivisions ?? 1)),
       timestampDen: selectedTiming?.timestampDen ?? targetNote.timestampDen,
     };
@@ -4293,10 +4297,10 @@ export function useNoteEditor(
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true, asChord: true });
         } else if (e.shiftKey) {
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, asChord: true });
-        } else if (selectedVoiceRef.current !== currentSelectedNote.voiceId) {
+        } else if (storedInputVoiceAt(currentSelectedNote) !== currentSelectedNote.voiceId) {
           const replacedSelectedVoice = replaceSelectedVoicePitchAtAnchor(
             currentSelectedNote,
-            selectedVoiceRef.current,
+            storedInputVoiceAt(currentSelectedNote),
             pitch.step,
             pitch.octave,
             pitch.alter,
