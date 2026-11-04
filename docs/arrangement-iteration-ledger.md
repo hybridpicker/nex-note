@@ -1234,3 +1234,15 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Cross-app tests and builds: run on the iteration 24–31 stack.
 - Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
 - Decision: accepted.
+
+## Gates for the iteration 24–31 stack and program stop
+
+- Run on `7f82975`:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all automated groups passed; browser 97
+    passed, 0 failed.
+  - `npm run test:e2e:doctor`: 5 passed.
+  - `npm run electron:refresh`: 1,458 tests passed; build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad, MIDI hardware, audible playback; the Xcode macOS target does not exist.
+- The owner asked to end the program here. The exit criteria are not met; see
+  `docs/arrangement-completion-report.md`.
