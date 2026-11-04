@@ -66,7 +66,35 @@ const HARMONY_SUFFIX_KIND: Record<string, string> = {
   sus: 'suspended-fourth',
   '5': 'power',
   '(9)': 'dominant',
+  '6/9': 'major-sixth',
+  '69': 'major-sixth',
+  'm6/9': 'minor-sixth',
+  'm69': 'minor-sixth',
 };
+
+/** Suffixes whose added degree is part of the chord name (6/9 adds a 9th to the sixth chord). */
+const HARMONY_SUFFIX_ADDED_DEGREES: Record<string, string[]> = {
+  '6/9': ['9'],
+  '69': ['9'],
+  'm6/9': ['9'],
+  'm69': ['9'],
+};
+
+/** "N.C.", "NC" and "no chord" (MusicXML kind "none"). */
+const NO_CHORD_PATTERN = /^\s*(?:N\.?\s?C\.?|no\s+chord)\s*$/i;
+
+/**
+ * Splits a chord symbol into root part and bass. A slash is a bass note only when a note name
+ * follows ("Am7/G"); "C6/9" keeps its suffix.
+ */
+function splitHarmonyBass(value: string): [string, string | undefined] {
+  const slash = value.lastIndexOf('/');
+  if (slash <= 0) return [value, undefined];
+  const candidate = value.slice(slash + 1);
+  const bass = parseHarmonyRoot(candidate);
+  if (!bass || bass.suffix.trim()) return [value, undefined];
+  return [value.slice(0, slash), candidate];
+}
 
 const HARMONY_SUFFIX_CANONICAL: Record<string, string> = {
   m7b5: 'm7b5',
@@ -887,7 +915,22 @@ function buildDirectionElement(
   timing?: { timestampNum?: number; timestampDen?: number; divisions?: number },
 ) {
   if (kind === 'harmony') {
-    const [rootPart, bassPart] = value.split('/');
+    if (NO_CHORD_PATTERN.test(value)) {
+      // MuseScore form: an empty-text root with kind "none" and the display text.
+      const harmony = doc.createElement('harmony');
+      const rootEl = doc.createElement('root');
+      const rootStep = doc.createElement('root-step');
+      rootStep.setAttribute('text', '');
+      rootStep.textContent = 'C';
+      rootEl.appendChild(rootStep);
+      harmony.appendChild(rootEl);
+      const kindEl = doc.createElement('kind');
+      kindEl.setAttribute('text', 'N.C.');
+      kindEl.textContent = 'none';
+      harmony.appendChild(kindEl);
+      return harmony;
+    }
+    const [rootPart, bassPart] = splitHarmonyBass(value);
     const root = parseHarmonyRoot(rootPart);
     if (!root) {
       const harmony = doc.createElement('harmony');
@@ -934,6 +977,13 @@ function buildDirectionElement(
       setOrCreateTextElement(doc, degree, 'degree-value', entry.value);
       setOrCreateTextElement(doc, degree, 'degree-alter', String(entry.alter));
       setOrCreateTextElement(doc, degree, 'degree-type', 'alter');
+      harmony.appendChild(degree);
+    });
+    (HARMONY_SUFFIX_ADDED_DEGREES[kindText] ?? []).forEach((value) => {
+      const degree = doc.createElement('degree');
+      setOrCreateTextElement(doc, degree, 'degree-value', value);
+      setOrCreateTextElement(doc, degree, 'degree-alter', '0');
+      setOrCreateTextElement(doc, degree, 'degree-type', 'add');
       harmony.appendChild(degree);
     });
     if (bassPart?.trim()) {

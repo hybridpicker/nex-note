@@ -910,6 +910,27 @@ test('double-dotted notes and rests keep both dots when a neighbouring note is e
   await expectNoDoctorIssues(page, 'after editing next to double-dotted notes');
 });
 
+test('inline chord entry writes N.C. and 6/9 as valid MusicXML harmonies', async ({ page }) => {
+  await bootWithScore(page);
+  for (const [noteIndex, symbol] of [[0, 'N.C.'], [1, 'C6/9']] as const) {
+    await clickRenderedNotehead(page, noteIndex);
+    await page.keyboard.press('Control+k');
+    const inlineChord = page.getByLabel('Inline chord symbol');
+    await expect(inlineChord).toBeFocused();
+    await inlineChord.fill(symbol);
+    await page.keyboard.press('Enter');
+  }
+  await expect.poll(async () => readCurrentXml(page)).toMatch(/<kind text="N\.C\.">none<\/kind>/);
+  const xml = await readCurrentXml(page);
+  expect(xml).toMatch(/<kind text="6\/9">major-sixth<\/kind>/);
+  expect(xml).not.toMatch(/<root-step>N<\/root-step>/);
+  const harmonies = (await readCurrentCore(page)).score.parts[0].staves[0].measures
+    .flatMap((measure) => measure.directions)
+    .filter((direction) => direction.kind === 'harmony')
+    .map((direction) => direction.value);
+  expect(harmonies).toEqual(expect.arrayContaining(['N.C.', 'C6/9']));
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

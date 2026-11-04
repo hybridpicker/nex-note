@@ -519,10 +519,14 @@ function buildDirections(measure: XmlElement, measureNumber: number, divisions: 
         ? 'b'
         : '';
     const timestamp = directionTimestamp(harmony, cursorPositions, divisions);
+    const noChord = (harmony.getElementsByTagName('kind')[0]?.textContent ?? '').trim() === 'none';
     return {
       id: makeId('harmony', measureNumber, index),
       kind: 'harmony',
-      value: `${rootStep}${rootAlter}${kindText}${bassStep ? `/${bassStep}${bassAlter}` : ''}`,
+      // MusicXML kind "none" is "no chord"; its root is only a placeholder.
+      value: noChord
+        ? (harmony.getElementsByTagName('kind')[0]?.getAttribute('text')?.trim() || 'N.C.')
+        : `${rootStep}${rootAlter}${kindText}${bassStep ? `/${bassStep}${bassAlter}` : ''}`,
       measureNumber,
       ...(timestamp ? { timestampNum: timestamp.timestampNum, timestampDen: timestamp.timestampDen } : {}),
     };

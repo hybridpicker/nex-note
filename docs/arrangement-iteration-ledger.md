@@ -46,8 +46,8 @@ as not reproduced and dropped.
 | 4b | 1/2 owner request 2026-11-04 (**in progress, iterations 4–7**) | Entry correctness matrix: eighths, sixteenths, dotted values and triplets entered by keyboard and mouse in voices 1–4, multi-voice staves, grand staff, several parts and different (including transposing) instruments; exact expected fixtures, one Undo entry per action | P1, P2, P5, parity matrix | A/B |
 | 5 | 1 data loss (**fixed in iteration 9**) | Double dots collapse to one dot on import | P1 | C |
 | 6 | 1 wrong target (**fixed in iteration 8**) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
-| 7 | 1 invalid output (*suspected*) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
-| 8 | 1 wrong onset (*suspected*) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
+| 7 | 1 invalid output (**fixed in iteration 10**) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
+| 8 | 1 wrong onset (**fixed in iteration 2**) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
 | 9 | 1 corruption (*suspected*) | `setCueNote` clears `durationType` | L4 | C |
 | 10 | 1 wrong data (*suspected*) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
 | 11 | 1 data loss (*suspected*) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
@@ -525,4 +525,34 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   neighbour edit keeps four dots) passes; `npm test` passed; build passed.
 - Cross-app tests and builds: run on the iteration 8–11 stack.
 - Documentation updated: matrix P1, this ledger.
+- Decision: accepted (pending the stack gates).
+
+## Iteration 10 — N.C. and 6/9 chord symbols export as valid MusicXML
+
+- Iteration / date / starting SHA / dirty-tree state: 10 / 2026-11-04 / `e574252` (local).
+- Track and matrix row: C (priority class 1, invalid output and data loss); L1.
+- Problem and observable baseline:
+  - N.C. was written as `<harmony><root><root-step>N</root-step></root></harmony>` with no
+    `<kind>`. That is invalid MusicXML, and it reimported as a chord named "N".
+  - `C6/9` lost "/9": the slash was taken for a bass note and the 9 dropped, so it reimported
+    as `C6`.
+  - Altered chords (C7b9, Bb7#11) are still written as plain `<words>`; this is a larger,
+    separate item (L1 next action).
+  - Mid-bar chord positions already survive since iteration 2 (the probe confirmed beat 2
+    stays at beat 2).
+  - New `test/harmony-no-chord.test.ts` passed 1/4 before; the new e2e case failed on the old
+    adapters.
+- Hypothesis and bounded change:
+  - N.C., NC, N.C and "no chord" export as the MuseScore form: an empty-text root and
+    `<kind text="N.C.">none</kind>`. Import reads `kind none` back as N.C.
+  - A slash is a bass note only when a plain note name follows. `6/9` (and `69`, `m6/9`)
+    exports as `major-sixth`/`minor-sixth` with text "6/9" and an added 9th degree.
+  - Whole-score transposition keeps N.C. and turns C6/9 into D6/9 (tested).
+  - Files: `src/musicxml-adapter/export/export-core-to-musicxml.ts`,
+    `src/musicxml-adapter/import/import-musicxml.ts`, `test/harmony-no-chord.test.ts` (new),
+    `e2e/notation-tools.spec.ts`.
+- Regression evidence before and after: unit 1/4 before, 4/4 after; e2e through the inline
+  chord field failed before, passes after; `npm test` 1,305 passed; build passed.
+- Cross-app tests and builds: run on the iteration 8–11 stack.
+- Documentation updated: matrix L1, this ledger.
 - Decision: accepted (pending the stack gates).
