@@ -419,6 +419,12 @@ function resolveRangeSelection(document: ScoreDocumentModel | null | undefined, 
  * legitimately carry a different id than the same logical event in the
  * current document. Used only as a fallback after the strict id-aware match.
  */
+function sameRhythmicPosition(a: SelectedNote, b: SelectedNote) {
+  return matchesSelectionLane(a, b)
+    && a.measureNumber === b.measureNumber
+    && timestampsEqual(a.timestampNum, a.timestampDen, b.timestampNum, b.timestampDen);
+}
+
 function selectedNotesPositionallyEqual(a: SelectedNote, b: SelectedNote) {
   if (a.isRest !== b.isRest) return false;
   return a.measureNumber === b.measureNumber
@@ -964,6 +970,8 @@ export function useNoteEditor(
   const selectedVisualRef = useRef<VisualSelection | null>(null);
   const lastNoteInputRef = useRef<SelectedNote | null>(null);
   const noteInputModeRef = useRef(false);
+  /** The last entered note when the input position is past the end of the score (MuseScore beyondScore). */
+  const beyondScoreRef = useRef<SelectedNote | null>(null);
   const onNoteInputActivatedRef = useRef(options?.onNoteInputActivated);
   onNoteInputActivatedRef.current = options?.onNoteInputActivated;
   const selectedDurationRef = useRef<NoteDuration>(initialSelectedDuration);
@@ -1169,6 +1177,7 @@ export function useNoteEditor(
 
   const selectSingleNote = useCallback((note: SelectedNote | null, visual?: VisualSelection | null) => {
     if (!note) return false;
+    if (beyondScoreRef.current && !sameRhythmicPosition(note, beyondScoreRef.current)) beyondScoreRef.current = null;
     selectedNotesRef.current = [note];
     setSelectedNotes([note]);
     setSelectedNoteLive(note);
@@ -1238,6 +1247,7 @@ export function useNoteEditor(
   }, [noteInputMode, selectedNote, setIsDottedLive, setSelectedAccidentalLive, setSelectedDurationLive, setSelectedGuitarFretLive, setSelectedGuitarStringLive, setSelectedGuitarTuningLive, setSelectedVoiceLive]);
 
   const handleNoteClick = useCallback((incoming: SelectedNote | null, clickOptions?: NoteClickOptions) => {
+    beyondScoreRef.current = null;
     const rawNote = coerceSelectedNote(incoming);
     const semanticEntries = buildSemanticSelectionEntries(coreDocument);
     const semanticEntryMatchesClickedNote = (candidate: SelectedNote, entry: ReturnType<typeof buildSemanticSelectionEntries>[number]) => {
@@ -2091,9 +2101,84 @@ export function useNoteEditor(
     }
     if (enteredNote) {
       selectSingleNote(enteredNote, { visualOnly: false, text: null, measureNumber: enteredNote.measureNumber, staffIndex: enteredNote.staffIndex });
+      // Nothing follows this entry in the score: the next plain entry appends a bar.
+      if (behavior?.advanceCursor !== false && noteInputModeRef.current && !chordInputModeRef.current && advanceFrom && !rawNextSelection) {
+        beyondScoreRef.current = enteredNote;
+      }
     }
     return true;
   }, [chordInputMode, noteInputMode, onApplyCommands, options, resolveRecentInputFromDocument, selectSingleNote, selectedNote, selectedNotes]);
+
+  /** The last entered note, if the input position is still past the end of the score. */
+  const beyondScoreCursor = useCallback(() => {
+    const flagged = beyondScoreRef.current;
+    const cursor = selectedNoteRef.current;
+    if (!flagged || !cursor || !noteInputModeRef.current || chordInputModeRef.current) return null;
+    if (!sameRhythmicPosition(cursor, flagged)) return null;
+    // Undo or another edit may have changed the end of the voice since the entry.
+    const last = getSemanticNoteOrder(coreDocument).filter((entry) => matchesSelectionLane(entry, flagged)).at(-1);
+    if (!last || last.measureNumber !== flagged.measureNumber) return null;
+    if (!timestampsEqual(last.timestampNum, last.timestampDen, flagged.timestampNum, flagged.timestampDen)) return null;
+    return Boolean(last.isRest) === Boolean(flagged.isRest) ? flagged : null;
+  }, [coreDocument]);
+
+  /**
+   * Entry past the end of the score: MuseScore appends one bar and writes there
+   * (NoteInput::addPitch with is.beyondScore()). Both happen in one command batch, so one Undo step.
+   */
+  const enterBeyondScore = useCallback((
+    lastEntered: SelectedNote,
+    pitches: Array<{ step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental }> | null,
+    value?: { duration: NoteDuration; dotted: boolean },
+  ) => {
+    const duration = value?.duration ?? selectedDurationRef.current;
+    const dotted = value?.dotted ?? isDottedRef.current;
+    const durationType = DURATION_TYPE_MAP[duration];
+    const newBar = {
+      coreMeasureId: null,
+      corePartId: lastEntered.corePartId ?? null,
+      measureNumber: lastEntered.measureNumber + 1,
+      staffIndex: lastEntered.staffIndex,
+      voiceId: storedInputVoiceAt(lastEntered),
+      timestampNum: 0,
+      timestampDen: Math.max(lastEntered.timestampDen, 1),
+    };
+    const newBarHasEntryVoice = newBar.voiceId === Math.min(
+      newBar.voiceId,
+      ...getSemanticNoteOrder(coreDocument)
+        .filter((entry) => entry.corePartId === lastEntered.corePartId && entry.staffIndex === lastEntered.staffIndex)
+        .map((entry) => entry.voiceId),
+    );
+    const commands: ScoreCommand[] = [
+      { type: 'insertMeasureAfter', measureNumber: lastEntered.measureNumber },
+      ...(pitches
+        ? pitches.map((pitch, index) => ({
+          type: 'insertNoteAt' as const,
+          ...newBar,
+          step: pitch.step,
+          octave: pitch.octave,
+          alter: pitch.alter,
+          ...(pitch.writtenAccidental ? { writtenAccidental: pitch.writtenAccidental } : {}),
+          durationType,
+          isDotted: dotted,
+          asChord: index > 0,
+          preserveOverflow: false,
+        }))
+        // The new bar's whole-bar rest sits in the staff's first voice; another voice has no event yet.
+        : [newBarHasEntryVoice
+          ? { type: 'replaceWithRest' as const, coreEntityId: null, ...newBar, durationType, isDotted: dotted }
+          : { type: 'insertRestAt' as const, ...newBar, durationType, isDotted: dotted }]),
+    ];
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml || next.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) {
+      warnNoOpEdit('enterBeyondScore', commands[0]!);
+      return false;
+    }
+    beyondScoreRef.current = null;
+    return commitNoteInputUpdate(commands, next.coreDocument, newBar, lastEntered, pitches
+      ? { isRest: false, step: pitches[0]!.step, octave: pitches[0]!.octave, alter: pitches[0]!.alter }
+      : { isRest: true }, { advanceCursor: true, enteredValue: { duration, dotted } });
+  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, storedInputVoiceAt, warnNoOpEdit, xml]);
 
   const resolveActiveDurationTarget = useCallback(() => {
     const activeSelection = selectedNoteRef.current ?? selectedNote;
@@ -2640,6 +2725,13 @@ export function useNoteEditor(
     // followed it used to replace that note.
     const targetNote = selectedNoteRef.current ?? lastNoteInputRef.current ?? selectedNote;
     if (!targetNote) return false;
+    const lastEntered = inputOptions?.advanceCursor !== false ? beyondScoreCursor() : null;
+    if (lastEntered) {
+      return enterBeyondScore(lastEntered, pitches, {
+        duration: inputOptions?.duration ?? selectedDurationRef.current,
+        dotted: inputOptions?.dotted ?? isDottedRef.current,
+      });
+    }
     const selectedTiming = resolveEventTimingFromDocument(coreDocument, {
       coreMeasureId: targetNote.coreMeasureId ?? null,
       corePartId: targetNote.corePartId ?? null,
@@ -2794,7 +2886,7 @@ export function useNoteEditor(
         skipHistory: next.xml === xml,
       },
     );
-  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, resolveEventTimingFromDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, warnNoOpEdit, warnRejectedEdit, xml]);
+  }, [applyEditorCommands, beyondScoreCursor, commitNoteInputUpdate, coreDocument, enterBeyondScore, resolveEventTimingFromDocument, selectedNote, setPreparedDurationPitchesLive, setPreparedDurationRestLive, warnNoOpEdit, warnRejectedEdit, xml]);
 
   const commitPreparedDurationPitches = useCallback((duration: NoteDuration) => {
     const pitches = preparedDurationPitchesRef.current;
@@ -3174,6 +3266,8 @@ export function useNoteEditor(
   const insertRest = useCallback(() => {
     const targetNote = selectedNoteRef.current ?? selectedNote;
     if (!targetNote) return false;
+    const lastEntered = beyondScoreCursor();
+    if (lastEntered) return enterBeyondScore(lastEntered, null);
     dbg.editor(`insertRest mode=${entryModeRef.current} dur=${DURATION_TYPE_MAP[selectedDurationRef.current]} dotted=${isDottedRef.current} voice=${selectedVoiceRef.current} after m.${targetNote.measureNumber} ts=${targetNote.timestampNum}/${targetNote.timestampDen}`);
     const overwriteSlot = entryModeRef.current === 'overwrite' || (noteInputModeRef.current && storedInputVoiceAt(targetNote) === targetNote.voiceId);
     const selectedDurationType = DURATION_TYPE_MAP[selectedDurationRef.current];
@@ -3198,6 +3292,7 @@ export function useNoteEditor(
         measureNumber: selectedAfterInput.measureNumber,
         staffIndex: selectedAfterInput.staffIndex,
       });
+      if (shouldAdvance && !rawNextSelection) beyondScoreRef.current = enteredRest;
     };
     const matchingRestSlot = overwriteSlot
       && targetNote.isRest
@@ -4814,7 +4909,12 @@ export function useNoteEditor(
           : melodicReference;
         const pitch = resolveTypedPitch(pitchReference, addingChordTone ? 'above' : 'closest');
         const writtenAccidental = selectedAccidentalRef.current ?? undefined;
-        if (metaKey && e.shiftKey) {
+        const lastEntered = !e.shiftKey && !metaKey ? beyondScoreCursor() : null;
+        if (lastEntered) {
+          if (enterBeyondScore(lastEntered, [{ step: pitch.step, octave: pitch.octave, alter: pitch.alter, writtenAccidental }]) && writtenAccidental) {
+            setSelectedAccidentalLive(null);
+          }
+        } else if (metaKey && e.shiftKey) {
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true, asChord: true });
         } else if (e.shiftKey && shiftChordAnchor) {
           const cursor = currentSelectedNote;
@@ -4857,7 +4957,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote]);
+  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
 
   return {
     selection: {

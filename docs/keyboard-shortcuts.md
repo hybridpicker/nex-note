@@ -275,6 +275,10 @@ Values that cross a beat: the rhythm speller writes them as tied notes or as sev
 off-beat quarter is eighth–tie–eighth). After such a value the cursor moves past all of its
 parts, as in MuseScore, so `4 C 5 D E` gives an eighth C, a quarter D and E on beat 2½.
 
+Past the end of the score: the next note, rest, MIDI key or `M` commit after the last position
+appends one bar and writes there, in one Undo step, as in MuseScore. A click or arrow key on the
+last note overwrites it instead.
+
 Selection keys during note input (MuseScore parity): after entering a note, the articulation
 keys (`Shift+S`, `Shift+.`, `Shift+6`, `Shift+-`), `/` (grace note), `J` (respell), `X` (stem)
 and `Shift+X` (slash notehead) act on the note just entered, as in MuseScore, while the input

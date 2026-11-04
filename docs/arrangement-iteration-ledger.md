@@ -69,7 +69,7 @@ as not reproduced and dropped.
 | 27 | 1 wrong pitch (**fixed in iteration 27**) | First `M`-mode pitch ignores the clef-middle-line rule; step-time entry after a voice change takes its octave from the other voice (MuseScore looks only in the entry voice) | parity matrix | A |
 | 30 | 1 invalid output (**fixed in iteration 28**) | `insertMeasureAfter` writes an empty `<measure>` with no rest in any staff | T6 | C |
 | 31 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
-| 29 | 1 data loss (to confirm against MuseScore) | Typing past the last position of the score replaces the last note | parity matrix | A |
+| 29 | 1 data loss (**fixed in iteration 31**) | Typing past the last position of the score replaces the last note | parity matrix | A |
 | 32 | 1 wrong onset, wrong target (**fixed in iteration 29**) | A rest typed in a rest-only bar after the last note is erased; left-hand rests in later bars are deleted; a rest in a later part moves the cursor to the first part | P1, S1, parity matrix | A |
 | 33 | 1 wrong target (**fixed in iteration 30**) | Audit: every keyboard action in a second part must leave the first part untouched (several hook commands carry no part) | E2, S1 | A |
 | 34 | 1 wrong target | Removing a text direction removes the same text from every part; the visual selection does not carry its part, so the click must pass it | E7, S1 | C |
@@ -1213,4 +1213,24 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   part. The selection of a text does not know its part yet.
 - Cross-app tests and builds: run on the iteration 24–31 stack.
 - Documentation updated: this ledger.
+- Decision: accepted.
+
+## Iteration 31 — Entry past the end of the score appends a bar
+
+- Iteration / date / starting SHA / dirty-tree state: 31 / 2026-11-04 / iteration 30 (local).
+- Track and matrix row: A, priority class 1 (data loss); parity matrix.
+- Problem and observable baseline: after the last position of the score the cursor stayed on the last
+  note, so the next letter replaced it. MuseScore (`NoteInput::addPitch` with `is.beyondScore()`, read
+  from the source) calls `appendMeasures(1)` and writes in the new bar. New
+  `test/entry-beyond-score.test.ts` failed before.
+- Hypothesis and bounded change: an entry with no next slot marks the input as past the end. The next
+  plain letter, rest, MIDI key or `M` commit appends one bar and writes there in one command batch, so
+  one Undo step. A click or navigation clears the mark, and it is re-checked against the document so
+  Undo cannot leave it stale. Shift chord tones still go to the last note. File:
+  `hooks/useNoteEditor.ts`.
+- Regression evidence before and after: 14/14 after; `npm test` 1,458 passed; build passed; application
+  `tsc` clean.
+- Not tested: `T` at the very end of the score.
+- Cross-app tests and builds: run on the iteration 24–31 stack.
+- Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
 - Decision: accepted.
