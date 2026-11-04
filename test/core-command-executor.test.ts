@@ -1534,28 +1534,30 @@ test('setMultiMeasureRest enables multi-measure rest on measure', () => {
 
 // --- Guitar technique expansion tests ---
 
-test('addGuitarBend adds bend technique to note', () => {
+test('addGuitarBend adds bend technique to a TAB note', () => {
   const doc = buildDocumentFromStaves({
     staves: [{ staffIndex: 1, measures: [buildMeasure('m1', 1, 1, { beats: 4, beatType: 4 })] }],
   });
   doc.score.parts[0]!.staves[0]!.measures[0]!.voices = [{
     id: 'v1', voiceId: 1,
-    events: [buildNoteEvent({ id: 'n1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 4, durationType: 'whole', step: 'C', octave: 4 })],
+    events: [buildNoteEvent({ id: 'n1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 4, durationType: 'whole', step: 'C', octave: 4 })].map((event) => ({ ...event, guitar: { string: 3 as const, fret: 5 } })),
   }];
   const next = applyCoreCommands(doc, [{ type: 'addGuitarBend', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4, bendSemitones: 1 } as never]);
   const event = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
   assert.ok(event.kind === 'note' && event.guitar?.techniques?.includes('bend'));
+  assert.deepEqual(event.kind === 'note' ? [event.guitar?.string, event.guitar?.fret] : null, [3, 5]);
 });
 
-test('addGuitarTap adds hammer-on technique to note', () => {
+test('addGuitarTap adds tap technique to a TAB note', () => {
   const doc = buildDocumentFromStaves({
     staves: [{ staffIndex: 1, measures: [buildMeasure('m1', 1, 1, { beats: 4, beatType: 4 })] }],
   });
   doc.score.parts[0]!.staves[0]!.measures[0]!.voices = [{
     id: 'v1', voiceId: 1,
-    events: [buildNoteEvent({ id: 'n1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 4, durationType: 'whole', step: 'C', octave: 4 })],
+    events: [buildNoteEvent({ id: 'n1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, durationDivisions: 4, durationType: 'whole', step: 'C', octave: 4 })].map((event) => ({ ...event, guitar: { string: 3 as const, fret: 5 } })),
   }];
   const next = applyCoreCommands(doc, [{ type: 'addGuitarTap', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 } as never]);
   const event = next.score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
-  assert.ok(event.kind === 'note' && event.guitar?.techniques?.includes('hammer-on'));
+  assert.ok(event.kind === 'note' && event.guitar?.techniques?.includes('tap'));
+  assert.ok(event.kind === 'note' && !event.guitar?.techniques?.includes('hammer-on'));
 });

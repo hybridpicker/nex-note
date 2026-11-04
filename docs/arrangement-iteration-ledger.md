@@ -49,7 +49,7 @@ as not reproduced and dropped.
 | 7 | 1 invalid output (**fixed in iteration 10**) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
 | 8 | 1 wrong onset (**fixed in iteration 2**) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
 | 9 | 1 corruption (**fixed in iteration 11**) | `setCueNote` clears `durationType` | L4 | C |
-| 10 | 1 wrong data (*suspected*) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
+| 10 | 1 wrong data (**fixed in iteration 14**) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
 | 11 | 1 data loss (*suspected*) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
 | 12 | 1 wrong pitch (**fixed in iteration 12**) | Transposing parts play back at written pitch | S2 | C |
 | 13 | 1 wrong target (*suspected*) | Inserted measures clone barlines, endings and breaks | T6 | C |
@@ -669,3 +669,44 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Documentation updated: this ledger.
 - Iteration 12 pushed: remote `devel` verified at `f0815e5`.
 - Decision: accepted (pending the stack gates).
+
+## Iteration 14 — Guitar bends keep their amount; taps are taps
+
+- Iteration / date / starting SHA / dirty-tree state: 14 / 2026-11-04 / `6f201d0` (local).
+- Track and matrix row: C (priority class 1, wrong data); L5.
+- Problem and observable baseline:
+  - `addGuitarBend` ignored `bendSemitones`; export always wrote `<bend-alter>1</bend-alter>`;
+    import dropped the amount. An imported full-step bend (2) therefore exported as a half step.
+  - `addGuitarTap` stored a hammer-on instead of MusicXML `<tap/>`.
+  - Both commands invented string 1, fret 0 for notes without TAB data.
+  - New `test/guitar-bend-tap.test.ts`: 0/4 before.
+- Hypothesis and bounded change:
+  - `guitar.bendAlter` (semitones; omitted for the default 1) is imported from `<bend-alter>`
+    and exported.
+  - `tap` is a technique kind, read from and written as `<tap/>`.
+  - Both commands reject notes without TAB data (`guitar_command_rejected`, no change).
+  - Corrected assertions in `test/core-command-executor.test.ts`: the old tests bent an
+    untabbed note (relying on the invented string 1, fret 0) and expected tap to store a
+    hammer-on. They now use a TAB note (string 3, fret 5), assert that the string and fret are
+    kept, and expect `tap`.
+  - Files: `src/score-core/model/types.ts`, `src/musicxml-adapter/import/import-musicxml.ts`,
+    `src/musicxml-adapter/export/export-core-to-musicxml.ts`,
+    `src/score-core/commands/core-command-executor.ts`, `test/guitar-bend-tap.test.ts` (new),
+    `test/core-command-executor.test.ts`.
+- Regression evidence before and after: 0/4 before, 4/4 after; guitar suites pass;
+  `npm test` passed after the test correction; build passed; application `tsc` clean.
+- Cross-app tests and builds: run on the iteration 13–14 stack.
+- Documentation updated: matrix L5, this ledger.
+- Decision: accepted (pending the stack gates).
+- Cross-app gates for the iteration 13–14 stack, run before pushing:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all groups passed; browser 89
+    passed, 0 failed.
+  - `npm run electron:refresh`: 1,319 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; Guitar Pro hardware workflows; the Xcode macOS target, which does
+    not exist.
+- Commit SHAs: iteration 13 `6f201d0`, iteration 14 is this commit; pushed together.
+- Decision: iterations 13 and 14 accepted.
+- Next item selected: entry-matrix batch 2 (owner request): chords in voice 2, voices 3 and 4,
+  accidental carry across voices, the middle instrument of three, rests and triplets in voice 2,
+  a left-hand second voice in sixteenths, voice 2 across the barline.

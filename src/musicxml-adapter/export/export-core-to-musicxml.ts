@@ -859,9 +859,10 @@ function buildEventElement(
       }
       if (guitarTechniques.has('bend')) {
         const bend = doc.createElement('bend');
-        setOrCreateTextElement(doc, bend, 'bend-alter', '1');
+        setOrCreateTextElement(doc, bend, 'bend-alter', String(event.kind === 'note' ? event.guitar?.bendAlter ?? 1 : 1));
         technical.appendChild(bend);
       }
+      if (guitarTechniques.has('tap')) technical.appendChild(doc.createElement('tap'));
       if (guitarTechniques.has('harmonic')) {
         const harmonic = doc.createElement('harmonic');
         harmonic.appendChild(doc.createElement('natural'));

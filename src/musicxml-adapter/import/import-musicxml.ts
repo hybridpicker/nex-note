@@ -141,6 +141,7 @@ function readHarmonyKindText(harmony: XmlElement) {
 }
 
 const GUITAR_TECHNICAL_TAGS = new Set([
+  'tap',
   'string',
   'fret',
   'hammer-on',
@@ -255,6 +256,7 @@ function readGuitarTechnical(note: XmlElement): { string: 1 | 2 | 3 | 4 | 5 | 6;
       techniques.add(pullOff.getAttribute('type') === 'stop' ? 'pull-off-stop' : 'pull-off');
     }
     if (technical.getElementsByTagName('bend').length > 0) techniques.add('bend');
+    if (technical.getElementsByTagName('tap').length > 0) techniques.add('tap');
     if (technical.getElementsByTagName('harmonic').length > 0) techniques.add('harmonic');
     if (technical.getElementsByTagName('mute').length > 0) techniques.add('dead-note');
     if (technical.getElementsByTagName('up-bow').length > 0) techniques.add('pick-up');
@@ -276,10 +278,12 @@ function readGuitarTechnical(note: XmlElement): { string: 1 | 2 | 3 | 4 | 5 | 6;
   // notation XML: a violin trill line (<wavy-line>) or a hammer-on mark in standard notation must
   // not become string 1, fret 0.
   if (stringValue < 1 || stringValue > 6 || fretValue < 0) return undefined;
+  const bendAlter = Number.parseFloat(technical?.getElementsByTagName('bend-alter')[0]?.textContent ?? '');
   return {
     string: stringValue as 1 | 2 | 3 | 4 | 5 | 6,
     fret: Math.max(0, Math.min(24, fretValue)),
     techniques: [...techniques],
+    ...(Number.isFinite(bendAlter) && bendAlter !== 1 && techniques.has('bend') ? { bendAlter } : {}),
   };
 }
 

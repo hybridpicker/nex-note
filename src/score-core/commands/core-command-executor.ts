@@ -6224,24 +6224,30 @@ export function executeCoreCommands(
       case 'addGuitarBend': {
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (event && event.kind === 'note') {
-          if (!event.guitar) event.guitar = { string: 1, fret: 0 };
+        // Bends belong to a fretted note; inventing string 1, fret 0 would contradict its pitch.
+        if (!event || event.kind !== 'note' || !event.guitar) {
+          diagnostics.push({ level: 'warning', code: 'guitar_command_rejected', message: 'Select a TAB note with a string and fret to add a bend.' });
+          break;
+        }
+        {
           const techniques = event.guitar.techniques ?? [];
-          if (!techniques.includes('bend')) {
-            event.guitar.techniques = [...techniques, 'bend'];
-          }
+          if (!techniques.includes('bend')) event.guitar.techniques = [...techniques, 'bend'];
+          const semitones = Number(command.bendSemitones);
+          if (Number.isFinite(semitones) && semitones > 0 && semitones !== 1) event.guitar.bendAlter = semitones;
+          else delete event.guitar.bendAlter;
         }
         break;
       }
       case 'addGuitarTap': {
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (event && event.kind === 'note') {
-          if (!event.guitar) event.guitar = { string: 1, fret: 0 };
+        if (!event || event.kind !== 'note' || !event.guitar) {
+          diagnostics.push({ level: 'warning', code: 'guitar_command_rejected', message: 'Select a TAB note with a string and fret to add a tap.' });
+          break;
+        }
+        {
           const techniques = event.guitar.techniques ?? [];
-          if (!techniques.includes('hammer-on')) {
-            event.guitar.techniques = [...techniques, 'hammer-on'];
-          }
+          if (!techniques.includes('tap')) event.guitar.techniques = [...techniques, 'tap'];
         }
         break;
       }

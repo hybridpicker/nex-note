@@ -98,7 +98,8 @@ export type GuitarTechniqueKind =
   | 'dead-note'
   | 'harmonic'
   | 'pick-up'
-  | 'pick-down';
+  | 'pick-down'
+  | 'tap';
 
 export interface BaseTimedEvent {
   id: string;
@@ -151,6 +152,8 @@ export interface NoteEvent extends BaseTimedEvent {
     fret: number;
     tuning?: string;
     techniques?: GuitarTechniqueKind[];
+    /** MusicXML `<bend-alter>` in semitones; a bend without it is a half step (1). */
+    bendAlter?: number;
   };
 }
 
