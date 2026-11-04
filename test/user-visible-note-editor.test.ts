@@ -4527,11 +4527,13 @@ test('note input previews and highlights the entered note while advancing the in
     .filter((event) => event.measureNumber === 1 && event.voiceId === 1)
     .sort((a, b) => a.timestampNum / a.timestampDen - b.timestampNum / b.timestampDen);
 
+  // A fresh treble bar resolves the first letter nearest to the middle line B4, as MuseScore does
+  // (NoteInput::resolveNoteInputParams), so C and D are C5 and D5.
   assert.deepEqual(
     events.map((event) => (
       `${event.timestampNum}/${event.timestampDen}:${event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : 'rest'}:${event.durationType ?? 'none'}`
     )),
-    ['0/8:C4:eighth', '1/8:D4:eighth', '2/8:rest:quarter', '4/8:rest:half'],
+    ['0/8:C5:eighth', '1/8:D5:eighth', '2/8:rest:quarter', '4/8:rest:half'],
   );
   assert.equal(hook.current.selectedNote?.isRest, true);
   assert.equal(hook.current.selectedNote?.timestampNum, 2);

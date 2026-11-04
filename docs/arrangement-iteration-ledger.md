@@ -906,3 +906,47 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   placeholder, so with no earlier note in the voice the first letter resolves against C4 on
   every staff (C4 on a bass staff). MuseScore (`resolveNoteInputParams`) uses the clef's middle
   line when no previous chord exists.
+
+## Iteration 21 — The first note of a passage follows the clef's register
+
+- Iteration / date / starting SHA / dirty-tree state: 21 / 2026-11-04 / `e6a1322` (equal to
+  `origin/devel`).
+- Track and matrix row: A (keyboard precision, MuseScore parity); parity "A-G pitch input", S3.
+- Problem and observable baseline:
+  - A rest's selection entry carries a placeholder pitch, C4. With no earlier note in the voice,
+    the first letter was resolved nearest to C4 on every staff.
+  - In a fresh cello bar, `c d e` gave C4 D4 E4 (ledger lines above the bass staff); the e2e
+    case shows this on the old hook.
+  - MuseScore (`NoteInput::resolveNoteInputParams`, branch `main`) walks back through rests to
+    the previous chord, and otherwise uses the clef's middle line (`line2pitch(4, clef)`).
+- Hypothesis and bounded change:
+  - `clefMiddleLineReference` derives the reference from the effective clef: treble B4, bass
+    D3, alto C4, tenor A3, octave clefs shifted.
+  - It is used when no preceding note exists in the lane, and for typing on a selected rest
+    outside note input.
+  - File: `hooks/useNoteEditor.ts`.
+  - Updated expectations:
+    - the entry-matrix scenarios that start on a rest (my own expectations from earlier
+      iterations, which recorded the old C4 register) now expect C5 for treble and C3 for bass
+      staves, through a register-aware `eighthScale` helper;
+    - the unit test "note input previews and highlights the entered note while advancing the
+      input cursor" now expects C5/D5 for a fresh treble bar, with the source reference.
+- Regression evidence before and after:
+  - `npm test`: 1,335 passed.
+  - `npm run test:e2e:notation-tools`: 46 passed.
+  - The new bass-clef e2e case (C3 D3 E3) failed on the old hook (C4 D4 …) and passes.
+  - Build passed; application `tsc` clean.
+- Documentation updated: `docs/user-manual.en.md` (pitch entry), `docs/keyboard-shortcuts.md`,
+  parity matrix "A-G pitch input", this ledger.
+- Cross-app tests and builds actually run:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all groups passed; browser 94
+    passed, 0 failed.
+  - `npm run test:e2e:doctor`: 5 passed.
+  - `npm run electron:refresh`: 1,335 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; the Xcode macOS target, which does not exist.
+- Commit SHA / push result: this commit, pushed after the gates.
+- Decision: accepted.
+- Next item selected: probe which note the articulation, grace, slur and respell keys act on
+  right after an entry in note input. MuseScore selects the note just entered; nex-note's
+  selection is the next slot.

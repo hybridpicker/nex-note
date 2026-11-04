@@ -265,3 +265,6 @@ Voice changes and chords (November 2026, MuseScore parity): changing the voice k
 position, so the next note or rest in the new voice starts at the cursor. Entry continues into
 the next bar even when the active voice does not exist there yet. A plain letter after a chord is
 resolved nearest to the chord's lowest note.
+First note of a passage: with no earlier note in the voice, `A`–`G` resolve nearest to the
+middle line of the effective clef (treble B4, bass D3, alto C4, tenor A3), as MuseScore does, so
+the first `C` is C5 in treble and C3 in bass clef.

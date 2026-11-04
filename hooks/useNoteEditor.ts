@@ -38,7 +38,7 @@ import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import { resolveNextEnharmonicPitch, writtenAccidentalToAlter, type AccidentalEnclosure, type WrittenAccidental } from '@/src/shared/music/accidentals';
-import { diatonicPitchIndex, pitchFromDiatonicIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
+import { diatonicPitchIndex, pitchFromDiatonicIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber, topLineDiatonicIndex, resolveClefAtMeasure } from '@/src/score-input/staff-pitch';
 
 export type { ArticulationKind, DynamicKind, BarlineKind };
 
@@ -448,6 +448,17 @@ function findAdjacentSelection(document: ScoreDocumentModel | null | undefined, 
   const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
   if (nextIndex < 0 || nextIndex >= ordered.length) return null;
   return ordered[nextIndex];
+}
+
+/**
+ * Octave reference when no earlier note exists in the voice: the middle line of the effective
+ * clef (MuseScore NoteInput::resolveNoteInputParams). A rest only carries a placeholder pitch, so
+ * the first C on a bass staff is C3 and on a treble staff C5.
+ */
+function clefMiddleLineReference(document: ScoreDocumentModel | null | undefined, rest: SelectedNote): SelectedNote {
+  const clef = resolveClefAtMeasure(document, rest.measureNumber, rest.staffIndex, { corePartId: rest.corePartId, measureId: rest.coreMeasureId });
+  const middle = pitchFromDiatonicIndex(topLineDiatonicIndex(clef) - 4);
+  return { ...rest, step: middle.step, octave: middle.octave, alter: 0, isRest: false };
 }
 
 function findNextRhythmicSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote) {
@@ -4548,7 +4559,7 @@ export function useNoteEditor(
         const precedingNote = inputReference.isRest
           ? getSelectionLaneOrder(coreDocument, inputReference)
             .filter((note) => !note.isRest && compareSelectedNotes(note, inputReference) < 0)
-            .at(-1) ?? inputReference
+            .at(-1) ?? clefMiddleLineReference(coreDocument, inputReference)
           : inputReference;
         // MuseScore resolves a plain letter nearest to the lowest note of the previous chord
         // (NoteInput::resolveNoteInputParams uses downNote()).
@@ -4612,11 +4623,11 @@ export function useNoteEditor(
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental });
         }
       } else if (measureAnchorSelection && currentSelectedNote) {
-        const pitch = resolveTypedPitch(currentSelectedNote, 'closest');
+        const pitch = resolveTypedPitch(currentSelectedNote.isRest ? clefMiddleLineReference(coreDocument, currentSelectedNote) : currentSelectedNote, 'closest');
         setNoteInputModeLive(true);
         insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined });
       } else if (currentSelectedNote?.isRest) {
-        const pitch = resolveTypedPitch(currentSelectedNote, 'closest');
+        const pitch = resolveTypedPitch(clefMiddleLineReference(coreDocument, currentSelectedNote), 'closest');
         setNoteInputModeLive(true);
         insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined, insertAtCursor: true });
       } else if (currentSelectedNote && !currentSelectedNote.isRest) {

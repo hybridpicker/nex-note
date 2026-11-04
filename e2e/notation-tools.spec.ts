@@ -1018,6 +1018,23 @@ ${'<note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><v
   await expectNoDoctorIssues(page, 'after editing next to a whole-bar rest');
 });
 
+test('the first note in an empty bass staff is resolved from the clef, as in MuseScore', async ({ page }) => {
+  const celloXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Cello</part-name></score-part></part-list><part id="P1">
+<measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>F</sign><line>4</line></clef></attributes>
+<note><rest measure="yes"/><duration>8</duration><voice>1</voice><type>whole</type></note></measure>
+</part></score-partwise>`;
+  await bootWithScore(page, celloXml);
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('N');
+  await page.keyboard.press('5');
+  for (const key of ['c', 'd', 'e']) await page.keyboard.press(key);
+  const pitches = async () => ((await readCurrentCore(page)).score.parts[0].staves[0].measures[0].voices[0]?.events ?? [])
+    .filter((event) => event.kind === 'note')
+    .map((event) => (event.kind === 'note' ? `${event.pitch.step}${event.pitch.octave}` : ''));
+  await expect.poll(pitches).toEqual(['C3', 'D3', 'E3']);
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

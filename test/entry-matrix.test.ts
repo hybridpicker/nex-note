@@ -55,7 +55,14 @@ const QUARTERS_IN_VOICE_ONE = scoreXml({
   }],
 });
 
-const EIGHTH_SCALE = ['m1@0 C4 eighth', 'm1@0.5 D4 eighth', 'm1@1 E4 eighth', 'm1@1.5 F4 eighth', 'm1@2 G4 eighth', 'm1@2.5 A4 eighth', 'm1@3 B4 eighth', 'm1@3.5 C5 eighth'];
+/**
+ * C D E F G A B C as eighths. The first note after a rest is resolved nearest to the clef's middle
+ * line (MuseScore): C5 on a treble staff, C3 on a bass staff.
+ */
+const eighthScale = (octave: number) => ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C']
+  .map((step, index) => `m1@${index / 2} ${step}${index === 7 ? octave + 1 : octave} eighth`);
+const EIGHTH_SCALE = eighthScale(5);
+const BASS_EIGHTH_SCALE = eighthScale(3);
 
 const SCENARIOS: Scenario[] = [
   {
@@ -72,10 +79,10 @@ const SCENARIOS: Scenario[] = [
     expect: [{
       where: {},
       events: [
-        'm1@0 C4 16th', 'm1@0.25 D4 16th', 'm1@0.5 E4 16th', 'm1@0.75 F4 16th',
-        'm1@1 G4 16th', 'm1@1.25 A4 16th', 'm1@1.5 B4 16th', 'm1@1.75 C5 16th',
-        'm1@2 D5 16th', 'm1@2.25 E5 16th', 'm1@2.5 F5 16th', 'm1@2.75 G5 16th',
-        'm1@3 A5 16th', 'm1@3.25 B5 16th', 'm1@3.5 C6 16th', 'm1@3.75 D6 16th',
+        'm1@0 C5 16th', 'm1@0.25 D5 16th', 'm1@0.5 E5 16th', 'm1@0.75 F5 16th',
+        'm1@1 G5 16th', 'm1@1.25 A5 16th', 'm1@1.5 B5 16th', 'm1@1.75 C6 16th',
+        'm1@2 D6 16th', 'm1@2.25 E6 16th', 'm1@2.5 F6 16th', 'm1@2.75 G6 16th',
+        'm1@3 A6 16th', 'm1@3.25 B6 16th', 'm1@3.5 C7 16th', 'm1@3.75 D7 16th',
         'm2@0 r whole',
       ],
     }],
@@ -85,7 +92,7 @@ const SCENARIOS: Scenario[] = [
     name: 'dotted eighth and sixteenth pairs (a new duration clears the dot)',
     xml: FOUR_FOUR,
     script: 'N 4 . c 3 d 4 . e 3 f',
-    expect: [{ where: {}, events: ['m1@0 C4 eighth.', 'm1@0.75 D4 16th', 'm1@1 E4 eighth.', 'm1@1.75 F4 16th', 'm1@2 r half', 'm2@0 r whole'] }],
+    expect: [{ where: {}, events: ['m1@0 C5 eighth.', 'm1@0.75 D5 16th', 'm1@1 E5 eighth.', 'm1@1.75 F5 16th', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 4,
   },
   {
@@ -99,21 +106,21 @@ const SCENARIOS: Scenario[] = [
     name: 'eighth triplet from a quarter and Cmd+3, then plain eighths',
     xml: FOUR_FOUR,
     script: 'N 5 Cmd+3 c d e 4 f g',
-    expect: [{ where: {}, events: ['m1@0 C4 eighth', 'm1@0.333 D4 eighth', 'm1@0.667 E4 eighth', 'm1@1 F4 eighth', 'm1@1.5 G4 eighth', 'm1@2 r half', 'm2@0 r whole'] }],
+    expect: [{ where: {}, events: ['m1@0 C5 eighth', 'm1@0.333 D5 eighth', 'm1@0.667 E5 eighth', 'm1@1 F5 eighth', 'm1@1.5 G5 eighth', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 6,
   },
   {
     name: 'sixteenth triplet from an eighth and Cmd+3',
     xml: FOUR_FOUR,
     script: 'N 4 Cmd+3 c d e',
-    expect: [{ where: {}, events: ['m1@0 C4 16th', 'm1@0.167 D4 16th', 'm1@0.333 E4 16th', 'm1@0.5 r eighth', 'm1@1 r quarter', 'm1@2 r half', 'm2@0 r whole'] }],
+    expect: [{ where: {}, events: ['m1@0 C5 16th', 'm1@0.167 D5 16th', 'm1@0.333 E5 16th', 'm1@0.5 r eighth', 'm1@1 r quarter', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 4,
   },
   {
     name: 'sixteenth quintuplet from a quarter and Cmd+5',
     xml: FOUR_FOUR,
     script: 'N 5 Cmd+5 c d e f g',
-    expect: [{ where: {}, events: ['m1@0 C4 16th', 'm1@0.2 D4 16th', 'm1@0.4 E4 16th', 'm1@0.6 F4 16th', 'm1@0.8 G4 16th', 'm1@1 r quarter', 'm1@2 r half', 'm2@0 r whole'] }],
+    expect: [{ where: {}, events: ['m1@0 C5 16th', 'm1@0.2 D5 16th', 'm1@0.4 E5 16th', 'm1@0.6 F5 16th', 'm1@0.8 G5 16th', 'm1@1 r quarter', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 6,
   },
   {
@@ -123,8 +130,8 @@ const SCENARIOS: Scenario[] = [
     expect: [{
       where: {},
       events: [
-        ...EIGHTH_SCALE.slice(0, 7), 'm1@3.5 C5 eighth~',
-        'm2@0 C5 eighth', 'm2@0.5 r eighth', 'm2@1 r quarter', 'm2@2 r half',
+        ...EIGHTH_SCALE.slice(0, 7), 'm1@3.5 C6 eighth~',
+        'm2@0 C6 eighth', 'm2@0.5 r eighth', 'm2@1 r quarter', 'm2@2 r half',
       ],
     }],
     batches: 8,
@@ -135,7 +142,7 @@ const SCENARIOS: Scenario[] = [
     script: 'N 4 c d e f g a b 5 . c',
     expect: [{
       where: {},
-      events: [...EIGHTH_SCALE.slice(0, 7), 'm1@3.5 C5 eighth~', 'm2@0 C5 quarter', 'm2@1 r quarter', 'm2@2 r half'],
+      events: [...EIGHTH_SCALE.slice(0, 7), 'm1@3.5 C6 eighth~', 'm2@0 C6 quarter', 'm2@1 r quarter', 'm2@2 r half'],
     }],
     batches: 8,
   },
@@ -143,7 +150,7 @@ const SCENARIOS: Scenario[] = [
     name: 'a half note on beat 3 of a 3/4 bar is tied across the barline',
     xml: THREE_FOUR,
     script: 'N 5 c d 6 e',
-    expect: [{ where: {}, events: ['m1@0 C4 quarter', 'm1@1 D4 quarter', 'm1@2 E4 quarter~', 'm2@0 E4 quarter', 'm2@1 r quarter', 'm2@2 r quarter'] }],
+    expect: [{ where: {}, events: ['m1@0 C5 quarter', 'm1@1 D5 quarter', 'm1@2 E5 quarter~', 'm2@0 E5 quarter', 'm2@1 r quarter', 'm2@2 r quarter'] }],
     batches: 3,
   },
   {
@@ -153,10 +160,10 @@ const SCENARIOS: Scenario[] = [
     expect: [{
       where: {},
       events: [
-        'm1@0 C4 16th', 'm1@0.25 D4 16th', 'm1@0.5 E4 16th', 'm1@0.75 F4 16th',
-        'm1@1 G4 16th', 'm1@1.25 A4 16th', 'm1@1.5 B4 16th', 'm1@1.75 C5 16th',
-        'm1@2 D5 16th', 'm1@2.25 E5 16th', 'm1@2.5 F5 16th', 'm1@2.75 G5 16th',
-        'm1@3 A5 16th', 'm1@3.25 B5 16th', 'm1@3.5 C6 16th', 'm1@3.75 r 16th',
+        'm1@0 C5 16th', 'm1@0.25 D5 16th', 'm1@0.5 E5 16th', 'm1@0.75 F5 16th',
+        'm1@1 G5 16th', 'm1@1.25 A5 16th', 'm1@1.5 B5 16th', 'm1@1.75 C6 16th',
+        'm1@2 D6 16th', 'm1@2.25 E6 16th', 'm1@2.5 F6 16th', 'm1@2.75 G6 16th',
+        'm1@3 A6 16th', 'm1@3.25 B6 16th', 'm1@3.5 C7 16th', 'm1@3.75 r 16th',
         'm2@0 r whole',
       ],
     }],
@@ -166,14 +173,14 @@ const SCENARIOS: Scenario[] = [
     name: 'eighths continue across the barline in 3/4',
     xml: THREE_FOUR,
     script: 'N 4 c d e f g a b c',
-    expect: [{ where: {}, events: [...EIGHTH_SCALE.slice(0, 6), 'm2@0 B4 eighth', 'm2@0.5 C5 eighth', 'm2@1 r quarter', 'm2@2 r quarter'] }],
+    expect: [{ where: {}, events: [...EIGHTH_SCALE.slice(0, 6), 'm2@0 B5 eighth', 'm2@0.5 C6 eighth', 'm2@1 r quarter', 'm2@2 r quarter'] }],
     batches: 8,
   },
   {
     name: 'eighths continue across the barline in 6/8',
     xml: SIX_EIGHT,
     script: 'N 4 c d e f g a b c',
-    expect: [{ where: {}, events: [...EIGHTH_SCALE.slice(0, 6), 'm2@0 B4 eighth', 'm2@0.5 C5 eighth', 'm2@1 r quarter', 'm2@2 r quarter'] }],
+    expect: [{ where: {}, events: [...EIGHTH_SCALE.slice(0, 6), 'm2@0 B5 eighth', 'm2@0.5 C6 eighth', 'm2@1 r quarter', 'm2@2 r quarter'] }],
     batches: 8,
   },
   {
@@ -193,7 +200,7 @@ const SCENARIOS: Scenario[] = [
     click: { staff: 2, voice: 5 },
     script: 'N 4 c d e f g a b c',
     expect: [
-      { where: { staff: 2, voice: 5 }, events: [...EIGHTH_SCALE, 'm2@0 r whole'] },
+      { where: { staff: 2, voice: 5 }, events: [...BASS_EIGHTH_SCALE, 'm2@0 r whole'] },
       { where: { staff: 2, voice: 1 }, events: [] },
     ],
     untouched: [{ staff: 1, voice: 1 }],
@@ -205,7 +212,7 @@ const SCENARIOS: Scenario[] = [
     click: { staff: 2, voice: 5 },
     script: 'N Cmd+Alt+2 4 c d',
     expect: [
-      { where: { staff: 2, voice: 6 }, events: ['m1@0 C4 eighth', 'm1@0.5 D4 eighth', 'm1@1 r quarter', 'm1@2 r half'] },
+      { where: { staff: 2, voice: 6 }, events: ['m1@0 C3 eighth', 'm1@0.5 D3 eighth', 'm1@1 r quarter', 'm1@2 r half'] },
       { where: { staff: 2, voice: 2 }, events: [] },
     ],
     untouched: [{ staff: 2, voice: 5 }, { staff: 1, voice: 1 }],
@@ -216,7 +223,7 @@ const SCENARIOS: Scenario[] = [
     xml: FLUTE_AND_CELLO,
     click: { partIndex: 1 },
     script: 'N 4 c d e f g a b c',
-    expect: [{ where: { partIndex: 1 }, events: EIGHTH_SCALE }],
+    expect: [{ where: { partIndex: 1 }, events: BASS_EIGHTH_SCALE }],
     untouched: [{ partIndex: 0 }],
     batches: 8,
   },
@@ -244,7 +251,7 @@ const SCENARIOS: Scenario[] = [
     name: 'a rest and a triplet in voice 2 start at the cursor',
     xml: QUARTERS_IN_VOICE_ONE,
     script: 'N Cmd+Alt+2 5 0 Cmd+3 c d e 5 0',
-    expect: [{ where: { voice: 2 }, events: ['m1@0 r quarter', 'm1@1 C4 eighth', 'm1@1.333 D4 eighth', 'm1@1.667 E4 eighth', 'm1@2 r quarter', 'm1@3 r quarter'] }],
+    expect: [{ where: { voice: 2 }, events: ['m1@0 r quarter', 'm1@1 C5 eighth', 'm1@1.333 D5 eighth', 'm1@1.667 E5 eighth', 'm1@2 r quarter', 'm1@3 r quarter'] }],
     untouched: [{ voice: 1 }],
     batches: 6,
   },
@@ -254,8 +261,8 @@ const SCENARIOS: Scenario[] = [
     click: { staff: 2, voice: 5 },
     script: 'N 5 c Cmd+Alt+2 3 e f g a',
     expect: [
-      { where: { staff: 2, voice: 5 }, events: ['m1@0 C4 quarter', 'm1@1 r quarter', 'm1@2 r half'] },
-      { where: { staff: 2, voice: 6 }, events: ['m1@0 r quarter', 'm1@1 E4 16th', 'm1@1.25 F4 16th', 'm1@1.5 G4 16th', 'm1@1.75 A4 16th', 'm1@2 r half'] },
+      { where: { staff: 2, voice: 5 }, events: ['m1@0 C3 quarter', 'm1@1 r quarter', 'm1@2 r half'] },
+      { where: { staff: 2, voice: 6 }, events: ['m1@0 r quarter', 'm1@1 E3 16th', 'm1@1.25 F3 16th', 'm1@1.5 G3 16th', 'm1@1.75 A3 16th', 'm1@2 r half'] },
     ],
     untouched: [{ staff: 1, voice: 1 }],
     batches: 5,
@@ -275,7 +282,7 @@ const SCENARIOS: Scenario[] = [
     xml: FLUTE_CLARINET_CELLO,
     click: { partIndex: 1 },
     script: 'N 3 c d e f 4 g a 5 b 6 c',
-    expect: [{ where: { partIndex: 1 }, events: ['m1@0 C4 16th', 'm1@0.25 D4 16th', 'm1@0.5 E4 16th', 'm1@0.75 F4 16th', 'm1@1 G4 eighth', 'm1@1.5 A4 eighth', 'm1@2 B4 quarter', 'm1@3 r quarter'] }],
+    expect: [{ where: { partIndex: 1 }, events: ['m1@0 C5 16th', 'm1@0.25 D5 16th', 'm1@0.5 E5 16th', 'm1@0.75 F5 16th', 'm1@1 G5 eighth', 'm1@1.5 A5 eighth', 'm1@2 B5 quarter', 'm1@3 r quarter'] }],
     untouched: [{ partIndex: 0 }, { partIndex: 2 }],
     batches: 7,
   },
