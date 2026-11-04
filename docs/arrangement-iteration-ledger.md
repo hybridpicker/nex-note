@@ -48,7 +48,7 @@ as not reproduced and dropped.
 | 6 | 1 wrong target (**fixed in iteration 8**) | `addDynamic`, `setHarmonyAt`, `fillSlashMeasure`, `addWords` write to every part with the same staff index | E1, L1, L2, E7 | C |
 | 7 | 1 invalid output (**fixed in iteration 10**) | N.C. exported as `<root-step>N</root-step>` without `<kind>` | L1 | C |
 | 8 | 1 wrong onset (**fixed in iteration 2**) | Mid-bar chord symbols move to beat 1 on reimport | L1 | C |
-| 9 | 1 corruption (*suspected*) | `setCueNote` clears `durationType` | L4 | C |
+| 9 | 1 corruption (**fixed in iteration 11**) | `setCueNote` clears `durationType` | L4 | C |
 | 10 | 1 wrong data (*suspected*) | `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores a hammer-on | L5 | C |
 | 11 | 1 data loss (*suspected*) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
 | 12 | 1 wrong pitch (*suspected*) | Transposing parts play back at written pitch | S2 | C |
@@ -556,3 +556,39 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Cross-app tests and builds: run on the iteration 8–11 stack.
 - Documentation updated: matrix L1, this ledger.
 - Decision: accepted (pending the stack gates).
+
+## Iteration 11 — `setCueNote` marks cue notes instead of deleting their value
+
+- Iteration / date / starting SHA / dirty-tree state: 11 / 2026-11-04 / `7e0f8ce` (local).
+- Track and matrix row: C (priority class 1, corruption); L4.
+- Problem and observable baseline: `setCueNote` (reachable through the AI command catalog) set
+  `durationType` to undefined and cleared the dot, leaving a note with no notated value. New
+  `test/cue-note-command.test.ts` passed 0/3 before.
+- Hypothesis and bounded change:
+  - A cue note keeps its value and duration and is marked with `<cue/>` before the pitch, the
+    same fragment the importer already preserves.
+  - `isCue: false` removes the mark.
+  - Rests and grace notes are rejected with a `cue_command_rejected` diagnostic and no change
+    (MusicXML allows either grace or cue).
+  - Files: `src/score-core/commands/core-command-executor.ts`,
+    `test/cue-note-command.test.ts` (new).
+  - Still missing: cue-size rendering evidence, keyboard and mouse paths, silencing cues in
+    the fallback MIDI.
+- Regression evidence before and after: 0/3 before, 3/3 after; `npm test` 1,308 passed; build
+  passed.
+- Cross-app tests and builds: run on the iteration 8–11 stack.
+- Documentation updated: matrix L4 (MISSING to PARTIAL), this ledger.
+- Decision: accepted (pending the stack gates).
+- Cross-app gates for the iteration 8–11 stack, run on the iteration 11 commit before pushing:
+  - `node scripts/notation-quality-cycle.mjs --browser`: all unit groups passed; browser 89
+    passed, 0 failed.
+  - `npm run test:e2e:doctor`: 5 passed.
+  - `npm run electron:refresh`: 1,308 tests passed, build and packaged app verified.
+  - `npm run ipad:sync` and `npm run ipad:doctor`: passed.
+  - Not run: physical iPad; the Xcode macOS target, which does not exist.
+- Commit SHAs: iteration 8 `6adaf6e`, 9 `e574252`, 10 `7e0f8ce`, 11 is this commit; pushed
+  together after these gates.
+- Decision: iterations 8–11 accepted.
+- Next item selected: iteration 12, transposing parts and playback pitch (S2). Before changing
+  anything, the local MuseScore CLI will render a B-flat clarinet to MIDI with and without
+  `<transpose>`.

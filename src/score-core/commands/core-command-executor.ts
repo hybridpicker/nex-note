@@ -6193,13 +6193,21 @@ export function executeCoreCommands(
       case 'setCueNote': {
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId);
         const event = found?.voice.events[findEventIndex(found.voice, command.timestampNum, command.timestampDen)];
-        if (event) {
-          if (command.isCue) {
-            if (!event.preservedXml) event.preservedXml = {};
-            event.durationType = undefined;
-            event.isDotted = false;
-          }
+        // A cue note keeps its value and duration; MusicXML marks it with <cue/> before the pitch,
+        // the same fragment the importer preserves. Grace notes cannot also be cue notes.
+        if (!event || event.kind !== 'note') {
+          diagnostics.push({ level: 'warning', code: 'cue_command_rejected', message: 'Select a note to mark it as a cue note.' });
+          break;
         }
+        if (nextDocument.graceNotes.some((graceNote) => graceNote.eventId === event.id)) {
+          diagnostics.push({ level: 'warning', code: 'cue_command_rejected', message: 'A grace note cannot also be a cue note.' });
+          break;
+        }
+        const withoutCue = (event.preservedXml?.beforePitch ?? []).filter((fragment) => !/^<cue\s*\/>$/.test(fragment.trim()));
+        event.preservedXml = {
+          ...event.preservedXml,
+          beforePitch: command.isCue ? ['<cue/>', ...withoutCue] : withoutCue,
+        };
         break;
       }
       case 'setMultiMeasureRest': {

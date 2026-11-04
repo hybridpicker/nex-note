@@ -49,8 +49,8 @@ Abbreviations:
 | Status | Rows |
 | --- | --- |
 | PASS | 1 |
-| PARTIAL | 42 |
-| MISSING | 4 |
+| PARTIAL | 43 |
+| MISSING | 3 |
 | BLOCKED | 0 |
 | Total | 47 |
 
@@ -111,7 +111,7 @@ Abbreviations:
 | L1 | Chord symbols: extensions, alterations, slash chords, polychords, N.C.; transposition with the part | PARTIAL: harmony direction string; `setHarmonyAt`, `addChords`; whole-score transpose moves chords. Range, note and part transposition do not. `setHarmonyAt` scoped to the selected part since iteration 8 | Cmd/Ctrl+K inline chord field | NIT chord field; lead-sheet toggle | 1 entry | rendered in e2e | n/a | root/kind/bass PASS; altered chords exported as `<words>`; N.C. exports as `kind none` and 6/9 keeps its added 9th since iteration 10; `<degree>` ignored; mid-bar onset now imported from the measure cursor (iteration 2) | `core-command-executor`, `score-roundtrip-golden`, `e2e/inline-chord-visibility` | PARTIAL | Export altered and added-tone chords (7b9, 7#11, add9) as `<harmony>` with `<degree>` instead of `<words>`; import `<degree>` |
 | L2 | Slash notation, rhythmic slashes with stems, kicks above the staff | PARTIAL: `notehead: 'slash'`, `fillSlashMeasure`, `setNoteStyle`. `fillSlashMeasure` scoped to the selected part since iteration 8 | `Cmd/Ctrl+/`, `Shift+X` | NIT slash button | 1 entry | unverified | slashes sound as pitched notes | `<notehead>slash` PASS | `core-command-executor`, `e2e/notation-tools` | PARTIAL | Reproduce the multi-part fill (priority 1); mute slash noteheads in playback |
 | L3 | Lyrics: verses, hyphenation, melisma extenders, elisions | PARTIAL: `lyrics[]`, `setLyricLine`, `addLyric` (verse 1), `removeLyricLine`. INS sends `syllabic: 'single'` always | CC "focus lyric line"; no lyric entry mode | INS lyrics fields | 1 entry | unverified | n/a | verse/syllabic/text PASS; `<extend>` and `<elision>` **lost** | `score-architecture`, `score-roundtrip-golden`, `user-visible-components` | PARTIAL | Preserve `<extend>` on import/export (priority 1, data loss); then a lyric entry mode |
-| L4 | Cue notes and cue-size staves | MISSING: `setCueNote` only clears `durationType` (*suspected* corruption); no cue field | MISSING | MISSING | 1 entry | n/a | fallback plays cues | `<cue/>` pass-through only | `score-architecture` (pass-through) | MISSING | Reproduce the `setCueNote` defect and reject it atomically until a cue model exists |
+| L4 | Cue notes and cue-size staves | PARTIAL: `setCueNote` marks a note with the preserved `<cue/>` fragment and keeps its value (iteration 11); rests and grace notes are rejected; no cue-size staves | MISSING | MISSING | 1 entry | unverified (cue size) | fallback plays cues | `<cue/>` round-trip PASS | `cue-note-command`, `score-architecture` (pass-through) | PARTIAL | Cue toggle in PAL with a keyboard path; silence cues in the fallback MIDI |
 | L5 | Guitar: TAB, fingering, string numbers, capo, bends, hammer-on, pull-off, slide, vibrato, palm mute, let ring | PARTIAL: `NoteEvent.guitar`, `setGuitarFret`, `toggleGuitarTechnique`, linked TAB. *Suspected*: `addGuitarBend` ignores `bendSemitones`; `addGuitarTap` stores hammer-on. Fingering raw XML only; capo MISSING | TAB button, `Alt/Option+1`–`6`, digits | NIT technique buttons, tuning selector | 1 entry | rendered TAB in e2e | techniques ignored | `<technical>` PASS; bend-alter always 1 | `guitar-tab-semantics`, `repitch-and-tab-entry`, `guitar-pro-import-contract`, `e2e/guitar-tab-sync` | PARTIAL | Reproduce the bend and tap defects (priority 1, wrong data) |
 
 ## Arranging workflow
