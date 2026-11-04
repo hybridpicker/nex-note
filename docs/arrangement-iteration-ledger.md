@@ -379,3 +379,39 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Iteration 4 commit: `b929eec`, pushed; remote verified equal.
 - Decision: accepted (pending the stack gates).
 - Next item selected: iteration 6, tuplets during note input.
+
+## Iteration 6 — Tuplets during note input (MuseScore semantics)
+
+- Iteration / date / starting SHA / dirty-tree state: 6 / 2026-11-04 / `08c14c4` (local, on
+  top of `b929eec`). Owner files left unstaged.
+- Track and matrix row: A (keyboard precision), C; P2.
+- Problem and observable baseline:
+  - In note input, Cmd/Ctrl+3 divided the selected element (a whole-bar rest) instead of
+    using the active duration, and was rejected.
+  - Typing into a tuplet slot committed a normal eighth that broke the group: after `c`, the
+    tuplet showed `C4 eighth | r 32nd.`.
+  - Entry-matrix scenario "eighth triplet from a quarter and Cmd+3" failed. The new e2e case
+    failed on the old hook.
+- Hypothesis and bounded change:
+  - In note input, Cmd/Ctrl+2..9 builds one batch at the cursor: `replaceWithRest` with the
+    active duration (the tuplet's total length, as in MuseScore), then `addTuplet` anchored at
+    that onset.
+  - The cursor moves to the first unit, and the entry value becomes the unit (the total halved
+    once per power of two of the normal count).
+  - A typed pitch (or a Shift chord tone) on a tuplet slot of the same unit value commits
+    through the existing `editTupletUnit` command, so the ratio and identities are kept.
+  - Outside note input the old "divide the selected element" behavior is unchanged.
+  - Files: `hooks/useNoteEditor.ts`, `test/entry-matrix.test.ts`,
+    `e2e/notation-tools.spec.ts`.
+- Regression evidence before and after:
+  - Entry matrix: eighth triplet, sixteenth triplet (eighth + Cmd+3) and sixteenth quintuplet
+    (quarter + Cmd+5) pass, each with one batch per action.
+  - e2e "a quarter and Cmd/Ctrl+3 during note input": failed before, passes after, with a
+    clean strict Doctor.
+  - `npm test`: 1,287 passed, 1 `todo`, 0 failed.
+  - `npm run build`: passed; application `tsc` clean.
+- Cross-app tests and builds: run on the stack; see iteration 7.
+- Documentation updated: `docs/user-manual.en.md` (tuplets during note input),
+  `docs/keyboard-shortcuts.md` (Cmd/Ctrl+2..9 row), matrix P2, this ledger.
+- Decision: accepted (pending the stack gates).
+- Next item selected: iteration 7, splitting at the barline.

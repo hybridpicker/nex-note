@@ -90,10 +90,23 @@ const SCENARIOS: Scenario[] = [
   },
   {
     name: 'eighth triplet from a quarter and Cmd+3, then plain eighths',
-    todo: 'iteration 6: tuplet at the cursor and entry into tuplet slots',
     xml: FOUR_FOUR,
     script: 'N 5 Cmd+3 c d e 4 f g',
     expect: [{ where: {}, events: ['m1@0 C4 eighth', 'm1@0.333 D4 eighth', 'm1@0.667 E4 eighth', 'm1@1 F4 eighth', 'm1@1.5 G4 eighth', 'm1@2 r half', 'm2@0 r whole'] }],
+    batches: 6,
+  },
+  {
+    name: 'sixteenth triplet from an eighth and Cmd+3',
+    xml: FOUR_FOUR,
+    script: 'N 4 Cmd+3 c d e',
+    expect: [{ where: {}, events: ['m1@0 C4 16th', 'm1@0.167 D4 16th', 'm1@0.333 E4 16th', 'm1@0.5 r eighth', 'm1@1 r quarter', 'm1@2 r half', 'm2@0 r whole'] }],
+    batches: 4,
+  },
+  {
+    name: 'sixteenth quintuplet from a quarter and Cmd+5',
+    xml: FOUR_FOUR,
+    script: 'N 5 Cmd+5 c d e f g',
+    expect: [{ where: {}, events: ['m1@0 C4 16th', 'm1@0.2 D4 16th', 'm1@0.4 E4 16th', 'm1@0.6 F4 16th', 'm1@0.8 G4 16th', 'm1@1 r quarter', 'm1@2 r half', 'm2@0 r whole'] }],
     batches: 6,
   },
   {

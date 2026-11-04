@@ -2017,6 +2017,69 @@ export function useNoteEditor(
   }) => {
     const { target, duration, dotted, label, advanceFrom } = input;
     const durationType = DURATION_TYPE_MAP[duration];
+
+    // Step-time entry into a tuplet slot: when the entry value is the slot's own unit, the pitch
+    // (or chord tone) goes into the unit through the tuplet editor, so the group keeps its ratio.
+    if (noteInputModeRef.current && (target.mode === 'replace' || target.mode === 'chord') && !input.guitar && !input.notehead) {
+      const slot = findEventReference(coreDocument, {
+        coreMeasureId: target.measureId ?? null,
+        corePartId: target.corePartId ?? null,
+        measureNumber: target.measureNumber,
+        staffIndex: target.staffIndex,
+        voiceId: target.voiceId,
+        timestampNum: target.timestampNum,
+        timestampDen: target.timestampDen,
+      })?.event ?? null;
+      const slotInTuplet = Boolean(slot && coreDocument?.tuplets.some((tuplet) => tuplet.eventIds.includes(slot.id)));
+      if (slot && slotInTuplet && slot.durationType === durationType && Boolean(slot.isDotted) === dotted) {
+        const unitCommands: ScoreCommand[] = [{
+          type: 'editTupletUnit',
+          action: target.mode === 'chord' && slot.kind === 'note' ? 'chord' : 'pitch',
+          step: target.step,
+          alter: target.alter,
+          octave: target.octave,
+          coreEntityId: slot.id,
+          coreMeasureId: target.measureId ?? null,
+          corePartId: target.corePartId ?? null,
+          measureNumber: target.measureNumber,
+          staffIndex: target.staffIndex,
+          voiceId: slot.voiceId,
+          timestampNum: slot.timestampNum,
+          timestampDen: slot.timestampDen,
+        }];
+        const unitNext = applyEditorCommands(unitCommands);
+        const unitRejection = unitNext.diagnostics.find((entry) => entry.code === 'tuplet_command_rejected');
+        if (unitNext.xml === xml || unitRejection) {
+          warnRejectedEdit(label, {
+            rejectionReason: unitRejection?.message ?? 'The tuplet unit could not take this pitch.',
+            target,
+          });
+          return false;
+        }
+        const unitLocator = {
+          coreEntityId: slot.id,
+          coreMeasureId: target.measureId ?? null,
+          corePartId: target.corePartId ?? null,
+          measureNumber: target.measureNumber,
+          staffIndex: target.staffIndex,
+          voiceId: slot.voiceId,
+          timestampNum: slot.timestampNum,
+          timestampDen: slot.timestampDen,
+        };
+        commitNoteInputUpdate(unitCommands, unitNext.coreDocument, unitLocator, advanceFrom, {
+          isRest: false,
+          step: target.step,
+          octave: target.octave,
+          alter: target.alter,
+        }, {
+          audition: input.audition,
+          advanceCursor: target.mode !== 'chord',
+        });
+        if (input.writtenAccidental) setSelectedAccidentalLive(null);
+        return true;
+      }
+    }
+
     const inspected = inspectResolvedEditTarget({
       coreDocument,
       target,
@@ -3337,6 +3400,77 @@ export function useNoteEditor(
     const first = targets[0]!;
     const { actualNotes, normalNotes, label } = normalizeTupletPreset(preset);
     dbg.editor(`addTuplet preset=${label} anchor=${first.coreEntityId ?? 'timestamp'} m.${first.measureNumber}`);
+
+    // Note input (MuseScore): the active duration is the total length of the new tuplet at the
+    // cursor. Quarter + Cmd/Ctrl+3 gives three triplet eighths, and entry continues with the unit.
+    if (noteInputModeRef.current) {
+      const totalDuration = selectedDurationRef.current;
+      const totalDotted = isDottedRef.current;
+      const tupletAtCursor: ScoreCommand[] = [{
+        type: 'replaceWithRest',
+        coreEntityId: first.coreEntityId ?? null,
+        coreMeasureId: first.coreMeasureId ?? null,
+        corePartId: first.corePartId ?? null,
+        measureNumber: first.measureNumber,
+        staffIndex: first.staffIndex,
+        voiceId: first.voiceId,
+        timestampNum: first.timestampNum,
+        timestampDen: first.timestampDen,
+        durationType: DURATION_TYPE_MAP[totalDuration],
+        isDotted: totalDotted,
+      }, {
+        type: 'addTuplet',
+        coreMeasureId: first.coreMeasureId ?? undefined,
+        corePartId: first.corePartId ?? undefined,
+        measureNumber: first.measureNumber,
+        staffIndex: first.staffIndex,
+        voiceId: first.voiceId,
+        startTimestampNum: first.timestampNum,
+        startTimestampDen: first.timestampDen,
+        stopTimestampNum: first.timestampNum,
+        stopTimestampDen: first.timestampDen,
+        actualNotes,
+        normalNotes,
+        bracket: true,
+        showNumber: 'actual',
+      }];
+      const nextAtCursor = applyEditorCommands(tupletAtCursor);
+      const rejectedAtCursor = nextAtCursor.diagnostics.find((entry) => entry.code === 'tuplet_command_rejected');
+      if (nextAtCursor.xml === xml || rejectedAtCursor) {
+        warnRejectedEdit('addTuplet', {
+          command: tupletAtCursor[1],
+          rejectionReason: rejectedAtCursor?.message ?? 'The active duration cannot hold this tuplet at the cursor.',
+        });
+        return;
+      }
+      onApplyCommands(tupletAtCursor, { selectionAnchor: toSelectionAnchor(first, []) });
+      const firstUnit = resolveRecentInputFromDocument(nextAtCursor.coreDocument, {
+        coreEntityId: first.coreEntityId ?? null,
+        coreMeasureId: first.coreMeasureId ?? null,
+        corePartId: first.corePartId ?? null,
+        measureNumber: first.measureNumber,
+        staffIndex: first.staffIndex,
+        voiceId: first.voiceId,
+        timestampNum: first.timestampNum,
+        timestampDen: first.timestampDen,
+      }, { isRest: true });
+      if (firstUnit) {
+        selectSingleNote(firstUnit, {
+          visualOnly: false,
+          text: null,
+          measureNumber: firstUnit.measureNumber,
+          staffIndex: firstUnit.staffIndex,
+        });
+      }
+      // Unit value: the total halved once per power of two in the normal count (3:2 -> /2, 5:4 -> /4).
+      let unit = totalDuration;
+      if (!totalDotted && Number.isInteger(Math.log2(normalNotes))) {
+        for (let step = 0; step < Math.log2(normalNotes); step += 1) unit = halveDuration(unit);
+        setSelectedDurationLive(unit);
+      }
+      return;
+    }
+
     const commands: ScoreCommand[] = [{
       type: 'addTuplet',
       coreEntityId: first.coreEntityId ?? undefined,
@@ -3364,7 +3498,7 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnRejectedEdit, xml]);
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, resolveRecentInputFromDocument, selectSingleNote, setSelectedDurationLive, warnRejectedEdit, xml]);
 
   const navigateNote = useCallback((direction: 'prev' | 'next') => {
     if (!selectedNote) return;

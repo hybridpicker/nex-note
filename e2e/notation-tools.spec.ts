@@ -820,6 +820,26 @@ ${upper}<backup><duration>8</duration></backup>
   await expect.poll(async () => (await lowerStaffVoices())[0]).toMatch(/^5:C@0\/\d+,.*[A-G]@/);
 });
 
+test('a quarter and Cmd/Ctrl+3 during note input create an eighth triplet that typed pitches fill', async ({ page }) => {
+  await bootWithScore(page);
+  await clickRenderedNotehead(page, 0);
+  await expectSingleNoteSelection(page, 0);
+  await page.keyboard.press('N');
+  await page.keyboard.press('5');
+  await page.keyboard.press('Control+3');
+  for (const key of ['c', 'd', 'e']) await page.keyboard.press(key);
+  const tripletNotes = async () => {
+    const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
+    return (measure.voices[0]?.events ?? [])
+      .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen < 0.25)
+      .map((event) => `${event.kind === 'note' ? event.pitch.step : ''}:${event.durationType}`);
+  };
+  await expect.poll(tripletNotes).toEqual(['C:eighth', 'D:eighth', 'E:eighth']);
+  const xml = await readCurrentXml(page);
+  expect((xml.match(/<time-modification>\s*<actual-notes>3<\/actual-notes>\s*<normal-notes>2<\/normal-notes>/g) ?? []).length).toBe(3);
+  await expectNoDoctorIssues(page, 'after triplet entry at the cursor');
+});
+
 test('one-shot accidental entry carries within the measure and preserves atomic undo/redo', async ({ page }) => {
   await bootWithScore(page);
   const initialXml = await readCurrentXml(page);

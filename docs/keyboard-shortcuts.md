@@ -133,7 +133,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Shift+.` | Accent toggeln | Auswahl erforderlich |
 | `Shift+6` | Marcato/Strong Accent toggeln | Auswahl erforderlich |
 | `Shift+-` | Tenuto toggeln | Auswahl erforderlich |
-| `Cmd/Ctrl+2` ... `9` | Dauer genau einer ausgewaehlten Note, eines Akkords oder einer Pause in ein Tuplet 2:3 bis 9:8 teilen; dieselben Aktionen sind als Toolbar-Buttons verfuegbar | Genau ein rhythmischer Anker; nicht darstellbare Dauern, Bereiche, Ties und bereits verschachtelte Tuplets werden sichtbar abgelehnt |
+| `Cmd/Ctrl+2` ... `9` | In der Noteneingabe (wie MuseScore): die aktive Dauer ist die Gesamtlänge des neuen Tuplets am Cursor (Viertel + `Cmd/Ctrl+3` = Achteltriole); der Cursor springt in die Gruppe, die Eingabedauer wird zur Einheit, getippte Tonhöhen füllen die Einheiten. Außerhalb der Noteneingabe: Dauer genau einer ausgewaehlten Note, eines Akkords oder einer Pause in ein Tuplet 2:3 bis 9:8 teilen; dieselben Aktionen sind als Toolbar-Buttons verfuegbar | Genau ein rhythmischer Anker; nicht darstellbare Dauern, Bereiche, Ties und bereits verschachtelte Tuplets werden sichtbar abgelehnt |
 | `/` | Eigene zeitlose Grace Note vor dem ausgewaehlten Anker einfuegen | Auswahl erforderlich; Hauptnote bleibt unveraendert |
 | `Cmd/Ctrl+/` | aktuellen Takt mit rhythmischen Slashes füllen | Auswahl erforderlich |
 | `Cmd/Ctrl+K` | Inline-Akkordcursor an der ausgewählten Note öffnen und vorhandenes Symbol zum Direktbearbeiten laden | Auswahl erforderlich |

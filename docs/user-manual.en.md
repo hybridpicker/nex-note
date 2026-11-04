@@ -94,6 +94,7 @@ Turn note input on with the toolbar button or `N`.
 | Repeat last input | `R` repeats the last entered note when note input has an active previous note. |
 | Voices | Toolbar or `Cmd/Ctrl+Alt/Option+1...4`. |
 | Insert/overwrite | `I` switches entry behavior. |
+| Tuplets during note input | Choose the total length (for example a quarter), press `Cmd/Ctrl+3` for a triplet (`2`–`9` for other tuplets). The cursor moves into the new group, the entry value becomes its unit (triplet eighths), and typed pitches fill the units in place. Outside note input, `Cmd/Ctrl+2`–`9` divides the selected note or rest. |
 | Chords | Chord input mode or `Shift+A...G` adds chord tones. |
 | Tied notes and chords | In Note Input, choose the second duration and press `T`; nex-note creates the next same-pitch note or complete chord, ties every tone, and advances once. Outside Note Input, `T` toggles ties on the selection. |
 | Accidentals | Flat, natural, sharp, double-flat, and double-sharp are one-shot tools for the next successful pitched entry; normal measure carry applies afterward. |
