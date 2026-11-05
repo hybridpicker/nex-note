@@ -150,7 +150,7 @@ Press `J` repeatedly to cycle a note, chord, or range through conventional enhar
 | Articulations | Staccato, staccatissimo, accent, marcato, tenuto, fermata. |
 | Dynamics | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
 | Tie | In normal mode, links selected pitches to the next matching onset. In Note Input, creates the next note or chord and its ties atomically. Shortcut: `T`. |
-| Slur | Spans the selection or the next note. Shortcut: `S`. |
+| Slur | Spans the selection or the next note. Shortcut: `S`. In Note Input, `S` after an entry opens a slur that each following note extends; `S` again ends it. |
 | Grace note | `/` inserts a separate zero-time grace note before the selected anchor without changing the main note's duration; barline starts and paired notation/TAB are supported. |
 | Tuplets | Select exactly one note, chord, or rest, then divide its duration with toolbar ratios 2:3 through 9:8 or `Cmd/Ctrl+2...9`; the remaining units are editable rests. |
 

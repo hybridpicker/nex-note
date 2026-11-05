@@ -285,3 +285,10 @@ and `Shift+X` (slash notehead) act on the note just entered, as in MuseScore, wh
 cursor stays on the next position. An explicit range selection is used as selected.
 `Shift+Left`/`Shift+Right` right after an entry start the range at the note just entered, so
 `C D E` followed by two `Shift+Left` and `S` slurs C to E, as in MuseScore.
+
+Slurs during note input (MuseScore parity, read from `NotationActionController::addSlur`,
+`NotationInteraction::doAddSlur` and `NoteInput::addPitch`): `S` after an entry opens a slur on the
+note just entered, and every note entered after it extends the slur to itself, in the same Undo step as
+the note. `S` again closes it, as does leaving note input. `S` on a `Shift+Arrow` range slurs the range
+and also leaves that slur open, so the next entered note extends it (MuseScore does the same). A range
+selected in note input does not move the input cursor: the next entry goes after the last entered note.

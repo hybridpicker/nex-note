@@ -1287,6 +1287,38 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   `src/score-core/commands/core-command-executor.ts`, tests.
 - Decision: accepted.
 
+## Iteration 34 — Slurs during note input
+
+- Iteration / date / starting SHA / dirty-tree state: 34 / 2026-11-05 / `d7bb40c` (local). The owner's
+  uncommitted docs stay untouched.
+- Track and matrix row: A, priority class 2 (precision, input cursor lost); E5, parity matrix.
+- Problem and observable baseline: `N 4 c s d e f s` created no slur (`S` needs a selection and the
+  cursor slot has none). After a `Shift+Arrow` slur over entered notes the selection stayed a range, so
+  the next entry targeted its start and was rejected. New `test/entry-slur-in-input.test.ts`: 0/4 before.
+- MuseScore (read from `musescore/MuseScore` main, not memory):
+  - `NotationActionController::addSlur` (`notationscene/internal/notationactioncontroller.cpp`): in note
+    input with an open slur it calls `resetSlur()`; otherwise `addSlurToSelection()`.
+  - `NotationInteraction::doAddSlur` (`notation/internal/notationinteraction.cpp`): a range slurs
+    first to last; a single note starts a slur with no end; in note input the result is stored with
+    `NoteInput::addSlur`, i.e. `InputState::setSlur`.
+  - `NoteInput::addPitch` (`engraving/editing/noteinput.cpp`): `if (is.slur())` the slur's end element
+    becomes the note just entered. `endNoteInput` clears the slur.
+  - The source does not state whether a range slur extended by later notes is intended; it follows from
+    the code above, so nex-note matches the code.
+- Hypothesis and bounded change: `inputSlurRef` holds the open slur (start, last end). `S` in note input
+  closes it, or opens one on the note just entered, or slurs a range and opens it. `commitNoteInputUpdate`
+  appends the `toggleSlur` commands (remove the previous span, add start to the new note) to the entry's
+  own batch, so each note is one Undo step. A `Shift+Arrow` range remembers the cursor slot it started from
+  (`rangeCursorRef`); `keepingInputCursor` restores it after an action on the range, so the next entry
+  follows the last note. Both refs clear when note input ends or a note is selected.
+  Files: `hooks/useNoteEditor.ts`, `test/entry-slur-in-input.test.ts`, `docs/keyboard-shortcuts.md`,
+  `docs/user-manual.en.md`.
+- Regression evidence before and after: 4/4 after; all `entry-*`, user-visible and note-editor tests
+  (493) pass.
+- Not covered: an open slur does not follow entries that jump to another part, staff or voice (they are
+  skipped), and rests do not extend it. The open slur has no visual marker yet.
+- Decision: accepted.
+
 ## Gates for the iteration 24–31 stack and program stop
 
 - Run on `7f82975`:

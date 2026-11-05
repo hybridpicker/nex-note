@@ -975,6 +975,13 @@ export function useNoteEditor(
   const selectedVisualRef = useRef<VisualSelection | null>(null);
   const lastNoteInputRef = useRef<SelectedNote | null>(null);
   const noteInputModeRef = useRef(false);
+  /**
+   * The slur that note input keeps open (MuseScore InputState::slur): every note entered after `S`
+   * extends it to the new note, until `S` again or the end of note input.
+   */
+  const inputSlurRef = useRef<{ start: SelectedNote; end: SelectedNote | null } | null>(null);
+  /** The input cursor slot a Shift+Arrow range was started from; the range does not move it. */
+  const rangeCursorRef = useRef<SelectedNote | null>(null);
   /** The last entered note when the input position is past the end of the score (MuseScore beyondScore). */
   const beyondScoreRef = useRef<SelectedNote | null>(null);
   const onNoteInputActivatedRef = useRef(options?.onNoteInputActivated);
@@ -1059,6 +1066,10 @@ export function useNoteEditor(
     const entering = value && !noteInputModeRef.current;
     noteInputModeRef.current = value;
     setNoteInputMode(value);
+    if (!value) {
+      inputSlurRef.current = null;
+      rangeCursorRef.current = null;
+    }
     if (entering) onNoteInputActivatedRef.current?.();
   }, []);
 
@@ -1183,6 +1194,7 @@ export function useNoteEditor(
   const selectSingleNote = useCallback((note: SelectedNote | null, visual?: VisualSelection | null) => {
     if (!note) return false;
     if (beyondScoreRef.current && !sameRhythmicPosition(note, beyondScoreRef.current)) beyondScoreRef.current = null;
+    rangeCursorRef.current = null;
     selectedNotesRef.current = [note];
     setSelectedNotes([note]);
     setSelectedNoteLive(note);
@@ -2084,9 +2096,35 @@ export function useNoteEditor(
         ? toSelectionAnchor(selectionAfterUpdate, [selectionAfterUpdate])
         : toSelectionAnchor(selectedNote, selectedNotes));
 
-    if (!behavior?.skipHistory && !onApplyCommands(commands, {
+    // The open input slur follows the note just entered, in the same command batch (one Undo step).
+    const inputSlur = inputSlurRef.current;
+    const extendsInputSlur = Boolean(
+      inputSlur && enteredNote && !enteredNote.isRest && !behavior?.skipHistory
+      && enteredNote.corePartId === inputSlur.start.corePartId
+      && enteredNote.staffIndex === inputSlur.start.staffIndex
+      && enteredNote.voiceId === inputSlur.start.voiceId
+      && compareSelectedNotes(enteredNote, inputSlur.end ?? inputSlur.start) > 0,
+    );
+    const slurLocator = (note: SelectedNote) => ({
+      measureNumber: note.measureNumber,
+      staffIndex: note.staffIndex,
+      voiceId: note.voiceId,
+      timestampNum: note.timestampNum,
+      timestampDen: note.timestampDen,
+    });
+    const slurCommands: ScoreCommand[] = extendsInputSlur && inputSlur && enteredNote
+      ? [inputSlur.end, enteredNote].flatMap((stop) => stop ? [{
+        type: 'toggleSlur' as const,
+        corePartId: inputSlur.start.corePartId ?? null,
+        ...slurLocator(inputSlur.start),
+        stopLocator: slurLocator(stop),
+      }] : [])
+      : [];
+
+    if (!behavior?.skipHistory && !onApplyCommands([...commands, ...slurCommands], {
       selectionAnchor: persistedSelectionAnchor,
     })) return false;
+    if (extendsInputSlur && inputSlur && enteredNote) inputSlur.end = enteredNote;
 
     if (enteredNote) {
       lastNoteInputRef.current = {
@@ -3970,6 +4008,7 @@ export function useNoteEditor(
     const cursor = selectedNoteRef.current ?? selectedNote;
     const startsFromEntered = Boolean(noteInputModeRef.current && entered && cursor && entered !== cursor);
     if (startsFromEntered) lastSelectedRef.current = entered;
+    if (noteInputModeRef.current && cursor && selectedNotesRef.current.length <= 1) rangeCursorRef.current = cursor;
     const anchor = lastSelectedRef.current;
     if (!anchor) {
       navigateNote(direction);
@@ -4429,9 +4468,12 @@ export function useNoteEditor(
     const keepingInputCursor = (action: () => void) => {
       const cursor = selectedNoteRef.current ?? selectedNote;
       const actsOnEnteredNote = Boolean(cursor && resolveEditTargets().note !== cursor);
+      // A Shift+Arrow range in note input leaves the cursor where it was; the action ends the range.
+      const rangeCursor = noteInputModeRef.current && selectedNotesRef.current.length > 1 ? rangeCursorRef.current : null;
       action();
-      if (actsOnEnteredNote && cursor) {
-        selectSingleNote(cursor, { visualOnly: false, text: null, measureNumber: cursor.measureNumber, staffIndex: cursor.staffIndex });
+      const restore = rangeCursor ?? (actsOnEnteredNote ? cursor : null);
+      if (restore) {
+        selectSingleNote(restore, { visualOnly: false, text: null, measureNumber: restore.measureNumber, staffIndex: restore.staffIndex });
       }
     };
 
@@ -4683,6 +4725,24 @@ export function useNoteEditor(
     }
 
     if (key === 'S') {
+      if (noteInputModeRef.current && !chordInputModeRef.current) {
+        // MuseScore: S ends the open input slur; otherwise it slurs the selection (the note just
+        // entered, or a Shift+Arrow range) and keeps that slur open for the notes entered next.
+        e.preventDefault();
+        if (inputSlurRef.current) {
+          inputSlurRef.current = null;
+          return;
+        }
+        const range = selectedNotesRef.current.length > 1 ? [...selectedNotesRef.current].filter((entry) => !entry.isRest).sort(compareSelectedNotes) : [];
+        if (range.length > 1) {
+          keepingInputCursor(toggleSlur);
+          inputSlurRef.current = { start: range[0]!, end: range[range.length - 1]! };
+          return;
+        }
+        const entered = resolveEditTargets().note;
+        if (entered && !entered.isRest) inputSlurRef.current = { start: entered, end: null };
+        return;
+      }
       if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); toggleSlur(); }
       return;
     }
