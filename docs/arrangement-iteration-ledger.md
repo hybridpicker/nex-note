@@ -1319,6 +1319,27 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   skipped), and rests do not extend it. The open slur has no visual marker yet.
 - Decision: accepted.
 
+## Iteration 35 — T at the end of the score
+
+- Iteration / date / starting SHA / dirty-tree state: 35 / 2026-11-05 / `ed7983f` (local). The owner's
+  uncommitted docs stay untouched.
+- Track and matrix row: A, priority class 1 (silent no-op at the end of a score); parity matrix.
+- Problem and observable baseline: `T` with the note in the last position found no next slot and was
+  rejected without any change. New `test/entry-tie-beyond-score.test.ts` (a note, a chord, voice 2, a rest):
+  3 of 4 failed before; the rest case already did nothing, as intended.
+- MuseScore (`EditTie::cmdAddTie`, `src/engraving/editing/edittie.cpp`, read from `main`): it moves the
+  input position to the next slot and, `if (is.beyondScore())`, calls `score->appendMeasures(1)` and moves
+  again, then adds the note there and ties to it. For a rest there is no note to tie
+  (`cmdTieNoteList` only lists notes), so nothing happens.
+- Hypothesis and bounded change: when `T` finds no next slot and the input is past the end
+  (`beyondScoreCursor`), it reuses `enterBeyondScore` with the source chord's pitches and the ties as
+  following commands, so the new bar, the notes and the ties are one batch and one Undo step. Voice 2
+  gets a bar for voice 2 only. File: `hooks/useNoteEditor.ts`.
+- Regression evidence before and after: 4/4 after; all `entry-*` and user-visible note-editor tests (464)
+  pass; application `tsc` clean.
+- Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.
+
 ## Gates for the iteration 24–31 stack and program stop
 
 - Run on `7f82975`:

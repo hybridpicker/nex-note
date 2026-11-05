@@ -2180,6 +2180,8 @@ export function useNoteEditor(
     lastEntered: SelectedNote,
     pitches: Array<{ step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental }> | null,
     value?: { duration: NoteDuration; dotted: boolean },
+    /** Commands that follow the new bar's note in the same batch, such as the ties of `T`. */
+    followingCommands: ScoreCommand[] = [],
   ) => {
     const duration = value?.duration ?? selectedDurationRef.current;
     const dotted = value?.dotted ?? isDottedRef.current;
@@ -2218,6 +2220,7 @@ export function useNoteEditor(
         : [newBarHasEntryVoice
           ? { type: 'replaceWithRest' as const, coreEntityId: null, ...newBar, durationType, isDotted: dotted }
           : { type: 'insertRestAt' as const, ...newBar, durationType, isDotted: dotted }]),
+      ...followingCommands,
     ];
     const next = applyEditorCommands(commands);
     if (next.xml === xml || next.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) {
@@ -2966,6 +2969,27 @@ export function useNoteEditor(
       ));
     if (sourceChord.length === 0) return false;
 
+    const sourceTieCommands: ScoreCommand[] = [];
+    sourceChord.forEach((pitch) => {
+      const sourceEvent = findEventReference(coreDocument, pitch)?.event;
+      if (sourceEvent?.kind === 'note' && !sourceEvent.tieStart) {
+        sourceTieCommands.push({
+          type: 'toggleTie',
+          coreEntityId: pitch.coreEntityId ?? null,
+          coreMeasureId: pitch.coreMeasureId ?? null,
+          corePartId: pitch.corePartId ?? null,
+          step: pitch.step,
+          octave: pitch.octave,
+          alter: pitch.alter,
+          measureNumber: pitch.measureNumber,
+          staffIndex: pitch.staffIndex,
+          voiceId: pitch.voiceId,
+          timestampNum: pitch.timestampNum,
+          timestampDen: pitch.timestampDen,
+        });
+      }
+    });
+
     const selectedIsNextSlot = Boolean(
       visibleSelection
       && isLocalNoteInputAdvance(sourceAnchor, visibleSelection),
@@ -2974,6 +2998,16 @@ export function useNoteEditor(
       ? visibleSelection
       : findNextRhythmicSelection(coreDocument, sourceAnchor);
     if (!targetAnchor || !isLocalNoteInputAdvance(sourceAnchor, targetAnchor)) {
+      // MuseScore EditTie::cmdAddTie: past the end of the score `T` appends a bar and ties into it.
+      const atEnd = beyondScoreCursor();
+      if (!targetAnchor && atEnd && sameRhythmicPosition(atEnd, sourceAnchor)) {
+        return enterBeyondScore(
+          atEnd,
+          sourceChord.map((pitch) => ({ step: pitch.step, octave: pitch.octave, alter: pitch.alter })),
+          undefined,
+          sourceTieCommands,
+        );
+      }
       warnRejectedEdit('insertTiedNote', {
         rejectionReason: 'next-rhythmic-slot-missing',
         source: sourceAnchor,
@@ -3051,25 +3085,7 @@ export function useNoteEditor(
         guitar: pitch.guitar,
       });
     });
-    sourceChord.forEach((pitch) => {
-      const sourceEvent = findEventReference(coreDocument, pitch)?.event;
-      if (sourceEvent?.kind === 'note' && !sourceEvent.tieStart) {
-        commands.push({
-          type: 'toggleTie',
-          coreEntityId: pitch.coreEntityId ?? null,
-          coreMeasureId: pitch.coreMeasureId ?? null,
-          corePartId: pitch.corePartId ?? null,
-          step: pitch.step,
-          octave: pitch.octave,
-          alter: pitch.alter,
-          measureNumber: pitch.measureNumber,
-          staffIndex: pitch.staffIndex,
-          voiceId: pitch.voiceId,
-          timestampNum: pitch.timestampNum,
-          timestampDen: pitch.timestampDen,
-        });
-      }
-    });
+    commands.push(...sourceTieCommands);
 
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
@@ -3096,7 +3112,7 @@ export function useNoteEditor(
       },
     );
     return true;
-  }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, selectedNote, warnNoOpEdit, warnRejectedEdit, xml]);
+  }, [applyEditorCommands, beyondScoreCursor, commitNoteInputUpdate, coreDocument, enterBeyondScore, selectedNote, warnNoOpEdit, warnRejectedEdit, xml]);
 
   const insertGuitarFret = useCallback((string: GuitarStringNumber, fret: number, tuningId = selectedGuitarTuningRef.current) => {
     const tuning = resolveGuitarTuning(tuningId);

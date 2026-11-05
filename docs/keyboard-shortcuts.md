@@ -278,6 +278,8 @@ parts, as in MuseScore, so `4 C 5 D E` gives an eighth C, a quarter D and E on b
 Past the end of the score: the next note, rest, MIDI key or `M` commit after the last position
 appends one bar and writes there, in one Undo step, as in MuseScore. A click or arrow key on the
 last note overwrites it instead.
+`T` at the last position of the score also appends one bar and writes the tied note (every note of a
+chord, in the same voice) there, in one Undo step, as MuseScore's `EditTie::cmdAddTie` does.
 
 Selection keys during note input (MuseScore parity): after entering a note, the articulation
 keys (`Shift+S`, `Shift+.`, `Shift+6`, `Shift+-`), `/` (grace note), `J` (respell), `X` (stem)

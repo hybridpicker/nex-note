@@ -101,7 +101,7 @@ Turn note input on with the toolbar button or `N`.
 | Marking while entering | Articulation keys, `/` (grace), `J` (respell), `X` and `Shift+X` act on the note you just entered, as in MuseScore; the next letter still goes to the next position. `Shift+Left`/`Shift+Right` start a range at that note. |
 | Voices while entering | Changing the voice keeps the input position: the next note or rest starts at the cursor in the new voice, also in a bar where that voice does not exist yet. |
 | Rests that start a bar | A rest typed at the start of a bar stays that value, also when no notes follow it yet (`C D E F`, `0`, `G` puts G on beat 2 of the next bar). Bars further on stay plain whole-bar rests. |
-| Past the end of the score | The next note or rest after the last position appends a bar and goes there, in one Undo step, so the last note is never replaced. |
+| Past the end of the score | The next note or rest after the last position appends a bar and goes there, in one Undo step, so the last note is never replaced. `T` at the last position does the same: it appends a bar and ties into it. |
 | Values across beats | A value that crosses a beat is written as tied notes, or as several rests (an off-beat quarter becomes eighth–tie–eighth). The whole value is kept and the cursor moves past it, so the next note never replaces its tied tail. |
 | Tied notes and chords | In Note Input, choose the second duration and press `T`; nex-note creates the next same-pitch note or complete chord, ties every tone, and advances once. Outside Note Input, `T` toggles ties on the selection. |
 | Accidentals | Flat, natural, sharp, double-flat, and double-sharp are one-shot tools for the next successful pitched entry; normal measure carry applies afterward. |
