@@ -148,7 +148,7 @@ Press `J` repeatedly to cycle a note, chord, or range through conventional enhar
 | Area | Features |
 | --- | --- |
 | Articulations | Staccato, staccatissimo, accent, marcato, tenuto, fermata. |
-| Dynamics | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. |
+| Dynamics | `pp`, `p`, `mp`, `mf`, `f`, `ff`, `fff`, `sfz`. From the keyboard, `Alt/Option+.` makes the dynamic of the note just entered (or of the selection) one level louder and `Alt/Option+,` one level softer; a note without a dynamic starts from `mf`. `Cmd/Ctrl+D` stays Duplicate (MuseScore uses it to add a dynamic). |
 | Tie | In normal mode, links selected pitches to the next matching onset. In Note Input, creates the next note or chord and its ties atomically. Shortcut: `T`. |
 | Slur | Spans the selection or the next note. Shortcut: `S`. In Note Input, `S` after an entry opens a slur that each following note extends; `S` again ends it. |
 | Grace note | `/` inserts a separate zero-time grace note before the selected anchor without changing the main note's duration; barline starts and paired notation/TAB are supported. |

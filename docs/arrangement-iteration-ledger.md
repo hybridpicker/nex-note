@@ -68,7 +68,7 @@ as not reproduced and dropped.
 | 26 | 1 data loss (**fixed in iteration 26**) | A MIDI key or `M`-mode commit after a typed letter replaces the note just entered instead of writing at the cursor | parity matrix | A |
 | 27 | 1 wrong pitch (**fixed in iteration 27**) | First `M`-mode pitch ignores the clef-middle-line rule; step-time entry after a voice change takes its octave from the other voice (MuseScore looks only in the entry voice) | parity matrix | A |
 | 30 | 1 invalid output (**fixed in iteration 28**) | `insertMeasureAfter` writes an empty `<measure>` with no rest in any staff | T6 | C |
-| 31 | 2 precision | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
+| 31 | 2 precision (**fixed in iteration 36**) | Dynamics have no keyboard path that passage 1 can script (`Cmd/Ctrl+D` is duplicate here, add-dynamic in MuseScore) | E1, parity matrix | A |
 | 29 | 1 data loss (**fixed in iteration 31**) | Typing past the last position of the score replaces the last note | parity matrix | A |
 | 32 | 1 wrong onset, wrong target (**fixed in iteration 29**) | A rest typed in a rest-only bar after the last note is erased; left-hand rests in later bars are deleted; a rest in a later part moves the cursor to the first part | P1, S1, parity matrix | A |
 | 33 | 1 wrong target (**fixed in iteration 30**) | Audit: every keyboard action in a second part must leave the first part untouched (several hook commands carry no part) | E2, S1 | A |
@@ -1338,6 +1338,31 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Regression evidence before and after: 4/4 after; all `entry-*` and user-visible note-editor tests (464)
   pass; application `tsc` clean.
 - Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.
+
+## Iteration 36 — Dynamics from the keyboard
+
+- Iteration / date / starting SHA / dirty-tree state: 36 / 2026-11-05 / `25cb54a` (local). The owner's
+  uncommitted docs stay untouched.
+- Track and matrix row: A, priority class 2; E1, parity matrix. The row stays `PARTIAL`.
+- Problem and observable baseline: backlog 31. No key entered a dynamic, so a scripted passage could not.
+  `test/entry-dynamics-keyboard.test.ts` failed before (no handler for the keys).
+- MuseScore (`src/app/configs/data/shortcuts.xml`, read from `main`): `add-dynamic` is `Ctrl+D`,
+  `increase-dynamic` is `Alt+.`, `decrease-dynamic` is `Alt+,`. Those increase/decrease actions change an
+  existing dynamic; the source does not say what they do on a note without one, so nex-note defines it
+  (start from `mf`).
+- Hypothesis and bounded change: `Cmd/Ctrl+D` stays Duplicate. `Alt/Option+.` and `Alt/Option+,` call the
+  new `stepDynamic`, which moves the dynamic of the note just entered (note input) or of the selection one
+  step along `pp p mp mf f ff fff`, one batch per press, each note in its own part. The handler matches the
+  physical codes `Period`/`Comma` (identical on US, UK and German/Austrian), or the printed `.`/`,`, so
+  macOS Option glyphs work. The key was free: no handler used Alt with these keys.
+  Files: `hooks/useNoteEditor.ts`, `test/entry-dynamics-keyboard.test.ts`,
+  `test/entry-second-part-audit.test.ts` (two more audit actions), `docs/keyboard-shortcuts.md`,
+  `docs/user-manual.en.md`.
+- Regression evidence before and after: new file 9/9 after (a first expectation for `Alt+,` was wrong:
+  `mf` softer is `mp`, not `p`; corrected in my own new test, not an existing one); second-part audit 217
+  cases pass.
+- Not checked: a QWERTZ Mac with real hardware; the Option glyphs come from the handler tests, not a device.
 - Decision: accepted.
 
 ## Gates for the iteration 24–31 stack and program stop

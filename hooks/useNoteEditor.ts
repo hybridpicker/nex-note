@@ -229,6 +229,9 @@ interface LegacyPointerPlacementTarget {
   placementMode?: 'replace' | 'insert' | 'chord';
 }
 
+/** The levels Alt/Option+. and Alt/Option+, move along. */
+const DYNAMIC_SCALE: DynamicKind[] = ['pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
+
 type VisualDeleteCommand =
   | Extract<ScoreCommand, { type: 'removeLyricLine' }>
   | Extract<ScoreCommand, { type: 'removeDirection' }>
@@ -3689,6 +3692,53 @@ export function useNoteEditor(
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
+  /**
+   * Alt/Option+. and Alt/Option+, (MuseScore increase-dynamic / decrease-dynamic): move the dynamic of
+   * the note just entered, or of the selection, one level along pp..fff. A note without a dynamic starts
+   * from mf. The part comes from each note, so a second part is edited alone.
+   */
+  const stepDynamic = useCallback((direction: 1 | -1) => {
+    const editTargets = resolveEditTargets();
+    const targets = selectedTargets(editTargets.note, editTargets.notes).filter((entry) => !entry.isRest);
+    if (!targets.length) return false;
+    const commands: ScoreCommand[] = [];
+    const seen = new Set<string>();
+    for (const target of targets) {
+      const key = `${target.corePartId}:${target.measureNumber}:${target.staffIndex}:${target.timestampNum}/${target.timestampDen}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const current = coreDocument?.score.parts
+        .filter((part) => !target.corePartId || part.id === target.corePartId)
+        .flatMap((part) => part.staves.filter((staff) => staff.staffIndex === target.staffIndex))
+        .flatMap((staff) => staff.measures.filter((measure) => measure.measureNumber === target.measureNumber))
+        .flatMap((measure) => measure.directions)
+        .find((entry) => entry.kind === 'dynamics' && entry.staffIndex === target.staffIndex
+          && timestampsEqual(entry.timestampNum ?? 0, entry.timestampDen ?? 1, target.timestampNum, target.timestampDen));
+      const index = DYNAMIC_SCALE.indexOf((current?.value ?? 'mf') as DynamicKind);
+      const next = DYNAMIC_SCALE[Math.max(0, Math.min(DYNAMIC_SCALE.length - 1, (index < 0 ? DYNAMIC_SCALE.indexOf('mf') : index) + direction))]!;
+      if (current && current.value === next) continue;
+      commands.push({
+        type: 'addDynamic',
+        dynamic: next,
+        corePartId: target.corePartId ?? null,
+        measureNumber: target.measureNumber,
+        staffIndex: target.staffIndex,
+        voiceId: target.voiceId,
+        timestampNum: target.timestampNum,
+        timestampDen: target.timestampDen,
+      });
+    }
+    if (!commands.length) return false;
+    dbg.editor(`stepDynamic ${direction} count=${commands.length}`);
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      warnNoOpEdit('stepDynamic', commands[0]!);
+      return false;
+    }
+    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
+    return true;
+  }, [applyEditorCommands, coreDocument, onApplyCommands, resolveEditTargets, selectedNote, selectedNotes, warnNoOpEdit, xml]);
+
   const addDynamic = useCallback((dynamic: DynamicKind) => {
     const targets = selectedTargets(selectedNote, selectedNotes);
     if (!targets.length) return;
@@ -4497,6 +4547,15 @@ export function useNoteEditor(
     // through to the bare Q notation action if the renderer receives it.
     if (metaKey && key === 'Q') return;
 
+    // Dynamics: Alt/Option+. louder, Alt/Option+, softer. The physical code is Period/Comma on US, UK
+    // and German/Austrian keyboards; macOS Option replaces the printed character.
+    if (e.altKey && !metaKey && !e.shiftKey && (e.code === 'Period' || e.code === 'Comma' || e.key === '.' || e.key === ',')) {
+      const louder = e.code === 'Period' || (e.code !== 'Comma' && e.key === '.');
+      e.preventDefault();
+      if (selectedNote || selectedNotes.length > 0) keepingInputCursor(() => { stepDynamic(louder ? 1 : -1); });
+      return;
+    }
+
     if (metaKey && key === 'D' && !(noteInputModeRef.current && e.shiftKey)) {
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
@@ -5151,6 +5210,7 @@ export function useNoteEditor(
     addDynamic,
     toggleTie: activateTie,
     toggleSlur,
+    stepDynamic,
     transposeSemitones,
     respellEnharmonically,
     commitDraggedPitch,

@@ -78,6 +78,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Shift+ArrowUp` / `Shift+ArrowDown` | ausgewählte oder zuletzt eingegebene Note eine Oktave höher/tiefer setzen | Noteneditor |
 | `Cmd/Ctrl+A` | alle Noten der aktiven Stimme auswählen | Noteneditor |
 | `Cmd/Ctrl+D` | Auswahl duplizieren | Noteneditor |
+| `Alt/Option+.` / `Alt/Option+,` | Dynamik der gerade eingegebenen Note bzw. der Auswahl um eine Stufe lauter / leiser (`pp p mp mf f ff fff`); ohne Dynamik beginnt die Stufe bei `mf` (`.` ergibt `f`, `,` ergibt `mp`). Gilt nur im Part der Note | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+X` | Auswahl ausschneiden | Noteneditor |
 | `Cmd/Ctrl+C` | Auswahl kopieren | Noteneditor |
 | `Cmd/Ctrl+V` | Clipboard an aktiver Auswahl einfügen | Noteneditor |
@@ -294,3 +295,17 @@ note just entered, and every note entered after it extends the slur to itself, i
 the note. `S` again closes it, as does leaving note input. `S` on a `Shift+Arrow` range slurs the range
 and also leaves that slur open, so the next entered note extends it (MuseScore does the same). A range
 selected in note input does not move the input cursor: the next entry goes after the last entered note.
+
+## Dynamics from the keyboard
+
+`Alt/Option+.` makes the dynamic louder and `Alt/Option+,` softer, on the note just entered in note input
+or on the selection (every note of a range, one Undo entry). The levels are `pp p mp mf f ff fff`; a note
+without a dynamic starts from `mf`, so `Alt+.` gives `f` and `Alt+,` gives `mp`. At `pp` or `fff` nothing
+happens. The dynamic is written in the part and staff of the note only. `sfz` stays available from the Edit
+Palette and the Inspector.
+
+Choice of key and MuseScore difference: MuseScore binds `Ctrl+D` to add-dynamic (a popup) and
+`Alt+.`/`Alt+,` to increase/decrease-dynamic of an existing dynamic (`src/app/configs/data/shortcuts.xml`).
+nex-note keeps `Cmd/Ctrl+D` as Duplicate, and its `Alt+.`/`Alt+,` also create the first dynamic, so one
+key pair covers entry and change. The keys have the same physical code (`Period`, `Comma`) on US, UK and
+German/Austrian layouts; on macOS Option replaces the printed character, which the handler ignores.

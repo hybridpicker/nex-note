@@ -96,6 +96,8 @@ const KEYBOARD: Array<[string, string]> = [
   ['an interval on the selection', 'Alt+3'],
   ['a sharp on the selection', '+'],
   ['a flat on the selection', '-'],
+  ['a louder dynamic after an entry', 'N 5 g Alt+.'],
+  ['a softer dynamic on the selection', 'Alt+,'],
 ];
 
 for (const [label, script] of KEYBOARD) {
