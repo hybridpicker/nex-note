@@ -796,6 +796,7 @@ function selectionRange(targets: SelectedNote[]) {
   const last = sorted[sorted.length - 1];
   return {
     start: {
+      corePartId: first.corePartId ?? null,
       measureNumber: first.measureNumber,
       staffIndex: first.staffIndex,
       voiceId: first.voiceId,
@@ -803,6 +804,7 @@ function selectionRange(targets: SelectedNote[]) {
       timestampDen: first.timestampDen,
     },
     end: {
+      corePartId: last.corePartId ?? null,
       measureNumber: last.measureNumber,
       staffIndex: last.staffIndex,
       voiceId: last.voiceId,

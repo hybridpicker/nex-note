@@ -106,6 +106,7 @@ function buildSelectionRange(selectedNotes: SelectedNote[]) {
   const last = sorted[sorted.length - 1];
   return {
     start: {
+      ...partScope(first),
       measureNumber: first.measureNumber,
       staffIndex: first.staffIndex,
       voiceId: first.voiceId,
@@ -113,6 +114,7 @@ function buildSelectionRange(selectedNotes: SelectedNote[]) {
       timestampDen: first.timestampDen,
     },
     end: {
+      ...partScope(last),
       measureNumber: last.measureNumber,
       staffIndex: last.staffIndex,
       voiceId: last.voiceId,
@@ -692,12 +694,14 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
                   const last = pitchedSelection[pitchedSelection.length - 1];
                   onApplyCommands([{
                     type: 'toggleSlur',
+                    ...partScope(first),
                     measureNumber: first.measureNumber,
                     staffIndex: first.staffIndex,
                     voiceId: first.voiceId,
                     timestampNum: first.timestampNum,
                     timestampDen: first.timestampDen,
                     stopLocator: {
+                      ...partScope(last),
                       measureNumber: last.measureNumber,
                       staffIndex: last.staffIndex,
                       voiceId: last.voiceId,

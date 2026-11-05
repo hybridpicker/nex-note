@@ -4700,6 +4700,7 @@ export function executeCoreCommands(
           command.stopLocator.measureNumber,
           command.stopLocator.staffIndex,
           command.stopLocator.voiceId,
+          commandScope(command),
         );
         const stopEvent = stopFound?.voice.events[
           findEventIndex(stopFound.voice, command.stopLocator.timestampNum, command.stopLocator.timestampDen)

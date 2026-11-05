@@ -1254,6 +1254,39 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   `test/score-architecture.test.ts` is unchanged and passes. One user action is one command batch.
 - Decision: accepted.
 
+## Iteration 33 — Multi-part audit of the remaining editing paths
+
+- Iteration / date / starting SHA / dirty-tree state: 33 / 2026-11-05 / `63c41a8` (local). The owner's
+  uncommitted docs stay untouched.
+- Track and matrix row: A and C, priority class 1 (wrong target); E2, S1. The rows stay `PARTIAL`.
+- Problem and observable baseline: `test/entry-second-part-audit.test.ts` covered 38 keyboard actions and
+  11 commands in the second of two parts. It now also runs every keyboard action, copy, cut and paste
+  (Cmd+C/X/V, and the palette's paste), keyboard and pointer range delete, additive and range pointer
+  selection, pointer entry (`placeNoteAt`), repeat-last-input and the hook calls behind the Edit Palette
+  and the Command Center (articulations, dynamic, slur, transpose, duplicate, delete, cut, slash fill,
+  rest) against three layouts: the second of two parts, the lower staff of a grand staff (the target
+  is staff 2 of a piano part, checked against its own staff 1 and the other part), and the middle part
+  of three. The cursor must stay in the targeted part and staff. 202 cases; 13 failed before the fix.
+- Leaks found and fixed:
+  - Range operations (range delete, ripple delete of a range, transposing a range, clearing a range's
+    articulations) sent locators with no part. With a range selected in the second part, the first
+    part was edited too. The hook and the Inspector now put the part into both ends of the range
+    (`selectionRange`, `buildSelectionRange`); the executor already honoured it.
+  - The Inspector's "Toggle slur" sent no part, and `setSlurPlacement` looked up its stop note in the
+    first part with that bar number, so a placement on a second-part slur missed. Both now carry
+    and use the part.
+- Not a leak (the test normalises it): a tuplet in one staff re-divides every staff of the same part so
+  the staves share one `divisions` value. The raw timestamps of the other staff change, its musical
+  times do not. The audit compares reduced fractions of a whole note. Documented in the test.
+- Corrected existing assertion (added strictness, nothing loosened): the exact range command in
+  `test/user-visible-components.test.ts` for the Inspector now includes `corePartId: 'part:P1'`.
+- Found and not changed: the palette's Tie button needs two notes of equal pitch to change anything, so
+  the audit asserts only that no other staff changes; the keyboard `T` case asserts the change.
+- Regression evidence before and after: 202/202 after; `test/user-visible-components.test.ts` passes.
+- Files: `hooks/useNoteEditor.ts`, `components/ScoreInspector.tsx`,
+  `src/score-core/commands/core-command-executor.ts`, tests.
+- Decision: accepted.
+
 ## Gates for the iteration 24–31 stack and program stop
 
 - Run on `7f82975`:

@@ -1892,8 +1892,8 @@ test('ScoreInspector dispatches visible selection and measure commands', async (
     type: 'transposeRangeChromatic',
     semitones: 2,
     range: {
-      start: { measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 },
-      end: { measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, timestampDen: 4 },
+      start: { corePartId: 'part:P1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 0, timestampDen: 4 },
+      end: { corePartId: 'part:P1', measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 1, timestampDen: 4 },
     },
   }]);
   assert.equal(calls[1]?.label, 'Toggle staccato on selection');
