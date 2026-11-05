@@ -6,6 +6,13 @@ import { applyDocumentCommands, buildDocumentState } from '../../src/score-core/
 import { importMusicXmlToCore } from '../../src/musicxml-adapter/import/import-musicxml.ts';
 import { validateScoreDocument } from '../../src/score-core/validation/validate-score-document.ts';
 import type { ScoreCommand } from '../../src/shared/schemas/score-command.ts';
+import {
+  KEYBOARD_LAYOUT_TABLES,
+  UNKNOWN_KEYBOARD_LAYOUT,
+  createKeyboardLayoutContext,
+  setActiveKeyboardLayoutContext,
+  type KeyboardLayoutId,
+} from '../../src/score-input/keyboard-layout.ts';
 
 /*
  * Keyboard entry harness for the entry-correctness matrix. It mounts the real useNoteEditor hook
@@ -24,7 +31,17 @@ export interface EntryHarness {
   unmount(): void;
 }
 
-export function mountEditor(initialXml: string): EntryHarness {
+export function mountEditor(initialXml: string, mountOptions: { layout?: KeyboardLayoutId } = {}): EntryHarness {
+  const layout = mountOptions.layout;
+  if (layout) {
+    // The platform's layout map: the unmodified character of each physical key.
+    const baseMap = new Map(Object.entries(KEYBOARD_LAYOUT_TABLES[layout]).map(([code, [base]]) => [code, base]));
+    for (const letter of 'abcdefghijklmnopqrstuvwxyz') {
+      const swapped = layout === 'de' ? ({ y: 'z', z: 'y' } as Record<string, string>)[letter] ?? letter : letter;
+      baseMap.set(`Key${letter.toUpperCase()}`, swapped);
+    }
+    setActiveKeyboardLayoutContext(createKeyboardLayoutContext(baseMap));
+  }
   const ref: { current: EditorHook | null } = { current: null };
   let latestXml = initialXml;
   const batches: ScoreCommand[][] = [];
@@ -60,7 +77,7 @@ export function mountEditor(initialXml: string): EntryHarness {
     press(script: string) {
       for (const token of script.trim().split(/\s+/).filter(Boolean)) {
         act(() => {
-          ref.current!.handleKeyDown(keyEvent(token));
+          ref.current!.handleKeyDown(layout ? layoutKeyEvent(token, layout) : keyEvent(token));
         });
         act(() => {
           renderer?.update(React.createElement(Harness));
@@ -76,6 +93,7 @@ export function mountEditor(initialXml: string): EntryHarness {
       act(() => {
         renderer?.unmount();
       });
+      if (layout) setActiveKeyboardLayoutContext(UNKNOWN_KEYBOARD_LAYOUT);
     },
   };
   return harness;
@@ -106,6 +124,56 @@ export function keyEvent(token: string) {
     key = usDigitShifted[Number(base)]!;
   }
   if (base === '+') code = 'Equal';
+  return {
+    key,
+    code,
+    metaKey: modifiers.has('cmd'),
+    ctrlKey: modifiers.has('ctrl'),
+    shiftKey: shift,
+    altKey: modifiers.has('alt'),
+    repeat: false,
+    preventDefault() {},
+    target: { tagName: 'DIV', isContentEditable: false, closest: () => null },
+  } as unknown as KeyboardEvent;
+}
+
+/**
+ * The key event a real keyboard of the given layout sends for a script token. A token names the
+ * character the shortcut documents ("+" sharp, "-" flat, "/" grace, "Shift+." accent). The physical
+ * `code` and the produced `key` come from the layout tables in src/score-input/keyboard-layout.ts, so
+ * a character that sits on a shifted key (German "/" is Shift+7, US "+" is Shift+=) arrives with the
+ * Shift flag a person would hold.
+ */
+export function layoutKeyEvent(token: string, layout: KeyboardLayoutId) {
+  const parts = token === '+' ? [''] : token.endsWith('++') ? [...token.slice(0, -2).split('+'), '+'] : token.split('+');
+  const base = token === '+' ? '+' : parts.pop()!;
+  const modifiers = new Set(parts.map((part) => part.toLowerCase()));
+  let shift = modifiers.has('shift');
+  const table = KEYBOARD_LAYOUT_TABLES[layout];
+  let key = base;
+  let code = base;
+  if (/^[a-z]$/i.test(base)) {
+    const letter = base.toLowerCase();
+    const physical = layout === 'de' && (letter === 'y' || letter === 'z') ? (letter === 'y' ? 'z' : 'y') : letter;
+    code = `Key${physical.toUpperCase()}`;
+    key = shift ? letter.toUpperCase() : letter;
+  } else if (/^[0-9]$/.test(base)) {
+    code = `Digit${base}`;
+    key = shift ? table[code]![1] : base;
+  } else if (base.length === 1) {
+    const baseHit = Object.entries(table).find(([, [unshifted]]) => unshifted === base);
+    const shiftedHit = Object.entries(table).find(([, [, shifted]]) => shifted === base);
+    if (baseHit) {
+      code = baseHit[0];
+      key = shift ? baseHit[1][1] : base;
+    } else if (shiftedHit) {
+      code = shiftedHit[0];
+      key = base;
+      shift = true;
+    } else {
+      throw new Error(`no ${layout} key types "${base}"`);
+    }
+  }
   return {
     key,
     code,

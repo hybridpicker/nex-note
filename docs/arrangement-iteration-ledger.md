@@ -53,7 +53,7 @@ as not reproduced and dropped.
 | 11 | 1 data loss (**lyrics fixed in iteration 18**; `<multiple-rest>` did not reproduce) | `<multiple-rest>`, lyric `<extend>` and `<elision>` dropped on round trip | T7, L3 | C |
 | 12 | 1 wrong pitch (**fixed in iteration 12**) | Transposing parts play back at written pitch | S2 | C |
 | 13 | 1 wrong target (**fixed in iteration 19**) | Inserted measures clone barlines, endings and breaks | T6 | C |
-| 14 | 2 precision | Scripted keyboard passage 1 (eight bars, treble) as a fixture with an exact keystroke script on three layouts | parity matrix | A |
+| 14 | 2 precision (**passage 1 done in iteration 37**; passages 2 to 4 not built) | Scripted keyboard passage 1 (eight bars, treble) as a fixture with an exact keystroke script on three layouts | parity matrix | A |
 | 15 | 2 precision | Mouse corpus: C-clef, clef change, pickup, dense multi-voice, grand staff with three ledger lines | parity matrix | B |
 | 16 | 3 missing | Beaming control (break/join) | P10 | C |
 | 17 | 3 missing | Score order and bracket/brace groups | S5 | C |
@@ -1363,6 +1363,37 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   `mf` softer is `mp`, not `p`; corrected in my own new test, not an existing one); second-part audit 217
   cases pass.
 - Not checked: a QWERTZ Mac with real hardware; the Option glyphs come from the handler tests, not a device.
+- Decision: accepted.
+
+## Iteration 37 — Keyboard passage 1 on US, UK and QWERTZ
+
+- Iteration / date / starting SHA / dirty-tree state: 37 / 2026-11-05 / `38234c3` (local). The owner's
+  uncommitted docs stay untouched.
+- Track and matrix row: A and C, priority class 1 for the defect found, 2 for the passage; parity matrix.
+- What was built:
+  - `test/support/keyboard-passage.ts`: one script (`PASSAGE_1`) and the exact expected result
+    (`PASSAGE_1_EXPECTED`): eight bars, treble, 4/4, mixed durations, a dotted quarter, a rest, two
+    accidentals (G sharp, B flat), a tie across a barline, an eighth triplet, a three-note chord, a grace
+    note, a dynamic (`f`), an accent, and a slur from bar 6 into bar 7. The expected lines were checked by
+    hand against the keystrokes before they were frozen (the first run exposed the slur defect below).
+  - `layoutKeyEvent` and a `layout` option for `mountEditor` in `test/support/entry-harness.ts`: each token
+    becomes the `key` and `code` a real keyboard of that layout sends, taken from the tables in
+    `src/score-input/keyboard-layout.ts` (US `+` is Shift+`=`; QWERTZ `+` is `BracketRight` unshifted, `-`
+    is `Slash`, `/` is Shift+7, Shift+`.` types `:`), and installs that layout's map as the active layout
+    context, as the browser's layout map does.
+  - `test/keyboard-passage-1.test.ts`: the script runs on US, UK and QWERTZ; each must equal the fixture
+    exactly with zero corrections (the script has no Delete, Backspace, Undo, Redo or Escape), and the three
+    layouts must produce byte-identical MusicXML.
+  - `e2e/notation-tools.spec.ts`: the same script in Chromium under strict Doctor (US layout only; Playwright
+    cannot switch the physical layout), and the result equals the same fixture.
+- Defect found and fixed: a slur from one bar into the next was imported as two half slurs (a start without a
+  stop and a stop without a start), because `buildVoices` tracked open slurs per measure. Reopening a saved
+  file therefore lost the pairing of every barline-crossing slur. Open slurs are now kept per part for the
+  whole import (`openSlursByPart`). New `test/import-slur-across-barline.test.ts` (2 cases) failed before.
+  File: `src/musicxml-adapter/import/import-musicxml.ts`.
+- Regression evidence before and after: passage 6/6 and import 2/2 after; the browser case passes (13.8 s).
+- Not covered: Mac Option glyphs and real hardware layouts; the German Mac Option+Shift+0 limit stays as
+  documented. Passages 2, 3 and 4 do not exist.
 - Decision: accepted.
 
 ## Gates for the iteration 24–31 stack and program stop

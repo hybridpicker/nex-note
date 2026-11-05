@@ -5,6 +5,7 @@ import { Midi } from '@tonejs/midi';
 import { writeFailureArtifacts } from './support/failure-artifacts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import { formatShortcutHint } from '../lib/shortcut-hints.ts';
+import { PASSAGE_1, PASSAGE_1_EXPECTED, summarize } from '../test/support/keyboard-passage.ts';
 
 // Tooltips name the host platform's modifiers; headless Chrome runs on the host OS.
 const hostShortcutHint = (shortcut: string) => formatShortcutHint(
@@ -2028,4 +2029,20 @@ test('eight-bar keyboard replacement preserves correction and MusicXML reopen', 
   await expect.poll(readPassage).toEqual(expected);
   await expect.poll(() => readMainVoiceMidi(page)).toEqual(expectedMidi);
   await expectNoDoctorIssues(page, 'eight-bar keyboard passage reopen');
+});
+
+test('keyboard passage 1 (mixed values, accidentals, tie, triplet, chord, grace, dynamic, slur, accent) enters in the browser with no corrections', async ({ page }) => {
+  const measures = Array.from({ length: 8 }, (_, index) => `<measure number="${index + 1}">${index === 0 ? '<attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}<note><rest measure="yes"/><duration>16</duration><voice>1</voice><type>whole</type></note></measure>`).join('');
+  const fluteXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list><part id="P1">${measures}</part></score-partwise>`;
+  await bootWithScore(page, fluteXml, { strictDoctor: true });
+  await page.keyboard.press('Control+Home');
+  // The browser sends the US layout's key and code values; Playwright names keys by physical code.
+  const playwrightKey: Record<string, string> = {
+    '+': 'Shift+Equal', '-': 'Minus', '/': 'Slash', '.': 'Period', 'Shift+.': 'Shift+Period',
+    'Alt+.': 'Alt+Period', 'Cmd+3': 'Control+3', 'Shift+e': 'Shift+e', 'Shift+g': 'Shift+g',
+  };
+  for (const token of PASSAGE_1.split(/\s+/)) await page.keyboard.press(playwrightKey[token] ?? token);
+  await expect.poll(async () => summarize(await readCurrentXml(page)), { timeout: 15_000 }).toEqual(PASSAGE_1_EXPECTED);
+  await expectNoDoctorIssues(page, 'keyboard passage 1');
 });

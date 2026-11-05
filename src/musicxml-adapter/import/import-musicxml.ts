@@ -27,6 +27,8 @@ type XmlElement = ReturnType<XmlDocument['createElement']>;
 
 interface SemanticCollectors {
   slurs: SlurSpan[];
+  /** Slurs that have started and not stopped yet, per part: a slur may cross a barline. */
+  openSlursByPart: Map<string, Map<string, SlurSpan>>;
   beams: BeamGroup[];
   tuplets: TupletSpan[];
   chordGroups: ChordGroup[];
@@ -757,7 +759,8 @@ function buildVoices(
   expectedDuration?: number,
 ): VoiceNode[] {
   const eventsByVoice = new Map<number, TimedEvent[]>();
-  const openSlurs = new Map<string, SlurSpan>();
+  const openSlurs = collectors.openSlursByPart.get(partId) ?? new Map<string, SlurSpan>();
+  collectors.openSlursByPart.set(partId, openSlurs);
   const beamGroups = new Map<string, BeamGroup>();
   const tupletGroups = new Map<string, TupletSpan>();
   let cursor = 0;
@@ -1175,6 +1178,7 @@ export function importMusicXmlToCore(xml: string): ScoreDocumentModel {
   const metadata = readMetadata(doc);
   const collectors: SemanticCollectors = {
     slurs: [],
+    openSlursByPart: new Map(),
     beams: [],
     tuplets: [],
     chordGroups: [],
