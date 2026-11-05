@@ -100,7 +100,7 @@ export type LegacyScoreOperation =
       staffIndex?: number;
       placement?: 'above' | 'below';
     }
-  | { type: 'removeDirection'; text: string; measureNumber: number; staffIndex?: number; kind?: string }
+  | { type: 'removeDirection'; text: string; measureNumber: number; staffIndex?: number; kind?: string; corePartId?: string | null }
   | { type: 'setSystemBreak'; measureNumber: number; value?: boolean }
   | { type: 'setPageBreak'; measureNumber: number; value?: boolean }
   | { type: 'setMeasureLayoutHint'; measureNumber: number; hint: 'newSystem' | 'newPage' | 'staffSpacing' | 'collisionPolicy'; value: boolean | number | string; staffIndex?: number; partId?: string }

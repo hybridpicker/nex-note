@@ -348,11 +348,13 @@ export function findDirectionByText(
   options?: {
     measureNumber?: number | null;
     staffIndex?: number | null;
+    corePartId?: string | null;
   },
-): { measure: MeasureNode; staff: StaffNode; direction: DirectionNode } | null {
+): { part: PartNode; measure: MeasureNode; staff: StaffNode; direction: DirectionNode } | null {
   if (!document) return null;
 
   for (const part of document.score.parts) {
+    if (options?.corePartId && part.id !== options.corePartId) continue;
     for (const staff of part.staves) {
       if (options?.staffIndex != null && staff.staffIndex !== options.staffIndex) continue;
       for (const measure of staff.measures) {
@@ -361,7 +363,7 @@ export function findDirectionByText(
           entry.value?.trim() === text
           && (options?.staffIndex == null || entry.staffIndex == null || entry.staffIndex === options.staffIndex)
         ));
-        if (direction) return { measure, staff, direction };
+        if (direction) return { part, measure, staff, direction };
       }
     }
   }

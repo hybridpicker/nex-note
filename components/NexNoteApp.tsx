@@ -3296,6 +3296,7 @@ export default function Home({ searchParams }: HomeProps) {
     visualText?: string | null;
     visualMeasureNumber?: number | null;
     visualStaffIndex?: number | null;
+    visualPartId?: string | null;
   }) => {
     const simultaneousNotes = !options?.additive && !options?.range && !options?.singleSelectionOnly && !options?.visualOnly
       ? (options?.selectionNotes && options.selectionNotes.length > 0

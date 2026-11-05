@@ -1436,8 +1436,10 @@ function removeDirection(
   text: string,
   staffIndex?: number,
   kind?: string,
+  corePartId?: string | null,
 ) {
   document.score.parts.forEach((part) => {
+    if (corePartId && part.id !== corePartId) return;
     part.staves.forEach((staff) => {
       if (staffIndex != null && staff.staffIndex !== staffIndex) return;
       const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
@@ -4880,7 +4882,7 @@ export function executeCoreCommands(
         break;
       }
       case 'removeDirection': {
-        removeDirection(nextDocument, command.measureNumber, command.text, command.staffIndex, command.kind);
+        removeDirection(nextDocument, command.measureNumber, command.text, command.staffIndex, command.kind, command.corePartId);
         break;
       }
       case 'addChords': {

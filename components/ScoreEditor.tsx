@@ -181,6 +181,7 @@ interface Props {
     visualText?: string | null;
     visualMeasureNumber?: number | null;
     visualStaffIndex?: number | null;
+    visualPartId?: string | null;
   }) => void;
   onPlaceNoteAt: (target: ResolvedEditTarget, options?: { audition?: boolean }) => void;
   onSetChordSymbol?: (value: string, targetNote?: SelectedNote | null) => void;
@@ -13824,6 +13825,7 @@ export default function ScoreEditor({
           visualText,
           visualMeasureNumber: directNote.measureNumber,
           visualStaffIndex: directNote.staffIndex,
+          visualPartId: directNote.corePartId ?? null,
         });
         return;
       }
@@ -13992,6 +13994,7 @@ export default function ScoreEditor({
         visualText,
         visualMeasureNumber: overlayAtPoint?.measureNumber ?? nearest?.measureNumber ?? null,
         visualStaffIndex: nearest?.staffIndex ?? null,
+        visualPartId: nearest?.corePartId ?? null,
       });
     } catch (err) {
       dbg.error('score', 'click handler error:', err);

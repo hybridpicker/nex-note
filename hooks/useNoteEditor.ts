@@ -180,6 +180,8 @@ interface NoteClickOptions {
   visualText?: string | null;
   visualMeasureNumber?: number | null;
   visualStaffIndex?: number | null;
+  /** The part the clicked text belongs to, so a text direction is removed from that part only. */
+  visualPartId?: string | null;
 }
 
 interface VisualSelection {
@@ -187,6 +189,7 @@ interface VisualSelection {
   text: string | null;
   measureNumber: number | null;
   staffIndex: number | null;
+  partId?: string | null;
 }
 
 interface UseNoteEditorOptions {
@@ -1298,6 +1301,7 @@ export function useNoteEditor(
           text: clickOptions.visualText ?? null,
           measureNumber: clickOptions.visualMeasureNumber ?? null,
           staffIndex: clickOptions.visualStaffIndex ?? null,
+          partId: clickOptions.visualPartId ?? null,
         });
         lastSelectedRef.current = null;
         return;
@@ -1327,6 +1331,7 @@ export function useNoteEditor(
         text: clickOptions?.visualText ?? null,
         measureNumber: clickOptions?.visualMeasureNumber ?? note.measureNumber,
         staffIndex: clickOptions?.visualStaffIndex ?? note.staffIndex,
+        partId: clickOptions?.visualPartId ?? note.corePartId ?? null,
       });
       return;
     }
@@ -1342,6 +1347,7 @@ export function useNoteEditor(
         text: clickOptions?.visualText ?? null,
         measureNumber: clickOptions?.visualMeasureNumber ?? note.measureNumber,
         staffIndex: clickOptions?.visualStaffIndex ?? note.staffIndex,
+        partId: clickOptions?.visualPartId ?? note.corePartId ?? null,
       });
       lastSelectedRef.current = note;
       return;
@@ -1358,6 +1364,7 @@ export function useNoteEditor(
         text: clickOptions?.visualText ?? null,
         measureNumber: clickOptions?.visualMeasureNumber ?? note.measureNumber,
         staffIndex: clickOptions?.visualStaffIndex ?? note.staffIndex,
+        partId: clickOptions?.visualPartId ?? note.corePartId ?? null,
       });
       lastSelectedRef.current = note;
       return;
@@ -1389,6 +1396,7 @@ export function useNoteEditor(
       text: clickOptions?.visualText ?? null,
       measureNumber: clickOptions?.visualMeasureNumber ?? note.measureNumber,
       staffIndex: clickOptions?.visualStaffIndex ?? note.staffIndex,
+      partId: clickOptions?.visualPartId ?? note.corePartId ?? null,
     });
     lastSelectedRef.current = note;
   }, [clearSelection, coreDocument, options, paintNote, setSelectedNoteLive, setSelectedVisualLive, setSelectedVoiceLive]);
@@ -1406,10 +1414,12 @@ export function useNoteEditor(
     const matchingDirection = findDirectionByText(coreDocument, selectedText, {
       measureNumber: selectedVisual.measureNumber,
       staffIndex: selectedVisual.staffIndex,
+      corePartId: selectedVisual.partId ?? selectedNote?.corePartId ?? null,
     });
     if (matchingDirection) {
       return {
         type: 'removeDirection',
+        corePartId: selectedVisual.partId ?? selectedNote?.corePartId ?? matchingDirection.part.id,
         measureNumber: matchingDirection.measure.measureNumber,
         staffIndex: matchingDirection.direction.staffIndex ?? selectedVisual.staffIndex ?? matchingDirection.staff.staffIndex,
         kind: matchingDirection.direction.kind,

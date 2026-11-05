@@ -72,7 +72,7 @@ as not reproduced and dropped.
 | 29 | 1 data loss (**fixed in iteration 31**) | Typing past the last position of the score replaces the last note | parity matrix | A |
 | 32 | 1 wrong onset, wrong target (**fixed in iteration 29**) | A rest typed in a rest-only bar after the last note is erased; left-hand rests in later bars are deleted; a rest in a later part moves the cursor to the first part | P1, S1, parity matrix | A |
 | 33 | 1 wrong target (**fixed in iteration 30**) | Audit: every keyboard action in a second part must leave the first part untouched (several hook commands carry no part) | E2, S1 | A |
-| 34 | 1 wrong target | Removing a text direction removes the same text from every part; the visual selection does not carry its part, so the click must pass it | E7, S1 | C |
+| 34 | 1 wrong target (**fixed in iteration 32**) | Removing a text direction removes the same text from every part; the visual selection does not carry its part, so the click must pass it | E7, S1 | C |
 
 ## Iteration 0 — Feature matrix and baseline
 
@@ -1233,6 +1233,25 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
 - Not tested: `T` at the very end of the score.
 - Cross-app tests and builds: run on the iteration 24–31 stack.
 - Documentation updated: `docs/keyboard-shortcuts.md`, `docs/user-manual.en.md`, this ledger.
+- Decision: accepted.
+
+## Iteration 32 — Text directions stay in their part
+
+- Iteration / date / starting SHA / dirty-tree state: 32 / 2026-11-05 / `f367d72` (local). Dirty tree: the
+  owner's `docs/README.md` and the untracked iteration prompt, both left alone.
+- Track and matrix row: C, priority class 1 (wrong target); E7, S1. The row status stays `PARTIAL`.
+- Problem and observable baseline: `removeDirection` looked at every part, so deleting a clicked text
+  removed the same text in the same bar from all parts. New `test/direction-part-scope.test.ts`
+  (same text in both parts, remove from either one) failed 2/2 core cases before.
+- Hypothesis and bounded change: the click carries the part (`visualPartId`, taken from the clicked or
+  nearest note) through `NoteClickOptions` and the visual selection into the `removeDirection` command
+  (`corePartId`), and the executor skips other parts. `findDirectionByText` takes the part too. The
+  command without a part keeps its old meaning for existing callers (AI operations).
+  Files: `components/ScoreEditor.tsx`, `components/NexNoteApp.tsx`, `hooks/useNoteEditor.ts`,
+  `src/score-core/commands/core-command-executor.ts`, `src/score-core/query/note-editor.ts`,
+  `src/shared/schemas/score-command.ts`.
+- Regression evidence before and after: 5/5 after; the existing `removeDirection` case in
+  `test/score-architecture.test.ts` is unchanged and passes. One user action is one command batch.
 - Decision: accepted.
 
 ## Gates for the iteration 24–31 stack and program stop
