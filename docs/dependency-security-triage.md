@@ -1,6 +1,8 @@
 # Dependency security triage
 
-Date: 2026-11-05. Source: the open Dependabot alerts of `hybridpicker/nex-note`, read with
+Date: 2026-11-05. **Update, same day: `next` was upgraded from 16.2.11 to 16.4.5** at the owner's request
+(see "Update" at the end). Everything else below is still the triage state of the alerts as read at the start.
+Source: the open Dependabot alerts of `hybridpicker/nex-note`, read with
 `gh api repos/hybridpicker/nex-note/dependabot/alerts` (86 open: 5 critical, 50 high, 25 medium,
 6 low). **Nothing was upgraded** in this triage; it only classifies and recommends. The advisory
 texts are public. Installed versions come from `npm ls` on `devel`.
@@ -14,7 +16,7 @@ the judgement made here from how this repository uses the package.
 
 | Package | Installed | Alerts (critical/high/medium/low) | Dependabot scope | Reaches shipped runtime? | Fixed in |
 | --- | --- | --- | --- | --- | --- |
-| `next` | 16.2.11 | 5 / 1 / 0 / 0 (alerts 78, 79, 90, 113, 115 critical; 114 high) | runtime | **Yes**: Next server (dev, packaged Electron server, Mac server for the iPad live mode) | 16.4.1 |
+| `next` | 16.2.11, **now 16.4.5** | 5 / 1 / 0 / 0 (alerts 78, 79, 90, 113, 115 critical; 114 high) | runtime | **Yes**: Next server (dev, packaged Electron server, Mac server for the iPad live mode) | 16.4.1 |
 | `@xmldom/xmldom` | 0.9.10 (direct), 0.8.13 (transitive) | 0 / 19 / 4 / 0 | runtime (0.9) and development (0.8) | **Yes** for 0.9.x: it parses imported MusicXML, ABC and Guitar Pro conversions | 0.9.12 / 0.8.15 |
 | `electron` | 41.4.0 | 0 / 5 / 10 / 6 (41.x and 42.x ranges) | development | **Yes**: the Electron runtime is bundled in the macOS and Linux apps | 41.10.6 (41.x line) |
 | `nanoid` | 3.3.16 | 0 / 3 / 0 / 0 | runtime | Transitive (Next/PostCSS build chain); not called with attacker-chosen sizes | 3.3.18 |
@@ -48,15 +50,36 @@ the judgement made here from how this repository uses the package.
 
 | Priority | Action | Why |
 | --- | --- | --- |
-| 1, urgent | Upgrade `next` from 16.2.11 to 16.4.1 or later, then run the full gate (`npm test`, `npm run build`, Electron refresh, iPad sync). | Five critical remote-code-execution alerts and one high denial of service apply to the installed version. The mitigating facts above (no `next/image`, local or LAN use) reduce the exposure but do not remove it. The owner decides. |
+| 1, urgent, **done 2026-11-05** | Upgrade `next` from 16.2.11 to 16.4.1 or later, then run the full gate (`npm test`, `npm run build`, Electron refresh, iPad sync). | Five critical remote-code-execution alerts and one high denial of service apply to the installed version. The mitigating facts above (no `next/image`, local or LAN use) reduce the exposure but do not remove it. The owner decides. |
 | 2, soon | Upgrade `@xmldom/xmldom` to 0.9.12 and the transitive 0.8.x to 0.8.15 (via the packages that pull it). | Shipped parser of untrusted files; 19 high alerts, mostly denial of service. A patch release within the same minor line. |
 | 3, soon | Upgrade `electron` to the latest 41.x patch (41.10.6 or later), or to 42.x if planned. Re-run `npm run electron:refresh`. | Shipped framework. The sandbox and webview alerts matter only if the app opens untrusted content in webviews or popups. Check this before judging urgency. |
 | 4, with the Next upgrade | Raise the `sharp` override from 0.35.0 to 0.35.4 and the `postcss` override from 8.5.18 to 8.5.23; let `nanoid`, `source-map-js` and `baseline-browser-mapping` follow the lock file. | Overrides pin the vulnerable versions, so a plain `npm update` will not fix them. |
 | 5, routine | Update tooling (`undici`, `brace-expansion`, `js-yaml`, `electron-builder`) with a normal `npm audit fix` pass on a branch. | Development-time only. Review `electron-builder`: alerts 31 and 32 concern AppImage packaging and the updater. |
 | 6, no action | `extract-zip` (no fix released) and `sprintf-js` (withdrawn advisory). | Install-time helpers; dismiss or track upstream. |
 
+## Update: `next` 16.4.5
+
+Done: `next` ^16.2.11 to ^16.4.5 (`package.json`, `package-lock.json`; the lock also moves `@swc/helpers` to
+0.5.23 and Next's own `postcss` to 8.5.23). 16.4.5 is above 16.4.1, the fixed version of all six `next`
+alerts. Two changes were needed:
+
+- `next.config.ts` now sets `typescript.tsconfigPath: 'tsconfig.build.json'`. Next 16.4 type-checks every
+  file in `tsconfig.json`, so the known type errors in `e2e/` and `test/` (backlog 23) failed the production
+  build. `tsconfig.build.json` extends `tsconfig.json` and excludes `e2e`, `test`, `scripts` and a few
+  generated folders; `tsc -p .` still checks everything.
+- `next.config.ts` sets `agentRules: false`. Next 16.4's dev server otherwise writes a "This is NOT the
+  Next.js you know" block into `AGENTS.md` when it detects an AI agent.
+
+Checked after the upgrade: `npm test` (1,646), `npm run build`, `test:e2e:doctor`, `electron:refresh`,
+`ipad:sync`, `ipad:doctor`, `git diff --check`. Application `tsc` is clean (the 41 known errors are in
+`e2e/` and `test/`). The browser group of `notation-quality-cycle` failed once on
+`e2e/mouse-precision-stress.spec.ts` "mouse entry prepares audio before commit" (the page stops answering
+for 45 s). That test also fails intermittently on 16.2.11: 1 of 8 runs there, 2 of 6 on 16.4.5, so it is
+treated as an existing flake, not a regression of the upgrade, but the sample is small. The sharp, postcss,
+nanoid and Electron alerts are still open. The image-optimisation endpoint was not exercised.
+
 ## Not done
 
-No dependency, lock file, override or workflow was changed. No alert was dismissed. Reachability of the
+No other dependency, override or workflow was changed. No alert was dismissed. Reachability of the
 Next image optimisation endpoint, and whether the apps open untrusted content in Electron webviews, were
 judged from the source and not exercised.

@@ -64,7 +64,7 @@ especially in paths the audit did not cover.
 
 ## 3. Surfaces
 
-Run on `fa87a81` (2026-11-05; `npm test` 1,646 passed; build passed):
+Run on `fa87a81` (2026-11-05, before the `next` upgrade, which was re-checked separately in iteration 39; `npm test` 1,646 passed; build passed):
 
 | Gate | Result |
 | --- | --- |
@@ -92,7 +92,7 @@ Known limitations:
   failed`), so its evidence is partial.
 - GitHub reports 86 open Dependabot alerts. They are triaged in
   [dependency-security-triage.md](dependency-security-triage.md); nothing was upgraded. `next` 16.2.11 has
-  five critical alerts and needs the owner's decision.
+  five critical alerts; it was upgraded to 16.4.5 afterwards (iteration 39).
 
 ## 4. Commits
 
@@ -190,11 +190,13 @@ Fixed (ledger iterations 32 to 38):
 5. Dynamics from the keyboard (backlog 31).
 6. Keyboard passage 1 (backlog 14), which also exposed and fixed an import defect: slurs across a barline
    were split into two half slurs on reopening a file.
-7. Dependabot triage (document only).
+7. Dependabot triage, then the `next` upgrade to 16.4.5 on the owner's request (iteration 39).
 
 Found and not fixed:
 
 - A slur left open in note input has no visual marker.
+- `e2e/mouse-precision-stress.spec.ts` "mouse entry prepares audio before commit" fails intermittently (the
+  page stops answering for 45 s), on `next` 16.2.11 and 16.4.5 alike. Not investigated.
 - Passages 2 to 4, the mouse corpus, the `MISSING` rows (S5, P10, W2) and the latency budgets were not
   started, as instructed.
 - Not checked: the physical iPad, MIDI hardware and audible playback. The Xcode macOS target does not exist.
@@ -204,7 +206,7 @@ Found and not fixed:
 
 In priority order:
 
-1. The owner's decision on the `next` upgrade (critical alerts), then `@xmldom/xmldom` and Electron.
+1. The owner's decision on `@xmldom/xmldom` and Electron (the `next` upgrade is done, iteration 39), then the tooling alerts.
 2. Keyboard passages 2 to 4 (backlog 14).
 3. The mouse corpus (backlog 15).
 4. The `MISSING` rows: S5, P10 and W2.

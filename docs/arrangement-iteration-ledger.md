@@ -1407,6 +1407,22 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   image optimisation endpoint was not tested. The owner decides.
 - Decision: accepted.
 
+## Iteration 39 — Upgrade `next` to 16.4.5
+
+- Iteration / date / starting SHA / dirty-tree state: 39 / 2026-11-05 / `3726f49`. Requested by the owner after
+  the triage. The owner's uncommitted `docs/README.md` and the iteration prompt stay untouched.
+- Problem: `next` 16.2.11 had five critical and one high Dependabot alert (fixed in 16.4.1).
+- Change: `next` to ^16.4.5 (`package.json`, `package-lock.json`). Two follow-ups that the new version forced:
+  `typescript.tsconfigPath` pointing at the new `tsconfig.build.json` (the build otherwise failed on the known
+  type errors in `e2e/` and `test/`, backlog 23) and `agentRules: false` (the dev server otherwise rewrites
+  `AGENTS.md`). The generated `AGENTS.md` block was reverted.
+- Evidence: `npm test` 1,646 passed; build passed; application `tsc` clean; Doctor, `electron:refresh`,
+  `ipad:sync`, `ipad:doctor` and `git diff --check` passed. `notation-quality-cycle --browser` failed once on
+  a mouse audio-preparation case that also fails intermittently on 16.2.11 (1 of 8 runs there, 2 of 6 here);
+  recorded as an existing flake, not investigated. The physical iPad and a packaged-app launch were not
+  tried, so the upgrade is verified by the automated gates only.
+- Decision: accepted, with the flake noted.
+
 ## Gates for the iteration 24–31 stack and program stop
 
 - Run on `7f82975`:
