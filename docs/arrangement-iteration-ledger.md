@@ -1396,6 +1396,17 @@ confirmation of the brackets in MuseScore was not possible headless; this remain
   documented. Passages 2, 3 and 4 do not exist.
 - Decision: accepted.
 
+## Iteration 38 — Dependency security triage
+
+- Iteration / date / starting SHA / dirty-tree state: 38 / 2026-11-05 / iteration 37 (local). Documentation
+  only; nothing was upgraded.
+- Result: `docs/dependency-security-triage.md` classifies the 86 open Dependabot alerts (5 critical, 50 high,
+  25 medium, 6 low) by package, severity, whether the package reaches shipped runtime, and a recommendation.
+  The urgent one: `next` 16.2.11 has five critical remote-code-execution alerts (fixed in 16.4.1). The
+  repository uses none of the affected Next features directly, and the exposure is local or LAN, but the
+  image optimisation endpoint was not tested. The owner decides.
+- Decision: accepted.
+
 ## Gates for the iteration 24–31 stack and program stop
 
 - Run on `7f82975`:
