@@ -93,3 +93,61 @@ export function injectIpadServerUrl(template, serverUrl) {
   }
   return template.replaceAll(IPAD_SERVER_URL_JSON_MARKER, JSON.stringify(serverUrl));
 }
+
+export const IPAD_LOCAL_SIGNING_PATH = 'ios/signing.local.xcconfig';
+const FREE_TEAM_PROFILE_MAX_DAYS = 7;
+
+export function parseLocalSigningTeam(source) {
+  const match = source.match(/^\s*DEVELOPMENT_TEAM\s*=\s*([A-Z0-9]{10})\s*$/m);
+  return match ? match[1] : null;
+}
+
+function readProfileDate(plistXml, key) {
+  const match = plistXml.match(new RegExp(`<key>${key}</key>\\s*<date>([^<]+)</date>`));
+  if (!match) throw new Error(`The provisioning profile has no ${key}.`);
+  return new Date(match[1]);
+}
+
+export function parseProvisioningProfile(plistXml) {
+  const creation = readProfileDate(plistXml, 'CreationDate');
+  const expiration = readProfileDate(plistXml, 'ExpirationDate');
+  const lifetimeDays = Math.round((expiration.getTime() - creation.getTime()) / 86_400_000);
+  return {
+    creation,
+    expiration,
+    lifetimeDays,
+    isShortLived: lifetimeDays <= FREE_TEAM_PROFILE_MAX_DAYS,
+  };
+}
+
+export function selectConnectedIpad(devicectlOutput, requestedIdentifier) {
+  const ipads = (devicectlOutput?.result?.devices ?? [])
+    .filter((device) => device.hardwareProperties?.deviceType === 'iPad')
+    // A paired iPad on Wi-Fi reports a disconnected tunnel until devicectl opens it on demand.
+    .filter((device) => device.connectionProperties?.pairingState === 'paired')
+    .filter((device) => device.connectionProperties?.tunnelState !== 'unavailable')
+    .map((device) => ({
+      identifier: device.identifier,
+      name: device.deviceProperties?.name ?? 'iPad',
+      udid: device.hardwareProperties?.udid,
+    }));
+
+  if (requestedIdentifier) {
+    const requested = ipads.find((device) => (
+      device.identifier === requestedIdentifier || device.udid === requestedIdentifier
+    ));
+    if (!requested) throw new Error(`The iPad ${requestedIdentifier} is not connected.`);
+    return requested;
+  }
+  if (ipads.length === 0) {
+    throw new Error('No connected iPad was found. Pair it with this Mac, unlock it, and connect it by USB or Wi-Fi.');
+  }
+  if (ipads.length > 1) {
+    throw new Error('Several iPads are connected. Set NEX_NOTE_IPAD_DEVICE to choose one.');
+  }
+  return ipads[0];
+}
+
+export function earliestDate(...dates) {
+  return new Date(Math.min(...dates.map((date) => date.getTime())));
+}

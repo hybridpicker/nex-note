@@ -26,6 +26,7 @@
     "electron:latest": "node scripts/launch-latest-devel-app.mjs",
     "ipad:init": "node scripts/prepare-ipad-web.mjs --live && npx cap add ios && node scripts/configure-ipad-project.mjs",
     "ipad:sync": "node scripts/ipad-dev.mjs --sync-only",
+    "ipad:install": "node scripts/ipad-install.mjs",
     "ipad:dev": "node scripts/ipad-dev.mjs",
     "ipad:doctor": "node scripts/ipad-doctor.mjs",
     "ipad:open": "npx cap open ios",

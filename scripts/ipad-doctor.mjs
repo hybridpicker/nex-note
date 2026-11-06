@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, statfsSync } from 'node:fs';
+import { existsSync, readFileSync, statfsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {
   buildIpadAppUrl,
   buildIpadServerOrigin,
+  IPAD_LOCAL_SIGNING_PATH,
+  parseLocalSigningTeam,
   probeNexNoteServer,
   resolveIpadPort,
   resolveLanAddress,
@@ -63,6 +65,13 @@ async function main() {
   const selectedDeveloperDir = commandOutput('xcode-select', ['-p']);
   if (xcodeDeveloperDir && selectedDeveloperDir.stdout.trim() !== xcodeDeveloperDir) {
     console.log(`○ Active developer directory: ${selectedDeveloperDir.stdout.trim()} (workflow will use ${xcodeDeveloperDir})`);
+  }
+
+  const signingPath = path.join(root, IPAD_LOCAL_SIGNING_PATH);
+  if (existsSync(signingPath) && parseLocalSigningTeam(readFileSync(signingPath, 'utf8'))) {
+    result('Long-lived signing team', true, `configured in ${IPAD_LOCAL_SIGNING_PATH}`);
+  } else {
+    console.log(`○ Long-lived signing team: not configured in ${IPAD_LOCAL_SIGNING_PATH} (a free personal team expires after 7 days)`);
   }
 
   const disk = statfsSync(root);

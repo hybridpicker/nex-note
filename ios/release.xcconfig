@@ -1,0 +1,3 @@
+// Release has no other shared settings. The optional local file carries the
+// machine-specific signing team and is never committed.
+#include? "signing.local.xcconfig"

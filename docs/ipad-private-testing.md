@@ -28,53 +28,64 @@ connection screen retries the exact generated LAN URL automatically.
    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
    ```
 
-5. In Xcode, open **Xcode > Settings > Accounts** and add the Apple Account used
-   on the iPad. A paid Apple Developer Program membership is not required for
-   testing on a personal device.
-6. In the repository, install dependencies and run the doctor:
+5. In Xcode, open **Xcode > Settings > Accounts** and add the Apple Account of
+   the paid Apple Developer Program membership.
+6. Create the untracked `ios/signing.local.xcconfig` with the paid team's ID.
+   Debug and Release both read it, and it is the only place the team is set:
+
+   ```
+   DEVELOPMENT_TEAM = YOUR10CHARS
+   CODE_SIGN_STYLE = Automatic
+   ```
+
+7. In the repository, install dependencies and run the doctor:
 
    ```bash
    npm install
    npm run ipad:doctor
    ```
 
+A free personal team also builds, but its profile expires after 7 days and iPadOS
+then refuses to launch the app. A paid team's development profile lasts one year.
+
 ## First standalone installation
 
 1. Connect the iPad to the Mac with a USB cable.
 2. On the iPad, tap **Trust** if asked and enter the device passcode.
-3. Build and synchronize the standalone editor:
+3. Build, sign, install, and launch the standalone editor:
 
    ```bash
-   npm run ipad:sync
-   npm run ipad:open
+   npm run ipad:install
    ```
 
-   `ipad:sync` runs the production build, generates the static `/ipad` entry,
-   copies its chunks and public assets into the native payload, and writes a
-   Capacitor configuration without `server.url`.
+   `ipad:install` runs `ipad:sync`, which performs the production build, generates
+   the static `/ipad` entry, copies its chunks and public assets into the native
+   payload, and writes a Capacitor configuration without `server.url`. It then
+   builds the Release configuration, refuses a 7-day profile, installs the app on
+   the connected iPad, launches it, and prints the date until which it is valid.
+   Pass `--skip-sync` to reuse the existing payload. With several connected iPads,
+   set `NEX_NOTE_IPAD_DEVICE` to the one to use.
 
-4. In Xcode, select the blue **App** project, then the **App** target, and open
-   **Signing & Capabilities**.
-5. Keep **Automatically manage signing** enabled and choose the personal team
-   for the Apple Account.
-6. Select the connected iPad as the run destination in the Xcode toolbar.
-7. Press the Run button.
-8. If iPadOS asks for Developer Mode, open **Settings > Privacy & Security >
-   Developer Mode**, enable it, restart, and confirm. Run again from Xcode.
-9. Stop any Mac Nex Note server and relaunch the installed app. The editor must
+4. If iPadOS asks for Developer Mode, open **Settings > Privacy & Security >
+   Developer Mode**, enable it, restart, confirm, and run the command again.
+5. Stop any Mac Nex Note server and relaunch the installed app. The editor must
    still open directly.
 
 ## Standalone daily loop
 
-After shared code changes, refresh the native payload and press Run in Xcode:
-
-```bash
-npm run ipad:sync
-npm run ipad:open
-```
+After shared code changes, run `npm run ipad:install` again. To debug in Xcode,
+run `npm run ipad:sync` and `npm run ipad:open`, then press Run; Xcode uses the
+same local team.
 
 The resulting installed build runs independently. The Mac can sleep or leave
 the network after installation.
+
+## Keeping the app installed
+
+The app keeps working until the date `ipad:install` printed, about one year after
+the build. Run `npm run ipad:install` before that date to renew it; app data is
+preserved as long as the team stays the same. Developer Mode must stay enabled on
+the iPad. No App Store, TestFlight, or public release is involved.
 
 ## Optional live-development loop
 
@@ -109,6 +120,7 @@ Useful commands:
 | Command | Purpose |
 | --- | --- |
 | `npm run ipad:doctor` | Check Xcode, disk space, packages, LAN address, and optional live-server reachability. |
+| `npm run ipad:install` | Sync, sign with the local paid team, install, and launch the standalone editor on the connected iPad. |
 | `npm run ipad:sync` | Build and synchronize the standalone native editor with no Mac server dependency. |
 | `npm run ipad:dev` | Prepare the separate Mac-backed live configuration, start Fast Refresh, and open Xcode. |
 | `npm run ipad:open` | Open the generated Xcode project. |
@@ -204,11 +216,20 @@ again and press Run once in Xcode. This does not affect a standalone build.
 ### Xcode reports a signing error
 
 - Confirm the Apple Account is present in Xcode settings.
-- Choose the personal team under **Signing & Capabilities**.
+- Confirm `ios/signing.local.xcconfig` names the paid team. Do not pick a team
+  under **Signing & Capabilities**: that writes it into the tracked project file.
 - Leave automatic signing enabled.
 - If the bundle identifier is already taken in that account, change
   `app.nexnote.ipad` to a unique reverse-domain identifier in
-  `capacitor.config.ts`, regenerate the iOS project, and select the team again.
+  `capacitor.config.ts`, regenerate the iOS project, and run the install again.
+
+### The app no longer opens after a few days
+
+iPadOS rejects an app whose provisioning profile expired. Seven days points to a
+free personal team. Set the paid team in `ios/signing.local.xcconfig` and run
+`npm run ipad:install`. If the iPad reports that the application identifier does
+not match, the installed copy belongs to another team and has to be deleted first,
+which also deletes that copy's local data.
 
 ### The app is not trusted or Developer Mode is unavailable
 
