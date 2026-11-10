@@ -144,9 +144,10 @@ export function laneContents(xml: string) {
           const key = laneKey(part.id, staff.staffIndex, voice.voiceId);
           const lines = lanes.get(key) ?? [];
           for (const event of voice.events) {
+            const tuplets = core.tuplets.filter((tuplet) => tuplet.eventIds.includes(event.id)).map((tuplet) => `${tuplet.actualNotes}:${tuplet.normalNotes}`);
             const pitch = event.kind === 'note' ? `${event.pitch.step}${event.pitch.alter}/${event.pitch.octave}` : 'r';
             const onset = Math.round((event.timestampNum / Math.max(event.timestampDen, 1)) * 4 * 10_000) / 10_000;
-            lines.push(`m${measure.measureNumber}@${onset} ${pitch} ${event.durationType}${event.isDotted ? '.' : ''}${event.kind === 'note' && event.tieStart ? '~' : ''}${event.isChord ? '+' : ''}`);
+            lines.push(`m${measure.measureNumber}@${onset} ${pitch} ${event.durationType}${event.isDotted ? '.' : ''}${event.kind === 'note' && event.tieStart ? '~' : ''}${event.isChord ? '+' : ''}${tuplets.length ? `{${tuplets.join(',')}}` : ''}`);
           }
           lanes.set(key, lines);
         }
@@ -226,6 +227,11 @@ export function runSequence(fixture: string, seed: number, actions: FuzzAction[]
       }
       const newIssues = errorIssues(app.xml).filter((code) => !startIssues.has(code));
       if (newIssues.length) return fail(step, `document invalid: ${[...new Set(newIssues)].join(', ')}`);
+      // The stored XML must hold the music the model holds: a re-export of it gives the same lanes.
+      // Otherwise a later edit anywhere rewrites that music (F12) or its tuplets (F13).
+      const stored = [...laneContents(app.xml)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
+      const again = [...laneContents(buildDocumentState(app.xml).xml)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
+      if (stored !== again) return fail(step, `stored XML is not what the model exports:\n${stored}\n=>\n${again}`);
       if (!isHistory && action !== 'Cmd+v') {
         const after = laneContents(app.xml);
         // Appending or inserting a bar gives every staff a whole-bar rest there; that is structure,

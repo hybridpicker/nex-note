@@ -123,8 +123,10 @@ test('piano left hand (stored voice 5) sixteenths and eighths across beats', () 
   const xml = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [PIANO] });
   const result = enter(xml, 'N 3 c 4 d e f 0', { staff: 2, voice: 5 }, [{ staff: 2, voice: 5 }, { staff: 1 }]);
   assert.deepEqual(result.voices[0], [
-    'm1@0 C3 16th', 'm1@0.25 D3 eighth', 'm1@0.75 E3 16th~', 'm1@1 E3 16th', 'm1@1.25 F3 eighth', 'm1@1.75 r eighth',
-    'm1@2.25 r eighth.', 'm1@3 r quarter',
+    // The rest after F is split at beat 3, as the document model has always held it; the stored XML
+    // used to show one eighth rest across the beat until the next edit rewrote it (F12).
+    'm1@0 C3 16th', 'm1@0.25 D3 eighth', 'm1@0.75 E3 16th~', 'm1@1 E3 16th', 'm1@1.25 F3 eighth', 'm1@1.75 r 16th',
+    'm1@2 r 16th', 'm1@2.25 r eighth.', 'm1@3 r quarter',
   ]);
   assert.deepEqual(result.voices[1], ['m1@0 r whole']);
 });

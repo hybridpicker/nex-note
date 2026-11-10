@@ -616,7 +616,29 @@ function measureHasExplicitDivisions(
   return measure.attributes.some((attribute) => typeof attribute.divisions === 'number' && attribute.divisions > 0);
 }
 
+/**
+ * The part each staff of the document being edited belongs to. MusicXML has one `<divisions>` per
+ * part, so a staff never changes its division grid alone (F11 in note-entry-mastery-ledger: a
+ * finer value in one staff of a grand staff exported the other staff's grid and corrupted onsets).
+ */
+const partOfStaff = new WeakMap<ScoreDocumentModel['score']['parts'][number]['staves'][number], ScoreDocumentModel['score']['parts'][number]>();
+
+function registerStaffParts(document: ScoreDocumentModel) {
+  for (const part of document.score.parts) for (const staff of part.staves) partOfStaff.set(staff, part);
+}
+
 function setStaffDivisionsAtMeasure(
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  measureNumber: number,
+  nextDivisions: number,
+) {
+  const siblings = partOfStaff.get(staff)?.staves ?? [staff];
+  for (const member of siblings.includes(staff) ? siblings : [staff]) {
+    setSingleStaffDivisionsAtMeasure(member, measureNumber, nextDivisions);
+  }
+}
+
+function setSingleStaffDivisionsAtMeasure(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   measureNumber: number,
   nextDivisions: number,
@@ -3638,10 +3660,8 @@ function convertTupletRange(document: ScoreDocumentModel, command: Extract<Valid
   if (paired) return 'Convert ranges on unpaired notation; paired TAB supports dividing an anchor.';
   const factor = command.actualNotes / gcd(roots[0]!.durationDivisions * command.normalNotes, command.actualNotes);
   if (timing.divisions * factor > 1048576) return 'This ratio exceeds the supported exact division grid.';
-  found.part.staves.forEach(staff => {
-    const t = getEffectiveMeasureTimingFromStaff(staff, { measureNumber: command.measureNumber });
-    if (t) setStaffDivisionsAtMeasure(staff, command.measureNumber, t.divisions * factor);
-  });
+  // One absolute grid for the whole part (setStaffDivisionsAtMeasure scales every staff of it).
+  setStaffDivisionsAtMeasure(found.staff, command.measureNumber, timing.divisions * factor);
   const scaledStart = start * factor;
   const lastEnd = (roots.at(-1)!.timestampNum + roots.at(-1)!.durationDivisions);
   for (const event of selected) {
@@ -3758,6 +3778,7 @@ export function executeCoreCommands(
   commands: ValidatedScoreCommand[],
 ): CoreCommandExecutionResult {
   const nextDocument = cloneDocument(currentDocument);
+  registerStaffParts(nextDocument);
   let selectionRemap: SelectionRemap = {};
   const diagnostics: CoreCommandExecutionResult['diagnostics'] = [];
   const batchTargetKeyFifths = [...commands]
@@ -4075,6 +4096,12 @@ export function executeCoreCommands(
           timestampNum: command.timestampNum,
           timestampDen: command.timestampDen,
         })];
+        if (event && event.kind !== 'note') {
+          // A rest has no pitch to change; entering a note into a rest is insertNote. A stale target
+          // used to crash here (F10 in note-entry-mastery-ledger).
+          diagnostics.push({ level: 'warning', code: 'pitch_command_rejected', message: 'There is a rest at this position; enter a note instead.' });
+          break;
+        }
         if (event) {
           event.kind = 'note';
           const noteEvent = event as Extract<TimedEvent, { kind: 'note' }>;
@@ -5301,10 +5328,8 @@ export function executeCoreCommands(
           rejectTuplet('Tuplet creation could not establish an exact integer division grid.');
           break;
         }
-        found.part.staves.forEach((staff) => {
-          const staffTiming = getEffectiveMeasureTimingFromStaff(staff, { measureNumber: command.measureNumber });
-          if (staffTiming) setStaffDivisionsAtMeasure(staff, command.measureNumber, staffTiming.divisions * scaleFactor);
-        });
+        // One absolute grid for the whole part (setStaffDivisionsAtMeasure scales every staff of it).
+        setStaffDivisionsAtMeasure(found.staff, command.measureNumber, targetDivisions);
 
         if (sourceLane.root.durationDivisions % command.actualNotes !== 0) {
           rejectTuplet('Tuplet creation remained fractional after division-grid normalization.');

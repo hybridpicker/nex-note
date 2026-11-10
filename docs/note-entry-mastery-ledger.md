@@ -11,7 +11,7 @@ Started 2026-11-10 on `devel@fe64f3d`.
 
 | Gate | State | Evidence |
 | --- | --- | --- |
-| 1 Trust | Not met | P0 rows open; the fuzzer fails on fresh seeds (F10 to F12) |
+| 1 Trust | Not met | P0 rows open (F2 to F7, F13, F14); the fuzzer still fails on fresh seeds with F13 |
 | 2 Preview equals commit | Not met | Mouse corpus not built (M7); F2 to F4, F7 open |
 | 3 Speed, production build | Not met | Production latency run not done (T3) |
 | 4 Orientation | Not met | O1 to O4 open; session driver not built (T2) |
@@ -26,6 +26,7 @@ Started 2026-11-10 on `devel@fe64f3d`.
 | ID | Tool | State |
 | --- | --- | --- |
 | T1 | Entry fuzzer: `test/entry-fuzz.test.ts`, `test/support/entry-fuzz.ts`. Six synthetic fixtures (single staff, grand staff with two voices, transposing part, tuplets and graces, pickup bar, three parts), 48 weighted key and click actions through the real editor and history hooks. After every action: no new validator error (covers bar sums per voice and meter), no lane outside the addressed part/staff/voice changed, note input keeps a cursor. After every sequence: Undo to the start equals the start XML, Redo to the end equals the end XML. Failures shrink to a minimal replay. `npm test` runs 12 fixed sequences; the gate run is `NEX_FUZZ_SEQUENCES=2000 NEX_FUZZ_SEED=<fresh> npx tsx --test test/entry-fuzz.test.ts` | Built. Voice-level isolation uses the selection's lanes plus the stored entry voice; a bar appended or inserted by the action may add whole-bar rests to every lane |
+| T1 (iteration 3) | New invariant after every action: the stored XML holds the music the model holds (a re-export gives the same lanes, including tuplet membership). A byte comparison is too strict because of F14 | Built |
 | T1a | App-level harness: `test/support/app-harness.ts` mounts `useScoreDocument` and `useNoteEditor` wired as `components/NexNoteApp.tsx` wires them (selection anchors in command meta, selection restore after history changes, `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to Undo and Redo). The older `test/support/entry-harness.ts` has no history | Built |
 | T2 | Browser session driver `e2e/support/entry-session.ts` | open |
 | T3 | Production latency run (`npm run build`, built app, `window.__NEX_NOTE_INPUT_METRICS__` at 32, 512 and 4,096 notes) | open |
@@ -42,18 +43,20 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 
 | ID | Finding | Reproduction test | Status | Commit |
 | --- | --- | --- | --- | --- |
-| F1 | Undo during note input loses the cursor; letters, arrows and new values do nothing afterwards | `test/note-entry-cursor-trust.test.ts` (4 tests failed before: cursor `none`), fuzzer seed 20361111 | fixed | see log, iteration 1 |
+| F1 | Undo during note input loses the cursor; letters, arrows and new values do nothing afterwards | `test/note-entry-cursor-trust.test.ts` (4 tests failed before: cursor `none`), fuzzer seed 20361111 | fixed | `cfe1f27` |
 | F2 | Mouse preview and commit disagree (ghost A4, commit D5); busy bar pushes the canvas ~12 px | needs T2 | open | |
 | F3 | Page stops answering after a mouse commit; 404 for `/soundfonts/FluidR3_GM/flute-mp3.js` | needs T2 | open | |
 | F4 | Two clicks on a valid ghost commit nothing | needs T2 | open | |
 | F5 | `R` in normal mode on a full 4/4 bar inserts a rest and drops the bar's last note | | open | |
 | F6 | Default entry mode is `insert`; paste pushes notes over the barline | | open | |
 | F7 | Zoom-dependent mouse evidence predates the zoom fix | needs T2 | open | |
-| F8 | (fuzzer, seed 20761115, "three parts": `N f W`) `W` in note input lengthens the note just entered and the cursor is lost: the commit records the old cursor slot as the selection, the longer note absorbs it, the restore clears the selection | `test/note-entry-cursor-trust.test.ts` "W in note input lengthens…" (failed before: cursor `none`) | fixed | iteration 0+1 |
-| F9 | Shortening a note (`Q`, or any shorter value through `changeNoteDuration`) moves the rest of the bar earlier instead of leaving a rest; wrong onsets for unrelated music | `test/note-entry-cursor-trust.test.ts` "W in note input over following notes…" (failed before: E5 at beat 2 instead of 3) | fixed | iteration 2 |
-| F10 | (fuzzer, seed base 7301) Crash `Cannot read properties of undefined (reading 'octave')`. Replays: single staff `["click:397","/","click:879","b","d","g","click:427","0","N","e"]`; transposing `["click:77","Shift+ArrowLeft","a","g","c","Delete","Shift+ArrowUp"]`; pickup `["click:39","c","Cmd+c","Cmd+v","J"]` | fuzzer replays | reproduced | |
-| F11 | (fuzzer, seed 107311, grand staff) `3 N e Q` deletes the voice-2 half notes on beat 3 of bars 1 and 2 of the right hand: lost music in another voice | fuzzer replay `["3","N","e","Q"]` | reproduced | |
-| F12 | (fuzzer) An edit in one lane respells the rests of another voice or part (same total, different rest values and onsets). Replays: tuplets `["click:319","Cmd+3","0","0","f","W","click:422","d"]` (voice 1 changes on an edit in voice 2); three parts `["click:311","5","Shift+e","Q","click:199","d"]` (part P2 changes on an edit in P1) | fuzzer replays | reproduced | |
+| F8 | (fuzzer, seed 20761115, "three parts": `N f W`) `W` in note input lengthens the note just entered and the cursor is lost: the commit records the old cursor slot as the selection, the longer note absorbs it, the restore clears the selection | `test/note-entry-cursor-trust.test.ts` "W in note input lengthens…" (failed before: cursor `none`) | fixed | `cfe1f27` |
+| F9 | Shortening a note (`Q`, or any shorter value through `changeNoteDuration`) moves the rest of the bar earlier instead of leaving a rest; wrong onsets for unrelated music | `test/note-entry-cursor-trust.test.ts` "W in note input over following notes…" (failed before: E5 at beat 2 instead of 3) | fixed | `2006cfa` |
+| F10 | (fuzzer, seed base 7301) Crash `Cannot read properties of undefined (reading 'octave')`. Replays: single staff `["click:397","/","click:879","b","d","g","click:427","0","N","e"]`; transposing `["click:77","Shift+ArrowLeft","a","g","c","Delete","Shift+ArrowUp"]`; pickup `["click:39","c","Cmd+c","Cmd+v","J"]` | `test/note-entry-document-trust.test.ts`: the three replays and a core test (all threw before). Two causes: `changeNotePitch` on a rest read the rest's missing pitch, and the editor's selection kept a copy that still said "note" after `0` or Delete replaced it with a rest. The core now rejects a pitch change on a rest (`pitch_command_rejected`), and the editor refreshes its selection, last entry and range anchor from the document by entity id whenever the document changes | fixed | iteration 3 |
+| F11 | (fuzzer, seed 107311, grand staff) `3 N e Q` deletes the voice-2 half notes on beat 3 of bars 1 and 2 of the right hand: lost music in another voice | `test/note-entry-document-trust.test.ts` replay and "F11: a finer value…" (failed before: voice 2 lost both beat-3 halves, bar 1 lost C5 and D5). Cause: a finer value rescaled the division grid of one staff only; MusicXML has one `<divisions>` per part, so the export wrote the other staff's grid. `setStaffDivisionsAtMeasure` now rescales every staff of the part; the two tuplet paths that scaled each staff by a relative factor now pass one absolute grid | fixed | iteration 3 |
+| F12 | (fuzzer) An edit in one lane respells the rests of another voice or part (same total, different rest values and onsets). Replays: tuplets `["click:319","Cmd+3","0","0","f","W","click:422","d"]` (voice 1 changes on an edit in voice 2); three parts `["click:311","5","Shift+e","Q","click:199","d"]` (part P2 changes on an edit in P1) | `test/note-entry-document-trust.test.ts`: replays `pickup bar` 409108 `["N","3","ArrowRight","e","6","0"]` and `three parts` 509106 `["click:36","Cmd+3","Delete"]`, and "F12: the stored XML is what the document model exports…" (all failed before). Cause: the hybrid executor exported XML from the raw execution result, while the document state kept the normalized model, which splits rests at beats; the next edit anywhere re-exported them. The XML is now exported from the normalized model. With the fix, 120 fresh sequences (seed 9100) leave one fixture failing the new fixed-point invariant (F13); without it, five of six fail | fixed | iteration 3 |
+| F13 | (fuzzer, new fixed-point invariant) After `Cmd+3` inside an existing triplet, the stored XML lacks the `<tuplet type="stop">` of the outer and the nested tuplet; a re-import changes the tuplet membership. Replays: `tuplets and graces` 309111 `["click:73","0",".","e","6","Cmd+3"]`, 307321 `["click:319","Cmd+3","0","0"]` | fuzzer replays | reproduced | |
+| F14 | (low) After voice-2 entry the exporter writes a trailing `<backup>` with nothing after it; a re-export drops it. Not musical, but the file changes on the next unrelated edit. Replay: `single staff` 9105 `["click:918","Cmd+Alt+2","f"]` | byte comparison of stored and re-exported XML | reproduced | |
 
 ### P1. Speed
 
@@ -119,6 +122,12 @@ Each can be reverted on request.
 | --- | --- | --- |
 | 2 | A shorter value no longer moves the following notes of the bar earlier; the freed time becomes rests after the note | MuseScore `Score::changeCRlen` |
 
+## Assertion changes
+
+| Iteration | Test | Change | Reason |
+| --- | --- | --- | --- |
+| 3 | `test/entry-split-values.test.ts` "piano left hand (stored voice 5)…" | Expected `m1@1.75 r eighth` became `m1@1.75 r 16th`, `m1@2 r 16th` | The model always held the rest split at beat 3; the old expectation read the stale XML that F12 left behind. Same strictness, the spelling MuseScore uses for a rest across a beat |
+
 ## Decisions
 
 - **Cursor after Undo and Redo in note input.** Undo puts the cursor on the position the undone
@@ -141,4 +150,5 @@ Each can be reverted on request.
 | # | Commit | Measured | Changed | Gates run | Not run |
 | --- | --- | --- | --- | --- | --- |
 | 0+1 | `cfe1f27` | F1 reproduced in the app harness: after `N 5 a b c` and Undo the selection is empty, `d` does nothing. Fuzzer then found F8 (fixed here, because a fixed `npm test` seed hits it) and F9 to F12 | Ledger; app harness; entry fuzzer; F8: `changeNoteDuration` in note input moves the cursor past the changed note and records no stale selection; history transactions carry `undoSelectionAnchor`/`redoSelectionAnchor`; note-input commits record the cursor before and after the entry; `restoreSelection(anchor, reason)` re-derives the last entered note after Undo/Redo | focused tests; fuzzer fixed seeds; `npm test` (1,668 passed); `npm run build`; `git diff --check`; pre-commit hook: `e2e/notation-tools.spec.ts` 51 passed in Chromium; post-commit hook: `electron:build` and `electron:verify` passed | `ipad:sync`/`ipad:doctor` (run at the end of the batch) |
-| 2 | (this commit) | `N 5 g W Q` on a bar of quarters: E5 and F5 moved to beats 2 and 3 | `applyDurationChangeToVoice` no longer calls `shiftEventsAfter` when a value gets shorter; the gap is filled with rests | focused tests; `npm test` (1,669 passed); pre-commit Chromium suite; post-commit Electron build | iPad (run at the end of the batch) |
+| 2 | `2006cfa` | `N 5 g W Q` on a bar of quarters: E5 and F5 moved to beats 2 and 3 | `applyDurationChangeToVoice` no longer calls `shiftEventsAfter` when a value gets shorter; the gap is filled with rests | focused tests; `npm test` (1,669 passed); pre-commit hook `e2e/notation-tools.spec.ts` 51 passed; post-commit `electron:build` + `electron:verify` passed | iPad (run at the end of the batch) |
+| 3 | (this commit) | Fuzzer replays for F10 (3 crashes), F11 (voice 2 lost) and F12 (stored XML differs from the model) | Core rejects a pitch change on a rest; editor refreshes its selection from the document; division grids change per part; XML exported from the normalized model; new fixed-point invariant in the fuzzer | focused tests (11, 7 failed before); `npm test` 1,680 passed; `npm run build`; `git diff --check`; fuzzer 120 fresh sequences with and without the export fix | iPad (end of batch) |

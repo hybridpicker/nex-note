@@ -3,6 +3,7 @@ import { executeCoreCommands, supportsCoreExecution, type SelectionRemap } from 
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
+import { normalizeScoreDocument } from '@/src/score-core/normalize/normalize-score-document';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
 
 export interface HybridExecutionResult {
@@ -102,7 +103,9 @@ export function executeHybridCommands(
 
       const execution = executeCoreCommands(nextCoreDocument, run);
       const unchanged = execution.coreDocument === nextCoreDocument;
-      nextCoreDocument = execution.coreDocument;
+      // Export what the document state will hold: the normalized model. Exporting the raw execution
+      // result left rest spellings in the XML that the next edit anywhere rewrote (F12).
+      nextCoreDocument = unchanged ? execution.coreDocument : normalizeScoreDocument(execution.coreDocument);
       selectionRemap = { ...selectionRemap, ...execution.selectionRemap };
       coreDiagnostics.push(...execution.diagnostics);
       if (!unchanged) nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);

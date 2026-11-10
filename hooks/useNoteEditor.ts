@@ -1286,6 +1286,39 @@ export function useNoteEditor(
     return true;
   }, [clearSelection, coreDocument, setSelectedNoteLive, setSelectedVisualLive]);
 
+  // The selection holds copies of events. When the document changes under them (Delete or a rest
+  // turns a note into a rest, a respell, Undo), refresh the copies by entity id, so a later command
+  // never addresses a note that is now a rest (F10 in note-entry-mastery-ledger).
+  useEffect(() => {
+    if (!coreDocument) return;
+    const entries = new Map(buildSemanticSelectionEntries(coreDocument).map((entry) => [entry.coreEntityId, entry]));
+    const refresh = (note: SelectedNote | null): SelectedNote | null => {
+      if (!note?.coreEntityId) return note;
+      const entry = entries.get(note.coreEntityId);
+      if (!entry) return note;
+      const fresh = toSelectedNote(entry);
+      const same = fresh.isRest === note.isRest
+        && fresh.step === note.step && fresh.octave === note.octave && fresh.alter === note.alter
+        && fresh.durationType === note.durationType && Boolean(fresh.isDotted) === Boolean(note.isDotted)
+        && fresh.measureNumber === note.measureNumber
+        && timestampsEqual(fresh.timestampNum, fresh.timestampDen, note.timestampNum, note.timestampDen);
+      return same ? note : { ...note, ...fresh, graphicalNote: note.graphicalNote ?? null };
+    };
+    const current = selectedNoteRef.current;
+    const refreshed = refresh(current);
+    if (refreshed !== current) setSelectedNoteLive(refreshed);
+    const list = selectedNotesRef.current;
+    const refreshedList = list.map((note) => refresh(note) ?? note);
+    if (refreshedList.some((note, index) => note !== list[index])) {
+      selectedNotesRef.current = refreshedList;
+      setSelectedNotes(refreshedList);
+    }
+    const last = lastNoteInputRef.current;
+    const refreshedLast = refresh(last);
+    if (refreshedLast !== last) lastNoteInputRef.current = refreshedLast;
+    if (lastSelectedRef.current) lastSelectedRef.current = refresh(lastSelectedRef.current);
+  }, [coreDocument, setSelectedNoteLive]);
+
   useEffect(() => {
     if (!selectedNote) return;
     if (!noteInputMode) {
