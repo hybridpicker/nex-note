@@ -16,6 +16,13 @@ All notable changes to nex-note are documented here.
 
 - In note input a value longer than the note at the cursor was rejected when notes followed in the bar; it now overwrites them, as in MuseScore.
 
+- A letter typed on a triplet rest broke the triplet; `T` onto a triplet note wrote wrong values.
+- Delete on a note with a grace note left a hidden gap in the bar.
+- Paste rewrote tied notes elsewhere in the voice and could overfill a bar that held a tied chord.
+- A tie could move onto a grace note, or stay behind after its second note was replaced.
+- Undo of the first note of a voice in a bar lost the input cursor.
+- The saved file could contain a stray `<backup>` that vanished on the next edit.
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

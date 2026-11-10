@@ -1704,11 +1704,16 @@ type EventVoiceContext = NonNullable<ReturnType<typeof findVoice>>;
 function deleteTimedEvent(document: ScoreDocumentModel, context: EventVoiceContext, event: TimedEvent) {
   const index = context.voice.events.indexOf(event);
   if (index < 0) return;
+  // Grace notes share the onset but are not chord tones: deleting the main note of a grace leaves
+  // a rest, not the grace note alone in a gap.
+  const graceEventIds = new Set((document.graceNotes ?? []).map((link) => link.eventId));
   const remainingTones = context.voice.events.filter(entry => (
-    entry !== event && entry.kind === 'note'
+    entry !== event && entry.kind === 'note' && !graceEventIds.has(entry.id)
     && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
   ));
-  if (event.kind === 'note' && remainingTones.length > 0) {
+  if (graceEventIds.has(event.id)) {
+    context.voice.events.splice(index, 1);
+  } else if (event.kind === 'note' && remainingTones.length > 0) {
     context.voice.events.splice(index, 1);
     if (!event.isChord) remainingTones[0]!.isChord = false;
   } else {
@@ -3291,6 +3296,8 @@ function collapseTiedFragmentsAcrossMeasures(
   staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
   voiceId: number,
   selectionRemap: SelectionRemap,
+  /** Limit the merge to tied pairs inside this span; music outside it keeps its spelling. */
+  range?: { startAbs: number; endAbs: number },
 ) {
   const timeline = buildStaffTimeline(staff);
   const tupletEventIds = buildTupletEventIdSet(document);
@@ -3306,6 +3313,11 @@ function collapseTiedFragmentsAcrossMeasures(
     || Boolean(event.preservedXml?.afterType?.length)
     || Boolean(event.preservedXml?.notationChildren?.length)
   );
+
+  // Onsets that carry chord tones. A tied pair is one note written twice only when neither side is a
+  // chord: merging the principal notes would leave the chord tones of the second onset without their
+  // note, as separate events in an overfull bar (F24).
+  const chordOnsets = new Set(flattened.filter((entry) => entry.event.isChord).map((entry) => entry.absStart));
 
   for (const entry of flattened) {
     const previous = collapsed[collapsed.length - 1];
@@ -3327,6 +3339,9 @@ function collapseTiedFragmentsAcrossMeasures(
       && previous.event.pitch.octave === entry.event.pitch.octave
       && previous.event.tieStart
       && previous.absStart + previous.event.durationDivisions === entry.absStart
+      && !chordOnsets.has(previous.absStart)
+      && !chordOnsets.has(entry.absStart)
+      && (!range || (previous.absStart >= range.startAbs && entry.absStart < range.endAbs))
       && !tupletEventIds.has(previous.event.id)
       && !tupletEventIds.has(entry.event.id)
       && !hasForeignAttachments(entry.event)
@@ -3356,6 +3371,12 @@ function collapseTiedFragmentsAcrossMeasures(
   if (!changed) return selectionRemap;
 
   rewriteVoiceFromAbsoluteTimeline(staff, voiceId, collapsed);
+  // The flattened timeline leaves out trailing bars that hold only rests; give them their rests back.
+  const firstMeasureNumber = staff.measures[0]?.measureNumber ?? 1;
+  fillVoiceTimelineGaps(staff, voiceId, {
+    startMeasureNumber: firstMeasureNumber,
+    endMeasureNumber: staff.measures[staff.measures.length - 1]?.measureNumber ?? firstMeasureNumber,
+  });
   remapCollapsedEventReferences(document, collapsedIdMap);
   return remapSelectionRemapTargets(selectionRemap, collapsedIdMap);
 }
@@ -3816,8 +3837,10 @@ function pruneGracesWithoutMainNote(nextDocument: ScoreDocumentModel, currentDoc
     for (const staff of part.staves) {
       for (const measure of staff.measures) {
         for (const voice of measure.voices) {
-          if (voice.events.some((event) => orphaned.has(event.id))) {
-            voice.events = voice.events.filter((event) => !orphaned.has(event.id));
+          // Only the grace note goes. A rest that took over the id of a grace (Delete on a note with a
+          // grace keeps the first event's id) stays, or the bar would get a hidden gap there.
+          if (voice.events.some((event) => orphaned.has(event.id) && event.kind === 'note')) {
+            voice.events = voice.events.filter((event) => !(orphaned.has(event.id) && event.kind === 'note'));
           }
         }
       }
@@ -4311,10 +4334,29 @@ export function executeCoreCommands(
           const root = simultaneousEvents.find((event) => !event.isChord) ?? simultaneousEvents[0];
           if (!root) return null;
 
-          const previousDuration = simultaneousEvents.reduce((max, event) => (
+          // A value other than the unit's own, written on a tuplet unit (F22b): the tuplet cannot keep
+          // its shape. On its first unit the whole tuplet goes and what is left of its time becomes
+          // rests (MuseScore Score::makeGap, "We have to remove the complete tuplet"). On a later unit
+          // the onset is not on the plain grid, so the edit is rejected as a whole.
+          const rootTuplet = nextDocument.tuplets.find((tuplet) => tuplet.eventIds.includes(root.id));
+          const keepsUnit = root.durationType === command.durationType && Boolean(root.isDotted) === Boolean(command.isDotted);
+          let tupletSpanDuration = 0;
+          const tupletMemberIds = new Set<string>();
+          if (rootTuplet && !keepsUnit) {
+            const members = voice.events.filter((event) => rootTuplet.eventIds.includes(event.id));
+            const firstOnset = Math.min(...members.map((event) => event.timestampNum));
+            if (members.length !== rootTuplet.eventIds.length || root.timestampNum !== firstOnset) return 'tuplet-unit' as const;
+            const memberOnsets = new Set(members.map((event) => event.timestampNum));
+            voice.events
+              .filter((event) => memberOnsets.has(event.timestampNum) && event.timestampDen === root.timestampDen)
+              .forEach((event) => tupletMemberIds.add(event.id));
+            tupletSpanDuration = Math.max(...members.map((event) => event.timestampNum + event.durationDivisions)) - firstOnset;
+          }
+
+          const previousDuration = tupletSpanDuration || simultaneousEvents.reduce((max, event) => (
             Math.max(max, event.durationDivisions)
           ), root.durationDivisions);
-          const replacedIds = new Set(simultaneousEvents.map((event) => event.id));
+          const replacedIds = new Set([...simultaneousEvents.map((event) => event.id), ...tupletMemberIds]);
           const rest = buildRestEventFromSpan(
             measure,
             timing.divisions,
@@ -4361,9 +4403,12 @@ export function executeCoreCommands(
               ...tuplet,
               eventIds: tuplet.eventIds.filter((eventId) => eventId === root.id || !replacedIds.has(eventId)),
             }))
-            .filter((tuplet) => tuplet.eventIds.length > 0);
+            .filter((tuplet) => tuplet.eventIds.length > 0)
+            .filter((tuplet) => !(tupletSpanDuration && tuplet.eventIds.includes(root.id)));
 
-          applyDurationChangeToVoice(nextDocument, {
+          // A rest of the unit's own value on a tuplet unit keeps the unit's time; the plain value of
+          // that name is longer and would grow over the next unit.
+          if (!(rootTuplet && keepsUnit)) applyDurationChangeToVoice(nextDocument, {
             staff,
             measure,
             voice,
@@ -4377,6 +4422,10 @@ export function executeCoreCommands(
         };
 
         const replacement = replaceVoiceOnset(found.staff, found.measure, found.voice);
+        if (replacement === 'tuplet-unit') {
+          diagnostics.push({ level: 'warning', code: 'tuplet_command_rejected', message: 'This value does not fit on a later note of a tuplet. Enter the tuplet\'s own note value here, or start on the first note of the tuplet.' });
+          break;
+        }
         if (!replacement) break;
         replacement.replacedIds.forEach((eventId) => {
           if (eventId !== replacement.rootId) commandSelectionRemap[eventId] = replacement.rootId;
@@ -5897,7 +5946,10 @@ export function executeCoreCommands(
             }
           });
 
-          const collapseRemap = collapseTiedFragmentsAcrossMeasures(nextDocument, target.staff, mapping.targetVoiceId, {});
+          const collapseRemap = collapseTiedFragmentsAcrossMeasures(nextDocument, target.staff, mapping.targetVoiceId, {}, {
+            startAbs: targetAbsoluteOffset,
+            endAbs: targetAbsoluteOffset + clipboardData.durationDivisions,
+          });
           laneEventIds.forEach((eventId) => {
             const identity = pastedIdentityMap.get(eventId);
             if (!identity) return;
@@ -6477,8 +6529,9 @@ export function executeCoreCommands(
   }
   applyRhythmSpellingToDocument(nextDocument, rhythmSpellingTargets);
   rebuildDefaultBeams(nextDocument, currentDocument);
-  pruneDanglingTieStarts(nextDocument);
+  // Graces first: a tie must not survive because it ran into a grace note that is removed here.
   pruneGracesWithoutMainNote(nextDocument, currentDocument);
+  pruneDanglingTieStarts(nextDocument);
   nextDocument.index = rebuildScoreIndex(nextDocument);
   nextDocument.revision += 1;
   return {

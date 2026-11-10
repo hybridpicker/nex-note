@@ -230,8 +230,11 @@ export function runSequence(fixture: string, seed: number, actions: FuzzAction[]
       // The stored XML must hold the music the model holds: a re-export of it gives the same lanes.
       // Otherwise a later edit anywhere rewrites that music (F12) or its tuplets (F13).
       const stored = [...laneContents(app.xml)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
-      const again = [...laneContents(buildDocumentState(app.xml).xml)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
+      const reexported = buildDocumentState(app.xml).xml;
+      const again = [...laneContents(reexported)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
       if (stored !== again) return fail(step, `stored XML is not what the model exports:\n${stored}\n=>\n${again}`);
+      // And the file itself is a fixed point of import and export, byte for byte (F14).
+      if (reexported !== app.xml) return fail(step, 'stored XML changes on a re-export (same music, different bytes)');
       if (!isHistory && action !== 'Cmd+v') {
         const after = laneContents(app.xml);
         // Appending or inserting a bar gives every staff a whole-bar rest there; that is structure,

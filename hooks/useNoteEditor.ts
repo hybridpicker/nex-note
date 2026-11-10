@@ -1022,7 +1022,13 @@ export function useNoteEditor(
     const prepared = prepareDocumentCommands({ xml, coreDocument }, commands);
     preparedCommandsRef.current = prepared;
     const rejection = prepared.result.diagnostics.find(d => d.code.endsWith('_rejected'));
-    if (rejection) setEditorError(rejection.message);
+    if (rejection) {
+      // A rejected command rejects its whole batch: callers see an unchanged document and commit
+      // nothing, so no half of an edit reaches the score.
+      setEditorError(rejection.message);
+      preparedCommandsRef.current = undefined;
+      return { ...prepared.result, xml, coreDocument: coreDocument ?? prepared.result.coreDocument };
+    }
     return prepared.result;
   }, [coreDocument, xml]);
   const onApplyCommands = useCallback((commands: ScoreCommand[], meta?: NoteEditorUpdateMeta) => {
@@ -1258,6 +1264,29 @@ export function useNoteEditor(
       // An old transaction without an input anchor: keep the cursor where it is if it still exists.
       const cursor = selectedNoteRef.current;
       restored = getSemanticNoteOrder(coreDocument).filter((entry) => sameRhythmicPosition(entry, cursor)).slice(0, 1);
+    }
+    if (!restored.length && inNoteInput) {
+      // The step removed the lane the cursor stood in (the first entry of a voice in that bar). The
+      // cursor keeps its rhythmic position on the staff: the event of another voice at or before it.
+      const locator = anchor?.anchorLocator ?? selectedNoteRef.current;
+      if (locator) {
+        const onset = locator.timestampNum / Math.max(locator.timestampDen, 1);
+        const sameStaff = getSemanticNoteOrder(coreDocument).filter((entry) => (
+          entry.measureNumber === locator.measureNumber
+          && entry.staffIndex === locator.staffIndex
+          && (!('corePartId' in locator) || !locator.corePartId || entry.corePartId === locator.corePartId)
+          && entry.timestampNum / Math.max(entry.timestampDen, 1) <= onset + 1e-9
+        ));
+        const latest = sameStaff.reduce<number>((max, entry) => Math.max(max, entry.timestampNum / Math.max(entry.timestampDen, 1)), -1);
+        restored = sameStaff
+          .filter((entry) => Math.abs(entry.timestampNum / Math.max(entry.timestampDen, 1) - latest) < 1e-9)
+          .sort((left, right) => left.voiceId - right.voiceId)
+          .slice(0, 1)
+          // Inside a longer rest of that voice the cursor keeps its own onset, as it had before.
+          .map((entry) => (entry.isRest && latest < onset - 1e-9
+            ? { ...entry, timestampNum: locator.timestampNum, timestampDen: locator.timestampDen }
+            : entry));
+      }
     }
     if (inNoteInput) {
       // The state after Undo or Redo is the state of an earlier entry: what was entered after it,
@@ -3164,8 +3193,11 @@ export function useNoteEditor(
     const sourceAnchor = lastNoteInputRef.current ?? visibleSelection;
     if (!sourceAnchor || sourceAnchor.isRest) return false;
 
+    // Grace notes share the onset of their main note but are not part of its chord.
+    const graceEventIds = new Set((coreDocument?.graceNotes ?? []).map((entry) => entry.eventId));
     const sourceChord = getSimultaneousPitchedNotes(coreDocument, sourceAnchor)
       .filter((note) => note.voiceId === sourceAnchor.voiceId)
+      .filter((note) => !note.coreEntityId || !graceEventIds.has(note.coreEntityId))
       .sort((left, right) => (
         diatonicPitchIndex(left.step, left.octave) - diatonicPitchIndex(right.step, right.octave)
         || left.alter - right.alter
@@ -3255,7 +3287,38 @@ export function useNoteEditor(
 
     const validatedTarget = inspected.target;
     const targetLocator = toResolvedEditLocator(validatedTarget);
-    const commands: ScoreCommand[] = [{
+    // The tied note lands on a tuplet unit of the armed value: write it into the unit, so the tuplet
+    // keeps its ratio (the plain value of that name is longer than the unit).
+    const targetSlot = findEventReference(coreDocument, {
+      coreMeasureId: validatedTarget.measureId ?? null,
+      corePartId: validatedTarget.corePartId ?? null,
+      measureNumber: validatedTarget.measureNumber,
+      staffIndex: validatedTarget.staffIndex,
+      voiceId: validatedTarget.voiceId,
+      timestampNum: validatedTarget.timestampNum,
+      timestampDen: validatedTarget.timestampDen,
+    })?.event ?? null;
+    const targetIsTupletUnit = Boolean(
+      targetSlot
+      && coreDocument?.tuplets.some((tuplet) => tuplet.eventIds.includes(targetSlot.id))
+      && targetSlot.durationType === durationType
+      && Boolean(targetSlot.isDotted) === dotted,
+    );
+    const commands: ScoreCommand[] = targetIsTupletUnit && targetSlot ? sourceChord.map((pitch, index) => ({
+      type: 'editTupletUnit' as const,
+      action: index > 0 ? 'chord' as const : 'pitch' as const,
+      step: pitch.step,
+      alter: pitch.alter,
+      octave: pitch.octave,
+      coreEntityId: targetSlot.id,
+      coreMeasureId: validatedTarget.measureId ?? null,
+      corePartId: validatedTarget.corePartId ?? null,
+      measureNumber: validatedTarget.measureNumber,
+      staffIndex: validatedTarget.staffIndex,
+      voiceId: targetSlot.voiceId,
+      timestampNum: targetSlot.timestampNum,
+      timestampDen: targetSlot.timestampDen,
+    })) : [{
       type: 'replaceWithRest',
       coreEntityId: targetAnchor.coreEntityId ?? null,
       coreMeasureId: targetAnchor.coreMeasureId ?? null,
@@ -3268,7 +3331,7 @@ export function useNoteEditor(
       durationType,
       isDotted: dotted,
     }];
-    sourceChord.forEach((pitch, index) => {
+    if (!targetIsTupletUnit) sourceChord.forEach((pitch, index) => {
       commands.push({
         type: 'insertNoteAt',
         coreMeasureId: validatedTarget.measureId,
@@ -5306,8 +5369,11 @@ export function useNoteEditor(
         insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined });
       } else if (currentSelectedNote?.isRest) {
         const pitch = resolveTypedPitch(clefMiddleLineReference(coreDocument, currentSelectedNote), 'closest');
+        // A letter on a selected rest starts note input with the cursor on that rest; the entry then
+        // takes the note-input path, which keeps a tuplet the rest belongs to (F22).
+        lastNoteInputRef.current = currentSelectedNote;
         setNoteInputModeLive(true);
-        insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined, insertAtCursor: true });
+        insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental: selectedAccidentalRef.current ?? undefined });
       } else if (currentSelectedNote && !currentSelectedNote.isRest) {
         changePitch(key, selectedAccidentalRef.current);
       }

@@ -632,19 +632,22 @@ function sameTimedEventOnset(left: TimedEvent, right: TimedEvent) {
     && left.timestampDen === right.timestampDen;
 }
 
-function findTieStopEvent(previous: TimedEvent, orderedEvents: TimedEvent[]) {
+function findTieStopEvent(previous: TimedEvent, orderedEvents: TimedEvent[], graceEventIds: ReadonlySet<string>) {
   if (previous.kind !== 'note') return null;
   const laterNotes = orderedEvents
     .filter((event) => event.kind === 'note' && compareTimedEventOnsetPosition(event, previous) > 0)
     .sort(compareTimedEventPosition);
   const next = laterNotes[0];
   if (!next) return null;
-  return laterNotes
+  // A grace note of the same pitch before the tied-to note shares its onset. The tie ends on the
+  // main note; which of the two is stored first must not decide it.
+  const candidates = laterNotes
     .filter((event) => sameTimedEventOnset(event, next))
-    .find((event) => notePitchesEqual(previous, event)) ?? null;
+    .filter((event) => notePitchesEqual(previous, event));
+  return candidates.find((event) => !graceEventIds.has(event.id)) ?? candidates[0] ?? null;
 }
 
-function buildTieStopEventPlacements(partNode: ScoreDocumentModel['score']['parts'][number]) {
+function buildTieStopEventPlacements(partNode: ScoreDocumentModel['score']['parts'][number], graceEventIds: ReadonlySet<string>) {
   const stopPlacements = new Map<string, TimedEvent['tiePlacement']>();
 
   for (const staff of partNode.staves) {
@@ -668,7 +671,7 @@ function buildTieStopEventPlacements(partNode: ScoreDocumentModel['score']['part
 
       for (const event of orderedEvents) {
         if (!event.tieStart) continue;
-        const stopEvent = findTieStopEvent(event, orderedEvents);
+        const stopEvent = findTieStopEvent(event, orderedEvents, graceEventIds);
         if (stopEvent) stopPlacements.set(stopEvent.id, event.tiePlacement);
       }
     }
@@ -1231,7 +1234,7 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
   coreDocument.score.parts.forEach((partNode, partIndex) => {
     const xmlPart = xmlParts.find((part) => part.getAttribute('id') === partNode.sourcePartId) as XmlEl | undefined;
     if (!xmlPart) return;
-    const tieStopEventPlacements = buildTieStopEventPlacements(partNode);
+    const tieStopEventPlacements = buildTieStopEventPlacements(partNode, new Set((coreDocument.graceNotes ?? []).map((entry) => entry.eventId)));
 
     const canonicalMeasures = findCanonicalMeasures(partNode);
     canonicalMeasures.forEach((measureRef) => {
@@ -1362,6 +1365,9 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
         if (!measure) return;
         const voices = [...measure.voices].sort((a, b) => a.voiceId - b.voiceId);
         voices.forEach((voice) => {
+          // A voice that writes no event must leave nothing behind: its <backup> would stand alone at
+          // the end of the measure and disappear on the next import (F14).
+          const sequenceStart = xmlMeasure.lastChild;
           if (!firstSequence && measureDuration > 0) {
             xmlMeasure.appendChild(buildBackup(doc, measureDuration));
           }
@@ -1396,6 +1402,15 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
               !event.isChord && !isGraceEvent(coreDocument, event.id)
             ));
             cursor += rhythmicEvent?.durationDivisions ?? 0;
+          }
+
+          let wroteEvent = false;
+          for (let node = xmlMeasure.lastChild; node && node !== sequenceStart; node = node.previousSibling) {
+            if (node.nodeType === 1 && (node as unknown as Element).tagName === 'note') { wroteEvent = true; break; }
+          }
+          if (!wroteEvent) {
+            while (xmlMeasure.lastChild && xmlMeasure.lastChild !== sequenceStart) xmlMeasure.removeChild(xmlMeasure.lastChild);
+            return;
           }
 
           firstSequence = false;
