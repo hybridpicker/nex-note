@@ -1784,7 +1784,10 @@ export function useNoteEditor(
       ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
       : (selectedNoteRef.current ?? selectedNote);
     if (!targetNote || !clipboard) return;
-    pastePayloadAt(clipboard, targetNote, entryModeRef.current, 'pasteContent');
+    // Paste always overwrites, as in MuseScore, Dorico and Finale. The editor's default mode is
+    // named insert but behaves like MuseScore's default entry; passing it to paste pushed the
+    // following music over the barline (F6 in note-entry-mastery-ledger).
+    pastePayloadAt(clipboard, targetNote, 'overwrite', 'pasteContent');
   }, [clipboard, pastePayloadAt, selectedNote]);
 
   /**

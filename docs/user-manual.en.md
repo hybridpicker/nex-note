@@ -93,7 +93,7 @@ Turn note input on with the toolbar button or `N`.
 | Rests | `R` or `0` inserts a rest using the active duration. |
 | Repeat last input | `R` repeats the last entered note when note input has an active previous note. |
 | Voices | Toolbar or `Cmd/Ctrl+Alt/Option+1...4`. |
-| Insert/overwrite | `I` switches entry behavior. |
+| Insert/overwrite | `I` switches entry behavior. Paste always overwrites the music after the paste position, as in MuseScore; it never pushes notes into the next bar. |
 | Values across the barline | A value typed from the keyboard that is longer than the rest of the bar is split at the barline and tied into the next bar in one step (for example a quarter on the last eighth becomes eighth–tie–eighth). Both parts must be single, possibly dotted values; other lengths are rejected with a message. Mouse entry keeps rejecting overlong values, because its preview shows a single-bar note. |
 | Tuplets during note input | Choose the total length (for example a quarter), press `Cmd/Ctrl+3` for a triplet (`2`–`9` for other tuplets). The cursor moves into the new group, the entry value becomes its unit (triplet eighths), and typed pitches fill the units in place. Outside note input, `Cmd/Ctrl+2`–`9` divides the selected note or rest. |
 | Chords | `Shift+A...G` adds a chord tone above the highest tone of the note you just entered, as in MuseScore; the cursor stays on the next position. Chord input mode keeps the cursor on the chord instead. |

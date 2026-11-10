@@ -81,7 +81,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Alt/Option+.` / `Alt/Option+,` | Dynamik der gerade eingegebenen Note bzw. der Auswahl um eine Stufe lauter / leiser (`pp p mp mf f ff fff`); ohne Dynamik beginnt die Stufe bei `mf` (`.` ergibt `f`, `,` ergibt `mp`). Gilt nur im Part der Note | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+X` | Auswahl ausschneiden | Noteneditor |
 | `Cmd/Ctrl+C` | Auswahl kopieren | Noteneditor |
-| `Cmd/Ctrl+V` | Clipboard an aktiver Auswahl einfügen | Noteneditor |
+| `Cmd/Ctrl+V` | Clipboard an aktiver Auswahl einfügen; überschreibt die folgende Musik wie in MuseScore, unabhängig vom Insert/Overwrite-Modus | Noteneditor |
 | `Delete` / `Backspace` | Auswahl löschen; bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten | Noteneditor oder Noteneingabe |
 | `Shift+Delete` / `Shift+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
