@@ -2,6 +2,27 @@
 
 All notable changes to nex-note are documented here.
 
+## Unreleased - 2026-11-10
+
+### Fixed
+
+- Undo during note input lost the input cursor, so later keys did nothing; Undo and Redo now keep it.
+- `W` in note input lost the cursor; `Q`/`W` now change the note just entered and move the cursor past it.
+- A shorter note value moved the rest of the bar earlier; the freed time now becomes rests.
+- A finer value in one staff of a grand staff deleted notes of the other voice and of the bar.
+- Three crashes when a pitch change reached a note that had become a rest.
+- The saved MusicXML could spell rests differently from the score on screen.
+- A grace note left in front of a rest was lost, together with its tuplet place, on reopening.
+
+### Changed
+
+- `R` outside note input repeats the selection after itself, as in MuseScore (it used to insert a rest and push the bar's last note out).
+- Paste always overwrites the following music, as in MuseScore, Dorico and Finale.
+
+### Validation
+
+- 1,689 unit tests, including a seeded entry fuzzer over six synthetic scores; build; `e2e/notation-tools.spec.ts` (51) in Chromium; Electron package build and verify; `ipad:sync` and `ipad:doctor`. 14 tests of `e2e/app.spec.ts` already failed before these changes and are tracked in `docs/note-entry-mastery-ledger.md` (F15).
+
 ## Unreleased - 2026-10-02
 
 ### Added

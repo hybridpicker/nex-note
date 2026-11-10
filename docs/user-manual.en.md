@@ -90,8 +90,9 @@ Turn note input on with the toolbar button or `N`.
 | Durations | `1` to `9` select 64th through longa; `8` is breve/double whole and `9` is longa. |
 | Dotted notes | `.` toggles dotted duration. Choosing a new note value (`1`–`9` or the toolbar) clears the dot, as in MuseScore; in duration-first input (`M`) the dot stays with the prepared pitch. |
 | Pitch entry | `A` to `G` enter or change notes, nearest to the previous note (after a chord: its lowest note). With no earlier note in the voice, the first note is placed nearest to the staff's middle line, as in MuseScore: `C` is C5 in treble clef and C3 in bass clef. |
-| Rests | `R` or `0` inserts a rest using the active duration. |
-| Repeat last input | `R` repeats the last entered note when note input has an active previous note. |
+| Rests | `0` enters a rest with the active duration (in note input also `R` before the first note). |
+| Repeat last input | In note input, `R` repeats the last entered note. |
+| Repeat selection | Outside note input, `R` repeats the selection directly after itself, over the music that follows, and selects the copy (MuseScore's Repeat selection). |
 | Voices | Toolbar or `Cmd/Ctrl+Alt/Option+1...4`. |
 | Insert/overwrite | `I` switches entry behavior. Paste always overwrites the music after the paste position, as in MuseScore; it never pushes notes into the next bar. |
 | Values across the barline | A value typed from the keyboard that is longer than the rest of the bar is split at the barline and tied into the next bar in one step (for example a quarter on the last eighth becomes eighth–tie–eighth). Both parts must be single, possibly dotted values; other lengths are rejected with a message. Mouse entry keeps rejecting overlong values, because its preview shows a single-bar note. |

@@ -13,7 +13,7 @@ Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | `Cmd/Ctrl+S` | aktuelle Partitur in der lokalen Library speichern | globale Partituransicht |
 | `Cmd/Ctrl+Shift+S` | Save As in der lokalen Library | globale Partituransicht |
 | `Cmd/Ctrl+W` | aktuelle Partitur schließen | globale Partituransicht |
-| `Cmd/Ctrl+Z` | Undo | global |
+| `Cmd/Ctrl+Z` | Undo; in der Noteneingabe springt der Cursor an die Stelle der rueckgaengig gemachten Eingabe | global |
 | `Cmd/Ctrl+Shift+Z` / `Cmd/Ctrl+Y` | Redo | global |
 | `Cmd/Ctrl+T` | Inspector öffnen und Staff-Text/Expression-Feld fokussieren | Partitur geöffnet |
 | `Cmd/Ctrl+M` | Inspector öffnen und Rehearsal-Mark-Feld fokussieren | Partitur geöffnet |
@@ -105,8 +105,8 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `8` | Breve/Doppelganze wählen | Noteneditor |
 | `9` | Longa wählen | Noteneditor |
 | `.` | Punktierung ein-/ausschalten; eine neu gewählte Dauer (`1`–`9`, Toolbar) setzt den Punkt zurück (wie MuseScore), im Duration-first-Modus `M` bleibt er erhalten | Noteneditor |
-| `Q` | Dauer halbieren | Noteneditor |
-| `W` | Dauer verdoppeln | Noteneditor |
+| `Q` | Dauer halbieren; in der Noteneingabe die gerade eingegebene Note, der Cursor springt hinter sie; die frei werdende Zeit wird zu Pausen | Noteneditor |
+| `W` | Dauer verdoppeln; in der Noteneingabe die gerade eingegebene Note, der Cursor springt hinter sie | Noteneditor |
 | `Shift+Q` | punktierte Dauer eine Stufe kleiner | Noteneditor |
 | `Shift+W` | punktierte Dauer eine Stufe größer | Noteneditor |
 | `Cmd/Ctrl+Alt/Option+1` ... `4` | Stimme 1 ... 4 wählen | Noteneditor |
@@ -309,3 +309,17 @@ Choice of key and MuseScore difference: MuseScore binds `Ctrl+D` to add-dynamic 
 nex-note keeps `Cmd/Ctrl+D` as Duplicate, and its `Alt+.`/`Alt+,` also create the first dynamic, so one
 key pair covers entry and change. The keys have the same physical code (`Period`, `Comma`) on US, UK and
 German/Austrian layouts; on macOS Option replaces the printed character, which the handler ignores.
+
+## Note-entry trust fixes (November 2026)
+
+From the note-entry mastery program ([ledger](note-entry-mastery-ledger.md)); each one follows
+MuseScore Studio 4:
+
+- **Undo and Redo in note input** keep the input cursor: Undo puts it where the undone note or rest
+  was entered, Redo after the redone entry, and typing continues from there.
+- **`Q`/`W` in note input** change the note just entered; the cursor moves past it. A shorter value
+  leaves rests after the note, and the following notes keep their onsets (`Score::changeCRlen`).
+- **`R` outside note input** is Repeat selection: the selection is written again directly after
+  itself, over the following music, and the copy is selected. The clipboard does not change.
+- **`Cmd/Ctrl+V`** always overwrites the music after the paste position, whatever the
+  Insert/Overwrite toggle says.

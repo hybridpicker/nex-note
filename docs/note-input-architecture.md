@@ -225,3 +225,32 @@ XML, with scalable SVG view boxes. History stores immutable result snapshots and
 advances its base when the 100-entry window discards a prefix. MIDI access and
 port-binding generations reject stale callbacks; recorder arming consumes input
 before audio permission completes, and take application checks document identity.
+
+## November 2026 trust invariants
+
+Added by the note-entry mastery program (`docs/note-entry-mastery-ledger.md`, rows F1 to F18). Each
+is covered by a test in `test/note-entry-*.test.ts` and by the entry fuzzer
+(`test/entry-fuzz.test.ts`, `test/support/entry-fuzz.ts`), which drives the real editor and history
+hooks through `test/support/app-harness.ts`.
+
+- **History restores the input cursor.** A transaction carries `undoSelectionAnchor` and
+  `redoSelectionAnchor` next to `selectionAnchor` (`hooks/useScoreDocument.ts`). Note-input commits
+  record the cursor before and after the entry; `restoreSelection(anchor, reason)` in
+  `hooks/useNoteEditor.ts` re-derives the last entered note (the event before the cursor in its
+  voice) after Undo or Redo and drops the open input slur.
+- **The selection never describes a stale event.** When the document changes, the selection, the
+  last entry and the range anchor are refreshed from the document by entity id, so a note that
+  became a rest is addressed as a rest. The core also rejects `changeNotePitch` on a rest
+  (`pitch_command_rejected`).
+- **One division grid per part.** `setStaffDivisionsAtMeasure` rescales every staff of the part,
+  because MusicXML has one `<divisions>` per part; rescaling one staff of a grand staff corrupted the
+  other staff's onsets on export.
+- **The stored XML is exported from the normalized model** (`hybrid-command-executor.ts`), so the
+  file and the model hold the same music. The fuzzer checks after every action that a re-export
+  gives the same lanes, including tuplet membership.
+- **A shorter value fills with rests** instead of moving the rest of the bar
+  (`applyDurationChangeToVoice`).
+- **Grace notes go with their main note.** At the end of `executeCoreCommands`, a grace whose main
+  event the edit turned into a rest or removed is deleted with its links; graces that already stood
+  before a rest are left alone.
+- **Paste overwrites** in every entry mode; `R` outside note input is Repeat selection.

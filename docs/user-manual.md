@@ -102,10 +102,11 @@ Note Input wird mit dem Button `Note Input` oder `N` aktiviert. Die Eingabe ist 
 | Dauern | `1` bis `9` waehlen 64tel bis Longa; `8` ist Breve/Doppelganze, `9` ist Longa. |
 | Punktierung | `.` toggelt die punktierte Dauer. |
 | Tonhoehen | `A` bis `G` geben Noten ein oder aendern die aktive Tonhoehe. |
-| Rest | `R` oder `0` fuegt einen Rest mit aktiver Dauer ein. |
-| Wiederholen | `R` wiederholt im Note-Input-Kontext die letzte Note, wenn bereits eine Note eingegeben wurde. |
+| Rest | `0` fuegt einen Rest mit aktiver Dauer ein (in Note Input vor der ersten Note auch `R`). |
+| Wiederholen | `R` wiederholt in Note Input die zuletzt eingegebene Note. |
+| Auswahl wiederholen | Ausserhalb von Note Input wiederholt `R` die Auswahl direkt hinter sich selbst, ueberschreibt die folgende Musik und waehlt die Kopie aus (wie MuseScores Repeat selection); die Zwischenablage bleibt unveraendert. |
 | Stimmen | Stimme 1 bis 4 ueber Toolbar oder `Cmd/Ctrl+Alt/Option+1...4`. |
-| Insert/Overwrite | `I` oder Toolbar-Schalter wechselt zwischen Einfuegen und Ueberschreiben; `Cmd/Ctrl+I` waehlt Insert, `Cmd/Ctrl+Shift+I` waehlt Overwrite. |
+| Insert/Overwrite | `I` oder Toolbar-Schalter wechselt zwischen Einfuegen und Ueberschreiben; `Cmd/Ctrl+I` waehlt Insert, `Cmd/Ctrl+Shift+I` waehlt Overwrite. Einfuegen aus der Zwischenablage ueberschreibt immer die folgende Musik wie in MuseScore und schiebt nie Noten in den naechsten Takt. |
 | Akkorde | `Cmd/Ctrl+Shift+H` toggelt Chord Input Mode; Chord Input Mode oder `Shift+A...G` fuegt Akkordtoene am aktuellen Einsatz hinzu. |
 | Cursor Insert | `Cmd/Ctrl+Shift+A...G` fuegt explizit am Cursor ein. |
 | Oktaven | `Shift+Arrow Up/Down` oder `Cmd/Ctrl+Arrow Up/Down`. |
@@ -145,7 +146,7 @@ Direkte Bearbeitung ist ueber Toolbar, Tastatur und Palette moeglich:
 | Oktavieren | `Shift+Arrow Up/Down`, `Cmd/Ctrl+Arrow Up/Down`, Toolbar `8va+/-`, Palette `+/-1 octave`. |
 | Cross-Staff verschieben | `Cmd/Ctrl+Shift+Arrow Up/Down` verschiebt Noten, Akkorde oder gemischte Note/Rest-Bereiche auf den Nachbarstaff, wenn dort passende Rest-Slots liegen. |
 | Ganzton / Quinte | Edit Palette `+/-M2` und `+/-P5`. |
-| Dauer halbieren/verdoppeln | `Q` / `W`. |
+| Dauer halbieren/verdoppeln | `Q` / `W`; in Note Input aendern sie die gerade eingegebene Note, der Cursor springt hinter sie. Ein kuerzerer Wert laesst Pausen hinter der Note, die folgenden Noten bleiben an ihrem Platz (wie MuseScore). |
 | Punktierte Dauer halbieren/verdoppeln | `Shift+Q` / `Shift+W`. |
 | Vorzeichen | Toolbar oder `-` Flat, `=` Natural, `+` Sharp, `Alt/Option+-` Double-flat, `Alt/Option+=` Double-sharp. In Note Input gilt die Wahl fuer genau die naechste erfolgreiche Note. |
 | Enharmonische Schreibweise | `J` durchlaeuft fuer die Auswahl die gueltigen Schreibweisen von Double-flat bis Double-sharp, ohne klingende Tonhoehe, Rhythmus oder Entity-Identitaet zu aendern. |
@@ -358,6 +359,8 @@ Undo/Redo funktioniert ueber den semantischen Command-Verlauf:
 
 Der Verlauf ist auf eine feste Laenge begrenzt. Nach sehr vielen Aenderungen koennen alte Schritte aus dem Verlauf fallen.
 
+In Note Input setzt Undo den Eingabecursor an die Stelle zurueck, an der die rueckgaengig gemachte Note oder Pause eingegeben wurde, und die Eingabe geht dort weiter; die Note vor dem Cursor bestimmt die Oktave des naechsten Buchstabens. Redo setzt den Cursor hinter die wiederhergestellte Eingabe.
+
 ## Debug und Bug Reports
 
 Im Debug-Modus erscheint ein `Report bug` Button. Der Bug Report exportiert ein Bundle mit:
@@ -398,7 +401,7 @@ Doctor Mode und Visual Debug helfen bei Note-Input-, Rhythmus-, Layout- und Sema
 2. `N` druecken.
 3. Dauer mit `1` bis `9` waehlen.
 4. Tonhoehe mit `A` bis `G` eingeben.
-5. Optional `.` fuer Punktierung, `R` fuer Rest, `Shift+A...G` fuer Akkordton.
+5. Optional `.` fuer Punktierung, `0` fuer Rest, `Shift+A...G` fuer Akkordton.
 
 ### Bereich bearbeiten
 

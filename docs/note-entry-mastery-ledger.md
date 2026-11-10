@@ -170,11 +170,11 @@ Each can be reverted on request.
   `overwrite` is a stricter replace-everywhere variant. The user-visible defect was paste, which
   inherited the mode; paste now always overwrites. The label `INS` for MuseScore's default behaviour
   is misleading; renaming the modes (not their behaviour) belongs to O3.
-- **Push to `origin/devel` held.** Local `devel` was two commits ahead of `origin/devel` at the
-  start (`c463b71`, `fe64f3d`, by the owner). `c463b71` adds `DEVELOPMENT_TEAM` to the tracked Xcode
-  project and `fe64f3d` moves it into an untracked local file on purpose. Pushing `devel` would
-  publish that identifier in the public history, so the program's commits stay local until the owner
-  decides (blocked on the owner: push as is, or rewrite those two commits first).
+- **Push to `origin/devel`.** Local `devel` was two commits ahead of `origin/devel` at the start
+  (`c463b71`, `fe64f3d`, by the owner); `c463b71` adds `DEVELOPMENT_TEAM` to the tracked Xcode project
+  and `fe64f3d` moves it into an untracked file. The program's commits were held locally until the
+  owner asked for the push; `devel` was pushed at `584a0df` on 2026-11-10, which also published those
+  two commits. Later iterations push after each commit, as the prompt says.
 
 ## Iteration log
 
@@ -186,4 +186,5 @@ Each can be reverted on request.
 | 4 | `a2cfbcc` | F5 reproduced in the app harness | `repeatSelection` (copy without the clipboard, paste in overwrite mode after the last selected event); `pastePayloadAt` shared with paste | focused 4 tests (3 failed before); `npm test` 1,684 passed; pre-commit Chromium 51 passed; post-commit Electron build verified. This ledger row and the F5 status were written in iteration 5: the ledger edit of iteration 4 failed on a stale match and the commit went ahead without it | iPad (end of batch) |
 | 5 | `b1de120` | F6 reproduced in the app harness. A default-mode flip broke 17 browser tests and was reverted (see Decisions) | Paste passes `mode: 'overwrite'` | focused 2 tests (1 failed before); `npm test` 1,686 passed; full `e2e/app.spec.ts` on this change: 38 passed, 16 failed; pre-commit Chromium 51 passed, post-commit Electron verified; the same file on `fe64f3d` sources: 40 passed, 14 failed (F15). The two extra failures re-run twice each: file lifecycle passed both times (flaky download wait), `:2084` failed once (F4) | iPad (end of batch) |
 | 6 | `6ea4454` | F13 replay 309111 failed the fixed-point invariant | `pruneGracesWithoutMainNote` at the end of `executeCoreCommands`; found F16 and F17 while diagnosing | focused 3 tests (1 failed before); `npm test` 1,689 passed; first version of the prune broke 6 grace tests (it missed graces stored after their main event before normalization) and was corrected before commit; pre-commit Chromium 51 passed, post-commit Electron verified; `ipad:sync` and `ipad:doctor` passed on this commit | — |
-| 7 | (this commit) | F18 bisected to `6ea4454` | `graceNotes ?? []` in the grace prune; in the same commit: handoff section, docs index, the program prompts (`note-entry-mastery-prompt.md`, `arrangement-note-entry-iteration-prompt.md`) committed; push to `origin/devel` on the owner's instruction | `--repeat-each` runs above; `npm test` 1,689 passed | — |
+| 7 | `584a0df` | F18 bisected to `6ea4454` | `graceNotes ?? []` in the grace prune; in the same commit: handoff section, docs index, the program prompts (`note-entry-mastery-prompt.md`, `arrangement-note-entry-iteration-prompt.md`) committed; push to `origin/devel` on the owner's instruction | `--repeat-each` runs above; `npm test` 1,689 passed | — |
+| docs | (this commit) | — | Session-1 behaviour in `CHANGELOG.md`, `docs/user-manual.en.md`, `docs/user-manual.md`, `docs/keyboard-shortcuts.md`, `docs/note-input-architecture.md`; stale `R inserts a rest` lines corrected | — | — |
