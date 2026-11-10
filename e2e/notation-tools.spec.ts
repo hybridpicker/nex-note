@@ -404,7 +404,8 @@ test('notation toolbar states active voice and entry intent in plain language', 
   await expect(summary).toHaveAttribute('aria-live', 'off');
 
   await page.getByTitle('Toggle note input (N)').click();
-  await page.getByTitle(hostShortcutHint('Voice 3 (Cmd/Ctrl+Alt/Option+3)'), { exact: true }).click();
+  // The note-input bar has a voice button of the same title; this test means the notation tools.
+  await page.getByTestId('left-notation-sidebar').getByTitle(hostShortcutHint('Voice 3 (Cmd/Ctrl+Alt/Option+3)'), { exact: true }).click();
   await page.getByTitle(hostShortcutHint('Entry: insert (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)'), { exact: true }).click();
   await page.getByTitle(hostShortcutHint('Multi-voice input off (Cmd/Ctrl+Shift+H)'), { exact: true }).click();
 
@@ -1347,10 +1348,19 @@ test('J cycles rendered enharmonic spelling with stable pitch, identity, and ato
   });
   const editedXml = await readCurrentXml(page);
   expect(editedXml).toMatch(/<step>D<\/step><alter>-2<\/alter><octave>4<\/octave>/);
-  const respelledNotehead = await page.locator('[data-testid="score-canvas"] .vf-notehead').first().boundingBox();
   expect(initialNotehead).not.toBeNull();
+  // The document changes before the score is drawn again: wait until the canvas shows this revision,
+  // then read the notehead. Read during the re-render, its node is detached and has no box (F37).
+  await expect.poll(() => page.getByTestId('score-canvas').evaluate((element) => (
+    (element as HTMLElement).dataset.documentRevision === (element as HTMLElement).dataset.renderedRevision
+  ))).toBe(true);
+  let respelledNotehead: { x: number; y: number; width: number; height: number } | null = null;
+  await expect.poll(async () => {
+    respelledNotehead = await page.locator('[data-testid="score-canvas"] .vf-notehead').first()
+      .boundingBox({ timeout: 1_000 }).catch(() => null);
+    return respelledNotehead ? Math.abs(respelledNotehead.y - initialNotehead!.y) : -1;
+  }, { message: 'the respelled notehead is drawn on another staff position' }).toBeGreaterThan(3);
   expect(respelledNotehead).not.toBeNull();
-  expect(Math.abs(respelledNotehead!.y - initialNotehead!.y)).toBeGreaterThan(3);
   await expectNoDoctorIssues(page, 'after rendered enharmonic respelling');
 
   await page.keyboard.press('Control+z');

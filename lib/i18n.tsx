@@ -394,6 +394,15 @@ const en = {
   'note.quintuplet': 'Quintuplet from selection',
   'note.voice': 'Voice',
   'note.entry': 'Entry',
+  'noteInputBar.label': 'Note input: armed value, accidental, voice and mode',
+  'noteInputBar.flat': 'Flat',
+  'noteInputBar.natural': 'Natural',
+  'noteInputBar.sharp': 'Sharp',
+  'noteInputBar.modeTitle': 'Entry mode',
+  'noteInputBar.modeStandard': 'Standard',
+  'noteInputBar.modeReplace': 'Replace',
+  'noteInputBar.tuplet': 'Cursor in tuplet',
+  'noteInputBar.noTuplet': 'Cursor not in a tuplet',
   'note.chordInputOn': 'Multi-voice input on',
   'note.chordInputOff': 'Multi-voice input off',
   'note.placementReplace': 'Replace',
@@ -527,6 +536,15 @@ type Dictionary = Record<TranslationKey, string>;
 export const TRANSLATION_KEYS = Object.keys(en) as TranslationKey[];
 
 const de: Partial<Dictionary> = {
+  'noteInputBar.label': 'Noteneingabe: gewählter Wert, Vorzeichen, Stimme und Modus',
+  'noteInputBar.flat': 'Be',
+  'noteInputBar.natural': 'Auflösungszeichen',
+  'noteInputBar.sharp': 'Kreuz',
+  'noteInputBar.modeTitle': 'Eingabemodus',
+  'noteInputBar.modeStandard': 'Standard',
+  'noteInputBar.modeReplace': 'Ersetzen',
+  'noteInputBar.tuplet': 'Cursor in N-Tole',
+  'noteInputBar.noTuplet': 'Cursor in keiner N-Tole',
   'app.language': 'Sprache',
   'app.settings': 'Einstellungen',
   'app.manual': 'Handbuch',
@@ -744,6 +762,15 @@ const de: Partial<Dictionary> = {
 };
 
 const fr: Partial<Dictionary> = {
+  'noteInputBar.label': 'Saisie de notes : valeur, altération, voix et mode actifs',
+  'noteInputBar.flat': 'Bémol',
+  'noteInputBar.natural': 'Bécarre',
+  'noteInputBar.sharp': 'Dièse',
+  'noteInputBar.modeTitle': 'Mode de saisie',
+  'noteInputBar.modeStandard': 'Standard',
+  'noteInputBar.modeReplace': 'Remplacer',
+  'noteInputBar.tuplet': 'Curseur dans un n-olet',
+  'noteInputBar.noTuplet': 'Curseur hors n-olet',
   'app.language': 'Langue',
   'app.settings': 'Réglages',
   'app.manual': 'Manuel',
@@ -922,6 +949,15 @@ const fr: Partial<Dictionary> = {
 };
 
 const es: Partial<Dictionary> = {
+  'noteInputBar.label': 'Entrada de notas: valor, alteración, voz y modo activos',
+  'noteInputBar.flat': 'Bemol',
+  'noteInputBar.natural': 'Becuadro',
+  'noteInputBar.sharp': 'Sostenido',
+  'noteInputBar.modeTitle': 'Modo de entrada',
+  'noteInputBar.modeStandard': 'Estándar',
+  'noteInputBar.modeReplace': 'Reemplazar',
+  'noteInputBar.tuplet': 'Cursor en un grupo irregular',
+  'noteInputBar.noTuplet': 'Cursor fuera de grupo irregular',
   'app.language': 'Idioma',
   'app.settings': 'Ajustes',
   'app.manual': 'Manual',

@@ -9,6 +9,13 @@ Started 2026-11-10 on `devel@fe64f3d`.
 
 ## Handoff (session 2, kept current after every iteration)
 
+**Session 3:** iteration 16 was committed after one hook rejection: `e2e/notation-tools.spec.ts:399`
+clicked `Voice 3` by title, which the note-input bar duplicates (50 of 51 passed, at load average up to
+290); the test is scoped to the notation tools. The same commit carries the waits for F21 and F37; their
+evidence runs are iteration 17. MuseScore defaults read this session:
+`src/app/configs/data/shortcuts.xml` and `src/engraving/editing/edit.cpp` `Score::cmdDeleteSelection`
+at `main@d83c216` (in note input, delete puts the input position on the deleted chord's segment: K3).
+
 Session 1: iterations 0 to 7 (F1, F5, F6, F8 to F13, F18). Session 2: iterations 8 to 14, all
 on the Trust gate: F14, F16, F17, F19, F22 to F35, F2, F4 and F15b fixed; F3, F7 not reproduced; F15 and F15a
 triaged. The fuzzer passes 2,000 fresh sequences with a byte-level fixed-point check after every
@@ -18,8 +25,9 @@ action. Next, in this order:
 2. S1 and S2 (gate 3). T3 is built; the numbers are under "Latency". The command path is down to
    about 200 ms at 4,096 notes; the visible edit still needs the three steps of the prompt (pending
    note in the overlay, range rendering, viewport rendering). The pending note needs the caret (O1).
-3. O1 and O2: caret and note-input bar. The session driver already reads `note-input-caret` and
-   `note-input-bar` (`data-armed-field`), which do not exist yet.
+3. O3 and O4 (plain labels, inspector note properties, status line as bar and beat, caret in view at
+   200 % and in page view). The mode names in the note-input bar are already `Standard` and
+   `Replace`; the sidebar still says `INS`.
 4. T4, the reference tasks, then P3 and P4.
 
 Verification habits that matter here:
@@ -54,7 +62,7 @@ Verification habits that matter here:
 | 1 Trust | Not met | Fuzzer: 2,000 fresh sequences of 40 actions pass (seed 560311, iteration 12 code before the UI-only changes of that iteration; `test/entry-fuzz.test.ts`, 6 fixtures, byte-level fixed point after every action). No open P0 row except the flaky tests F21 and F37 |
 | 2 Preview equals commit | Not met | F2 fixed (canvas no longer moves), F7 covered at 50/100/200 % on one treble fixture; the corpus of clefs, views and textures is M7 |
 | 3 Speed, production build | Not met | Measured (see Latency): visible edit p95 67 / 433 / 6,712 ms against 100 / 100 / 150; pointer preview within budget at 32 and 512 notes |
-| 4 Orientation | Not met | O1 to O4 open; session driver not built (T2) |
+| 4 Orientation | Not met | O1 and O2 fixed (caret and note-input bar, proven on one treble fixture); O3 and O4 open; the proof "at every step of R1 to R6" needs the reference tasks (T4) |
 | 5 Keyboard flow | Not met | Reference tasks R2 to R6 not built (T4) |
 | 6 Mouse flow | Not met | R7, R8 not built; M1 to M6 open |
 | 7 Every row closed | Not met | See queue |
@@ -137,8 +145,8 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 
 | ID | Finding | Reproduction test | Status | Commit |
 | --- | --- | --- | --- | --- |
-| O1 | No keyboard caret | needs T2 | open | |
-| O2 | Armed state invisible with the tools panel closed | needs T2 | open | |
+| O1 | No keyboard caret: nothing marked where the next note would land | `e2e/entry-orientation.spec.ts` "O1: a caret marks the input position from N on and follows every entry" and "O1: the caret follows Undo and a click on another bar" (before: `note-input-caret` did not exist; probe of iteration 12 read `caret: null`). The caret is drawn in `components/ScoreEditor.tsx` from the rendered snap grid at the cursor's onset, over the cursor's staff, in the voice colour (`VOICE_COLOURS`), for keyboard, mouse and MIDI entry; inside a longer rest it is placed by time between its neighbours; the viewport scrolls to keep it in view | fixed | iteration 16 |
+| O2 | The armed state was invisible with the tools panel closed | `e2e/entry-orientation.spec.ts` "O2: the note-input bar shows what is armed and follows every change" (before: `note-input-bar` did not exist). `components/NoteInputBar.tsx`: value, dot, accidental, voice, entry mode and tuplet, each a control, at the right end of the always-present row under the toolbar, so it moves nothing (the F2 canvas test covers `N`). First placed in the toolbar row, where it pushed "Note Input", "MIC REC", "Lead" and "Layout" out of view at 1280 px; moved after looking at the screenshot | fixed | iteration 16 |
 | O3 | Cryptic labels (`INS`, `CHD`, `STEP`, `DUR`, `LEAD`); wrong "Multi-voice" hover label; inspector has no note properties | | open | |
 | O4 | View-follow during long entry not established; status line shows a raw fraction | needs T2 | open | |
 
@@ -247,6 +255,7 @@ Each can be reverted on request.
 | 14 | `e2e/app.spec.ts` "mouse note input activates clicked pitches while preserving the selected input voice" | The click goes to the voice-2 notehead itself (was: 27 px under the voice-1 notehead, a point on the voice-2 stem). Expectations unchanged | The preview takes its pitch from the pointer position (F4); the old point only named G3 because the hover test matched the whole SVG group of the note, stem included |
 | 14 | `e2e/guitar-tab-sync.spec.ts` "dragging a TAB fret to another string keeps the pitch and recomputes the fret" | The drag is one TAB line (was 1.5). Expected fret, string and pitch unchanged | Calibrated on the F2 shift like `:3321`: passes with the toolbar of `1d084b4`, failed since iteration 12 without anyone running this file |
 | 14 | `e2e/step-time-anchor-validation.spec.ts` "standard step-time note input only targets real note/rest anchors…" | First entered `C` is C5 (was C4) | Clef middle-line rule of `d32b138`; fails on the pre-F2 toolbar too, so it predates this program |
+| 16 | `e2e/notation-tools.spec.ts:399` and `e2e/app.spec.ts`, helper `voiceButton` (3 tests) | The button is looked up inside the notation tools (`left-notation-sidebar`). No expectation changed | The note-input bar (O2) has voice buttons with the same title, so the title alone matched two elements |
 
 ## Decisions
 
@@ -307,7 +316,7 @@ Each can be reverted on request.
 | 5 | `b1de120` | F6 reproduced in the app harness. A default-mode flip broke 17 browser tests and was reverted (see Decisions) | Paste passes `mode: 'overwrite'` | focused 2 tests (1 failed before); `npm test` 1,686 passed; full `e2e/app.spec.ts` on this change: 38 passed, 16 failed; pre-commit Chromium 51 passed, post-commit Electron verified; the same file on `fe64f3d` sources: 40 passed, 14 failed (F15). The two extra failures re-run twice each: file lifecycle passed both times (flaky download wait), `:2084` failed once (F4) | iPad (end of batch) |
 | 6 | `6ea4454` | F13 replay 309111 failed the fixed-point invariant | `pruneGracesWithoutMainNote` at the end of `executeCoreCommands`; found F16 and F17 while diagnosing | focused 3 tests (1 failed before); `npm test` 1,689 passed; first version of the prune broke 6 grace tests (it missed graces stored after their main event before normalization) and was corrected before commit; pre-commit Chromium 51 passed, post-commit Electron verified; `ipad:sync` and `ipad:doctor` passed on this commit | — |
 | 7 | `584a0df` | F18 bisected to `6ea4454` | `graceNotes ?? []` in the grace prune; in the same commit: handoff section, docs index, the program prompts (`note-entry-mastery-prompt.md`, `arrangement-note-entry-iteration-prompt.md`) committed; push to `origin/devel` on the owner's instruction | `--repeat-each` runs above; `npm test` 1,689 passed | — |
-| docs | (this commit) | — | Session-1 behaviour in `CHANGELOG.md`, `docs/user-manual.en.md`, `docs/user-manual.md`, `docs/keyboard-shortcuts.md`, `docs/note-input-architecture.md`; stale `R inserts a rest` lines corrected | — | — |
+| docs | `6606032` | — | Session-1 behaviour in `CHANGELOG.md`, `docs/user-manual.en.md`, `docs/user-manual.md`, `docs/keyboard-shortcuts.md`, `docs/note-input-architecture.md`; stale `R inserts a rest` lines corrected | — | — |
 | 8 | `a683223` | F16: C D E F, `0` on D gave C D r E. F17 replay: `e` rejected with an internal code. F19: `N 6 a` on D rejected, `N 7 a` accepted | `0` outside note input starts note input first; keyboard replace with a longer value falls back to `replaceWithRest` + `insertNoteAt`; rejection text for the remaining case | focused 8 tests (5 failed before); `npm test` 1,697 passed; full `e2e/app.spec.ts`, both projects: 43 passed, 29 failed = the 14 known regression-project failures (F15), 14 smoke-project failures and `:2540`; on the `6606032` sources the same 14 smoke tests fail and `:2540` fails 1 of 3 (F15, F21) | iPad (end of batch) |
 | 9 | `ef16dd4` | Byte-level fixed-point invariant added to the fuzzer; 240 sequences (seed 771100) failed on all six fixtures, then on four; 360 sequences (seed 3305500) still fail on five (F30) | F14, F22 to F29 as in their rows; T2 driver `e2e/support/entry-session.ts` added, not yet used by a spec | focused 19 tests; `npm test` 1,716 passed; `e2e/app.spec.ts` regression project before the last four core fixes: 38 passed, 16 failed = the 14 of F15, `:2540` (F21) and the file-lifecycle download wait (flaky since session 1) | smoke project (F15a); iPad (end of batch) |
 | 10 | `b42a27d` | Fuzzer: seed 3305500 failed on 5 of 6 fixtures; after the fixes 360 sequences of seed 3305500 and 600 of seed 48200000 pass; 600 of seed 91730000 fail on 4 fixtures (F32) | F30 as in its row; fuzzer clicks with live ids | 11 new tests; `npm test` 1,727 passed; `e2e/app.spec.ts` regression project: 39 passed, 15 failed = the 14 of F15 and `:2540` (F21) | smoke project (F15a); iPad (end of batch) |
@@ -315,4 +324,5 @@ Each can be reverted on request.
 | 12 | `0379ed7` | Gate fuzzer: 2,000 sequences pass (seed 560311). Session driver first used: F2 reproduced (canvas 162 → 174 px). F15/F15a triaged test by test | F34; F2 (progress bar overlays the toolbar edge); palette command request acknowledged; `e2e/entry-trust.spec.ts`; `e2e/support/keyboard-layout.ts`; `e2e/app.spec.ts` setup helpers and the assertion changes above | 14 new unit and 9 new browser tests; `npm test` 1,743 passed; `npm run build`; `e2e/entry-trust.spec.ts` 21 of 21 (3 repeats) plus F3 6 of 6; `e2e/app.spec.ts` both projects: 69 passed, 3 failed = the file-lifecycle download wait, `:2138` (F4) and `:3321` (a test calibrated on the F2 shift, corrected in iteration 13) | iPad (end of batch); `electron:refresh` beyond the post-commit build |
 | 13 | `0769cd8` | F35 and F31 reproduced in the app harness | F35, F31 as in their rows; grace prune by main-note identity; F20 closed as documented behaviour | 3 new tests, F27 and F28 scenarios rebuilt for the new entry behaviour (same assertions on the tie, the grace and the triplet); `npm test` 1,746 passed; fuzzer 900 fresh sequences (seed 83310000) pass; `e2e/app.spec.ts` and `e2e/entry-trust.spec.ts`: 79 passed, 1 failed (`:3321`, corrected, then 5 of 5) | iPad (end of batch) |
 | 14 | `879ac43` (the hook rejected it twice under machine load, see F37) | F4 reproduced 8 of 15 under CPU load; the preview at one pointer position was `B3 insert` on the first pointer event and `C4 chord` on the next | Hover hit-test by geometry only; new browser test | under load: new test 10 of 10, the two app.spec tests 15 of 15 each. Full runs on the fix: `e2e/app.spec.ts` + `e2e/entry-trust.spec.ts` 78 passed, 3 failed (file-lifecycle download wait, `:2540` F21, `:3207` corrected then 3 of 3); eight pointer and step-time spec files 70 passed, 2 failed (both corrected, see Assertion changes; then 13 of 13 in their two files); `npm test` 1,746 | iPad (end of batch); `e2e/real-score-stress`, `dunhill-old-abbey-stress`, `transform-score-stress`, `semantic-grid-fuzz`, `score-navigation`, `print-output`, `embed`, `chat-arrangement`, `inline-chord-visibility`, `note-entry-performance` not run in this session |
-| 15 | (this commit) | T3 run: see Latency. `node --cpu-prof` of the command path: 92 % in `exportCoreToMusicXml` | S3 (export without deep clones, measure index, reused parsed document); `NEX_E2E_NO_ARTIFACTS`; F36 test | `npm test` 1,746; fuzzer 900 fresh sequences (seed 44120000) with the cached export compared against a fresh parse; F36 5 of 5 and 10 of 10 under load; `npm run build`; `e2e/app.spec.ts` + `e2e/entry-trust.spec.ts` 82 of 82 | iPad (end of batch); production latency after the change (the machine was loaded) |
+| 15 | `d292e48` (first hook run failed through my own edit of `lib/i18n.tsx` during it) | T3 run: see Latency. `node --cpu-prof` of the command path: 92 % in `exportCoreToMusicXml` | S3 (export without deep clones, measure index, reused parsed document); `NEX_E2E_NO_ARTIFACTS`; F36 test | `npm test` 1,746; fuzzer 900 fresh sequences (seed 44120000) with the cached export compared against a fresh parse; F36 5 of 5 and 10 of 10 under load; `npm run build`; `e2e/app.spec.ts` + `e2e/entry-trust.spec.ts` 82 of 82 | iPad (end of batch); production latency after the change (the machine was loaded) |
+| 16 | (this commit) | Probe of iteration 12: no caret, no armed state on screen | O1 caret, O2 note-input bar, translations (en, de, fr, es), manuals. `voiceButton` helper of `e2e/app.spec.ts` scoped to the notation tools (the bar has voice buttons of the same title); the F21 waits in the same file (see iteration 17) | 3 new browser tests; `npm test` 1,746; `npm run build`; `e2e/app.spec.ts` (both projects) + `e2e/entry-trust.spec.ts` + `e2e/entry-orientation.spec.ts` at load average 13 to 30: 80 passed, 5 failed = three tests that clicked `Voice 2` by title (two buttons now; helper scoped), `:2594` (F21) and one boot timeout of 15 s (`:914`); the five again after the helper fix, 3 runs each at load 50 to 200: 15 of 15 | iPad (end of batch) |

@@ -4,6 +4,10 @@ All notable changes to nex-note are documented here.
 
 ## Unreleased - 2026-11-10
 
+### Added
+
+- Note input shows a caret in the colour of the input voice at the position of the next note, and a bar with the armed note value, dot, accidental, voice, entry mode and tuplet; every field is clickable.
+
 ### Fixed
 
 - Undo during note input lost the input cursor, so later keys did nothing; Undo and Redo now keep it.

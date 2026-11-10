@@ -102,6 +102,7 @@ Note Input wird mit dem Button `Note Input` oder `N` aktiviert. Die Eingabe ist 
 | Dauern | `1` bis `9` waehlen 64tel bis Longa; `8` ist Breve/Doppelganze, `9` ist Longa. |
 | Punktierung | `.` toggelt die punktierte Dauer. |
 | Tonhoehen | `A` bis `G` geben Noten ein oder aendern die aktive Tonhoehe. |
+| Caret und Eingabeleiste | Solange Note Input aktiv ist, zeigt ein senkrechter Caret in der Farbe der Eingabestimme (Stimme 1 blau, 2 gruen, 3 orange, 4 violett), wo die naechste Note landet, bei Tastatur-, Maus- und MIDI-Eingabe; die Ansicht scrollt mit. Eine Leiste rechts in der Zeile unter der Toolbar zeigt, was gewaehlt ist: Notenwert, Punktierung, Vorzeichen, Stimme, Eingabemodus (`Standard` oder `Ersetzen`) und die N-Tole, in der der Cursor steht. Jedes Feld ist anklickbar. |
 | Rest | `0` fuegt einen Rest mit aktiver Dauer ein (in Note Input vor der ersten Note auch `R`). Ausserhalb von Note Input startet `0` die Noteneingabe an der gewaehlten Note und schreibt die Pause darueber; nichts wird nach hinten geschoben. |
 | Laengere Werte ueber vorhandenen Noten | Ein Wert, der laenger ist als die Note am Cursor, ueberschreibt die folgende Musik im Takt. Eine angeschnittene Note hinterlaesst eine Pause; eine erreichte N-Tole wird als Ganzes entfernt. |
 | Wiederholen | `R` wiederholt in Note Input die zuletzt eingegebene Note. |

@@ -6,7 +6,8 @@ import { applyNotationFont } from '@/lib/notation-font';
 import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } from '@/src/render-bridge/osmd/nested-tuplets';
 
 import { inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback } from '@/src/score-input/input-metrics';
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { VOICE_COLOURS } from '@/components/NoteInputBar';
 import type { NoteDuration, NoteEntryMode, SelectedNote } from '@/hooks/useNoteEditor';
 import type { PlaybackCursorTarget, PlaybackPlayheadSnapshot, PlaybackState } from '@/hooks/usePlayback';
 import { getBugReportContext, getBugReportEvents, recordBugReportEvent } from '@/lib/bug-report-recorder';
@@ -15420,6 +15421,75 @@ export default function ScoreEditor({
     };
   }, [coreDocument, inputByDurationMode, isDotted, measureLayoutOverlays, noteInputAnchor, preparedDurationActivePitch, renderViewportRevision, selectedDuration, selectedVoice]);
 
+  // The note-input caret (O1 in docs/note-entry-mastery-ledger.md): where the next note lands, for
+  // keyboard, mouse and MIDI entry alike. It is drawn from the rendered snap grid, at the onset of the
+  // input cursor, over the cursor's staff, in the colour of the input voice.
+  const noteInputCaret = useMemo(() => {
+    if (!noteInputMode) return null;
+    const cursor = selectedNote ?? noteInputAnchor ?? null;
+    if (!cursor?.coreMeasureId) return null;
+    const grid = renderedGhostGridRef.current;
+    let domX = findRenderedGhostPointForAnchor(grid, cursor)?.domX ?? null;
+    if (domX == null) {
+      // A cursor inside a longer rest has no rendered event of its own: place it between its
+      // neighbours on the staff, by time.
+      const onset = cursor.timestampNum / Math.max(cursor.timestampDen, 1);
+      const points = getRenderedGhostStaffPoints(grid, cursor.coreMeasureId, cursor.staffIndex, { includeSynthetic: true })
+        .map((point) => ({ onset: point.timestampNum / Math.max(point.timestampDen, 1), domX: point.domX }))
+        .sort((left, right) => left.onset - right.onset);
+      const before = points.filter((point) => point.onset <= onset + 1e-9).at(-1) ?? null;
+      const after = points.find((point) => point.onset > onset + 1e-9) ?? null;
+      const overlay = measureLayoutOverlays.find((entry) => entry.measureId === cursor.coreMeasureId) ?? null;
+      if (before && Math.abs(before.onset - onset) < 1e-9) domX = before.domX;
+      else if (before && after) domX = before.domX + ((onset - before.onset) / (after.onset - before.onset)) * (after.domX - before.domX);
+      else if (before && overlay) {
+        // After the last event of the bar: towards the right barline, by the share of the bar left.
+        const barEnd = overlay.domRect.x + overlay.domRect.width;
+        const span = Math.max(1 - before.onset, 1e-9);
+        domX = before.domX + Math.min(1, (onset - before.onset) / span) * (barEnd - before.domX - 8);
+      } else if (after) domX = after.domX;
+    }
+    if (domX == null) return null;
+    const staffCandidates = (staffDetailsByMeasureRef.current.get(cursor.measureNumber) ?? [])
+      .filter((entry) => entry.staffIndex === cursor.staffIndex);
+    const staff = staffCandidates.find((entry) => cursor.corePartId && entry.corePartId === cursor.corePartId)
+      ?? staffCandidates[0]
+      ?? null;
+    if (!staff) return null;
+    const space = Math.max(staff.lineDistanceDom, 4);
+    const top = staff.topLineDomY - space * 1.5;
+    const bottom = staff.bottomLineDomY + space * 1.5;
+    return {
+      // Just left of the notehead position, as a text cursor stands before its character.
+      left: domX - space * 0.9 + overlayLayerOffset.x,
+      top: top + overlayLayerOffset.y,
+      height: bottom - top,
+      measureNumber: cursor.measureNumber,
+      staffIndex: cursor.staffIndex,
+      voice: selectedVoice,
+      timestamp: `${cursor.timestampNum}/${cursor.timestampDen}`,
+    };
+  }, [measureLayoutOverlays, noteInputAnchor, noteInputMode, overlayLayerOffset, renderViewportRevision, selectedNote, selectedVoice]);
+
+  // Keep the caret in view (O4): long entry must never run out of the window.
+  const noteInputCaretRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const caretElement = noteInputCaretRef.current;
+    const viewport = viewportRef.current;
+    if (!noteInputCaret || !caretElement || !viewport) return;
+    const caretRect = caretElement.getBoundingClientRect();
+    const viewRect = viewport.getBoundingClientRect();
+    const marginX = Math.min(96, viewRect.width / 4);
+    const marginY = Math.min(48, viewRect.height / 4);
+    let dx = 0;
+    let dy = 0;
+    if (caretRect.right > viewRect.right - marginX) dx = caretRect.right - (viewRect.right - marginX);
+    else if (caretRect.left < viewRect.left + marginX) dx = caretRect.left - (viewRect.left + marginX);
+    if (caretRect.bottom > viewRect.bottom - marginY) dy = caretRect.bottom - (viewRect.bottom - marginY);
+    else if (caretRect.top < viewRect.top + marginY) dy = caretRect.top - (viewRect.top + marginY);
+    if (dx !== 0 || dy !== 0) viewport.scrollBy({ left: dx, top: dy });
+  }, [noteInputCaret]);
+
   const rawSemanticAnchorTarget = dragPreviewTarget
     ?? (inputByDurationMode
       ? durationInputPitchCursorTarget ?? ghostNoteTarget
@@ -17055,6 +17125,26 @@ export default function ScoreEditor({
                       className="h-7 w-12 rounded-md border border-nex-accent bg-white px-2 text-center text-xs font-semibold text-nex-ink shadow-lg outline-none ring-2 ring-white/90"
                     />
                   </form>
+                )}
+                {noteInputCaret && (
+                  <div
+                    ref={noteInputCaretRef}
+                    aria-hidden
+                    data-testid="note-input-caret"
+                    data-caret-measure={noteInputCaret.measureNumber}
+                    data-caret-staff={noteInputCaret.staffIndex}
+                    data-caret-voice={noteInputCaret.voice}
+                    data-caret-timestamp={noteInputCaret.timestamp}
+                    className="absolute rounded-sm"
+                    style={{
+                      left: `${noteInputCaret.left}px`,
+                      top: `${noteInputCaret.top}px`,
+                      width: '3px',
+                      height: `${noteInputCaret.height}px`,
+                      backgroundColor: VOICE_COLOURS[noteInputCaret.voice] ?? VOICE_COLOURS[1],
+                      opacity: 0.85,
+                    }}
+                  />
                 )}
                 <ScoreInputOverlay
                   target={visibleScoreInputTarget}

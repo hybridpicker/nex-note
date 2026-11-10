@@ -447,7 +447,15 @@ function commandCenterButton(page: Page) {
 
 /** A voice button of the notation tools; its title names the platform's shortcut. */
 function voiceButton(page: Page, voice: 1 | 2 | 3 | 4) {
-  return page.getByTitle(new RegExp(`^Voice ${voice} \\(`));
+  // The note-input bar has voice buttons of the same title; these tests mean the notation tools.
+  return page.getByTestId('left-notation-sidebar').getByTitle(new RegExp(`^Voice ${voice} \\(`));
+}
+
+/** Wait until the canvas shows the current document: reads during a re-render see detached nodes. */
+async function waitForRenderedRevision(page: Page) {
+  await expect.poll(() => page.getByTestId('score-canvas').evaluate((element) => (
+    (element as HTMLElement).dataset.documentRevision === (element as HTMLElement).dataset.renderedRevision
+  )), { timeout: 15_000 }).toBe(true);
 }
 
 /** The notation tools start collapsed; open them and every section, so their controls can be used. */
@@ -2675,6 +2683,14 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
     const chordCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');
     const chordCenterY = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-y')) ?? '28');
     await page.mouse.click(chordBox!.x + chordCenterX, chordBox!.y + chordCenterY);
+    // The chord tone is committed and drawn before the next scan reads the snap lanes (F21).
+    await expect.poll(async () => {
+      const core = await readCurrentCore(page);
+      return core.score.parts[0].staves[0].measures[0].voices
+        .find((voice) => voice.voiceId === 1)?.events
+        .filter((event) => event.kind === 'note' && event.timestampNum / event.timestampDen === 0.25).length ?? 0;
+    }, { message: `chord tone ${pitch} was committed` }).toBe(memberIndex + 2);
+    await waitForRenderedRevision(page);
 
     if (memberIndex === 0) {
       const exactOnsetX = await page.locator(
@@ -2773,6 +2789,7 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
   // desktop failure where the rendered chord beneath the ghost won the click.
   await page.keyboard.press(`${MOD}+Shift+H`);
   await expect.poll(async () => (await readE2EState(page))?.chordInputMode).toBe(false);
+  await waitForRenderedRevision(page);
   const threeNoteOnsetX = await page.locator(
     '[data-semantic-snap-measure="1"][data-semantic-snap-staff="1"][data-semantic-snap-timestamp="8/32"]',
   ).first().evaluate((element) => {
@@ -2799,11 +2816,18 @@ test('Little Walk Guitar + TAB visible ghost replaces beat 2 and builds a synchr
   for (const lane of threeNoteHigherLanes) {
     if (!lane.pitch || usedPitches.has(lane.pitch)) continue;
     await page.mouse.move(lane.x, lane.y);
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    if (!(await ghost.isVisible().catch(() => false))) continue;
-    if (await ghost.getAttribute('data-ghost-timestamp') !== '8/32') continue;
-    const candidatePitch = await ghost.getAttribute('data-ghost-pitch');
-    if (!candidatePitch || usedPitches.has(candidatePitch)) continue;
+    // Two frames are not always enough for the preview of this position under load (F21): wait for
+    // the ghost of this lane; a lane whose ghost never shows is skipped as before.
+    let candidatePitch: string | null = null;
+    await expect.poll(async () => {
+      candidatePitch = await page.evaluate(() => {
+        const element = document.querySelector<HTMLElement>('[data-testid="ghost-note-preview"]');
+        if (!element || element.offsetParent === null) return null;
+        return element.dataset.ghostTimestamp === '8/32' ? element.dataset.ghostPitch ?? null : null;
+      });
+      return Boolean(candidatePitch) && !usedPitches.has(candidatePitch!);
+    }, { timeout: 3_000 }).toBe(true).catch(() => { candidatePitch = null; });
+    if (!candidatePitch) continue;
     const candidateBox = await ghost.boundingBox();
     expect(candidateBox).toBeTruthy();
     const candidateCenterX = Number.parseFloat((await ghost.getAttribute('data-ghost-notehead-center-x')) ?? '0');

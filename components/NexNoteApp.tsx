@@ -58,6 +58,7 @@ import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-reco
 import { usePlayback } from '@/hooks/usePlayback';
 import type { PlaybackSampleBank } from '@/lib/playback-sample-bank';
 import { AdvancedNoteInput } from '@/components/AdvancedNoteInput';
+import NoteInputBar from '@/components/NoteInputBar';
 import { useMidiRecording } from '@/hooks/useMidiRecording';
 import { useMidiInput } from '@/hooks/useMidiInput';
 import {
@@ -5304,10 +5305,37 @@ export default function Home({ searchParams }: HomeProps) {
                   />
                 )}
 
-                {!printView && coreDocument && <AdvancedNoteInput xml={xml} document={coreDocument} selected={selectedNote} selection={selectedNotes}
-                  apply={(commands, prepared) => applyCommands(commands, { prepared, selectionAnchor: currentSelectionAnchor }).applied}
-                  recording={midiRecording}
-                  midi={{ enabled: midiInputEnabled, status: midiInputStatus, toggle: toggleMidiInput, devices: midiDevices, selectedDeviceId: midiSelectedDeviceId, selectDevice: selectMidiDevice }} />}
+                {!printView && coreDocument && (
+                  <div className="relative">
+                    <AdvancedNoteInput xml={xml} document={coreDocument} selected={selectedNote} selection={selectedNotes}
+                      apply={(commands, prepared) => applyCommands(commands, { prepared, selectionAnchor: currentSelectionAnchor }).applied}
+                      recording={midiRecording}
+                      midi={{ enabled: midiInputEnabled, status: midiInputStatus, toggle: toggleMidiInput, devices: midiDevices, selectedDeviceId: midiSelectedDeviceId, selectDevice: selectMidiDevice }} />
+                    {/* The armed state of note input sits at the end of this row, which is always there:
+                        showing it moves nothing (O2 and F2 in docs/note-entry-mastery-ledger.md). */}
+                    {noteInputMode && (
+                      <div className="absolute right-2 top-[3px] z-10">
+                        <NoteInputBar
+                          selectedDuration={selectedDuration}
+                          isDotted={isDotted}
+                          selectedAccidental={selectedAccidental}
+                          selectedVoice={selectedVoice}
+                          entryMode={entryMode}
+                          tupletLabel={(() => {
+                            const id = selectedNote?.coreEntityId;
+                            const tuplet = id ? coreDocument.tuplets.find((entry) => entry.eventIds.includes(id)) : null;
+                            return tuplet ? `${tuplet.actualNotes ?? 3}:${tuplet.normalNotes ?? 2}` : null;
+                          })()}
+                          onDurationChange={setDuration}
+                          onToggleDotted={toggleDotted}
+                          onAccidentalChange={setAccidental}
+                          onVoiceChange={setVoice}
+                          onToggleEntryMode={toggleEntryMode}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {printView ? (
                   <div className="nex-score-stage nex-print-preview-shell flex-1 overflow-auto bg-nex-score-bg p-6">
