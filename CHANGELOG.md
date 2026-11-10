@@ -32,6 +32,9 @@ All notable changes to nex-note are documented here.
 - `Q`/`W` and the value keys on a triplet note broke the triplet; they now work inside it.
 - A command-center command for a palette section did nothing while the notation tools were collapsed.
 
+- In note input a letter typed in another voice only changed the pitch of that voice's note; it now writes the armed value and moves on.
+- `Cmd/Ctrl+3` with the cursor at the end of the score replaced the last note.
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

@@ -3332,7 +3332,10 @@ test('direct notehead drag can transpose the existing note without toolbar mode 
   await page.mouse.move(target.x, target.y);
   await page.mouse.down();
   await expect.poll(async () => (await readE2EState(page))?.selectedNote?.timestampNum ?? null).toBe(0);
-  await page.mouse.move(target.x, target.y - 12, { steps: 4 });
+  // 24 px: until the score stopped moving under the pointer (F2 in
+  // docs/note-entry-mastery-ledger.md) the mouse-down slid the canvas 12 px down, so the 12 px this
+  // test dragged acted as 24. The distance is now written out; the expected pitch is unchanged.
+  await page.mouse.move(target.x, target.y - 24, { steps: 6 });
   await page.mouse.up();
 
   await expect.poll(async () => {

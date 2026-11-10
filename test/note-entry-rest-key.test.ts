@@ -62,3 +62,28 @@ test('0 outside note input is one Undo step', () => {
     app.unmount();
   }
 });
+
+/*
+ * F31: with the cursor past a note that fills the last bar, Cmd+3 replaced that note with the rests
+ * of a tuplet. MuseScore has no chord or rest at that position and does nothing; Nex Note says so.
+ */
+test('F31: Cmd+3 past the last note of the score leaves that note alone', () => {
+  const lastBarEmpty = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [{ ...TREBLE }] });
+  const app = mountApp(lastBarEmpty);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    app.click(selectableNotes(app.xml)[0]!);
+    app.press('N 7 c');
+    assert.deepEqual(voiceSummary(app.xml, {}), ['m1@0 C5 whole']);
+    const before = app.xml;
+    app.press('Cmd+3');
+    assert.equal(app.xml, before, 'the whole note is still there');
+    assert.match(app.editor.editorError ?? '', /end of the score/i);
+    app.press('d');
+    assert.deepEqual(voiceSummary(app.xml, {}).slice(0, 2), ['m1@0 C5 whole', 'm2@0 D5 whole'], 'entry still continues in a new bar');
+  } finally {
+    console.warn = warn;
+    app.unmount();
+  }
+});

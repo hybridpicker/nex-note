@@ -3883,7 +3883,7 @@ function editRhythmPassage(document: ScoreDocumentModel, command: Extract<Valida
 /** For each grace event: the kind of its main event (same voice, same onset). */
 function graceMainKinds(document: ScoreDocumentModel) {
   const graceIds = new Set((document.graceNotes ?? []).map((link) => link.eventId));
-  const kinds = new Map<string, 'note' | 'rest' | 'none'>();
+  const kinds = new Map<string, string>();
   for (const part of document.score.parts) {
     for (const staff of part.staves) {
       for (const measure of staff.measures) {
@@ -3897,7 +3897,10 @@ function graceMainKinds(document: ScoreDocumentModel) {
               !graceIds.has(candidate.id)
               && Math.abs(candidate.timestampNum / Math.max(candidate.timestampDen, 1) - onset) < 1e-9
             ));
-            kinds.set(event.id, atOnset.some((candidate) => candidate.kind === 'note') ? 'note' : atOnset.length ? 'rest' : 'none');
+            // The main note is identified, not only its kind: a grace note belongs to its chord and goes
+            // when another note takes that chord's place (a paste or a new entry over it).
+            const main = atOnset.find((candidate) => candidate.kind === 'note' && !candidate.isChord) ?? atOnset.find((candidate) => candidate.kind === 'note');
+            kinds.set(event.id, main ? `note:${main.id}` : atOnset.length ? 'rest' : 'none');
           });
         }
       }
@@ -3917,7 +3920,7 @@ function pruneGracesWithoutMainNote(nextDocument: ScoreDocumentModel, currentDoc
   if (!nextDocument.graceNotes?.length) return;
   const before = graceMainKinds(currentDocument);
   const after = graceMainKinds(nextDocument);
-  const orphaned = new Set([...after].filter(([id, kind]) => kind !== 'note' && before.get(id) === 'note').map(([id]) => id));
+  const orphaned = new Set([...after].filter(([id, kind]) => (before.get(id) ?? '').startsWith('note:') && kind !== before.get(id)).map(([id]) => id));
   if (!orphaned.size) return;
   for (const part of nextDocument.score.parts) {
     for (const staff of part.staves) {

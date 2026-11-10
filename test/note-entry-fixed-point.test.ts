@@ -171,7 +171,8 @@ test('F26: Delete on a note with a grace note leaves a visible rest and no grace
 });
 
 test('F27: T onto a triplet unit of the armed value writes a triplet note', () => {
-  const app = drive('three parts', ['click:569', 'b', '6', 'Cmd+3', 'b', 'g', 'T']);
+  // A triplet of quarters on the whole-bar rest of the last bar, two notes, then T onto the third unit.
+  const app = drive('three parts', ['click:569', 'N', '6', 'Cmd+3', 'b', 'g', 'T']);
   try {
     assert.deepEqual(
       voiceSummary(app.xml, { partIndex: 2 }).filter((line) => line.startsWith('m3@')),
@@ -184,12 +185,22 @@ test('F27: T onto a triplet unit of the armed value writes a triplet note', () =
 });
 
 test('F28: a paste over the tied-to note takes the tie off the note before it', () => {
-  const app = drive('grand staff, two voices', ['Cmd+Alt+2', 'N', 'a', 'Backspace', 'Cmd+c', 'd', 'g', 'd', 'T', '/', 'a', 'f', 'd', 'click:528', 'Cmd+v']);
+  // Voice 2: D4 tied to a D4 that carries a grace note of the same pitch, then the fixture's G4 half.
+  const app = drive('grand staff, two voices', ['N', 'Cmd+Alt+2', '5', 'd', 'T', '/', 'Escape']);
   try {
-    assert.deepEqual(
-      voiceSummary(app.xml, { voice: 2 }).filter((line) => line.startsWith('m1@')),
-      ['m1@0 D4 quarter', 'm1@1 G4 quarter', 'm1@2 D4 quarter', 'm1@3 r quarter'],
-    );
+    const voice2 = () => voiceSummary(app.xml, { voice: 2 }).filter((line) => line.startsWith('m1@'));
+    assert.deepEqual(voice2(), ['m1@0 D4 quarter~', 'm1@1 D4 eighth', 'm1@1 D4 quarter', 'm1@2 G4 half']);
+    const find = (step: string, onset: number, value: string) => selectableNotesOf(app.doc.coreDocument!).find((note) => (
+      note.measureNumber === 1 && note.voiceId === 2 && !note.isRest && note.step === step
+      && note.timestampNum / note.timestampDen === onset && note.durationType === value
+    ))!;
+    app.click(find('G', 0.5, 'half'));
+    app.press('Cmd+c');
+    app.click(find('D', 0.25, 'quarter'));
+    app.press('Cmd+v');
+    // The pasted half ends on beat 4; what is left of the old G4 half stays a note there.
+    assert.deepEqual(voice2(), ['m1@0 D4 quarter', 'm1@1 G4 half', 'm1@3 G4 quarter'], 'no tie is left on the first D4, and no grace note');
+    assert.equal(importMusicXmlToCore(app.xml).graceNotes.length, 0);
   } finally {
     app.unmount();
   }

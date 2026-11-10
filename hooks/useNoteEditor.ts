@@ -4298,6 +4298,15 @@ export function useNoteEditor(
     // Note input (MuseScore): the active duration is the total length of the new tuplet at the
     // cursor. Quarter + Cmd/Ctrl+3 gives three triplet eighths, and entry continues with the unit.
     if (noteInputModeRef.current) {
+      // Past the end of the score the cursor still shows the last note. A tuplet there would
+      // replace that note (F31); MuseScore has no chord or rest at that position and does nothing.
+      if (beyondScoreCursor()) {
+        warnRejectedEdit('addTuplet', {
+          message: 'The cursor is at the end of the score. Enter a note or a rest first; the tuplet starts there.',
+          rejectionReason: 'beyond-score',
+        });
+        return;
+      }
       const totalDuration = selectedDurationRef.current;
       const totalDotted = isDottedRef.current;
       const tupletAtCursor: ScoreCommand[] = [{
@@ -4392,7 +4401,7 @@ export function useNoteEditor(
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, resolveRecentInputFromDocument, selectSingleNote, setSelectedDurationLive, warnRejectedEdit, xml]);
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, resolveRecentInputFromDocument, selectSingleNote, setSelectedDurationLive, warnRejectedEdit, beyondScoreCursor, xml]);
 
   const navigateNote = useCallback((direction: 'prev' | 'next') => {
     if (!selectedNote) return;
@@ -5425,14 +5434,22 @@ export function useNoteEditor(
         } else if (e.shiftKey) {
           insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, asChord: true });
         } else if (storedInputVoiceAt(currentSelectedNote) !== currentSelectedNote.voiceId) {
-          const replacedSelectedVoice = replaceSelectedVoicePitchAtAnchor(
-            currentSelectedNote,
-            storedInputVoiceAt(currentSelectedNote),
-            pitch.step,
-            pitch.octave,
-            pitch.alter,
-            writtenAccidental,
-          );
+          // The input voice already has a note at the cursor's onset: enter over it like any entry in
+          // that voice, with the armed value and an advancing cursor (F35; MuseScore writes the input
+          // state's duration with setNoteRest). It used to change the pitch only.
+          const entryVoice = storedInputVoiceAt(currentSelectedNote);
+          const voiceNoteAtCursor = buildSemanticSelectionEntries(coreDocument).find((entry) => (
+            !entry.isRest
+            && entry.measureNumber === currentSelectedNote.measureNumber
+            && entry.staffIndex === currentSelectedNote.staffIndex
+            && entry.voiceId === entryVoice
+            && (!currentSelectedNote.corePartId || !entry.corePartId || entry.corePartId === currentSelectedNote.corePartId)
+            && timestampsEqual(entry.timestampNum, entry.timestampDen, currentSelectedNote.timestampNum, currentSelectedNote.timestampDen)
+          ));
+          const replacedSelectedVoice = Boolean(voiceNoteAtCursor);
+          if (voiceNoteAtCursor) {
+            insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, target: toSelectedNote(voiceNoteAtCursor) });
+          }
           // The active voice has no note at the cursor yet: enter it at the cursor's onset (MuseScore
           // keeps the input position when the voice changes), not at the last entered note.
           if (!replacedSelectedVoice) insertNote(pitch.step, pitch.octave, { alter: pitch.alter, writtenAccidental, insertAtCursor: true, target: currentSelectedNote });
