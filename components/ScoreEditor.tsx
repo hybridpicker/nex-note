@@ -12516,10 +12516,12 @@ export default function ScoreEditor({
       domPoint = refinedSession.effectivePoint;
     }
     const pointerInputVoice = resolveStoredInputVoiceAtPoint(measureLayoutOverlaysRef.current, domPoint, coreDocument, selectedVoice);
-    const pointerPath = typeof e.nativeEvent.composedPath === 'function' ? e.nativeEvent.composedPath() : [];
-    const pointerPathNodes = pointerPath.filter((entry): entry is Node => entry instanceof Node);
-    const directlyHoveredRendered = findDirectRenderedNoteHit(renderedNotesRef.current, pointerPathNodes)
-      ?? findRenderedNoteheadAtPoint(renderedNotesRef.current, domPoint);
+    // The hovered notehead is found by geometry alone. The event path is not a stable witness: once
+    // a ghost is drawn it covers the notehead under the pointer, so the same pointer position named
+    // a voice-2 notehead on the first move and none on the next, and the preview changed from one
+    // pitch and mode to another without the pointer moving (F4 in
+    // docs/note-entry-mastery-ledger.md). A preview is a function of position, document and mode.
+    const directlyHoveredRendered = findRenderedNoteheadAtPoint(renderedNotesRef.current, domPoint);
     const crossVoiceDirectNotehead = Boolean(
       directlyHoveredRendered?.note
       && !directlyHoveredRendered.note.isRest

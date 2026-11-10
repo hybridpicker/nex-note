@@ -3222,11 +3222,10 @@ test('mouse note input activates clicked pitches while preserving the selected i
     .filter((notehead) => Math.abs(notehead.x - firstColumnX) <= 24)
     .sort((left, right) => left.y - right.y);
   expect(firstOnsetNoteheads.length).toBeGreaterThanOrEqual(1);
-  const voiceOneNote = firstOnsetNoteheads[0]!;
-  const voiceTwoNote = {
-    x: voiceOneNote.x,
-    y: voiceOneNote.y + 27,
-  };
+  // The voice-2 notehead itself (G3), not a point on its stem: the preview takes its pitch from the
+  // pointer position (F4 in docs/note-entry-mastery-ledger.md), so 27 px under C4 would be E3.
+  expect(firstOnsetNoteheads.length).toBeGreaterThanOrEqual(2);
+  const voiceTwoNote = firstOnsetNoteheads[1]!;
   const noteSummary = async () => {
     const measure = (await readCurrentCore(page)).score.parts[0].staves[0].measures[0];
     return measure.voices

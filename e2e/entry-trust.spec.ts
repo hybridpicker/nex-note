@@ -104,6 +104,45 @@ test('F4: every click on a visible ghost enters exactly one note within 700 ms',
   expect((await notes(session)).length, 'no late duplicate').toBe(expectedCount);
 });
 
+/** Two voices on one staff: voice 2 lies a step or two under voice 1, so their noteheads touch. */
+const TWO_VOICES = (() => {
+  const note = (step: string, octave: number, voice: number, stem: string) => `<note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>4</duration><voice>${voice}</voice><type>quarter</type><stem>${stem}</stem></note>`;
+  const upper = [['C', 4], ['C', 4], ['D', 4], ['E', 4]] as const;
+  const lower = [['G', 3], ['A', 3], ['B', 3], ['C', 3]] as const;
+  const bar = upper.map(([step, octave]) => note(step, octave, 1, 'up')).join('')
+    + '<backup><duration>16</duration></backup>'
+    + lower.map(([step, octave]) => note(step, octave, 2, 'down')).join('');
+  return scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [{ ...TREBLE, content: { '1:1': bar } }] });
+})();
+
+test('F4: the preview at a resting pointer is the same on every pointer event, and the click commits it', async ({ page }, testInfo) => {
+  const session = await EntrySession.boot(page, testInfo, { xml: TWO_VOICES });
+  await session.keys('Escape N 5');
+
+  // Beat 3: voice 1 has D4, voice 2 has B3 right under the C4 line. Aim at C4.
+  const c4 = await session.noteheadCenter(0);
+  const beat3 = await session.noteheadCenter(2);
+  const point = { x: beat3.x, y: c4.y };
+  const seen: string[] = [];
+  for (let repeat = 0; repeat < 4; repeat += 1) {
+    // The same point again: a pointer event without movement, as a click sends one before it presses.
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(120);
+    const ghost = await session.ghost();
+    seen.push(ghost ? `${ghost.pitch} ${ghost.mode} v${ghost.voice} ${ghost.timestamp}` : 'none');
+  }
+  expect(new Set(seen).size, `previews at one position: ${seen.join(' | ')}`).toBe(1);
+
+  const preview = (await session.ghost())!;
+  const before = await session.voice();
+  await session.click(point.x, point.y);
+  const after = await session.voice();
+  const added = after.filter((line) => !before.includes(line));
+  expect(after.length - before.length, `added ${JSON.stringify(added)}`).toBe(1);
+  expect(added[0]).toContain(` ${preview.mode === 'chord' ? '+' : ''}${ghostPitchLabel(preview.pitch)} `);
+  expect(before.every((line) => after.includes(line)), 'no note of the bar is moved or lost').toBe(true);
+});
+
 for (const failure of ['answers 404 at once', 'hangs for 20 s and then fails'] as const) {
   test(`F3: a sound that ${failure} costs the audition, not the entry`, async ({ page }, testInfo) => {
   // No audio stub: the real loader runs against a server without the soundfont.

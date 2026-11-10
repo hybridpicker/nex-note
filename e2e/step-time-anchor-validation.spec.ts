@@ -232,8 +232,10 @@ test('standard step-time note input only targets real note/rest anchors and pads
   await page.keyboard.press('5');
   await page.keyboard.press('C');
 
+  // The first note of a voice is placed nearest to the treble staff's middle line (B4): C5. See
+  // docs/keyboard-shortcuts.md and commit d32b138; this expectation predated that rule.
   await expectStaff(page, 1, [
-    { start: 0, kind: 'note', pitch: 'C4', durationType: 'quarter', guitar: null },
+    { start: 0, kind: 'note', pitch: 'C5', durationType: 'quarter', guitar: null },
     { start: 0.25, kind: 'rest', pitch: null, durationType: 'quarter', guitar: null },
     { start: 0.5, kind: 'rest', pitch: null, durationType: 'half', guitar: null },
   ]);

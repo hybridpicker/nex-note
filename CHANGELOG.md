@@ -35,6 +35,8 @@ All notable changes to nex-note are documented here.
 - In note input a letter typed in another voice only changed the pitch of that voice's note; it now writes the armed value and moves on.
 - `Cmd/Ctrl+3` with the cursor at the end of the score replaced the last note.
 
+- The mouse preview could change pitch and mode without the pointer moving, and under load a click then inserted a different note and pushed the bar's last note out.
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

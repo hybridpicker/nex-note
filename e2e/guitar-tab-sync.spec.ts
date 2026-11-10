@@ -215,7 +215,9 @@ test('dragging a TAB fret to another string keeps the pitch and recomputes the f
   await page.mouse.down();
   // Many sub-pixel/small mouse events must still activate once their total
   // displacement crosses the drag threshold.
-  await page.mouse.move(start.x, start.y + lineDistance * 1.5, { steps: 24 });
+  // One line down. This was 1.5 lines while the mouse-down still slid the score 12 px under the
+  // pointer (F2 in docs/note-entry-mastery-ledger.md), which took about half a line off the drag.
+  await page.mouse.move(start.x, start.y + lineDistance, { steps: 24 });
 
   const ghost = page.locator('[data-testid="ghost-note-preview"]');
   await expect(ghost).toHaveAttribute('data-ghost-tab-fret', '12');
