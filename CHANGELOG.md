@@ -14,7 +14,11 @@ All notable changes to nex-note are documented here.
 - The saved MusicXML could spell rests differently from the score on screen.
 - A grace note left in front of a rest was lost, together with its tuplet place, on reopening.
 
+- In note input a value longer than the note at the cursor was rejected when notes followed in the bar; it now overwrites them, as in MuseScore.
+
 ### Changed
+
+- `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).
 
 - `R` outside note input repeats the selection after itself, as in MuseScore (it used to insert a rest and push the bar's last note out).
 - Paste always overwrites the following music, as in MuseScore, Dorico and Finale.

@@ -90,7 +90,8 @@ Turn note input on with the toolbar button or `N`.
 | Durations | `1` to `9` select 64th through longa; `8` is breve/double whole and `9` is longa. |
 | Dotted notes | `.` toggles dotted duration. Choosing a new note value (`1`–`9` or the toolbar) clears the dot, as in MuseScore; in duration-first input (`M`) the dot stays with the prepared pitch. |
 | Pitch entry | `A` to `G` enter or change notes, nearest to the previous note (after a chord: its lowest note). With no earlier note in the voice, the first note is placed nearest to the staff's middle line, as in MuseScore: `C` is C5 in treble clef and C3 in bass clef. |
-| Rests | `0` enters a rest with the active duration (in note input also `R` before the first note). |
+| Rests | `0` enters a rest with the active duration (in note input also `R` before the first note). Outside note input, `0` starts note input at the selected note and writes the rest over it; nothing is pushed later. |
+| Longer values over existing notes | A value longer than the note at the cursor overwrites the music that follows in the bar. A note that is cut leaves a rest; a tuplet that is reached is removed as a whole. |
 | Repeat last input | In note input, `R` repeats the last entered note. |
 | Repeat selection | Outside note input, `R` repeats the selection directly after itself, over the music that follows, and selects the copy (MuseScore's Repeat selection). |
 | Voices | Toolbar or `Cmd/Ctrl+Alt/Option+1...4`. |

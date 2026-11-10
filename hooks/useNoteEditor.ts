@@ -127,6 +127,7 @@ function formatRejectedEditMessage(context: string, details: Record<string, unkn
     && typeof (diagnostic as { message?: unknown }).message === 'string'
   ));
   if (firstDiagnostic) return firstDiagnostic.message;
+  if (typeof details.message === 'string') return details.message;
   if (typeof details.rejectionReason === 'string') return `${context}: ${details.rejectionReason}`;
   return `${context}: edit rejected`;
 }
@@ -2640,7 +2641,62 @@ export function useNoteEditor(
           }
         }
       }
+      // Keyboard step-time entry of a value longer than the note at the cursor, with music after it
+      // in the bar (F19). MuseScore `Score::setNoteRest` makes a gap of the entered value and writes
+      // the note into it: the following music is overwritten, a cut note leaves a rest, and a tuplet
+      // the gap reaches is removed as a whole (`makeGap`: "We have to remove the complete tuplet").
+      let overwriteMessage: string | null = null;
+      if (
+        noteInputModeRef.current
+        && String(inspected.rejectionReason ?? '').startsWith('blocking-event:')
+        && target.mode === 'replace'
+        && target.source === 'keyboard'
+        && !input.guitar
+      ) {
+        const slot = {
+          coreMeasureId: target.measureId ?? null,
+          corePartId: target.corePartId ?? null,
+          measureNumber: target.measureNumber,
+          staffIndex: target.staffIndex,
+          voiceId: target.voiceId,
+          timestampNum: target.timestampNum,
+          timestampDen: target.timestampDen,
+        };
+        const slotReference = findEventReference(coreDocument, slot);
+        const exactSlot = slotReference?.event.voiceId === target.voiceId
+          && timestampsEqual(slotReference.event.timestampNum, slotReference.event.timestampDen, target.timestampNum, target.timestampDen)
+          ? slotReference.event
+          : null;
+        if (slotReference && exactSlot) {
+          const pitchFields = {
+            step: target.step,
+            octave: target.octave,
+            alter: target.alter,
+            ...(input.writtenAccidental ? { writtenAccidental: input.writtenAccidental } : {}),
+          };
+          const overwriteCommands: ScoreCommand[] = [
+            { type: 'replaceWithRest', coreEntityId: exactSlot.id, ...slot, durationType, isDotted: dotted },
+            { type: 'insertNoteAt', ...slot, ...pitchFields, durationType, isDotted: dotted, asChord: false, preserveOverflow: false },
+          ];
+          const overwriteNext = applyEditorCommands(overwriteCommands);
+          if (overwriteNext.xml !== xml && !overwriteNext.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) {
+            commitNoteInputUpdate(overwriteCommands, overwriteNext.coreDocument, slot, advanceFrom, {
+              isRest: false,
+              step: target.step,
+              octave: target.octave,
+              alter: target.alter,
+            }, {
+              audition: input.audition,
+              advanceCursor: true,
+            });
+            if (input.writtenAccidental) setSelectedAccidentalLive(null);
+            return true;
+          }
+          overwriteMessage = 'This note value does not fit over the music that follows here.';
+        }
+      }
       warnRejectedEdit(label, {
+        ...(overwriteMessage ? { message: overwriteMessage } : {}),
         rejectionReason: inspected.rejectionReason,
         diagnostics: inspected.diagnostics,
         target,
@@ -5076,7 +5132,12 @@ export function useNoteEditor(
         if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); repeatSelection(); }
         return;
       }
-      if (selectedNote) { e.preventDefault(); insertRest(); }
+      if (!selectedNote) return;
+      e.preventDefault();
+      // MuseScore `putRestToSelection`: outside note input, `0` starts note input at the selection
+      // and writes a rest of the armed value over it (F16); it never pushes the bar later.
+      if (!noteInputModeRef.current && e.key === '0') toggleNoteInput();
+      insertRest();
       return;
     }
 
