@@ -10,6 +10,7 @@ All notable changes to nex-note are documented here.
 
 ### Fixed
 
+- After undoing a note entered with the mouse, the next click in that bar previewed a chord tone on the note that was gone and entered nothing.
 - Undo during note input lost the input cursor, so later keys did nothing; Undo and Redo now keep it.
 - `W` in note input lost the cursor; `Q`/`W` now change the note just entered and move the cursor past it.
 - A shorter note value moved the rest of the bar earlier; the freed time now becomes rests.

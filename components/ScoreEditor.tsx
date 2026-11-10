@@ -1,6 +1,6 @@
 'use client';
 
-import { storedVoiceFor } from '@/src/score-input/voice-mapping';
+import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
 
 import { applyNotationFont } from '@/lib/notation-font';
 import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } from '@/src/render-bridge/osmd/nested-tuplets';
@@ -2702,6 +2702,35 @@ function applyPointerModifiersToGhostTarget(
     ...resolved,
     placementLockedByModifier: Boolean(event.shiftKey || event.altKey),
   };
+}
+
+/**
+ * The note-input commit that a following hover at the same onset builds a chord on. It holds only
+ * while the document has a note there: after Undo, Delete or an overwrite the place is a rest again,
+ * and a chord preview on it would show a tone that the click cannot add (F38 in
+ * docs/note-entry-mastery-ledger.md). Checked whenever the document changes; the first change after
+ * the click is the commit itself.
+ */
+function recentCommitStillHasNote(
+  recent: PointerEntryLocator | null,
+  coreDocument: ScoreDocumentModel | null | undefined,
+) {
+  if (!recent || !coreDocument) return false;
+  const wantedPart = recent.corePartId?.replace(/^part:/, '') ?? null;
+  for (const part of coreDocument.score.parts) {
+    if (wantedPart && part.id.replace(/^part:/, '') !== wantedPart && part.sourcePartId !== wantedPart) continue;
+    const staff = part.staves.find((entry) => entry.staffIndex === recent.staffIndex);
+    const measure = staff?.measures.find((entry) => (recent.measureId ?? recent.coreMeasureId) === entry.id)
+      ?? staff?.measures.find((entry) => entry.measureNumber === recent.measureNumber);
+    for (const voice of measure?.voices ?? []) {
+      if (voice.voiceId !== recent.voiceId && inputVoiceOf(voice.voiceId) !== recent.voiceId) continue;
+      if (voice.events.some((event) => (
+        event.kind === 'note'
+        && event.timestampNum * recent.timestampDen === recent.timestampNum * event.timestampDen
+      ))) return true;
+    }
+  }
+  return false;
 }
 
 function applyEntryModeToGhostTarget(
@@ -12017,6 +12046,11 @@ export default function ScoreEditor({
     if (noteInputMode) return;
     lastNoteInputCommitTargetRef.current = null;
   }, [noteInputMode]);
+  useEffect(() => {
+    if (lastNoteInputCommitTargetRef.current && !recentCommitStillHasNote(lastNoteInputCommitTargetRef.current, coreDocument)) {
+      lastNoteInputCommitTargetRef.current = null;
+    }
+  }, [coreDocument]);
   const graceEventIds = useMemo(() => buildGraceEventIdSet(coreDocument), [coreDocument]);
   const pageCount = useMemo(
     () => Math.max(1, measureLayoutOverlays.reduce((max, overlay) => Math.max(max, overlay.pageIndex + 1), 1)),
@@ -14946,7 +14980,7 @@ export default function ScoreEditor({
           voiceId: committed.target.voiceId,
           timestampNum: committed.target.timestampNum,
           timestampDen: committed.target.timestampDen,
-        };
+          };
         lastPlacementClientRef.current = {
           x: tabletSession.latestPoint.x,
           y: tabletSession.latestPoint.y,

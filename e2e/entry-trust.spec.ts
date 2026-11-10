@@ -219,3 +219,27 @@ for (const zoom of [50, 100, 200]) {
     expect(mismatches).toEqual([]);
   });
 }
+
+test('F38: after Undo of a mouse-entered note the next click in that bar commits what its ghost shows', async ({ page }, testInfo) => {
+  const session = await EntrySession.boot(page, testInfo, { xml: EMPTY_EIGHT_BARS });
+  await session.keys('N 5');
+
+  const first = await pointInBar(session, 2, 0.3, -6);
+  await session.move(first.x, first.y);
+  await session.click(first.x, first.y);
+  expect((await notes(session)).length).toBe(1);
+  await session.keys('Cmd+z');
+  expect((await notes(session)).length, 'Undo removes the note').toBe(0);
+
+  // The bar is empty again: the preview must not offer a chord tone on the note that is gone.
+  const second = await pointInBar(session, 2, 0.6, 8);
+  await session.move(second.x, second.y);
+  const ghost = await session.ghost();
+  expect(ghost, 'a ghost shows').not.toBeNull();
+  expect(ghost!.mode, 'no chord on a rest').not.toBe('chord');
+  await session.click(second.x, second.y);
+  const added = await notes(session);
+  expect(added.length, 'the click enters one note').toBe(1);
+  expect(added[0]).toContain(`m${ghost!.measure}@`);
+  expect(added[0]).toContain(` ${ghostPitchLabel(ghost!.pitch)} `);
+});
