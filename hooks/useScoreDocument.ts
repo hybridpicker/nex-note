@@ -46,6 +46,14 @@ export interface ScoreDocumentTransaction {
   beforeRevision?: number;
   afterRevision?: number;
   selectionAnchor?: ScoreDocumentSelectionAnchor | null;
+  /**
+   * Selection to restore when this transaction is undone, if it differs from `selectionAnchor`.
+   * Note input records the input position before the entry here, so Undo puts the cursor back
+   * where the undone note was entered (MuseScore restores the input state with the undo step).
+   */
+  undoSelectionAnchor?: ScoreDocumentSelectionAnchor | null;
+  /** Selection to restore when this transaction is redone, if it differs from `selectionAnchor`. */
+  redoSelectionAnchor?: ScoreDocumentSelectionAnchor | null;
 }
 
 interface HistoryEntry {
@@ -386,7 +394,13 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     });
   }, [buildCoreState, clearHistoryStacks, replaceSession, setBaseDocumentLive, setDocumentLive]);
 
-  const applyCommands = useCallback((commands: ScoreCommand[], meta?: { label?: string; selectionAnchor?: ScoreDocumentSelectionAnchor | null; prepared?: PreparedDocumentCommands }) => {
+  const applyCommands = useCallback((commands: ScoreCommand[], meta?: {
+    label?: string;
+    selectionAnchor?: ScoreDocumentSelectionAnchor | null;
+    undoSelectionAnchor?: ScoreDocumentSelectionAnchor | null;
+    redoSelectionAnchor?: ScoreDocumentSelectionAnchor | null;
+    prepared?: PreparedDocumentCommands;
+  }) => {
     if (!commands.length) return { applied: false, reason: 'empty-command-batch' as const, commandCount: 0, commandTypes: [] as string[] };
     const current = documentRef.current;
     const next = commitPreparedDocumentCommands(current, commands, meta?.prepared);
@@ -446,6 +460,8 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
       beforeRevision: current.revision,
       afterRevision: next.revision,
       selectionAnchor: meta?.selectionAnchor ?? null,
+      ...(meta?.undoSelectionAnchor !== undefined ? { undoSelectionAnchor: meta.undoSelectionAnchor } : {}),
+      ...(meta?.redoSelectionAnchor !== undefined ? { redoSelectionAnchor: meta.redoSelectionAnchor } : {}),
     });
     const nextUndo = pushUndo({
       document: nextDocumentState,
@@ -489,7 +505,9 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     const replayed = remaining.at(-1)?.document ?? (remaining.length ? replayHistory(baseDocumentRef.current, remaining) : baseDocumentRef.current);
     setDocumentLive(replayed);
     setLastCommands(remaining[remaining.length - 1]?.commands ?? []);
-    const restoredSelectionAnchor = removed.transaction.selectionAnchor ?? null;
+    const restoredSelectionAnchor = removed.transaction.undoSelectionAnchor !== undefined
+      ? removed.transaction.undoSelectionAnchor
+      : removed.transaction.selectionAnchor ?? null;
     setHistoryMeta({
       depth: remaining.length,
       lastAction: 'undo',
@@ -538,7 +556,9 @@ export function useScoreDocument(initialXml = '', options?: UseScoreDocumentOpti
     setUndoStackLive(nextUndo);
     setDocumentLive(replayed);
     setLastCommands(next.commands ?? []);
-    const restoredSelectionAnchor = next.transaction.selectionAnchor ?? null;
+    const restoredSelectionAnchor = next.transaction.redoSelectionAnchor !== undefined
+      ? next.transaction.redoSelectionAnchor
+      : next.transaction.selectionAnchor ?? null;
     setHistoryMeta((prev) => ({
       ...prev,
       depth: nextUndo.length,

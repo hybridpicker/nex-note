@@ -1087,7 +1087,12 @@ export default function Home({ searchParams }: HomeProps) {
   } = useNoteEditor(
     xml,
     coreDocument,
-    (commands, meta) => applyCommands(commands, { selectionAnchor: meta?.selectionAnchor ?? null, prepared: meta?.prepared }),
+    (commands, meta) => applyCommands(commands, {
+      selectionAnchor: meta?.selectionAnchor ?? null,
+      undoSelectionAnchor: meta?.undoSelectionAnchor,
+      redoSelectionAnchor: meta?.redoSelectionAnchor,
+      prepared: meta?.prepared,
+    }),
     {
       onNoteInputActivated: () => {
         // Initialize audio in the mode-activation gesture, before a note click
@@ -1233,7 +1238,7 @@ export default function Home({ searchParams }: HomeProps) {
   useEffect(() => {
     const shouldRestoreEmptySelection = ['undo', 'redo', 'load', 'reset', 'replace'].includes(historyMeta.lastAction ?? '');
     if (historyMeta.currentSelectionAnchor == null && !shouldRestoreEmptySelection) return;
-    restoreSelection(historyMeta.currentSelectionAnchor ?? null);
+    restoreSelection(historyMeta.currentSelectionAnchor ?? null, historyMeta.lastAction ?? null);
   }, [historyMeta.currentSelectionAnchor, historyMeta.lastAction, historyMeta.lastTransaction?.id, restoreSelection]);
 
   useEffect(() => {

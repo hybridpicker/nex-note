@@ -245,6 +245,8 @@ Use zoom controls, view mode, Navigator, Find/Go to, AI layout cleanup, system/p
 
 Undo is `Cmd/Ctrl+Z`; redo is `Cmd/Ctrl+Shift+Z` or `Cmd/Ctrl+Y`. History is command-based and bounded, so very old edits can drop out after many changes.
 
+During Note Input, Undo puts the input cursor back where the undone note or rest was entered, and you can keep typing from there; the note before the cursor sets the octave of the next letter. Redo moves the cursor after the redone entry. `Q`/`W` in Note Input change the note just entered and move the cursor past it.
+
 ## Debug and Bug Reports
 
 In debug mode, `Report bug` exports a bundle with score data, runtime state, recent actions, and Markdown/JSON reports. Doctor Mode and visual debug tools help diagnose note input, rhythm, layout, and semantic-grid issues.

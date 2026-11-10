@@ -169,6 +169,10 @@ export interface EditorSelection {
 export interface NoteEditorUpdateMeta {
   prepared?: PreparedDocumentCommands;
   selectionAnchor?: ScoreDocumentSelectionAnchor | null;
+  /** Selection Undo restores. Note input sets it to the input position before the entry. */
+  undoSelectionAnchor?: ScoreDocumentSelectionAnchor | null;
+  /** Selection Redo restores. Note input sets it to the input position after the entry. */
+  redoSelectionAnchor?: ScoreDocumentSelectionAnchor | null;
 }
 
 interface NoteClickOptions {
@@ -1023,7 +1027,17 @@ export function useNoteEditor(
   const onApplyCommands = useCallback((commands: ScoreCommand[], meta?: NoteEditorUpdateMeta) => {
     const prepared = preparedCommandsRef.current;
     preparedCommandsRef.current = undefined;
-    const result = onApplyCommandsCallback(commands, { ...meta, prepared });
+    // Undo of a note-input edit returns the cursor to the input position the edit started from,
+    // as MuseScore restores its input state with the undo step (F1 in note-entry-mastery-ledger).
+    const inputCursor = noteInputModeRef.current ? selectedNoteRef.current : null;
+    const undoSelectionAnchor = meta?.undoSelectionAnchor !== undefined || !inputCursor
+      ? meta?.undoSelectionAnchor
+      : toSelectionAnchor(inputCursor, [inputCursor]);
+    const result = onApplyCommandsCallback(commands, {
+      ...meta,
+      prepared,
+      ...(undoSelectionAnchor !== undefined ? { undoSelectionAnchor } : {}),
+    });
     if (result && !result.applied) {
       setEditorError('The score validation did not accept this input.');
       return false;
@@ -1232,9 +1246,27 @@ export function useNoteEditor(
     return firstSemanticNote;
   }, [coreDocument, selectedNote, selectSingleNote]);
 
-  const restoreSelection = useCallback((anchor: ScoreDocumentSelectionAnchor | null | undefined) => {
-    const restored = resolveSelectionAnchor(coreDocument, anchor);
+  const restoreSelection = useCallback((
+    anchor: ScoreDocumentSelectionAnchor | null | undefined,
+    reason?: 'load' | 'replace' | 'apply' | 'undo' | 'redo' | 'reset' | null,
+  ) => {
+    const fromHistoryStep = reason === 'undo' || reason === 'redo';
+    const inNoteInput = noteInputModeRef.current && fromHistoryStep;
+    let restored = resolveSelectionAnchor(coreDocument, anchor);
+    if (!restored.length && inNoteInput && selectedNoteRef.current) {
+      // An old transaction without an input anchor: keep the cursor where it is if it still exists.
+      const cursor = selectedNoteRef.current;
+      restored = getSemanticNoteOrder(coreDocument).filter((entry) => sameRhythmicPosition(entry, cursor)).slice(0, 1);
+    }
+    if (inNoteInput) {
+      // The state after Undo or Redo is the state of an earlier entry: what was entered after it,
+      // an open slur and the past-the-end flag no longer describe the document.
+      beyondScoreRef.current = null;
+      inputSlurRef.current = null;
+      rangeCursorRef.current = null;
+    }
     if (!restored.length) {
+      if (inNoteInput) lastNoteInputRef.current = null;
       clearSelection();
       return false;
     }
@@ -1244,6 +1276,13 @@ export function useNoteEditor(
     setSelectedNoteLive(anchorNote);
     setSelectedVisualLive(anchorNote ? { visualOnly: false, text: null, measureNumber: anchorNote.measureNumber, staffIndex: anchorNote.staffIndex } : null);
     lastSelectedRef.current = anchorNote;
+    if (inNoteInput && anchorNote) {
+      // The note entered last in that state is the event before the cursor in its voice; it sets the
+      // register of the next letter and is the target of the selection keys, as after a normal entry.
+      lastNoteInputRef.current = getSelectionLaneOrder(coreDocument, anchorNote)
+        .filter((entry) => matchesSelectionLane(entry, anchorNote) && compareSelectedNotes(entry, anchorNote) < 0)
+        .at(-1) ?? null;
+    }
     return true;
   }, [clearSelection, coreDocument, setSelectedNoteLive, setSelectedVisualLive]);
 
@@ -2126,6 +2165,9 @@ export function useNoteEditor(
 
     if (!behavior?.skipHistory && !onApplyCommands([...commands, ...slurCommands], {
       selectionAnchor: persistedSelectionAnchor,
+      ...(noteInputModeRef.current && selectionAfterUpdate
+        ? { redoSelectionAnchor: toSelectionAnchor(selectionAfterUpdate, [selectionAfterUpdate]) }
+        : {}),
     })) return false;
     if (extendsInputSlur && inputSlur && enteredNote) inputSlur.end = enteredNote;
 
@@ -2277,17 +2319,34 @@ export function useNoteEditor(
       timestampNum: target.timestampNum,
       timestampDen: target.timestampDen,
     };
-    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
     const resolved = resolveSelectionFromDocument(next.coreDocument, updatedTarget);
+    // In note input the changed note is usually the one just entered, behind the cursor. A longer
+    // value can absorb the cursor's slot, so the cursor moves to the position after the changed
+    // note (F8 in note-entry-mastery-ledger: the old slot was restored and the cursor was lost).
+    const cursorBefore = selectedNoteRef.current ?? selectedNote;
+    const inNoteInput = noteInputModeRef.current;
+    const changedAtCursor = Boolean(cursorBefore && resolved && sameRhythmicPosition(cursorBefore, resolved));
+    const rawCursorAfter = inNoteInput && resolved && !changedAtCursor
+      ? findNextInputPosition(next.coreDocument, resolved, { duration, dotted })
+      : null;
+    const cursorAfter = inNoteInput && resolved
+      ? (changedAtCursor ? resolved : (isLocalNoteInputAdvance(resolved, rawCursorAfter) ? rawCursorAfter : resolved))
+      : null;
+    onApplyCommands(commands, inNoteInput
+      ? { selectionAnchor: null, ...(cursorAfter ? { redoSelectionAnchor: toSelectionAnchor(cursorAfter, [cursorAfter]) } : {}) }
+      : { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
     if (resolved) {
       lastNoteInputRef.current = resolved;
-      if (selectedNote && selectedNotes.length <= 1) {
+      if (cursorAfter) {
+        selectSingleNote(cursorAfter, { visualOnly: false, text: null, measureNumber: cursorAfter.measureNumber, staffIndex: cursorAfter.staffIndex });
+        if (!rawCursorAfter && !changedAtCursor) beyondScoreRef.current = resolved;
+      } else if (selectedNote && selectedNotes.length <= 1) {
         setSelectedNoteLive(resolved);
         selectedNotesRef.current = [resolved];
         setSelectedNotes([resolved]);
       }
     }
-  }, [applyEditorCommands, onApplyCommands, resolveActiveDurationTarget, resolveSelectionFromDocument, selectedNote, selectedNotes, setIsDottedLive, setSelectedDurationLive, setSelectedNoteLive, warnNoOpEdit, xml]);
+  }, [applyEditorCommands, onApplyCommands, resolveActiveDurationTarget, resolveSelectionFromDocument, selectSingleNote, selectedNote, selectedNotes, setIsDottedLive, setSelectedDurationLive, setSelectedNoteLive, warnNoOpEdit, xml]);
 
   const setDurationSelection = useCallback((duration: NoteDuration) => {
     // With an active note, duration buttons edit that note even while note
