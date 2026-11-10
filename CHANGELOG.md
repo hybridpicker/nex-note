@@ -25,6 +25,9 @@ All notable changes to nex-note are documented here.
 
 - A note typed after or into a triplet could respell or cut the triplet; a chord tone could get a different length than its chord.
 
+- A bar added while entering notes could be saved with a wrong `<divisions>` value and reopen with wrong note lengths.
+- Delete on a triplet note left rests of odd values; repeating or copying one tone of a chord could shift another voice.
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

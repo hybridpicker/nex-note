@@ -382,6 +382,11 @@ function syncPartMeasures(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
           ?? (existingMeasures[Math.max(0, index - 1)]?.cloneNode(true) as XmlEl | undefined)
           ?? doc.createElement('measure'));
       stripMeasureContent(measureEl);
+      // A bar built from its neighbour must not inherit the neighbour's <attributes>: a copied
+      // <divisions> states a grid this bar does not have (the neighbour's value before this export
+      // updates it), and the file reopens with wrong note lengths. The bar's own attributes are
+      // written from the model below.
+      if (!sourceMeasure) removeDirectChildrenByTag(measureEl, 'attributes');
       measureEl.setAttribute('number', String(sourceMeasureNumberFor(coreMeasure)));
       if (coreMeasure.implicit) {
         measureEl.setAttribute('implicit', 'yes');
@@ -767,7 +772,14 @@ function buildEventElement(
     note.appendChild(tie);
   }
 
-  const eventSlurs = coreDocument.slurs.filter((slur) => slur.startEventId === event.id || slur.stopEventId === event.id);
+  // A fixed order (ends before starts, then by number), so the file does not depend on the order in
+  // which the slurs were made.
+  const eventSlurs = coreDocument.slurs
+    .filter((slur) => slur.startEventId === event.id || slur.stopEventId === event.id)
+    .sort((left, right) => (
+      Number(left.startEventId === event.id) - Number(right.startEventId === event.id)
+      || left.number - right.number
+    ));
   const guitarTechniques = event.kind === 'note' ? new Set(event.guitar?.techniques ?? []) : new Set<string>();
   // Only write a tuplet notation element for the first and last note of the span;
   // middle notes carry only <time-modification> and do not need a <notations> block.

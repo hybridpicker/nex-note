@@ -25,6 +25,12 @@ import { FUZZ_FIXTURES, runSequence } from './support/entry-fuzz.ts';
  * F30  (iteration 10) a plain note after a tuplet respelled the tuplet's rests; a chord tone took the
  *      armed value instead of the chord's; a letter with another value on a tuplet unit, or a value
  *      reaching into a tuplet, cut the tuplet; grace notes joined the beams of the main notes
+ * F32  (iteration 11) Delete on a tuplet unit left plain rests of made-up values; R or copy of one
+ *      chord tone pasted a chord tone without its note and shifted another voice; slur ends changed
+ *      order on re-export; a note from another voice's cursor cut a tuplet; a chord tone on a note
+ *      with a grace note took the grace note's value
+ * F33  a bar appended during entry copied the <divisions> of the bar before it, as it stood before
+ *      that export; the file then stated a grid its notes did not use
  */
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -46,6 +52,14 @@ const REPLAYS: Array<[string, number, string[]]> = [
   ['transposing part', 3505516, ['click:884', 'Cmd+3', '5', 'e']],
   ['single staff', 48200018, ['N', 'c', 'f', 'f', 'd', 'f', 'd', 'ArrowRight', 'f', 'f', 'Cmd+3', 'Q', '5', 'f']],
   ['three parts', 48700000, ['N', 'g', 'e', 'f', '.', 'f', 'e', '/', '/']],
+  // Iteration 11 (F32).
+  ['grand staff, two voices', 91830016, ['click:487', 'Delete', 'd', 'Shift+e', 'J', 'N', 'R']],
+  ['transposing part', 91930096, ['click:310', 'Cmd+3', 'b', 'Delete', 'Cmd+Alt+2', 'b', 'Shift+e']],
+  ['tuplets and graces', 92030068, ['click:814', 'Backspace', '6', 'e', 'Shift+g', 'click:409', 'ArrowLeft', 'W', 'f', 'Backspace']],
+  ['pickup bar', 92130060, ['click:924', 'ArrowLeft', 's', 'Shift+ArrowLeft', 's']],
+  ['transposing part', 15750091, ['click:252', 'ArrowRight', 'Shift+ArrowLeft', 'd', 'Cmd+Alt+2', 'Cmd+3', 'f', 'Cmd+Alt+1', 'g']],
+  ['tuplets and graces', 15850069, ['N', 'ArrowRight', 'Shift+ArrowLeft', 'Shift+g', 'Delete']],
+  ['grand staff, two voices', 62140015, ['click:512', 'a', 'd', 'a', 'a', '3', 'f', 'Cmd+z', 'Cmd+3', 'click:738', 'g', 'Cmd+3']],
   ['grand staff, two voices', 871114, ['Cmd+Alt+2', 'N', 'a', 'Backspace', 'Cmd+c', 'd', 'g', 'd', 'T', '/', 'a', 'f', 'd', 'click:528', 'Cmd+v', 'Shift+ArrowLeft', 'e']],
 ];
 for (const [fixture, seed, actions] of REPLAYS) {
@@ -240,6 +254,69 @@ test('F30: a value that starts before a triplet and reaches into it removes the 
       voiceSummary(app.xml, {}).filter((line) => line.startsWith('m3@')),
       ['m3@0 F5 eighth', 'm3@0.5 F5 eighth~', 'm3@1 F5 eighth', 'm3@1.5 r eighth', 'm3@2 r half'],
     );
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F32: Delete on a triplet note leaves a triplet rest of the same value', () => {
+  const app = drive('transposing part', ['click:310', 'Cmd+3', 'b', 'ArrowLeft', 'Delete']);
+  try {
+    assert.deepEqual(voiceSummary(app.xml, {}).filter((line) => line.startsWith('m3@')), ['m3@0 A5 half', 'm3@2 r quarter', 'm3@2.667 r quarter', 'm3@3.333 r quarter']);
+    assert.deepEqual(importMusicXmlToCore(app.xml).tuplets.map((tuplet) => tuplet.eventIds.length), [3]);
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F32: R on one tone of a chord writes that note and leaves the other voice alone', () => {
+  const app = drive('grand staff, two voices', ['click:487', 'Delete', 'd', 'Shift+e', 'J', 'N']);
+  try {
+    const voice2 = voiceSummary(app.xml, { voice: 2 });
+    app.press('R');
+    assert.deepEqual(voiceSummary(app.xml, { voice: 2 }), voice2, 'voice 2 is untouched');
+    assert.deepEqual(
+      voiceSummary(app.xml, {}).filter((line) => line.startsWith('m2@')),
+      ['m2@0 E5 quarter', 'm2@1 D5 quarter', 'm2@1 Fb5(chord) quarter', 'm2@2 Fb5 quarter', 'm2@3 D5 quarter'],
+    );
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F32: a note typed at another voice\'s cursor inside a tuplet is rejected whole', () => {
+  const app = drive('transposing part', ['click:252', 'ArrowRight', 'Shift+ArrowLeft', 'd', 'Cmd+Alt+2', 'Cmd+3', 'f', 'Cmd+Alt+1']);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const before = app.xml;
+    app.press('g');
+    assert.equal(app.xml, before);
+    assert.match(app.editor.editorError ?? '', /tuplet/i);
+  } finally {
+    console.warn = warn;
+    app.unmount();
+  }
+});
+
+test('F32: a chord tone on a note with a grace note takes the main note\'s value', () => {
+  const app = drive('tuplets and graces', ['N', 'ArrowRight', 'Shift+ArrowLeft', 'Shift+g']);
+  try {
+    assert.deepEqual(voiceSummary(app.xml, {}).slice(0, 3), ['m1@0 E5 eighth', 'm1@0 D5 quarter', 'm1@0 G5(chord) quarter']);
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F33: an appended bar does not copy the <divisions> of the bar before it', () => {
+  const app = drive('grand staff, two voices', ['click:512', 'a', 'd', 'a', 'a', '3', 'f', 'Cmd+z', 'Cmd+3', 'click:738', 'g', 'Cmd+3']);
+  try {
+    const bar5 = /<measure number="5">(.*?)<\/measure>/s.exec(app.xml)![1]!;
+    assert.doesNotMatch(bar5, /<divisions>/, 'bar 5 states no grid of its own');
+    // The whole note of bar 5 is still a whole note after reopening the file.
+    const reopened = importMusicXmlToCore(app.xml).score.parts[0]!.staves[0]!.measures[4]!.voices[0]!.events[0]!;
+    assert.equal(reopened.durationType, 'whole');
+    assert.equal(reopened.durationDivisions / (reopened.timestampDen / 4), 4, 'four quarters long');
   } finally {
     app.unmount();
   }

@@ -2505,8 +2505,9 @@ export function useNoteEditor(
     const { target, duration, label, advanceFrom } = input;
     // A tone added to a chord takes the chord's value, whatever value is armed (MuseScore adds the
     // note to the existing chord); a chord whose tones differ in length cannot be written.
-    const chordRoot = target.mode === 'chord'
-      ? findEventReference(coreDocument, {
+    const chordRoot = target.mode === 'chord' ? (() => {
+      const graceEventIds = new Set((coreDocument?.graceNotes ?? []).map((entry) => entry.eventId));
+      const voiceEvents = findEventReference(coreDocument, {
         coreMeasureId: target.measureId ?? null,
         corePartId: target.corePartId ?? null,
         measureNumber: target.measureNumber,
@@ -2514,9 +2515,16 @@ export function useNoteEditor(
         voiceId: target.voiceId,
         timestampNum: target.timestampNum,
         timestampDen: target.timestampDen,
-      })?.event ?? null
-      : null;
-    const takesChordValue = Boolean(chordRoot && chordRoot.kind === 'note' && chordRoot.durationType);
+      })?.measure.voices.find((voice) => voice.voiceId === target.voiceId)?.events ?? [];
+      // The note that carries the chord: not a grace note at that onset, not a chord tone.
+      return voiceEvents.find((event) => (
+        event.kind === 'note'
+        && !event.isChord
+        && !graceEventIds.has(event.id)
+        && timestampsEqual(event.timestampNum, event.timestampDen, target.timestampNum, target.timestampDen)
+      )) ?? null;
+    })() : null;
+    const takesChordValue = Boolean(chordRoot?.durationType);
     const durationType = takesChordValue ? chordRoot!.durationType! : DURATION_TYPE_MAP[duration];
     const dotted = takesChordValue ? Boolean(chordRoot!.isDotted) : input.dotted;
 

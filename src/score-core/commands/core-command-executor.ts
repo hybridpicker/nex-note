@@ -1714,8 +1714,25 @@ function deleteTimedEvent(document: ScoreDocumentModel, context: EventVoiceConte
     entry !== event && entry.kind === 'note' && !graceEventIds.has(entry.id)
     && timestampsEqual(entry.timestampNum, entry.timestampDen, event.timestampNum, event.timestampDen)
   ));
+  const inTuplet = document.tuplets.some((tuplet) => tuplet.eventIds.includes(event.id));
   if (graceEventIds.has(event.id)) {
     context.voice.events.splice(index, 1);
+  } else if (inTuplet && event.kind === 'rest') {
+    // A rest unit of a tuplet is already what Delete leaves behind.
+    return;
+  } else if (inTuplet && remainingTones.length === 0) {
+    // The unit stays a unit of its tuplet, as a rest of the same value and identity.
+    const { id, measureNumber, staffIndex, voiceId, timestampNum, timestampDen, durationDivisions, durationType, isDotted } = event;
+    context.voice.events.splice(index, 1, {
+      id, kind: 'rest', measureNumber, staffIndex, voiceId, timestampNum, timestampDen, durationDivisions, durationType, isDotted,
+      isChord: false,
+    } as TimedEvent);
+    // The rest keeps the id: drop what belongs to a note, keep the tuplet membership.
+    document.slurs = document.slurs.filter((slur) => slur.startEventId !== id && slur.stopEventId !== id);
+    document.graceNotes = document.graceNotes.filter((link) => link.eventId !== id);
+    document.lyricLines = document.lyricLines.filter((line) => line.eventId !== id);
+    document.fermataEventIds.delete(id);
+    return;
   } else if (event.kind === 'note' && remainingTones.length > 0) {
     context.voice.events.splice(index, 1);
     if (!event.isChord) remainingTones[0]!.isChord = false;
@@ -6018,6 +6035,29 @@ export function executeCoreCommands(
             ? clampInsertionOffsetToMeasure(requestedAbsoluteOffset, timing.durationDivisions, requestedDuration)
             : rawAbsoluteOffset
           : anchor ? anchor.timestampNum + anchor.durationDivisions : rawAbsoluteOffset;
+        // A plain value must not cut a tuplet and leave orphaned units. Inserting at the first unit
+        // moves the tuplet on as a whole; an insert that starts inside a tuplet, or that would be
+        // written into rest units of one, is rejected as a whole. The editor clears the tuplet first
+        // where the entry may do so (replaceWithRest).
+        if (isAbsoluteInsert && !(command.type === 'insertNoteAt' && command.asChord)) {
+          const insertEnd = insertionOffset + requestedDuration;
+          const cutsTuplet = nextDocument.tuplets.some((tuplet) => {
+            const units = found.voice.events.filter((event) => tuplet.eventIds.includes(event.id));
+            if (!units.length) return false;
+            const first = Math.min(...units.map((event) => event.timestampNum));
+            const last = Math.max(...units.map((event) => event.timestampNum + event.durationDivisions));
+            if (insertionOffset > first && insertionOffset < last) return true;
+            return units.some((event) => (
+              event.kind === 'rest'
+              && event.timestampNum < insertEnd
+              && event.timestampNum + event.durationDivisions > insertionOffset
+            ));
+          });
+          if (cutsTuplet) {
+            diagnostics.push({ level: 'warning', code: 'tuplet_command_rejected', message: 'This note would cut into a tuplet. Enter the tuplet\'s own note value on one of its notes, or remove the tuplet first.' });
+            break;
+          }
+        }
         const spanningRestIndex = isAbsoluteInsert
           ? found.voice.events.findIndex((event) => (
               !event.isChord

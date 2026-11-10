@@ -135,6 +135,22 @@ export function buildClipboardPayloadFromSelection(
   }).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   if (copiedEvents.length === 0) return null;
 
+  // Chord tones copied without the note that carries their chord (one tone of a chord selected):
+  // the lowest-ordered copy at that onset becomes the carrying note, or the paste would write a
+  // chord tone with nothing under it.
+  const onsetKey = (entry: (typeof copiedEvents)[number]) => `${entry.sourceStaffIndex}:${entry.sourceVoiceId}:${entry.absStart}`;
+  const onsetsWithRoot = new Set(copiedEvents
+    .filter((entry) => !entry.event.isChord && !graceIds.has(entry.event.id))
+    .map(onsetKey));
+  const promoted = new Set<string>();
+  for (const entry of copiedEvents) {
+    if (!entry.event.isChord || graceIds.has(entry.event.id)) continue;
+    const key = onsetKey(entry);
+    if (onsetsWithRoot.has(key) || promoted.has(key)) continue;
+    entry.event.isChord = false;
+    promoted.add(key);
+  }
+
   const clipStart = copiedEvents.reduce((min, entry) => Math.min(min, entry.absStart), Number.POSITIVE_INFINITY);
   const clipEnd = copiedEvents.reduce(
     (max, entry) => Math.max(max, entry.absStart + entry.event.durationDivisions),
