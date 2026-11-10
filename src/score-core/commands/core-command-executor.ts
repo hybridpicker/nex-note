@@ -3775,7 +3775,7 @@ function editRhythmPassage(document: ScoreDocumentModel, command: Extract<Valida
 
 /** For each grace event: the kind of its main event (same voice, same onset). */
 function graceMainKinds(document: ScoreDocumentModel) {
-  const graceIds = new Set(document.graceNotes.map((link) => link.eventId));
+  const graceIds = new Set((document.graceNotes ?? []).map((link) => link.eventId));
   const kinds = new Map<string, 'note' | 'rest' | 'none'>();
   for (const part of document.score.parts) {
     for (const staff of part.staves) {
@@ -3807,7 +3807,7 @@ function graceMainKinds(document: ScoreDocumentModel) {
  * <forward>, so the tuplet lost a member on the next round trip.
  */
 function pruneGracesWithoutMainNote(nextDocument: ScoreDocumentModel, currentDocument: ScoreDocumentModel) {
-  if (!nextDocument.graceNotes.length) return;
+  if (!nextDocument.graceNotes?.length) return;
   const before = graceMainKinds(currentDocument);
   const after = graceMainKinds(nextDocument);
   const orphaned = new Set([...after].filter(([id, kind]) => kind !== 'note' && before.get(id) === 'note').map(([id]) => id));
@@ -3823,7 +3823,7 @@ function pruneGracesWithoutMainNote(nextDocument: ScoreDocumentModel, currentDoc
       }
     }
   }
-  nextDocument.graceNotes = nextDocument.graceNotes.filter((link) => !orphaned.has(link.eventId));
+  nextDocument.graceNotes = (nextDocument.graceNotes ?? []).filter((link) => !orphaned.has(link.eventId));
   nextDocument.slurs = (nextDocument.slurs ?? []).filter((slur) => !orphaned.has(slur.startEventId ?? '') && !orphaned.has(slur.stopEventId ?? ''));
   nextDocument.lyricLines = (nextDocument.lyricLines ?? []).filter((line) => !orphaned.has(line.eventId));
   nextDocument.tuplets = (nextDocument.tuplets ?? []).map((tuplet) => ({ ...tuplet, eventIds: tuplet.eventIds.filter((id) => !orphaned.has(id)) }));

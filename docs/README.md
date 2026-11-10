@@ -13,6 +13,9 @@ This directory mixes current status docs, architecture docs, validation material
 - Multi-app development flow: [multi-app-development-flow.md](./multi-app-development-flow.md)
 - Private iPad testing: [ipad-private-testing.md](./ipad-private-testing.md)
 - Native macOS Xcode implementation prompt: [macos-xcode-private-testing-prompt.md](./macos-xcode-private-testing-prompt.md)
+- Autonomous note-entry and arrangement completeness loop: [arrangement-note-entry-iteration-prompt.md](./arrangement-note-entry-iteration-prompt.md)
+- Autonomous note-entry mastery loop (precision, speed and usability against MuseScore, Dorico and Finale): [note-entry-mastery-prompt.md](./note-entry-mastery-prompt.md)
+- Note-entry mastery ledger (live work queue, gates, decisions, iteration log): [note-entry-mastery-ledger.md](./note-entry-mastery-ledger.md)
 - Founder test file intake: [founder-test-file-intake.md](./founder-test-file-intake.md)
 
 ## Current Source Of Truth

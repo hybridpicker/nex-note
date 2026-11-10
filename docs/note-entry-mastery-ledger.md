@@ -7,6 +7,21 @@ that failed before the change for the stated reason.
 
 Started 2026-11-10 on `devel@fe64f3d`.
 
+## Handoff (end of session 1, 2026-11-10)
+
+Seven iterations, all on the Trust gate. Fixed: F1, F5, F6, F8 to F13, F18 (a regression of F13's fix, found by the pre-commit hook and bisected). Next session, in this order:
+
+1. P0 rows without a browser: F16 (`0` outside note input pushes the bar), F17 (letter after an
+   armed dotted value enters nothing), F14 (stray `<backup>`).
+2. F15: triage the 14 `e2e/app.spec.ts` failures that predate this program, one by one.
+3. T2, the browser session driver, then the browser-only P0 rows F2, F3, F4, F7.
+4. The 2,000-sequence fuzzer gate run with a fresh seed (gate 1), then T3 and P1.
+
+Verification habit that matters here: the pre-commit hook runs only `e2e/notation-tools.spec.ts`
+and the post-commit hook runs `electron:build`; `e2e/app.spec.ts` and the mouse suites must be run
+by hand for any change to entry behaviour. Chain ledger edits with `&&` so a failed edit stops the
+commit (iteration 4 lost its ledger row this way).
+
 ## Gates
 
 | Gate | State | Evidence |
@@ -18,7 +33,7 @@ Started 2026-11-10 on `devel@fe64f3d`.
 | 5 Keyboard flow | Not met | Reference tasks R2 to R6 not built (T4) |
 | 6 Mouse flow | Not met | R7, R8 not built; M1 to M6 open |
 | 7 Every row closed | Not met | See queue |
-| 8 Surfaces and exchange | Not run on a final commit | |
+| 8 Surfaces and exchange | Not met | On `6ea4454`: `npm test` 1,689 passed, `npm run build`, `git diff --check`, `npm run ipad:sync` and `npm run ipad:doctor` passed; every commit of session 1 passed the pre-commit `e2e/notation-tools.spec.ts` (51) and the post-commit `electron:build` + `electron:verify`. Not run: `notation-quality-cycle --browser`, reference-fixture MusicXML/MXL round trips (no reference tasks yet), physical iPad, Linux Electron; the Xcode macOS target does not exist |
 | 9 Independent review | Not started | |
 
 ## Tools (Iteration 0)
@@ -59,6 +74,7 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 | F14 | (low) After voice-2 entry the exporter writes a trailing `<backup>` with nothing after it; a re-export drops it. Not musical, but the file changes on the next unrelated edit. Replay: `single staff` 9105 `["click:918","Cmd+Alt+2","f"]` | byte comparison of stored and re-exported XML | reproduced | |
 | F16 | `0` outside note input inserts a rest before the selected note and pushes the bar later, cutting the last note: in the tuplet fixture a tied half A5 became a tied quarter. Same class as F5. Check MuseScore's normal-mode `0` (the handbook's Del replaces with a rest) before changing it | replay above, steps `click:73` `0` | reproduced | |
 | F17 | After `click:73 0 .` (a dotted value armed on a rest before a note with a grace), `e` switches note input on but enters nothing and the cursor stays; check whether a rejection message is shown | replay 309111 steps 1 to 4 | reproduced | |
+| F18 | `e2e/notation-tools.spec.ts:1990` "eight-bar keyboard replacement preserves correction and MusicXML reopen" failed intermittently after reopening the exported `.mxl`: `page.evaluate: Execution context was destroyed, most likely because of a navigation`; the server log shows the main page loading again where passing runs call `apply-operations`. Introduced by `6ea4454` (F13): 8 of 12 passed there, 24 of 24 on `fe64f3d`, `2006cfa`, `db9011f`, `a2cfbcc` and `b1de120` | Bisection with `--repeat-each`. The grace prune read `graceNotes` without the `?? []` the rest of the code uses for documents that lack the field; with the guard 18 of 18 passed. The exact path that reached the prune without `graceNotes` is not proven | fixed | iteration 7 |
 | F15 | 14 tests of `e2e/app.spec.ts` already fail on `fe64f3d` (before this program), Chromium on macOS, 2026-11-10: lines 1321, 1819, 1907, 1935, 1981, 2963, 3291, 3606, 3674, 3720, 3769, 3858, 3917, 3947 (polyphonic clicks, shortcut matrix incl. `Shift+ArrowUp` on a voice-2 entry, double accidentals, advance after entry, replace/insert-between/chord flows, Alt-click voice, replace drag, duration-first arrows, lower-staff rests, Doctor multi-voice, chord input, articulation shortcuts, inspector/palette, tuplet tools). The program's earlier completion report ran only `e2e/notation-tools.spec.ts`, which the pre-commit hook also runs. Each one is a real defect or a stale test; triage one by one | full `app.spec.ts` run on `fe64f3d` with the sources of that commit: 40 passed, 14 failed | reproduced | |
 
 ### P1. Speed
@@ -169,4 +185,5 @@ Each can be reverted on request.
 | 3 | `db9011f` | Fuzzer replays for F10 (3 crashes), F11 (voice 2 lost) and F12 (stored XML differs from the model) | Core rejects a pitch change on a rest; editor refreshes its selection from the document; division grids change per part; XML exported from the normalized model; new fixed-point invariant in the fuzzer | focused tests (11, 7 failed before); `npm test` 1,680 passed; `npm run build`; `git diff --check`; fuzzer 120 fresh sequences with and without the export fix; pre-commit Chromium 51 passed; post-commit Electron build verified | iPad (end of batch) |
 | 4 | `a2cfbcc` | F5 reproduced in the app harness | `repeatSelection` (copy without the clipboard, paste in overwrite mode after the last selected event); `pastePayloadAt` shared with paste | focused 4 tests (3 failed before); `npm test` 1,684 passed; pre-commit Chromium 51 passed; post-commit Electron build verified. This ledger row and the F5 status were written in iteration 5: the ledger edit of iteration 4 failed on a stale match and the commit went ahead without it | iPad (end of batch) |
 | 5 | `b1de120` | F6 reproduced in the app harness. A default-mode flip broke 17 browser tests and was reverted (see Decisions) | Paste passes `mode: 'overwrite'` | focused 2 tests (1 failed before); `npm test` 1,686 passed; full `e2e/app.spec.ts` on this change: 38 passed, 16 failed; pre-commit Chromium 51 passed, post-commit Electron verified; the same file on `fe64f3d` sources: 40 passed, 14 failed (F15). The two extra failures re-run twice each: file lifecycle passed both times (flaky download wait), `:2084` failed once (F4) | iPad (end of batch) |
-| 6 | (this commit) | F13 replay 309111 failed the fixed-point invariant | `pruneGracesWithoutMainNote` at the end of `executeCoreCommands`; found F16 and F17 while diagnosing | focused 3 tests (1 failed before); `npm test` 1,689 passed; first version of the prune broke 6 grace tests (it missed graces stored after their main event before normalization) and was corrected before commit | iPad (end of batch) |
+| 6 | `6ea4454` | F13 replay 309111 failed the fixed-point invariant | `pruneGracesWithoutMainNote` at the end of `executeCoreCommands`; found F16 and F17 while diagnosing | focused 3 tests (1 failed before); `npm test` 1,689 passed; first version of the prune broke 6 grace tests (it missed graces stored after their main event before normalization) and was corrected before commit; pre-commit Chromium 51 passed, post-commit Electron verified; `ipad:sync` and `ipad:doctor` passed on this commit | — |
+| 7 | (this commit) | F18 bisected to `6ea4454` | `graceNotes ?? []` in the grace prune; in the same commit: handoff section, docs index, the program prompts (`note-entry-mastery-prompt.md`, `arrangement-note-entry-iteration-prompt.md`) committed; push to `origin/devel` on the owner's instruction | `--repeat-each` runs above; `npm test` 1,689 passed | — |
