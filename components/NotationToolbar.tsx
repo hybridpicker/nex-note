@@ -318,7 +318,7 @@ export default function NotationToolbar({
         : `REC ${Math.round(microphoneSignalLevelDb)} dB`;
 
   return (
-    <div className="nex-brand-toolbar shrink-0 select-none border-b px-3 py-2" data-testid="notation-toolbar">
+    <div className="nex-brand-toolbar relative shrink-0 select-none border-b px-3 py-2" data-testid="notation-toolbar">
 
       {/* Main row */}
       <div className="flex items-center gap-1 overflow-x-auto">
@@ -545,11 +545,13 @@ export default function NotationToolbar({
         </button>
       </div>
 
-      {/* Playback progress bar */}
+      {/* Playback progress bar. It lies over the toolbar's bottom edge and takes no room of its own:
+          it appears with a selection or playback, and the score below must not move then (F2 in
+          docs/note-entry-mastery-ledger.md: a click landed two staff steps off its preview). */}
       {showPlaybackProgress && (
         <div
           data-testid="playback-progress-bar"
-          className="relative mt-2 h-1 cursor-pointer overflow-hidden rounded-full bg-nex-border"
+          className="absolute inset-x-3 bottom-0.5 h-1 cursor-pointer overflow-hidden rounded-full bg-nex-border"
           onClick={e => {
             const rect = e.currentTarget.getBoundingClientRect();
             const ratio = (e.clientX - rect.left) / rect.width;

@@ -1325,6 +1325,70 @@ function applyDurationChangeToVoice(
   const previousDurationDivisions = simultaneousEvents.reduce((max, current) => (
     Math.max(max, current.durationDivisions)
   ), 0);
+  // A unit of a tuplet changes its value inside the tuplet (MuseScore changeCRlen works in the
+  // tuplet's own time): a shorter value keeps the ratio and leaves a rest unit for the freed time.
+  // A longer value, or one that does not fit the ratio, is not written: the caller rejects it.
+  const tuplet = document.tuplets.find((entry) => entry.eventIds.includes(event.id));
+  if (tuplet) {
+    if (event.durationType === input.durationType && Boolean(event.isDotted) === Boolean(input.isDotted)) return true;
+    const actualNotes = tuplet.actualNotes ?? 3;
+    const normalNotes = tuplet.normalNotes ?? 2;
+    const scaled = (requestedDuration * normalNotes) / actualNotes;
+    if (!Number.isInteger(scaled) || scaled <= 0) return 'tuplet-value' as const;
+    if (scaled > previousDurationDivisions) {
+      // Longer: only into rest units of the same tuplet that follow directly and are used up exactly.
+      const unitEnd = event.timestampNum + previousDurationDivisions;
+      const targetEnd = event.timestampNum + scaled;
+      const followingRests = input.voice.events
+        .filter((entry) => entry.kind === 'rest' && tuplet.eventIds.includes(entry.id) && entry.timestampNum >= unitEnd && entry.timestampNum < targetEnd)
+        .sort((a, b) => a.timestampNum - b.timestampNum);
+      let cursor = unitEnd;
+      for (const rest of followingRests) {
+        if (rest.timestampNum !== cursor) break;
+        cursor += rest.durationDivisions;
+      }
+      if (cursor !== targetEnd) return 'tuplet-value' as const;
+      const consumed = new Set(followingRests.map((entry) => entry.id));
+      input.voice.events = input.voice.events.filter((entry) => !consumed.has(entry.id));
+      tuplet.eventIds = tuplet.eventIds.filter((id) => !consumed.has(id));
+      simultaneousEvents.forEach((entry) => {
+        entry.durationDivisions = scaled;
+        entry.durationType = input.durationType;
+        entry.isDotted = input.isDotted;
+      });
+      return true;
+    }
+    const freed = previousDurationDivisions - scaled;
+    const freedPlain = (freed * actualNotes) / normalNotes;
+    if (freed <= 0 || !Number.isInteger(freedPlain) || !isRepresentableDuration(freedPlain, timing.divisions)) {
+      return 'tuplet-value' as const;
+    }
+    simultaneousEvents.forEach((entry) => {
+      entry.durationDivisions = scaled;
+      entry.durationType = input.durationType;
+      entry.isDotted = input.isDotted;
+    });
+    const freedValue = describeDuration(freedPlain, timing.divisions);
+    const restUnit = {
+      id: `${event.id}:unit-rest:${event.timestampNum + scaled}`,
+      kind: 'rest',
+      measureNumber: event.measureNumber,
+      staffIndex: event.staffIndex,
+      voiceId: event.voiceId,
+      timestampNum: event.timestampNum + scaled,
+      timestampDen: event.timestampDen,
+      durationDivisions: freed,
+      durationType: freedValue.type,
+      isDotted: freedValue.dotted,
+      isChord: false,
+    } as TimedEvent;
+    input.voice.events.push(restUnit);
+    input.voice.events.sort((a, b) => a.timestampNum - b.timestampNum || Number(a.isChord) - Number(b.isChord));
+    const unitIds = new Set(simultaneousEvents.map((entry) => entry.id));
+    const lastUnitIndex = tuplet.eventIds.reduce((last, id, index) => (unitIds.has(id) ? index : last), -1);
+    tuplet.eventIds.splice(lastUnitIndex + 1, 0, restUnit.id);
+    return true;
+  }
   const delta = nextDurationDivisions - previousDurationDivisions;
   const fromOffset = event.timestampNum + previousDurationDivisions;
   simultaneousEvents.forEach((entry) => {
@@ -4317,6 +4381,10 @@ export function executeCoreCommands(
           durationType: command.durationType,
           isDotted: command.isDotted,
         });
+        if (applied === 'tuplet-value') {
+          diagnostics.push({ level: 'warning', code: 'tuplet_command_rejected', message: 'This value does not fit here inside the tuplet. A note of a tuplet can be made shorter, or longer into rests of the same tuplet.' });
+          break;
+        }
         if (!applied) break;
         const paired = findPairedTabNotationEvent(
           found.part,

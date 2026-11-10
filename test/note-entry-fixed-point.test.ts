@@ -29,6 +29,8 @@ import { FUZZ_FIXTURES, runSequence } from './support/entry-fuzz.ts';
  *      chord tone pasted a chord tone without its note and shifted another voice; slur ends changed
  *      order on re-export; a note from another voice's cursor cut a tuplet; a chord tone on a note
  *      with a grace note took the grace note's value
+ * F34  (iteration 12) Q on a tuplet unit wrote a plain shorter note and a rest of an odd value;
+ *      Shift+S lost a cursor that stood inside a longer rest of another voice
  * F33  a bar appended during entry copied the <divisions> of the bar before it, as it stood before
  *      that export; the file then stated a grid its notes did not use
  */
@@ -59,6 +61,9 @@ const REPLAYS: Array<[string, number, string[]]> = [
   ['pickup bar', 92130060, ['click:924', 'ArrowLeft', 's', 'Shift+ArrowLeft', 's']],
   ['transposing part', 15750091, ['click:252', 'ArrowRight', 'Shift+ArrowLeft', 'd', 'Cmd+Alt+2', 'Cmd+3', 'f', 'Cmd+Alt+1', 'g']],
   ['tuplets and graces', 15850069, ['N', 'ArrowRight', 'Shift+ArrowLeft', 'Shift+g', 'Delete']],
+  // Iteration 12 (F34).
+  ['transposing part', 7970031, ['N', 'W', 'Cmd+Alt+2', 'c', 'R', '0', 'Shift+s']],
+  ['tuplets and graces', 8070046, ['Cmd+Alt+2', 'N', 'e', 'c', 'click:907', 'Cmd+z', 'f', 'ArrowRight', 'Q', 'f', 'ArrowLeft', '5', 'e']],
   ['grand staff, two voices', 62140015, ['click:512', 'a', 'd', 'a', 'a', '3', 'f', 'Cmd+z', 'Cmd+3', 'click:738', 'g', 'Cmd+3']],
   ['grand staff, two voices', 871114, ['Cmd+Alt+2', 'N', 'a', 'Backspace', 'Cmd+c', 'd', 'g', 'd', 'T', '/', 'a', 'f', 'd', 'click:528', 'Cmd+v', 'Shift+ArrowLeft', 'e']],
 ];
@@ -317,6 +322,41 @@ test('F33: an appended bar does not copy the <divisions> of the bar before it', 
     const reopened = importMusicXmlToCore(app.xml).score.parts[0]!.staves[0]!.measures[4]!.voices[0]!.events[0]!;
     assert.equal(reopened.durationType, 'whole');
     assert.equal(reopened.durationDivisions / (reopened.timestampDen / 4), 4, 'four quarters long');
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F34: Q and W change a triplet note inside the triplet', () => {
+  const app = drive('tuplets and graces', ['N', 'ArrowRight', 'ArrowRight', 'Q']);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const bar1 = () => voiceSummary(app.xml, {}).filter((line) => line.startsWith('m1@1'));
+    assert.deepEqual(bar1(), ['m1@1 E5 16th', 'm1@1.167 r 16th', 'm1@1.333 F#5 eighth', 'm1@1.667 G5 eighth'], 'a triplet 16th and a triplet 16th rest');
+    assert.deepEqual(importMusicXmlToCore(app.xml).tuplets.map((tuplet) => tuplet.eventIds.length), [4]);
+    app.press('W');
+    assert.deepEqual(bar1(), ['m1@1 E5 eighth', 'm1@1.333 F#5 eighth', 'm1@1.667 G5 eighth'], 'W takes the rest unit back');
+    const before = app.xml;
+    app.press('W');
+    assert.equal(app.xml, before, 'a value that would grow over the next note is rejected whole');
+    assert.match(app.editor.editorError ?? '', /tuplet/i);
+  } finally {
+    console.warn = warn;
+    app.unmount();
+  }
+});
+
+test('F34: Shift+S keeps a cursor that stands inside a longer rest of another voice', () => {
+  const app = drive('transposing part', ['N', 'W', 'Cmd+Alt+2', 'c', 'R', '0']);
+  try {
+    const cursor = app.editor.selectedNote!;
+    app.press('Shift+s');
+    assert.ok(app.editor.selectedNote, 'note input keeps its cursor');
+    assert.deepEqual(
+      [app.editor.selectedNote.measureNumber, app.editor.selectedNote.timestampNum / app.editor.selectedNote.timestampDen],
+      [cursor.measureNumber, cursor.timestampNum / cursor.timestampDen],
+    );
   } finally {
     app.unmount();
   }

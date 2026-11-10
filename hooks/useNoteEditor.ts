@@ -1271,9 +1271,11 @@ export function useNoteEditor(
       const cursor = selectedNoteRef.current;
       restored = getSemanticNoteOrder(coreDocument).filter((entry) => sameRhythmicPosition(entry, cursor)).slice(0, 1);
     }
-    if (!restored.length && inNoteInput) {
-      // The step removed the lane the cursor stood in (the first entry of a voice in that bar). The
-      // cursor keeps its rhythmic position on the staff: the event of another voice at or before it.
+    if (!restored.length && noteInputModeRef.current) {
+      // The cursor is not an event of the document: the step removed its lane (Undo of the first
+      // entry of a voice in that bar), or it stands inside a longer rest of another voice and an
+      // edit elsewhere asks to restore it. It keeps its rhythmic position on the staff: the event of
+      // another voice at or before it.
       const locator = anchor?.anchorLocator ?? selectedNoteRef.current;
       if (locator) {
         const onset = locator.timestampNum / Math.max(locator.timestampDen, 1);

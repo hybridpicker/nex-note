@@ -2,8 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { expect } from '@playwright/test';
+import { Midi } from '@tonejs/midi';
 import type { Page, Route, TestInfo } from '@playwright/test';
 
+import { pinKeyboardLayout, type PinnedKeyboardLayout } from './keyboard-layout';
 import { importMusicXmlToCore } from '../../src/musicxml-adapter/import/import-musicxml';
 
 /*
@@ -90,6 +92,8 @@ export interface EntrySessionOptions {
   url?: string;
   /** Save a screenshot after every step (default true). */
   screenshots?: boolean;
+  /** Keyboard layout the page reports (default `us`), so layout-dependent keys are deterministic. */
+  layout?: PinnedKeyboardLayout;
   /** Milliseconds to wait for the app to settle after a step (default: until the render is idle). */
   settleTimeout?: number;
 }
@@ -121,7 +125,20 @@ async function installPlaybackStubs(page: Page) {
   });
 }
 
+/** A short MIDI file for `/api/midi`, so the transport has a length as it has in the running app. */
+function buildMidiBody() {
+  const midi = new Midi();
+  midi.header.setTempo(96);
+  const track = midi.addTrack();
+  [60, 62, 64, 65].forEach((pitch, index) => track.addNote({ midi: pitch, time: index * 0.5, duration: 0.5, velocity: 0.8 }));
+  return Buffer.from(midi.toArray());
+}
+
 async function mockStableRoutes(page: Page) {
+  const midiBody = buildMidiBody();
+  await page.route('**/api/midi', async (route: Route) => {
+    await route.fulfill({ status: 200, contentType: 'audio/midi', body: midiBody });
+  });
   await page.route('**/api/ollama-models', async (route: Route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [] }) });
   });
@@ -141,12 +158,12 @@ export class EntrySession {
    * place, for cases that are about audio never blocking entry.
    */
   static async boot(page: Page, testInfo: TestInfo, options: EntrySessionOptions & { stubAudio?: boolean }) {
+    await pinKeyboardLayout(page, options.layout ?? 'us');
     if (options.stubAudio !== false) await installPlaybackStubs(page);
     await mockStableRoutes(page);
     const fileName = options.name ?? 'entry-session.musicxml';
     await page.addInitScript(({ xml, name }: { xml: string; name: string }) => {
       if (window.top !== window) return;
-      document.documentElement.style.scrollBehavior = 'auto';
       if (localStorage.getItem('nex-note:e2e-boot')) return;
       const now = Date.now();
       localStorage.setItem('nex-note:score-library', JSON.stringify([{
@@ -156,6 +173,11 @@ export class EntrySession {
       localStorage.setItem('nex-note:recent-files', JSON.stringify([{ name, timestamp: now, size: xml.length }]));
       localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: name }));
     }, { xml: options.xml, name: fileName });
+    // A separate script: the document element may not exist yet when init scripts run, and a throw
+    // in the seeding script above would leave the app on its start screen.
+    await page.addInitScript(() => {
+      if (document.documentElement) document.documentElement.style.scrollBehavior = 'auto';
+    });
     await page.goto(options.url ?? '/');
     await expect(page.getByTitle('Save as')).toBeVisible({ timeout: 15_000 });
     const session = new EntrySession(page, testInfo, { screenshots: true, ...options });
@@ -294,11 +316,19 @@ export class EntrySession {
   /** Union box of a rendered measure of one staff (1-based), in page coordinates. */
   async measureBox(measureNumber: number, staffIndex = 1) {
     const selector = `[data-measure-number="${measureNumber}"][data-staff-index="${staffIndex}"], [data-measure-number="${measureNumber}"]`;
-    const locator = this.page.locator(selector).first();
-    await locator.scrollIntoViewIfNeeded();
-    const box = await locator.boundingBox();
-    if (!box) throw new Error(`Measure ${measureNumber} is not rendered`);
-    return box;
+    // The score is re-rendered after an edit; a box read in between belongs to a detached node.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const locator = this.page.locator(selector).first();
+      try {
+        await locator.scrollIntoViewIfNeeded({ timeout: 1_000 });
+        const box = await locator.boundingBox({ timeout: 1_000 });
+        if (box && box.width > 0) return box;
+      } catch {
+        // Re-rendered meanwhile: read again.
+      }
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(`Measure ${measureNumber} is not rendered`);
   }
 
   async noteheadCenter(index: number) {

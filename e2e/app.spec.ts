@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
 import { Midi } from '@tonejs/midi';
+import { pinKeyboardLayout } from './support/keyboard-layout';
 import { writeFailureArtifacts } from './support/failure-artifacts';
 import { clickGhostMapEntry, expectGhostMapRatios, scanGhostMapForMeasure } from './support/ghost-map';
 import { createNewScoreXml } from '../lib/new-score.ts';
@@ -439,6 +440,34 @@ async function waitForRenderedLayout(page: Page) {
   await page.getByTestId('score-viewport').focus();
 }
 
+/** The header button that opens the command center; its title names the platform's shortcut. */
+function commandCenterButton(page: Page) {
+  return page.getByTitle(/^Search commands \(/);
+}
+
+/** A voice button of the notation tools; its title names the platform's shortcut. */
+function voiceButton(page: Page, voice: 1 | 2 | 3 | 4) {
+  return page.getByTitle(new RegExp(`^Voice ${voice} \\(`));
+}
+
+/** The notation tools start collapsed; open them and every section, so their controls can be used. */
+async function ensureNotationToolsOpen(page: Page, options: { expandSections?: boolean } = {}) {
+  const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
+  if (await showTools.isVisible()) await showTools.click();
+  await expect(page.getByRole('button', { name: 'Hide notation tools', exact: true })).toBeVisible();
+  if (options.expandSections === false) return;
+  await page.evaluate(() => {
+    document.querySelectorAll<HTMLElement>('.nex-note-sidebar-section-toggle[aria-expanded="false"]').forEach((toggle) => toggle.click());
+  });
+}
+
+/** The right panel (Inspector, assistant) starts collapsed. */
+async function ensureRightPanelOpen(page: Page) {
+  const showPanel = page.getByTitle(/Show panel|Panel einblenden/);
+  if (await showPanel.isVisible()) await showPanel.click();
+  await expect(page.getByTitle(/Hide panel|Panel ausblenden/)).toBeVisible();
+}
+
 async function openNotationSection(page: Page, name: RegExp | string) {
   const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
   if (await showTools.isVisible()) await showTools.click();
@@ -565,6 +594,8 @@ async function readCurrentCore(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  // The shortcuts pressed in this file are the US ones; the machine's own layout must not decide.
+  await pinKeyboardLayout(page, 'us');
   await installPlaybackStubs(page);
   await mockStableRoutes(page);
 });
@@ -626,6 +657,8 @@ test('new score dialog creates a configured score in the browser @smoke', async 
   await expect(page.getByTitle('Save as')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Spring Sketch.musicxml')).toBeVisible();
 
+  await ensureRightPanelOpen(page);
+
   await page.getByRole('button', { name: 'Inspector' }).click();
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('Spring Sketch');
   await expect(page.getByRole('textbox', { name: 'Composer', exact: true })).toHaveValue('Lukas');
@@ -636,7 +669,7 @@ test('new score dialog creates a configured score in the browser @smoke', async 
 
 test('command center explains disabled commands and indexes their reasons @smoke', async ({ page }) => {
   await page.goto('/');
-  const commandsButton = page.getByTitle('Commands (Cmd/Ctrl+K)');
+  const commandsButton = commandCenterButton(page);
   await commandsButton.click();
 
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
@@ -684,7 +717,7 @@ test('command center exposes palette edit commands and runs selected-note edits 
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
   await commandSearch.fill('toggle staccato');
   await expect(page.getByRole('button', { name: /Toggle staccato/ })).toContainText('Unavailable: Select a note first');
@@ -695,7 +728,7 @@ test('command center exposes palette edit commands and runs selected-note edits 
     .flatMap((measure) => measure.voices)
     .flatMap((voice) => voice.events).length;
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('duplicate selection');
   await expect(page.getByRole('button', { name: /Duplicate selection/ })).toContainText(await expectedShortcutHint(page, 'Cmd D'));
   await page.keyboard.press('Enter');
@@ -707,19 +740,19 @@ test('command center exposes palette edit commands and runs selected-note edits 
   )).toBeGreaterThan(baselineEventCount);
 
   await clickRenderedNotehead(page, 0);
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('cut selection');
   await expect(page.getByRole('button', { name: /Cut selection/ })).toContainText(await expectedShortcutHint(page, 'Cmd X'));
   await expect(page.getByRole('button', { name: /Cut selection/ })).toBeEnabled();
   await page.keyboard.press('Escape');
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('active voice 3');
   await expect(page.getByRole('button', { name: /Set active voice 3/ })).toContainText(await expectedShortcutHint(page, 'Cmd Alt 3'));
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(3);
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('active voice 3');
   await expect(page.getByRole('button', { name: /Set active voice 3/ })).toContainText('Voice 3 is already active for note entry');
   await page.keyboard.press('Escape');
@@ -729,7 +762,7 @@ test('command center exposes palette edit commands and runs selected-note edits 
     return event?.kind === 'note' ? `${event.pitch.step}${event.pitch.alter ?? 0}${event.pitch.octave}` : null;
   });
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('transpose up semitone');
   await page.keyboard.press('Enter');
 
@@ -738,7 +771,7 @@ test('command center exposes palette edit commands and runs selected-note edits 
     return event?.kind === 'note' ? `${event.pitch.step}${event.pitch.alter ?? 0}${event.pitch.octave}` : null;
   }).not.toBe(beforePitch);
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('set final barline');
   await page.keyboard.press('Enter');
 
@@ -752,7 +785,7 @@ test('command center opens palette sections and focuses their controls @smoke', 
   await waitForRenderedScore(page);
   await clickRenderedNotehead(page, 0);
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
   await commandSearch.fill('palette transpose');
   await page.keyboard.press('Enter');
@@ -764,7 +797,7 @@ test('command center opens palette sections and focuses their controls @smoke', 
   await page.keyboard.press('Escape');
   await expect(transposePanel).toBeHidden();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('palette dynamics');
   await page.keyboard.press('Enter');
 
@@ -777,11 +810,13 @@ test('command center and shortcuts focus inspector text workflows @smoke', async
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
+  await ensureRightPanelOpen(page);
+
   await page.getByRole('button', { name: 'Inspector' }).click();
   await page.getByRole('button', { name: 'Text & Rehearsal' }).first().click();
   await expect(page.getByPlaceholder('Staff text / expression')).toBeHidden();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
   await commandSearch.fill('staff text');
   await expect(page.getByRole('button', { name: /Enter staff text/ })).toContainText(await expectedShortcutHint(page, 'Cmd T'));
@@ -806,7 +841,7 @@ test('command center and shortcuts focus inspector text workflows @smoke', async
     return xml.includes('<rehearsal') && xml.includes('B');
   }).toBeTruthy();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('text input');
   await expect(page.getByRole('button', { name: /Enter staff text/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /Enter rehearsal mark/ })).toBeVisible();
@@ -818,25 +853,25 @@ test('command center and shortcuts focus inspector text workflows @smoke', async
   await clickRenderedNotehead(page, 0);
   await expect(page.getByPlaceholder('Lyric for selected note')).toBeVisible();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('lyric line');
   await page.keyboard.press('Enter');
   await expect(page.getByPlaceholder('Lyric for selected note')).toBeFocused();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('chord input');
   await expect(page.getByRole('button', { name: /Turn chord input on/ })).toContainText(await expectedShortcutHint(page, 'Shift Cmd H'));
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await readE2EState(page))?.chordInputMode).toBe(true);
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('chord symbol');
   await expect(page.getByRole('button', { name: /Enter chord symbol/ })).toContainText(await expectedShortcutHint(page, 'Cmd K'));
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('Inline chord symbol')).toBeFocused();
   await page.keyboard.press('Escape');
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('dynamic marking');
   await page.keyboard.press('Enter');
   const dynamicSelect = page.getByLabel('Dynamic marking');
@@ -855,22 +890,22 @@ test('command center opens inspector sections for metadata, structure, and part 
 
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('inspector score setup');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toBeFocused();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('inspector key signature');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: 'C major' })).toBeFocused();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('inspector measure tools');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: /Insert after m\./ })).toBeFocused();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('inspector parts instruments');
   await page.keyboard.press('Enter');
   await expect(page.getByPlaceholder('Part name').first()).toBeFocused();
@@ -882,7 +917,7 @@ test('command center exposes structural inspector commands for measure and repea
 
   const initialMeasureCount = (await readCurrentCore(page)).score.parts[0].staves[0].measures.length;
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
   await commandSearch.fill('structure');
   await expect(page.getByRole('button', { name: /Inspector: repeats and endings/ })).toBeVisible();
@@ -911,46 +946,46 @@ test('command center exposes score view controls for navigator, find, zoom, and 
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
 
   await commandSearch.fill('navigator');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('navigator-box')).toBeVisible();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('find/go to');
   await expect(page.getByRole('button', { name: /Open Find\/Go to/ })).toContainText(await expectedShortcutHint(page, 'Cmd F'));
   await page.keyboard.press('Enter');
   await expect(page.getByPlaceholder('Measure, p2, r1, A')).toBeFocused();
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('zoom in');
   await expect(page.getByRole('button', { name: /Zoom in/ })).toContainText(await expectedShortcutHint(page, 'Cmd +'));
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('Zoom percent')).toHaveValue('110');
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('reset zoom');
   await expect(page.getByRole('button', { name: /Reset zoom to 100%/ })).toContainText(await expectedShortcutHint(page, 'Cmd 0'));
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('Zoom percent')).toHaveValue('100');
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('continuous horizontal');
   await page.getByRole('button', { name: /Switch to continuous horizontal view/ }).click();
   await expect(page.getByLabel('Score view mode')).toHaveValue('continuous-horizontal');
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const activeHorizontalView = page.getByRole('button', { name: /Switch to continuous horizontal view/ });
   await expect(activeHorizontalView).toBeDisabled();
   await expect(activeHorizontalView).toContainText('This view is already active');
   await page.keyboard.press('Escape');
 
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   await commandSearch.fill('page view');
   await page.getByRole('button', { name: /Switch to page view/ }).click();
   await expect(page.getByLabel('Score view mode')).toHaveValue('page');
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await commandCenterButton(page).click();
   const activePageView = page.getByRole('button', { name: /Switch to page view/ });
   await expect(activePageView).toBeDisabled();
   await expect(activePageView).toContainText('This view is already active');
@@ -1088,17 +1123,18 @@ test('toolbar disabled note actions explain selection requirements @smoke', asyn
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
+  await ensureNotationToolsOpen(page, { expandSections: false });
   await expect(page.locator('button[title^="Quarter note: 5"]').first()).toBeVisible();
-  await expect(page.getByTitle('Voice 3 (Cmd/Ctrl+Alt/Option+3)')).toBeVisible();
+  await expect(voiceButton(page, 3)).toBeVisible();
   await page.getByRole('button', { name: /Expression slur/ }).click();
   await page.getByRole('button', { name: /Harmony Cmaj7/ }).click();
   await page.getByRole('button', { name: /Edit Clipboard/ }).click();
-  await expect(page.getByRole('button', { name: 'Triplet from selection (Cmd/Ctrl+3) - Select a note first' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Triplet from selection (Cmd/Ctrl+3) - Select a note first') })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Insert rest (R or 0) - Select a note first' })).toBeDisabled();
-  await expect(page.getByTitle('Chord symbol (Cmd/Ctrl+K) - Select a note first')).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Copy (Cmd/Ctrl+C) - Select a note first' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Cut (Cmd/Ctrl+X) - Select a note first' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Paste (Cmd/Ctrl+V) - Select a note first' })).toBeDisabled();
+  await expect(page.getByTitle(await expectedShortcutHint(page, 'Chord symbol (Cmd/Ctrl+K) - Select a note first'))).toBeDisabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Copy (Cmd/Ctrl+C) - Select a note first') })).toBeDisabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Cut (Cmd/Ctrl+X) - Select a note first') })).toBeDisabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Paste (Cmd/Ctrl+V) - Select a note first') })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Delete (Del) - Select a note first' })).toBeDisabled();
   await page.getByRole('button', { name: 'Selection', exact: true }).click();
   await expect(page.getByRole('button', { name: /Copy selection .*Select a note first/ })).toBeDisabled();
@@ -1116,9 +1152,9 @@ test('toolbar disabled note actions explain selection requirements @smoke', asyn
   await clickRenderedNotehead(page, 0);
 
   await expect(page.getByTitle('Set active note to F (F)')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Triplet from selection (Cmd/Ctrl+3)' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Triplet from selection (Cmd/Ctrl+3)') })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Insert rest (R or 0)' })).toBeEnabled();
-  await expect(page.getByTitle('Chord symbol (Cmd/Ctrl+K)')).toBeEnabled();
+  await expect(page.getByTitle(await expectedShortcutHint(page, 'Chord symbol (Cmd/Ctrl+K)'))).toBeEnabled();
   await page.keyboard.press(`${MOD}+K`);
   const inlineChord = page.getByLabel('Inline chord symbol');
   await expect(inlineChord).toBeFocused();
@@ -1128,9 +1164,9 @@ test('toolbar disabled note actions explain selection requirements @smoke', asyn
     const core = await readCurrentCore(page);
     return core.score.parts[0]?.staves[0]?.measures[0]?.directions.find((direction) => direction.kind === 'harmony')?.value ?? '';
   }).toBe('Dm7');
-  await expect(page.getByRole('button', { name: 'Copy (Cmd/Ctrl+C)' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Cut (Cmd/Ctrl+X)' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Paste (Cmd/Ctrl+V) - Copy a selection first' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Copy (Cmd/Ctrl+C)') })).toBeEnabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Cut (Cmd/Ctrl+X)') })).toBeEnabled();
+  await expect(page.getByRole('button', { name: await expectedShortcutHint(page, 'Paste (Cmd/Ctrl+V) - Copy a selection first') })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Delete (Del)' })).toBeEnabled();
   await page.getByRole('button', { name: 'Selection', exact: true }).click();
   await expect(page.getByRole('button', { name: /Copy selection/ })).toBeEnabled();
@@ -1146,16 +1182,17 @@ test('note input toolbar exposes shortcut hints and active-note controls @smoke'
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
+  await ensureNotationToolsOpen(page, { expandSections: false });
   await expect(page.locator('button[title^="Quarter note: 5"]').first()).toBeVisible();
   await expect(page.getByTitle('Flat (-)')).toBeVisible();
-  await expect(page.getByTitle('Voice 3 (Cmd/Ctrl+Alt/Option+3)')).toBeVisible();
+  await expect(voiceButton(page, 3)).toBeVisible();
   await page.getByRole('button', { name: /Expression slur/ }).click();
   await expect(page.getByTitle('Toggle slur (S) - Select a note first')).toBeDisabled();
 
   await clickRenderedNotehead(page, 0);
 
   await expect(page.getByTitle('Set active note to F (F)')).toBeVisible();
-  await expect(page.getByTitle('Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)')).toBeVisible();
+  await expect(page.getByTitle(await expectedShortcutHint(page, 'Raise active note by one octave (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)'))).toBeVisible();
   await expect(page.getByTitle('Toggle slur (S)')).toBeEnabled();
 });
 
@@ -1163,8 +1200,8 @@ test('toolbar transport and history controls expose shortcut hints and disabled 
   await bootWithScore(page);
   await waitForRenderedScore(page);
 
-  await expect(page.getByTitle('Undo (Cmd/Ctrl+Z) - No edit to undo')).toBeDisabled();
-  await expect(page.getByTitle('Redo (Cmd/Ctrl+Shift+Z) - No edit to redo')).toBeDisabled();
+  await expect(page.getByTitle(await expectedShortcutHint(page, 'Undo (Cmd/Ctrl+Z) - No edit to undo'))).toBeDisabled();
+  await expect(page.getByTitle(await expectedShortcutHint(page, 'Redo (Cmd/Ctrl+Shift+Z) - No edit to redo'))).toBeDisabled();
   await expect(page.getByTitle('Stop - Playback is already stopped')).toBeDisabled();
   await expect(page.getByTitle('Toggle note input (N)')).toBeVisible();
 
@@ -1175,6 +1212,8 @@ test('toolbar transport and history controls expose shortcut hints and disabled 
 test('inspector disabled note-scoped text workflows explain selection requirements @smoke', async ({ page }) => {
   await bootWithScore(page);
   await waitForRenderedScore(page);
+
+  await ensureRightPanelOpen(page);
 
   await page.getByRole('button', { name: 'Inspector' }).click();
 
@@ -1322,7 +1361,9 @@ test('compact polyphonic note clicks keep the selection on the clicked note', as
   await page.setViewportSize({ width: 800, height: 760 });
   await bootWithScore(page, 'compact-polyphonic-click.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
-  await page.getByRole('button', { name: 'Hide notation tools' }).click();
+  // The tools start collapsed; hide them only where a stored preference left them open.
+  const hideTools = page.getByRole('button', { name: 'Hide notation tools' });
+  if (await hideTools.isVisible()) await hideTools.click();
   await expect(page.getByRole('button', { name: 'Show notation tools' })).toBeVisible();
   await waitForRenderedScore(page);
 
@@ -1396,6 +1437,7 @@ test('assistant workflow covers provider switching, AI preview, apply/cancel, an
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByTitle('llama3:8b')).toBeVisible();
 
+  await ensureRightPanelOpen(page);
   const input = page.getByPlaceholder('Describe your edit…');
   await input.fill('set the title');
   await page.getByRole('button', { name: 'Send' }).click();
@@ -1411,6 +1453,8 @@ test('assistant workflow covers provider switching, AI preview, apply/cancel, an
   await page.getByPlaceholder('Type apply to confirm or cancel to discard…').fill('apply');
   await page.getByRole('button', { name: 'Send' }).click();
 
+  await ensureRightPanelOpen(page);
+
   await page.getByRole('button', { name: 'Inspector' }).click();
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('AI Applied Title');
 
@@ -1425,6 +1469,7 @@ test('assistant workflow covers provider switching, AI preview, apply/cancel, an
   await expect(page.getByRole('heading', { name: 'Set up your score' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByTitle('Save as')).toBeVisible({ timeout: 15_000 });
+  await ensureRightPanelOpen(page);
   await page.getByRole('button', { name: 'Inspector' }).click();
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue('AI Applied Title');
 });
@@ -1456,6 +1501,8 @@ test('playback controls and responsive panel behavior work in the browser with s
   } else {
     await expect(page.getByText('Ready')).toBeVisible();
   }
+
+  await ensureRightPanelOpen(page);
 
   await page.getByTitle(/Hide panel|Panel ausblenden/).click();
   await expect(page.getByTitle(/Show panel|Panel einblenden/)).toBeVisible();
@@ -1860,7 +1907,8 @@ test('browser shortcut matrix covers note input durations, voices, repeat, and r
     const core = await readCurrentCore(page);
     return core.score.parts[0].staves[0].measures[0].voices.some((voice) => (
       voice.voiceId === 2
-      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 3)
+      // Nearest to the treble staff's middle line (B4): no note stands before the cursor in voice 2.
+      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 4 && event.timestampNum === 0)
     ));
   }).toBeTruthy();
 
@@ -1869,7 +1917,7 @@ test('browser shortcut matrix covers note input durations, voices, repeat, and r
     const core = await readCurrentCore(page);
     return core.score.parts[0].staves[0].measures[0].voices.some((voice) => (
       voice.voiceId === 2
-      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 4)
+      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 5 && event.timestampNum === 0)
     ));
   }).toBeTruthy();
   await page.keyboard.press('Shift+ArrowDown');
@@ -1877,7 +1925,7 @@ test('browser shortcut matrix covers note input durations, voices, repeat, and r
     const core = await readCurrentCore(page);
     return core.score.parts[0].staves[0].measures[0].voices.some((voice) => (
       voice.voiceId === 2
-      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 3)
+      && voice.events.some((event) => event.kind === 'note' && event.pitch.step === 'B' && event.pitch.octave === 4 && event.timestampNum === 0)
     ));
   }).toBeTruthy();
 
@@ -1962,7 +2010,9 @@ test('note input advances after entry while the entered notes remain playable an
     return events
       .filter((event) => event.kind === 'note')
       .map((event) => `${event.timestampNum / Math.max(event.timestampDen, 1)}:${event.pitch.step}${event.pitch.octave}:${event.durationType ?? 'none'}`);
-  }).toEqual(['0:C4:eighth', `${1 / 8}:D4:eighth`]);
+  // The first note of a voice is placed nearest to the middle line of its clef (treble: B4), as in
+  // MuseScore; see docs/keyboard-shortcuts.md and commit d32b138. C and D are therefore C5 and D5.
+  }).toEqual(['0:C5:eighth', `${1 / 8}:D5:eighth`]);
 
   await expect.poll(async () => {
     const selected = (await readE2EState(page))?.selectedNote;
@@ -1997,18 +2047,22 @@ test('note input covers replace, insert-between, and chord tone keyboard flows',
       .join(',');
   }).toBe('A');
 
-  const chordAnchor = (await readE2EState(page))?.selectedNote ?? null;
-  expect(chordAnchor).toBeTruthy();
-  if (!chordAnchor) throw new Error('Missing note-input chord anchor');
-  await page.keyboard.press('Shift+E'); // chord tone on current onset
+  // Shift+letter adds a tone to the note just entered (the A on beat 2), as in MuseScore; the cursor
+  // already stands on the next beat. See docs/keyboard-shortcuts.md, "Shift+A...G".
+  const cursor = (await readE2EState(page))?.selectedNote ?? null;
+  expect(cursor).toBeTruthy();
+  await page.keyboard.press('Shift+E');
   await expect.poll(async () => {
-    const voice = (await readCurrentCore(page)).score.parts[0].staves[chordAnchor.staffIndex - 1]?.measures[chordAnchor.measureNumber - 1]?.voices
-      .find((entry) => entry.voiceId === chordAnchor.voiceId);
-    if (!voice) return 0;
+    const voice = (await readCurrentCore(page)).score.parts[0].staves[0]?.measures[0]?.voices
+      .find((entry) => entry.voiceId === 1);
+    if (!voice) return [];
     return voice.events
-      .filter((event) => event.kind === 'note' && event.timestampNum === chordAnchor.timestampNum && event.timestampDen === chordAnchor.timestampDen)
-      .length;
-  }).toBeGreaterThanOrEqual(2);
+      .filter((event) => event.kind === 'note' && event.timestampNum === 1 && event.timestampDen === 4)
+      .map((event) => (event.kind === 'note' ? event.pitch.step : ''))
+      .sort();
+  }).toEqual(['A', 'E']);
+  // The cursor did not move.
+  expect((await readE2EState(page))?.selectedNote?.timestampNum).toBe(cursor?.timestampNum);
 
   await page.keyboard.press('I'); // back to insert mode
   await page.keyboard.press(`${MOD}+Shift+F`); // insert at cursor between neighboring onsets
@@ -2984,12 +3038,14 @@ test('mouse note input visible ghost coverage includes Alt-click committing sele
 
   await bootWithScore(page, 'alt-click-selected-voice.musicxml', buildFourQuarterFixtureXml());
   await waitForRenderedScore(page);
+  await ensureNotationToolsOpen(page);
+  await waitForRenderedScore(page);
   const altTargetNote = await noteheadCenter(page, 0);
 
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');
   await page.keyboard.press('5');
-  await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
+  await voiceButton(page, 2).click();
   await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(2);
 
   await page.mouse.move(altTargetNote.x, altTargetNote.y);
@@ -3606,6 +3662,8 @@ test('note input arrows repitch the active tone in a newly entered chord', async
 test('duration-first cursor arrows move chromatically when no existing note is active', async ({ page }) => {
   await bootWithScore(page, 'duration-first-chromatic-cursor.musicxml', buildFourQuarterFixtureXml());
   await waitForRenderedScore(page);
+  await ensureNotationToolsOpen(page);
+  await waitForRenderedScore(page);
   const before = (await readE2EState(page))?.xml;
 
   await page.keyboard.press('Escape');
@@ -3680,7 +3738,7 @@ test('note input commits the selected voice on lower piano staff rest targets', 
   await page.keyboard.press('5');
   const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
   if (await showTools.isVisible()) await showTools.click();
-  await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
+  await voiceButton(page, 2).click();
   await expect.poll(async () => (await readE2EState(page))?.selectedVoice).toBe(2);
 
   const lowerGhostMap = await scanGhostMapForMeasure(page, 1, {
@@ -3726,7 +3784,7 @@ test('debug doctor verifies multi-voice lower-staff input and note frequencies',
   await page.keyboard.press('5');
   const showTools = page.getByRole('button', { name: 'Show notation tools', exact: true });
   if (await showTools.isVisible()) await showTools.click();
-  await page.getByTitle('Voice 2 (Cmd/Ctrl+Alt/Option+2)').click();
+  await voiceButton(page, 2).click();
   await expect.poll(async () => (
     await page.evaluate(() => Boolean((window as any).__NEX_NOTE_DOCTOR__?.settings?.enabled))
   )).toBeTruthy();
@@ -3769,6 +3827,8 @@ test('debug doctor verifies multi-voice lower-staff input and note frequencies',
 test('browser editing covers chord input, overwrite, pitch shortcuts, accidentals, and octave changes', async ({ page }) => {
   await bootWithScore(page, 'polyphonic.musicxml', buildPolyphonicFixtureXml());
   await waitForRenderedScore(page);
+  await ensureNotationToolsOpen(page);
+  await waitForRenderedScore(page);
 
   await clickRenderedNotehead(page, 0);
   await page.keyboard.press('N');
@@ -3799,6 +3859,8 @@ test('browser editing covers chord input, overwrite, pitch shortcuts, accidental
   }).toBe('G3');
 
   await page.keyboard.press('N');
+  await ensureNotationToolsOpen(page);
+  await waitForRenderedScore(page);
   await clickRenderedNotehead(page, 0);
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -3922,6 +3984,8 @@ test('browser inspector and palette flows cover measure insertion, deletion, tie
   await page.keyboard.press(`${MOD}+End`);
   await expect.poll(async () => (await readE2EState(page))?.selectedNote?.measureNumber).toBe(2);
 
+  await ensureRightPanelOpen(page);
+
   await page.getByRole('button', { name: 'Inspector' }).click();
   await openInspectorSection(page, 'Measure');
   await page.getByRole('button', { name: 'Insert after m.2' }).click();
@@ -3938,6 +4002,8 @@ test('browser inspector and palette flows cover measure insertion, deletion, tie
   await page.getByTitle('Grace note').click();
   await expect.poll(async () => (await readCurrentXml(page)).includes('<grace')).toBeTruthy();
 
+  await ensureRightPanelOpen(page);
+
   await page.getByRole('button', { name: 'Inspector' }).click();
   await openInspectorSection(page, 'Repeats & Endings');
   await page.getByRole('button', { name: 'End repeat on m.1' }).click();
@@ -3950,8 +4016,8 @@ test('browser tuplet tools divide one quarter or eighth anchor into editable tup
 
   await clickRenderedNotehead(page, 0);
   await openNotationSection(page, /Expression/);
-  await expect(page.getByTitle('Septuplet 7:4 from selection (Cmd/Ctrl+7)')).toBeVisible();
-  await page.getByTitle('Triplet from selection (Cmd/Ctrl+3)').click();
+  await expect(page.getByTitle(await expectedShortcutHint(page, 'Septuplet 7:4 from selection (Cmd/Ctrl+7)'))).toBeVisible();
+  await page.getByTitle(await expectedShortcutHint(page, 'Triplet from selection (Cmd/Ctrl+3)')).click();
   await expect.poll(async () => {
     const core = await readCurrentCore(page);
     return {
@@ -3966,7 +4032,7 @@ test('browser tuplet tools divide one quarter or eighth anchor into editable tup
   await waitForRenderedScore(page);
   await clickRenderedNotehead(page, 0);
   await openNotationSection(page, /Expression/);
-  await page.getByTitle('Quintuplet from selection (Cmd/Ctrl+5)').click();
+  await page.getByTitle(await expectedShortcutHint(page, 'Quintuplet from selection (Cmd/Ctrl+5)')).click();
   await expect.poll(async () => {
     const core = await readCurrentCore(page);
     return {

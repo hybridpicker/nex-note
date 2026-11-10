@@ -28,6 +28,10 @@ All notable changes to nex-note are documented here.
 - A bar added while entering notes could be saved with a wrong `<divisions>` value and reopen with wrong note lengths.
 - Delete on a triplet note left rests of odd values; repeating or copying one tone of a chord could shift another voice.
 
+- The score moved 12 px down as soon as a note was selected, so a mouse click could land two staff steps away from its preview.
+- `Q`/`W` and the value keys on a triplet note broke the triplet; they now work inside it.
+- A command-center command for a palette section did nothing while the notation tools were collapsed.
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

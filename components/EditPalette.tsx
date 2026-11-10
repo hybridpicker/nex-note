@@ -234,6 +234,8 @@ export default function EditPalette({
       const detail = event instanceof CustomEvent ? event.detail as { section?: SectionId } | null : null;
       const section = detail?.section;
       if (!section) return;
+      // Acknowledge: the sender repeats the request until a mounted palette has taken it.
+      event.preventDefault();
       setActiveSection(section);
       focusPanelFirstControl();
     };

@@ -1368,9 +1368,16 @@ export default function Home({ searchParams }: HomeProps) {
   const focusEditPaletteSection = useCallback((section: EditPaletteSectionId) => {
     setPrintView(false);
     setLeftNotationSidebarCollapsed(false);
-    window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('nex-note:focus-edit-palette-section', { detail: { section } }));
-    }, 0);
+    // The palette is mounted only while the sidebar is open. It acknowledges the request by
+    // cancelling the event; until then the request is repeated, so a command run with the sidebar
+    // collapsed still opens its section.
+    let attempts = 0;
+    const request = () => {
+      const unhandled = window.dispatchEvent(new CustomEvent('nex-note:focus-edit-palette-section', { detail: { section }, cancelable: true }));
+      attempts += 1;
+      if (unhandled && attempts < 40) window.setTimeout(request, 25);
+    };
+    window.setTimeout(request, 0);
   }, []);
 
   const dispatchScoreViewCommand = useCallback((action: ScoreViewCommandAction, viewMode?: ScoreViewModeCommand) => {
