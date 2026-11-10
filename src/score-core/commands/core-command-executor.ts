@@ -3773,6 +3773,62 @@ function editRhythmPassage(document: ScoreDocumentModel, command: Extract<Valida
   return null;
 }
 
+/** For each grace event: the kind of its main event (same voice, same onset). */
+function graceMainKinds(document: ScoreDocumentModel) {
+  const graceIds = new Set(document.graceNotes.map((link) => link.eventId));
+  const kinds = new Map<string, 'note' | 'rest' | 'none'>();
+  for (const part of document.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const voice of measure.voices) {
+          voice.events.forEach((event) => {
+            if (!graceIds.has(event.id)) return;
+            const onset = event.timestampNum / Math.max(event.timestampDen, 1);
+            // Before normalization a grace can follow its main event in the array, so look at every
+            // non-grace event of the voice at the same onset.
+            const atOnset = voice.events.filter((candidate) => (
+              !graceIds.has(candidate.id)
+              && Math.abs(candidate.timestampNum / Math.max(candidate.timestampDen, 1) - onset) < 1e-9
+            ));
+            kinds.set(event.id, atOnset.some((candidate) => candidate.kind === 'note') ? 'note' : atOnset.length ? 'rest' : 'none');
+          });
+        }
+      }
+    }
+  }
+  return kinds;
+}
+
+/**
+ * A grace note belongs to the note after it. When an edit turns that note into a rest or removes it,
+ * the grace goes too, as in MuseScore, where grace notes are part of a chord. Graces that already
+ * stood before a rest in the document before this edit are left alone. F13 in
+ * note-entry-mastery-ledger: an orphaned grace made the following tuplet rest import as a
+ * <forward>, so the tuplet lost a member on the next round trip.
+ */
+function pruneGracesWithoutMainNote(nextDocument: ScoreDocumentModel, currentDocument: ScoreDocumentModel) {
+  if (!nextDocument.graceNotes.length) return;
+  const before = graceMainKinds(currentDocument);
+  const after = graceMainKinds(nextDocument);
+  const orphaned = new Set([...after].filter(([id, kind]) => kind !== 'note' && before.get(id) === 'note').map(([id]) => id));
+  if (!orphaned.size) return;
+  for (const part of nextDocument.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        for (const voice of measure.voices) {
+          if (voice.events.some((event) => orphaned.has(event.id))) {
+            voice.events = voice.events.filter((event) => !orphaned.has(event.id));
+          }
+        }
+      }
+    }
+  }
+  nextDocument.graceNotes = nextDocument.graceNotes.filter((link) => !orphaned.has(link.eventId));
+  nextDocument.slurs = (nextDocument.slurs ?? []).filter((slur) => !orphaned.has(slur.startEventId ?? '') && !orphaned.has(slur.stopEventId ?? ''));
+  nextDocument.lyricLines = (nextDocument.lyricLines ?? []).filter((line) => !orphaned.has(line.eventId));
+  nextDocument.tuplets = (nextDocument.tuplets ?? []).map((tuplet) => ({ ...tuplet, eventIds: tuplet.eventIds.filter((id) => !orphaned.has(id)) }));
+}
+
 export function executeCoreCommands(
   currentDocument: ScoreDocumentModel,
   commands: ValidatedScoreCommand[],
@@ -6422,6 +6478,7 @@ export function executeCoreCommands(
   applyRhythmSpellingToDocument(nextDocument, rhythmSpellingTargets);
   rebuildDefaultBeams(nextDocument, currentDocument);
   pruneDanglingTieStarts(nextDocument);
+  pruneGracesWithoutMainNote(nextDocument, currentDocument);
   nextDocument.index = rebuildScoreIndex(nextDocument);
   nextDocument.revision += 1;
   return {
