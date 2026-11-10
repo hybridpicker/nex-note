@@ -14,9 +14,10 @@ on the Trust gate: F14, F16, F17, F19, F22 to F35, F2, F4 and F15b fixed; F3, F7
 triaged. The fuzzer passes 2,000 fresh sequences with a byte-level fixed-point check after every
 action. Next, in this order:
 
-1. Open P0 rows: F36 (the click never finds the drawn ghost in the DOM and commits the pointer lock
-   instead; decide whether that can differ from what is drawn) and F21 (flaky test `:2540`).
-2. T3, the production latency run, then S1 and S2 (gate 3).
+1. Open P0 rows: only the flaky tests F21 (`:2540`) and F37 (`notation-tools:1325` under load).
+2. S1 and S2 (gate 3). T3 is built; the numbers are under "Latency". The command path is down to
+   about 200 ms at 4,096 notes; the visible edit still needs the three steps of the prompt (pending
+   note in the overlay, range rendering, viewport rendering). The pending note needs the caret (O1).
 3. O1 and O2: caret and note-input bar. The session driver already reads `note-input-caret` and
    `note-input-bar` (`data-armed-field`), which do not exist yet.
 4. T4, the reference tasks, then P3 and P4.
@@ -29,8 +30,10 @@ Verification habits that matter here:
   `exhaustive-mouse-grid`, `tablet-entry`, `manual-hover-fix`, `snap-ghost-debug`,
   `step-time-anchor-validation`, `note-entry-quality` and `guitar-tab-sync` (72 tests, about 13 min). Expected today: 72 tests, all pass except
   intermittently `:2540` (F21) and the file-lifecycle download wait.
-- Never run two Playwright invocations at once, and do not edit `app/`, `components/`, `hooks/` or
-  `src/` while one runs: the dev server reloads them under the running tests.
+- Never run two Playwright invocations at once, and do not edit `app/`, `components/`, `hooks/`,
+  `lib/` or `src/` while one runs, the commit hook included: the dev server reloads them under the
+  running tests (an edit of `lib/i18n.tsx` during the hook of iteration 15 failed a test with
+  "Missing E2E XML state").
 - After a fuzzer failure, trace the replay with a scratch test that prints the voice lines and the
   first byte difference between the stored XML and its re-export after every action; most findings
   of this session were visible in that one print.
@@ -48,9 +51,9 @@ Verification habits that matter here:
 
 | Gate | State | Evidence |
 | --- | --- | --- |
-| 1 Trust | Not met | Fuzzer: 2,000 fresh sequences of 40 actions pass (seed 560311, iteration 12 code before the UI-only changes of that iteration; `test/entry-fuzz.test.ts`, 6 fixtures, byte-level fixed point after every action). Open P0 rows: F36 (and F21, a flaky test) |
+| 1 Trust | Not met | Fuzzer: 2,000 fresh sequences of 40 actions pass (seed 560311, iteration 12 code before the UI-only changes of that iteration; `test/entry-fuzz.test.ts`, 6 fixtures, byte-level fixed point after every action). No open P0 row except the flaky tests F21 and F37 |
 | 2 Preview equals commit | Not met | F2 fixed (canvas no longer moves), F7 covered at 50/100/200 % on one treble fixture; the corpus of clefs, views and textures is M7 |
-| 3 Speed, production build | Not met | Production latency run not done (T3) |
+| 3 Speed, production build | Not met | Measured (see Latency): visible edit p95 67 / 433 / 6,712 ms against 100 / 100 / 150; pointer preview within budget at 32 and 512 notes |
 | 4 Orientation | Not met | O1 to O4 open; session driver not built (T2) |
 | 5 Keyboard flow | Not met | Reference tasks R2 to R6 not built (T4) |
 | 6 Mouse flow | Not met | R7, R8 not built; M1 to M6 open |
@@ -66,7 +69,7 @@ Verification habits that matter here:
 | T1 (iteration 3) | New invariant after every action: the stored XML holds the music the model holds (a re-export gives the same lanes, including tuplet membership). A byte comparison is too strict because of F14 | Built |
 | T1a | App-level harness: `test/support/app-harness.ts` mounts `useScoreDocument` and `useNoteEditor` wired as `components/NexNoteApp.tsx` wires them (selection anchors in command meta, selection restore after history changes, `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to Undo and Redo). The older `test/support/entry-harness.ts` has no history | Built |
 | T2 | Browser session driver `e2e/support/entry-session.ts`: boots a synthetic score, key scripts in the harness syntax, pointer moves and clicks, reads the document, voice lines, ghost, caret (`note-input-caret`), armed state (`note-input-bar`), canvas box; one screenshot per step | Built in iteration 9; first used in iteration 10 |
-| T3 | Production latency run (`npm run build`, built app, `window.__NEX_NOTE_INPUT_METRICS__` at 32, 512 and 4,096 notes) | open |
+| T3 | Production latency run: `npm run build`, `npx next start --port 3101`, then `NEX_E2E_REUSE=1 NEX_E2E_NO_ARTIFACTS=1 NEX_QUALITY_OUTPUT=<dir> npx playwright test e2e/note-entry-performance.spec.ts` (32, 512 and 4,096 notes, 30 samples, stages from `window.__NEX_NOTE_INPUT_METRICS__`). `NEX_E2E_NO_ARTIFACTS=1` (new in `playwright.config.ts`) switches trace, screenshot and video off: the trace snapshots the DOM inside the page on every key and was about 13 % of the profiled time at 512 notes and most of the pointer-preview time at 4,096 | Built in iteration 15. Results under "Latency" |
 | T4 | Reference tasks R1 to R8 as fixtures with Nex Note and MuseScore key scripts and counts. R1 exists as `test/support/keyboard-passage.ts`; its MuseScore script is not written | open |
 
 Deviation from the prompt: the tools were committed together with the F1 fix, not before it. On
@@ -117,7 +120,7 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 | F34 | (fuzzer, seed 7770000) `Q` on a tuplet unit turned it into a plain 16th plus a dotted-64th rest and broke the tuplet; `Shift+S` with the cursor inside a whole-bar rest of another voice lost the cursor | `test/note-entry-fixed-point.test.ts`: two replays and two "F34" tests. A value change on a tuplet unit stays inside the tuplet: shorter leaves a rest unit, longer takes following rest units of the same tuplet if they are used up exactly, anything else is rejected with a sentence (MuseScore `changeCRlen` works in the tuplet's time). The cursor fallback of F29 now also serves edits other than Undo | fixed | iteration 12 |
 | F15b | `e2e/app.spec.ts` "note-input replace drag keeps one chord tone active and repitches it in place" showed a `chord` ghost in some runs and `replace` in others. Same cause as F4 | the test, 15 of 15 under CPU load after the F4 fix | fixed | iteration 14 |
 | F35 | In note input a letter typed in another voice at an onset where that voice already had a note only changed the pitch: the armed value was not written and the cursor did not advance | `test/note-entry-cross-voice-value.test.ts` (1 of 2 failed before: the half note stayed a half; the Undo case is a guard). The letter now enters over that note like any entry in the input voice. MuseScore `Score::cmdAddPitch` → `setNoteRest` with the input state's duration. Rebuilding the F28 scenario for this showed that a paste over a note with a grace note kept the grace on the pasted note; the grace prune now follows the identity of the main note | fixed | iteration 13 |
-| F36 | (found while diagnosing F4) At a click the editor looks for the drawn ghost with `container.querySelector('[data-testid="ghost-note-preview"]')` to commit exactly what is displayed (`resolveNoteInputCommitTarget`, "WYSIWYG commit"). In every instrumented run (more than 30) that lookup returned null, so the commit comes from the pointer lock (`visibleGhostPointerLockRef`), the ghost of the last pointer event, not from the DOM. With a resting pointer both are the same since F4; whether a fast move followed at once by a click can commit a ghost that was never drawn is not established | temporary diagnostics hook, removed again | reproduced | |
+| F36 | (found while diagnosing F4) At a click the editor looks for the drawn ghost with `container.querySelector('[data-testid="ghost-note-preview"]')`; the ghost overlay is a sibling of that container, so the lookup always returns null and the commit comes from the pointer lock (`visibleGhostPointerLockRef`), the ghost of the last pointer event. Question was whether a click right after a fast move can commit something that was never drawn for that place | `e2e/entry-trust.spec.ts` "F36: a click right after a fast move commits the preview of the place it lands on": 5 of 5, and 10 of 10 under CPU load. The pointer lock is the preview of the click position; the dead DOM lookup is left alone (see Decisions) | not reproduced | iteration 15 |
 | F37 | (flaky test) `e2e/notation-tools.spec.ts:1325` "J cycles rendered enharmonic spelling with stable pitch, identity, and atomic history" failed in two pre-commit hook runs of iteration 14 while the machine was loaded (load average about 20, hook runs of 6.1 and 8.5 min instead of 3.1): `boundingBox()` of the first notehead was null right after `J`, read while the score was being re-rendered. At normal load the whole file passes 51 of 51 with the iteration-14 change and 51 of 51 without it, and the test alone 12 of 12. A keyboard-only test, not touched by the hover change. The test should wait for the re-render before it reads the box | the two hook logs; the two full-file runs; `--repeat-each=12` | reproduced | |
 | K11 | A value other than the unit's cannot be typed inside a tuplet: on the first unit the tuplet is removed, on a later unit the entry is rejected. MuseScore writes the value inside the tuplet (a triplet quarter can hold two triplet eighths). Since iteration 12 `Q`, `W` and the value keys on a selected unit do work inside the tuplet (F34); typing a new note of another value does not | `test/note-entry-fixed-point.test.ts` "F30: another value on the first unit…" documents today's behaviour | open | |
 | F31 | With the cursor past a note that fills the last bar, `Cmd+3` replaced that note with tuplet rests | `test/note-entry-rest-key.test.ts` "F31" (failed before: the whole note was gone). The tuplet is rejected with a sentence; the next letter still continues in a new bar. MuseScore has no chord or rest at that position and does nothing | fixed | iteration 13 |
@@ -128,6 +131,7 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 | --- | --- | --- | --- | --- |
 | S1 | Visible edit 455/495 ms at 512 notes, 3,851/4,781 ms at 4,096 (dev server, Sept 2026) | needs T3 | open | |
 | S2 | Every edit runs the semantic command over the whole document and re-renders the whole OSMD score | needs T3 | open | |
+| S3 | Every edit exported the whole score through the DOM of its source XML: each bar was deep-copied with all its notes and then emptied, every bar lookup scanned a live `getElementsByTagName` list (quadratic in the number of bars), and the source XML of the edit before was parsed again. 92 % of the command path at 4,096 notes (`node --cpu-prof` on `scripts/benchmark-note-entry.ts`) | benchmark table under "Latency": 1,579 → 199 ms median at 4,096 notes, 92 → 29 ms at 512. Bars are copied without their content, indexed once per part and export, and the parsed document of the last export is reused when the next export starts from its XML. The fuzzer compares the cached path with a fresh parse after every action: 900 fresh sequences pass (seed 44120000) | fixed | iteration 15 |
 
 ### P2. Orientation
 
@@ -164,6 +168,34 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 | M5 | Mouse entry rejects values longer than the bar; keyboard splits and ties | | open | |
 | M6 | Spanner end handles not surveyed | | open | |
 | M7 | Mouse corpus matrix not built | | open | |
+
+## Latency
+
+Production build, headless Chromium on the owner's Mac, 30 samples per size, milliseconds as
+median / p95. The machine was in use during every run (load average 7 to 24), so the numbers are
+upper bounds; compare columns measured in the same hour only.
+
+| Stage | 32 notes | 512 notes | 4,096 notes | Run |
+| --- | --- | --- | --- | --- |
+| Visible edit (`input-to-note-frame`), budget p95 100 / 100 / 150 | 46 / 67 | 413 / 433 | 5,640 / 6,712 | `879ac43`, with trace and video |
+| Visible edit | 46 / 105 | 728 / 935 | 3,623 / 8,858 | `879ac43`, without trace and video, load about 10 |
+| Pointer preview (`input-to-preview-frame`), budget p95 33 | 33 / 34 | 33 / 36 | 184 / 388 | `879ac43`, with trace and video |
+| Pointer preview | 32 / 34 | 33 / 33 | 29 / 40 | `879ac43`, without trace and video |
+| Semantic command | 5 / 7 | 66 / 69 | 838 / 1,606 | `879ac43`, with trace and video |
+| OSMD load + render | 14 / 31 | 140 / 157 | 1,781 / 2,737 | `879ac43`, with trace and video |
+
+Reading: the pointer preview meets its budget at 32 and 512 notes and is close at 4,096 once the
+test tool no longer records a trace. The visible edit misses its budget from 512 notes on. The
+measured stages explain about half of it; the rest is React work and the rebuilding of the edit
+maps after the render.
+
+Command path alone (`npx tsx scripts/benchmark-note-entry.ts <out> --prepared`, Node, median ms):
+
+| Step | 32 notes | 512 notes | 4,096 notes |
+| --- | --- | --- | --- |
+| Before iteration 15 | 6 | 92 | 1,579 |
+| Measures cloned without their content | 10 | 76 | 883 |
+| Plus measure index and reused parsed document | 2 | 29 | 199 |
 
 ## Reference sources read
 
@@ -217,6 +249,12 @@ Each can be reverted on request.
 | 14 | `e2e/step-time-anchor-validation.spec.ts` "standard step-time note input only targets real note/rest anchors…" | First entered `C` is C5 (was C4) | Clef middle-line rule of `d32b138`; fails on the pre-F2 toolbar too, so it predates this program |
 
 ## Decisions
+
+- **The click commits the pointer lock, not the DOM ghost (F36).** The code that reads the drawn ghost
+  back from the DOM at a click never finds it. It is not repaired: the pointer lock is the preview
+  computed for the pointer event at the click position, which is what is drawn for a resting pointer
+  (F4 test) and what would be drawn one frame later after a fast move (F36 test). Reading the DOM
+  instead would commit the previous place after a fast move.
 
 - **Meter-aware spelling of entered values stays (F20).** A value that crosses a strong boundary
   (the half-bar in 4/4, a beat in simple meters, a dotted beat in compound meters) is written as tied
@@ -276,4 +314,5 @@ Each can be reverted on request.
 | 11 | `1d084b4` | Fuzzer: seeds 91730000, 15550000 and 62040000 pass 600 sequences each after the fixes; seed 7770000 fails on 2 fixtures (F34). Clean so far: 3305500 (360), 48200000, 91730000, 15550000, 62040000 (600 each), each measured on the code of its iteration, not on the final commit | F32, F33 as in their rows | 9 new tests; `npm test` 1,738 passed; `e2e/app.spec.ts` regression project: 39 passed, 15 failed = the 14 of F15 and `:2540` (F21) | smoke project (F15a); iPad (end of batch) |
 | 12 | `0379ed7` | Gate fuzzer: 2,000 sequences pass (seed 560311). Session driver first used: F2 reproduced (canvas 162 → 174 px). F15/F15a triaged test by test | F34; F2 (progress bar overlays the toolbar edge); palette command request acknowledged; `e2e/entry-trust.spec.ts`; `e2e/support/keyboard-layout.ts`; `e2e/app.spec.ts` setup helpers and the assertion changes above | 14 new unit and 9 new browser tests; `npm test` 1,743 passed; `npm run build`; `e2e/entry-trust.spec.ts` 21 of 21 (3 repeats) plus F3 6 of 6; `e2e/app.spec.ts` both projects: 69 passed, 3 failed = the file-lifecycle download wait, `:2138` (F4) and `:3321` (a test calibrated on the F2 shift, corrected in iteration 13) | iPad (end of batch); `electron:refresh` beyond the post-commit build |
 | 13 | `0769cd8` | F35 and F31 reproduced in the app harness | F35, F31 as in their rows; grace prune by main-note identity; F20 closed as documented behaviour | 3 new tests, F27 and F28 scenarios rebuilt for the new entry behaviour (same assertions on the tie, the grace and the triplet); `npm test` 1,746 passed; fuzzer 900 fresh sequences (seed 83310000) pass; `e2e/app.spec.ts` and `e2e/entry-trust.spec.ts`: 79 passed, 1 failed (`:3321`, corrected, then 5 of 5) | iPad (end of batch) |
-| 14 | (this commit; the hook rejected it twice under machine load, see F37) | F4 reproduced 8 of 15 under CPU load; the preview at one pointer position was `B3 insert` on the first pointer event and `C4 chord` on the next | Hover hit-test by geometry only; new browser test | under load: new test 10 of 10, the two app.spec tests 15 of 15 each. Full runs on the fix: `e2e/app.spec.ts` + `e2e/entry-trust.spec.ts` 78 passed, 3 failed (file-lifecycle download wait, `:2540` F21, `:3207` corrected then 3 of 3); eight pointer and step-time spec files 70 passed, 2 failed (both corrected, see Assertion changes; then 13 of 13 in their two files); `npm test` 1,746 | iPad (end of batch); `e2e/real-score-stress`, `dunhill-old-abbey-stress`, `transform-score-stress`, `semantic-grid-fuzz`, `score-navigation`, `print-output`, `embed`, `chat-arrangement`, `inline-chord-visibility`, `note-entry-performance` not run in this session |
+| 14 | `879ac43` (the hook rejected it twice under machine load, see F37) | F4 reproduced 8 of 15 under CPU load; the preview at one pointer position was `B3 insert` on the first pointer event and `C4 chord` on the next | Hover hit-test by geometry only; new browser test | under load: new test 10 of 10, the two app.spec tests 15 of 15 each. Full runs on the fix: `e2e/app.spec.ts` + `e2e/entry-trust.spec.ts` 78 passed, 3 failed (file-lifecycle download wait, `:2540` F21, `:3207` corrected then 3 of 3); eight pointer and step-time spec files 70 passed, 2 failed (both corrected, see Assertion changes; then 13 of 13 in their two files); `npm test` 1,746 | iPad (end of batch); `e2e/real-score-stress`, `dunhill-old-abbey-stress`, `transform-score-stress`, `semantic-grid-fuzz`, `score-navigation`, `print-output`, `embed`, `chat-arrangement`, `inline-chord-visibility`, `note-entry-performance` not run in this session |
+| 15 | (this commit) | T3 run: see Latency. `node --cpu-prof` of the command path: 92 % in `exportCoreToMusicXml` | S3 (export without deep clones, measure index, reused parsed document); `NEX_E2E_NO_ARTIFACTS`; F36 test | `npm test` 1,746; fuzzer 900 fresh sequences (seed 44120000) with the cached export compared against a fresh parse; F36 5 of 5 and 10 of 10 under load; `npm run build`; `e2e/app.spec.ts` + `e2e/entry-trust.spec.ts` 82 of 82 | iPad (end of batch); production latency after the change (the machine was loaded) |

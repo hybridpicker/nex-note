@@ -37,6 +37,8 @@ All notable changes to nex-note are documented here.
 
 - The mouse preview could change pitch and mode without the pointer moving, and under load a click then inserted a different note and pushed the bar's last note out.
 
+- Every edit is faster in larger scores: the MusicXML export no longer copies and re-parses the whole score (about eight times faster at 4,096 notes).
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

@@ -143,6 +143,32 @@ test('F4: the preview at a resting pointer is the same on every pointer event, a
   expect(before.every((line) => after.includes(line)), 'no note of the bar is moved or lost').toBe(true);
 });
 
+test('F36: a click right after a fast move commits the preview of the place it lands on', async ({ page }, testInfo) => {
+  const session = await EntrySession.boot(page, testInfo, { xml: TWO_VOICES, screenshots: false });
+  await session.keys('Escape N 5');
+
+  // What the preview shows at the target when the pointer rests there.
+  const beat4 = await session.noteheadCenter(3);
+  const target = { x: beat4.x, y: beat4.y - 20 };
+  await session.move(target.x, target.y);
+  const resting = (await session.ghost())!;
+  expect(resting).not.toBeNull();
+
+  // Go elsewhere, let that preview settle, then jump to the target and press at once: the press
+  // arrives before the preview of the target has been drawn.
+  const far = await session.measureBox(2);
+  await session.move(far.x + far.width * 0.5, far.y + far.height * 0.3);
+  const before = await session.voice();
+  await page.mouse.move(target.x, target.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await session.settle();
+  const added = (await session.voice()).filter((line) => !before.includes(line));
+  expect(added.length, `added ${JSON.stringify(added)}`).toBe(1);
+  expect(added[0]).toContain(`m${resting.measure}@`);
+  expect(added[0]).toContain(` ${resting.mode === 'chord' ? '+' : ''}${ghostPitchLabel(resting.pitch)} `);
+});
+
 for (const failure of ['answers 404 at once', 'hangs for 20 s and then fails'] as const) {
   test(`F3: a sound that ${failure} costs the audition, not the entry`, async ({ page }, testInfo) => {
   // No audio stub: the real loader runs against a server without the soundfont.

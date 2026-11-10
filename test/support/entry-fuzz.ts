@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { act } from 'react-test-renderer';
 
 import { importMusicXmlToCore } from '../../src/musicxml-adapter/import/import-musicxml.ts';
+import { withFreshMusicXmlExport } from '../../src/musicxml-adapter/export/export-core-to-musicxml.ts';
 import { buildDocumentState } from '../../src/score-core/commands/apply-document-commands.ts';
 import { validateScoreDocument } from '../../src/score-core/validation/validate-score-document.ts';
 import { storedVoiceFor } from '../../src/score-input/voice-mapping.ts';
@@ -233,7 +234,9 @@ export function runSequence(fixture: string, seed: number, actions: FuzzAction[]
       // The stored XML must hold the music the model holds: a re-export of it gives the same lanes.
       // Otherwise a later edit anywhere rewrites that music (F12) or its tuplets (F13).
       const stored = [...laneContents(app.xml)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
-      const reexported = buildDocumentState(app.xml).xml;
+      // A fresh parse, not the exporter's cached document, which stays in place for the next action:
+      // the two must agree byte for byte however long the chain of in-place reuse has become.
+      const reexported = withFreshMusicXmlExport(() => buildDocumentState(app.xml).xml);
       const again = [...laneContents(reexported)].map(([key, lines]) => `${key}: ${lines.join(' | ')}`).join('\n');
       if (stored !== again) return fail(step, `stored XML is not what the model exports:\n${stored}\n=>\n${again}`);
       // And the file itself is a fixed point of import and export, byte for byte (F14).

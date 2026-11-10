@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 const PORT = Number(process.env.NEX_E2E_PORT ?? 3101);
 const HOST = process.env.NEX_E2E_HOST ?? 'localhost';
 const REUSE_EXISTING = process.env.NEX_E2E_REUSE === '1';
+const NO_ARTIFACTS = process.env.NEX_E2E_NO_ARTIFACTS === '1';
 const chromePath = process.env.NEX_E2E_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 export default defineConfig({
@@ -16,9 +17,11 @@ export default defineConfig({
   use: {
     baseURL: `http://${HOST}:${PORT}`,
     headless: true,
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    // Tracing snapshots the DOM inside the page on every action and the video encodes every frame;
+    // both cost main-thread time. Latency measurements switch them off (NEX_E2E_NO_ARTIFACTS=1).
+    trace: NO_ARTIFACTS ? 'off' : 'retain-on-failure',
+    screenshot: NO_ARTIFACTS ? 'off' : 'only-on-failure',
+    video: NO_ARTIFACTS ? 'off' : 'retain-on-failure',
     launchOptions: {
       executablePath: chromePath,
       args: ['--no-sandbox'],

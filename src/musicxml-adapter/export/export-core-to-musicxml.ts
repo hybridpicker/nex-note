@@ -321,8 +321,26 @@ function removePlaceholderCreditBlocks(root: XmlEl) {
   }
 }
 
+/**
+ * Measures of a part by their `number`, first one wins (as a search from the start would). Built
+ * once per part and export: a `getElementsByTagName` scan for every lookup made the export
+ * quadratic in the number of bars. `syncPartMeasures` drops the index when it replaces the measures.
+ */
+const measureIndexByPart = new WeakMap<object, Map<number, XmlEl>>();
+
 function getMeasureByXmlNumber(part: XmlEl, xmlMeasureNumber: number) {
-  return Array.from(part.getElementsByTagName('measure')).find((measure) => parseInt(measure.getAttribute('number') ?? '0', 10) === xmlMeasureNumber) ?? null;
+  let index = measureIndexByPart.get(part);
+  if (!index) {
+    index = new Map<number, XmlEl>();
+    const measures = part.getElementsByTagName('measure');
+    for (let i = 0; i < measures.length; i++) {
+      const measure = measures[i] as XmlEl;
+      const number = parseInt(measure.getAttribute('number') ?? '0', 10);
+      if (!index.has(number)) index.set(number, measure);
+    }
+    measureIndexByPart.set(part, index);
+  }
+  return index.get(xmlMeasureNumber) ?? null;
 }
 
 function sourceMeasureNumberFor(measure: Pick<MeasureNode, 'measureNumber' | 'sourceMeasureNumber'>) {
@@ -334,16 +352,22 @@ function getMeasureForCoreMeasure(part: XmlEl, measure: Pick<MeasureNode, 'measu
     ?? getMeasureByXmlNumber(part, measure.measureNumber);
 }
 
-function stripMeasureContent(measure: XmlEl) {
-  const removableTags = new Set(['note', 'backup', 'forward', 'direction', 'harmony', 'print', 'barline']);
-  const toRemove: XmlEl[] = [];
+const MEASURE_CONTENT_TAGS = new Set(['note', 'backup', 'forward', 'direction', 'harmony', 'print', 'barline']);
+
+/**
+ * A copy of a measure element without its content (notes, rests, directions and so on), which the
+ * export writes anew. Same result as a deep clone followed by `stripMeasureContent`, without first
+ * copying every note of the score only to remove it again: that deep clone was most of the cost of
+ * an export, and an export runs on every edit.
+ */
+function cloneMeasureWithoutContent(measure: XmlEl): XmlEl {
+  const copy = measure.cloneNode(false) as XmlEl;
   for (let i = 0; i < measure.childNodes.length; i++) {
     const child = measure.childNodes[i] as XmlEl;
-    if (child.nodeType === 1 && removableTags.has(child.tagName)) {
-      toRemove.push(child);
-    }
+    if (child.nodeType === 1 && MEASURE_CONTENT_TAGS.has(child.tagName)) continue;
+    copy.appendChild(child.cloneNode(true));
   }
-  for (const child of toRemove) measure.removeChild(child);
+  return copy;
 }
 
 function findCanonicalMeasures(partNode: Pick<PartNode, 'staves'>): MeasureNode[] {
@@ -376,12 +400,8 @@ function syncPartMeasures(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
       const sourceMeasure = coreMeasure.sourceMeasureNumber != null
         ? bySourceNumber.get(coreMeasure.sourceMeasureNumber) ?? null
         : null;
-      const measureEl = sourceMeasure
-        ? sourceMeasure.cloneNode(true) as XmlEl
-        : ((orderedMeasures[index - 1]?.cloneNode(true) as XmlEl | undefined)
-          ?? (existingMeasures[Math.max(0, index - 1)]?.cloneNode(true) as XmlEl | undefined)
-          ?? doc.createElement('measure'));
-      stripMeasureContent(measureEl);
+      const template = sourceMeasure ?? orderedMeasures[index - 1] ?? existingMeasures[Math.max(0, index - 1)] ?? null;
+      const measureEl = template ? cloneMeasureWithoutContent(template) : doc.createElement('measure');
       // A bar built from its neighbour must not inherit the neighbour's <attributes>: a copied
       // <divisions> states a grid this bar does not have (the neighbour's value before this export
       // updates it), and the file reopens with wrong note lengths. The bar's own attributes are
@@ -402,6 +422,7 @@ function syncPartMeasures(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
     for (const measure of orderedMeasures) {
       xmlPart.appendChild(measure);
     }
+    measureIndexByPart.delete(xmlPart);
   }
 }
 
@@ -1462,9 +1483,32 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
   });
 }
 
+/**
+ * The parsed document of the last export, with the XML it serialized to. An edit exports from the XML
+ * of the edit before it, so the next call finds its source already parsed; parsing the whole score
+ * again was a quarter of the cost of an edit in a large score. The document is mutated in place and
+ * re-serialized, so the pair stays consistent. Any other source is parsed as before.
+ */
+let lastExport: { xml: string; doc: XmlDocument } | null = null;
+
+/**
+ * Run `work` with exports that parse their source afresh, then put the cached document back. For
+ * checks that compare the cached path with an independent parse without disturbing it.
+ */
+export function withFreshMusicXmlExport<T>(work: () => T): T {
+  const kept = lastExport;
+  lastExport = null;
+  try {
+    return work();
+  } finally {
+    lastExport = kept;
+  }
+}
+
 export function exportCoreToMusicXml(sourceXml: string, coreDocument: ScoreDocumentModel) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(sourceXml, 'application/xml');
+  const cached = lastExport && lastExport.xml === sourceXml ? lastExport.doc : null;
+  lastExport = null;
+  const doc = cached ?? new DOMParser().parseFromString(sourceXml, 'application/xml');
   syncPartMeasures(doc, coreDocument);
   updateMetadata(doc, coreDocument);
   if (coreDocument.accidentalPolicy && doc.documentElement) {
@@ -1480,5 +1524,7 @@ export function exportCoreToMusicXml(sourceXml: string, coreDocument: ScoreDocum
   updateTranspose(doc, coreDocument);
   updateAttributes(doc, coreDocument);
   updateMeasureContent(doc, coreDocument);
-  return serialize(doc);
+  const xml = serialize(doc);
+  lastExport = { xml, doc };
+  return xml;
 }
