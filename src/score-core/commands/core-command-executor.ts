@@ -1319,8 +1319,9 @@ function applyDurationChangeToVoice(
     constrainVoiceToMeasure(input.voice, timing.durationDivisions, timing.divisions);
     input.voice.events.sort((a, b) => a.timestampNum - b.timestampNum || Number(a.isChord) - Number(b.isChord));
   } else if (delta < 0) {
-    shiftEventsAfter(input.voice, fromOffset, delta);
-    constrainVoiceToMeasure(input.voice, timing.durationDivisions, timing.divisions);
+    // A shorter value leaves its freed time as rests directly after the note; the following music
+    // keeps its onsets (MuseScore Score::changeCRlen, "make shorter and fill with rest",
+    // src/engraving/editing/cmd.cpp). The gap is filled below.
     input.voice.events.sort((a, b) => a.timestampNum - b.timestampNum || Number(a.isChord) - Number(b.isChord));
   }
   fillVoiceTimelineGaps(input.staff, input.voiceId, {

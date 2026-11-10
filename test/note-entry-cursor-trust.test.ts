@@ -125,3 +125,18 @@ test('W in note input lengthens the note just entered and the cursor moves past 
     app.unmount();
   }
 });
+
+test('W in note input over following notes keeps a cursor on the next remaining note', () => {
+  const app = mountApp(FOUR_BARS_OF_QUARTERS);
+  try {
+    app.press('N 5 g W');
+    assert.deepEqual(bar(app, 1), ['m1@0 G4 half', 'm1@2 E5 quarter', 'm1@3 F5 quarter']);
+    assert.equal(cursor(app), 'm1@2 E5');
+    app.press('Q');
+    // F9: the freed beat becomes a rest; E and F keep their onsets (MuseScore Score::changeCRlen).
+    assert.deepEqual(bar(app, 1), ['m1@0 G4 quarter', 'm1@1 r quarter', 'm1@2 E5 quarter', 'm1@3 F5 quarter']);
+    assert.notEqual(cursor(app), 'none');
+  } finally {
+    app.unmount();
+  }
+});

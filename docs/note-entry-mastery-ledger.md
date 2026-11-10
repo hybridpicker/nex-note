@@ -50,7 +50,7 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 | F6 | Default entry mode is `insert`; paste pushes notes over the barline | | open | |
 | F7 | Zoom-dependent mouse evidence predates the zoom fix | needs T2 | open | |
 | F8 | (fuzzer, seed 20761115, "three parts": `N f W`) `W` in note input lengthens the note just entered and the cursor is lost: the commit records the old cursor slot as the selection, the longer note absorbs it, the restore clears the selection | `test/note-entry-cursor-trust.test.ts` "W in note input lengthens…" (failed before: cursor `none`) | fixed | iteration 0+1 |
-| F9 | Shortening a note (`Q`, or any shorter value through `changeNoteDuration`) moves the rest of the bar earlier instead of leaving a rest; wrong onsets for unrelated music | app harness: `N 5 g W Q` gives E5 at beat 2 instead of 3 | reproduced | |
+| F9 | Shortening a note (`Q`, or any shorter value through `changeNoteDuration`) moves the rest of the bar earlier instead of leaving a rest; wrong onsets for unrelated music | `test/note-entry-cursor-trust.test.ts` "W in note input over following notes…" (failed before: E5 at beat 2 instead of 3) | fixed | iteration 2 |
 | F10 | (fuzzer, seed base 7301) Crash `Cannot read properties of undefined (reading 'octave')`. Replays: single staff `["click:397","/","click:879","b","d","g","click:427","0","N","e"]`; transposing `["click:77","Shift+ArrowLeft","a","g","c","Delete","Shift+ArrowUp"]`; pickup `["click:39","c","Cmd+c","Cmd+v","J"]` | fuzzer replays | reproduced | |
 | F11 | (fuzzer, seed 107311, grand staff) `3 N e Q` deletes the voice-2 half notes on beat 3 of bars 1 and 2 of the right hand: lost music in another voice | fuzzer replay `["3","N","e","Q"]` | reproduced | |
 | F12 | (fuzzer) An edit in one lane respells the rests of another voice or part (same total, different rest values and onsets). Replays: tuplets `["click:319","Cmd+3","0","0","f","W","click:422","d"]` (voice 1 changes on an edit in voice 2); three parts `["click:311","5","Shift+e","Q","click:199","d"]` (part P2 changes on an edit in P1) | fuzzer replays | reproduced | |
@@ -117,6 +117,7 @@ Each can be reverted on request.
 
 | Iteration | Change | Reference |
 | --- | --- | --- |
+| 2 | A shorter value no longer moves the following notes of the bar earlier; the freed time becomes rests after the note | MuseScore `Score::changeCRlen` |
 
 ## Decisions
 
@@ -139,4 +140,5 @@ Each can be reverted on request.
 
 | # | Commit | Measured | Changed | Gates run | Not run |
 | --- | --- | --- | --- | --- | --- |
-| 0+1 | (this commit) | F1 reproduced in the app harness: after `N 5 a b c` and Undo the selection is empty, `d` does nothing. Fuzzer then found F8 (fixed here, because a fixed `npm test` seed hits it) and F9 to F12 | Ledger; app harness; entry fuzzer; F8: `changeNoteDuration` in note input moves the cursor past the changed note and records no stale selection; history transactions carry `undoSelectionAnchor`/`redoSelectionAnchor`; note-input commits record the cursor before and after the entry; `restoreSelection(anchor, reason)` re-derives the last entered note after Undo/Redo | focused tests; fuzzer fixed seeds; `npm test`; `npm run build`; `git diff --check` | browser, Electron, iPad (see log entry 3) |
+| 0+1 | `cfe1f27` | F1 reproduced in the app harness: after `N 5 a b c` and Undo the selection is empty, `d` does nothing. Fuzzer then found F8 (fixed here, because a fixed `npm test` seed hits it) and F9 to F12 | Ledger; app harness; entry fuzzer; F8: `changeNoteDuration` in note input moves the cursor past the changed note and records no stale selection; history transactions carry `undoSelectionAnchor`/`redoSelectionAnchor`; note-input commits record the cursor before and after the entry; `restoreSelection(anchor, reason)` re-derives the last entered note after Undo/Redo | focused tests; fuzzer fixed seeds; `npm test` (1,668 passed); `npm run build`; `git diff --check`; pre-commit hook: `e2e/notation-tools.spec.ts` 51 passed in Chromium; post-commit hook: `electron:build` and `electron:verify` passed | `ipad:sync`/`ipad:doctor` (run at the end of the batch) |
+| 2 | (this commit) | `N 5 g W Q` on a bar of quarters: E5 and F5 moved to beats 2 and 3 | `applyDurationChangeToVoice` no longer calls `shiftEventsAfter` when a value gets shorter; the gap is filled with rests | focused tests; `npm test` (1,669 passed); pre-commit Chromium suite; post-commit Electron build | iPad (run at the end of the batch) |
