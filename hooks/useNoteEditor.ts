@@ -118,6 +118,12 @@ function warnPostCommitDiagnostics(
   }
 }
 
+/** Note values as fractions of a whole note, by MusicXML type name. */
+const WHOLE_NOTE_FRACTION: Record<string, number> = {
+  long: 4, breve: 2, whole: 1, half: 1 / 2, quarter: 1 / 4, eighth: 1 / 8,
+  '16th': 1 / 16, '32nd': 1 / 32, '64th': 1 / 64,
+};
+
 function formatRejectedEditMessage(context: string, details: Record<string, unknown>): string {
   const diagnostics = Array.isArray(details.diagnostics) ? details.diagnostics : [];
   const firstDiagnostic = diagnostics.find((diagnostic): diagnostic is { message: string } => (
@@ -2496,8 +2502,59 @@ export function useNoteEditor(
     writtenAccidental?: WrittenAccidental;
     guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] };
   }) => {
-    const { target, duration, dotted, label, advanceFrom } = input;
-    const durationType = DURATION_TYPE_MAP[duration];
+    const { target, duration, label, advanceFrom } = input;
+    // A tone added to a chord takes the chord's value, whatever value is armed (MuseScore adds the
+    // note to the existing chord); a chord whose tones differ in length cannot be written.
+    const chordRoot = target.mode === 'chord'
+      ? findEventReference(coreDocument, {
+        coreMeasureId: target.measureId ?? null,
+        corePartId: target.corePartId ?? null,
+        measureNumber: target.measureNumber,
+        staffIndex: target.staffIndex,
+        voiceId: target.voiceId,
+        timestampNum: target.timestampNum,
+        timestampDen: target.timestampDen,
+      })?.event ?? null
+      : null;
+    const takesChordValue = Boolean(chordRoot && chordRoot.kind === 'note' && chordRoot.durationType);
+    const durationType = takesChordValue ? chordRoot!.durationType! : DURATION_TYPE_MAP[duration];
+    const dotted = takesChordValue ? Boolean(chordRoot!.isDotted) : input.dotted;
+
+    // Write the entry value over whatever stands at the slot: a rest of that value first (which
+    // overwrites the following music, MuseScore `Score::setNoteRest` -> `makeGap`), then the note.
+    const commitOverwrite = (slotEvent: TimedEvent) => {
+      const slot = {
+        coreMeasureId: target.measureId ?? null,
+        corePartId: target.corePartId ?? null,
+        measureNumber: target.measureNumber,
+        staffIndex: target.staffIndex,
+        voiceId: target.voiceId,
+        timestampNum: target.timestampNum,
+        timestampDen: target.timestampDen,
+      };
+      const overwriteCommands: ScoreCommand[] = [
+        { type: 'replaceWithRest', coreEntityId: slotEvent.id, ...slot, durationType, isDotted: dotted },
+        {
+          type: 'insertNoteAt', ...slot,
+          step: target.step, octave: target.octave, alter: target.alter,
+          ...(input.writtenAccidental ? { writtenAccidental: input.writtenAccidental } : {}),
+          durationType, isDotted: dotted, asChord: false, preserveOverflow: false,
+        },
+      ];
+      const overwriteNext = applyEditorCommands(overwriteCommands);
+      if (overwriteNext.xml === xml || overwriteNext.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) return false;
+      commitNoteInputUpdate(overwriteCommands, overwriteNext.coreDocument, slot, advanceFrom, {
+        isRest: false,
+        step: target.step,
+        octave: target.octave,
+        alter: target.alter,
+      }, {
+        audition: input.audition,
+        advanceCursor: true,
+      });
+      if (input.writtenAccidental) setSelectedAccidentalLive(null);
+      return true;
+    };
 
     // Step-time entry into a tuplet slot: when the entry value is the slot's own unit, the pitch
     // (or chord tone) goes into the unit through the tuplet editor, so the group keeps its ratio.
@@ -2558,6 +2615,38 @@ export function useNoteEditor(
         });
         if (input.writtenAccidental) setSelectedAccidentalLive(null);
         return true;
+      }
+      // A value that starts on plain time and reaches into a tuplet of the voice takes the same
+      // road: the gap removes the tuplet as a whole instead of cutting one of its units.
+      const reachesTuplet = (() => {
+        if (!slot || slotInTuplet || target.mode !== 'replace' || !coreDocument?.tuplets.length) return false;
+        const value = WHOLE_NOTE_FRACTION[durationType];
+        if (!value) return false;
+        const start = target.timestampNum / Math.max(target.timestampDen, 1);
+        const end = start + value * (dotted ? 1.5 : 1);
+        const tupletEventIds = new Set(coreDocument.tuplets.flatMap((tuplet) => tuplet.eventIds));
+        const voiceEvents = findEventReference(coreDocument, {
+          coreMeasureId: target.measureId ?? null,
+          corePartId: target.corePartId ?? null,
+          measureNumber: target.measureNumber,
+          staffIndex: target.staffIndex,
+          voiceId: target.voiceId,
+          timestampNum: target.timestampNum,
+          timestampDen: target.timestampDen,
+        })?.measure.voices.find((voice) => voice.voiceId === target.voiceId)?.events ?? [];
+        return voiceEvents.some((event) => {
+          const onset = event.timestampNum / Math.max(event.timestampDen, 1);
+          return tupletEventIds.has(event.id) && onset > start + 1e-9 && onset < end - 1e-9;
+        });
+      })();
+      if (slot && reachesTuplet && commitOverwrite(slot)) return true;
+      // Another value on a tuplet unit (F30): the tuplet cannot keep its shape. The core removes it
+      // as a whole from its first unit and rejects the entry on a later one.
+      if (slot && slotInTuplet && target.mode === 'replace') {
+        if (commitOverwrite(slot)) return true;
+        // eslint-disable-next-line no-console
+        console.warn('[nex-note:note-editor] edit rejected', { context: label, rejectionReason: 'tuplet-unit-value', target });
+        return false;
       }
     }
 
@@ -2697,30 +2786,7 @@ export function useNoteEditor(
           ? slotReference.event
           : null;
         if (slotReference && exactSlot) {
-          const pitchFields = {
-            step: target.step,
-            octave: target.octave,
-            alter: target.alter,
-            ...(input.writtenAccidental ? { writtenAccidental: input.writtenAccidental } : {}),
-          };
-          const overwriteCommands: ScoreCommand[] = [
-            { type: 'replaceWithRest', coreEntityId: exactSlot.id, ...slot, durationType, isDotted: dotted },
-            { type: 'insertNoteAt', ...slot, ...pitchFields, durationType, isDotted: dotted, asChord: false, preserveOverflow: false },
-          ];
-          const overwriteNext = applyEditorCommands(overwriteCommands);
-          if (overwriteNext.xml !== xml && !overwriteNext.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) {
-            commitNoteInputUpdate(overwriteCommands, overwriteNext.coreDocument, slot, advanceFrom, {
-              isRest: false,
-              step: target.step,
-              octave: target.octave,
-              alter: target.alter,
-            }, {
-              audition: input.audition,
-              advanceCursor: true,
-            });
-            if (input.writtenAccidental) setSelectedAccidentalLive(null);
-            return true;
-          }
+          if (commitOverwrite(exactSlot)) return true;
           overwriteMessage = 'This note value does not fit over the music that follows here.';
         }
       }

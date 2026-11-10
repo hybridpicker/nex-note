@@ -23,6 +23,8 @@ All notable changes to nex-note are documented here.
 - Undo of the first note of a voice in a bar lost the input cursor.
 - The saved file could contain a stray `<backup>` that vanished on the next edit.
 
+- A note typed after or into a triplet could respell or cut the triplet; a chord tone could get a different length than its chord.
+
 ### Changed
 
 - `0` outside note input starts note input and writes the rest over the selected note, as in MuseScore (it used to insert a rest and push the bar's last note out).

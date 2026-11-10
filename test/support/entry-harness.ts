@@ -188,7 +188,11 @@ export function layoutKeyEvent(token: string, layout: KeyboardLayoutId) {
 }
 
 export function selectableNotes(xml: string): SelectedNote[] {
-  const core = importMusicXmlToCore(xml);
+  return selectableNotesOf(importMusicXmlToCore(xml));
+}
+
+/** The same list from a live document model, with the entity ids the editor holds. */
+export function selectableNotesOf(core: ReturnType<typeof importMusicXmlToCore>): SelectedNote[] {
   const notes: SelectedNote[] = [];
   for (const part of core.score.parts) {
     for (const staff of part.staves) {

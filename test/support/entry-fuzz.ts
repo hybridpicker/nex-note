@@ -8,7 +8,7 @@ import { validateScoreDocument } from '../../src/score-core/validation/validate-
 import { storedVoiceFor } from '../../src/score-input/voice-mapping.ts';
 import type { SelectedNote } from '../../hooks/useNoteEditor.ts';
 import { mountApp, type AppHarness } from './app-harness.ts';
-import { selectableNotes } from './entry-harness.ts';
+import { selectableNotes, selectableNotesOf } from './entry-harness.ts';
 import { BASS, CLARINET_BB, PIANO, TREBLE, scoreXml } from './entry-fixtures.ts';
 
 /*
@@ -193,7 +193,10 @@ export interface FuzzFailure {
 
 function applyAction(app: AppHarness, action: FuzzAction) {
   if (action.startsWith('click:')) {
-    const notes = selectableNotes(app.xml);
+    // The live model, as a click in the app delivers it: a re-import of the XML numbers its events
+    // anew, and such an id can belong to a different event of the live document.
+    const live = app.doc.coreDocument;
+    const notes = live ? selectableNotesOf(live) : selectableNotes(app.xml);
     if (!notes.length) return;
     app.click(notes[Number(action.slice(6)) % notes.length]!);
     return;

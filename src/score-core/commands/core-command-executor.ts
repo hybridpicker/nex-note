@@ -266,6 +266,7 @@ function resolveBeamGroupUnitDivisions(divisions: number, timeSignature: { beats
 
 function rebuildDefaultBeams(document: ScoreDocumentModel, baseline: ScoreDocumentModel) {
   const rebuilt: ScoreDocumentModel['beams'] = [];
+  const graceEventIds = new Set((document.graceNotes ?? []).map((link) => link.eventId));
 
   document.score.parts.forEach((part) => {
     part.staves.forEach((staff) => {
@@ -287,7 +288,9 @@ function rebuildDefaultBeams(document: ScoreDocumentModel, baseline: ScoreDocume
             rebuilt.push(...baseline.beams.filter(beam => beam.eventIds.every(id => ids.has(id))));
             return;
           }
-          const ordered = [...voice.events].sort((left, right) => (
+          // Grace notes take no time and stand outside the beams of the main notes; among the main
+          // notes they would break or join groups depending on the order of their ids.
+          const ordered = voice.events.filter((event) => !graceEventIds.has(event.id)).sort((left, right) => (
             left.timestampNum - right.timestampNum
             || Number(left.isChord) - Number(right.isChord)
             || left.id.localeCompare(right.id)
@@ -3550,6 +3553,8 @@ function coalesceAdjacentRestsInMeasure(
   staffIndex: number,
   voiceId: number,
   events: TimedEvent[],
+  /** Rests that keep their identity and value: tuplet units are not plain time to respell. */
+  keepEventIds: ReadonlySet<string> = new Set(),
 ) {
   const sorted = [...events].sort((a, b) => (
     a.timestampNum - b.timestampNum
@@ -3579,7 +3584,7 @@ function coalesceAdjacentRestsInMeasure(
   };
 
   for (const event of sorted) {
-    const isMergeableRest = event.kind === 'rest' && !event.isChord;
+    const isMergeableRest = event.kind === 'rest' && !event.isChord && !keepEventIds.has(event.id);
     if (
       isMergeableRest
       && restSpanStart != null
@@ -6175,6 +6180,7 @@ export function executeCoreCommands(
               found.staff.staffIndex,
               command.voiceId,
               found.voice.events,
+              buildTupletEventIdSet(nextDocument),
             )
         ).sort((a, b) => a.timestampNum - b.timestampNum);
         if (!isAbsoluteInsert) {

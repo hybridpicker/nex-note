@@ -4,7 +4,7 @@ import test from 'node:test';
 import { buildDocumentState } from '../src/score-core/commands/apply-document-commands.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 import { mountApp, type AppHarness } from './support/app-harness.ts';
-import { selectableNotes, voiceSummary } from './support/entry-harness.ts';
+import { selectableNotesOf, voiceSummary } from './support/entry-harness.ts';
 import { FUZZ_FIXTURES, runSequence } from './support/entry-fuzz.ts';
 
 /*
@@ -22,6 +22,9 @@ import { FUZZ_FIXTURES, runSequence } from './support/entry-fuzz.ts';
  * F28  a tie stayed on a note when the note it ran into was replaced, because a grace note of the
  *      same pitch stood there until the end of the edit
  * F29  Undo of the first entry of a voice in a bar left note input without a cursor
+ * F30  (iteration 10) a plain note after a tuplet respelled the tuplet's rests; a chord tone took the
+ *      armed value instead of the chord's; a letter with another value on a tuplet unit, or a value
+ *      reaching into a tuplet, cut the tuplet; grace notes joined the beams of the main notes
  */
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,6 +38,14 @@ const REPLAYS: Array<[string, number, string[]]> = [
   ['tuplets and graces', 1071116, ['N', 'Delete']],
   ['three parts', 1271115, ['click:569', 'b', '6', 'Cmd+3', 'b', 'g', 'T']],
   ['pickup bar', 1171108, ['N', 'N', 'Delete', 'Cmd+Alt+2', '.', 'a', 'e', 'b', '5', 'f', 'a', 'b', 'a', '0', 'a', 'Cmd+z']],
+  // Iteration 10 (F30).
+  ['single staff', 3305512, ['N', '3', 'Cmd+3', '0', 'c', 'T', 'c']],
+  ['transposing part', 3505504, ['click:75', 'Backspace', '.', 'g', 'Shift+g', 'ArrowDown', 'Cmd+3']],
+  ['single staff', 3305529, ['6', 'N', 'Cmd+3', '4', 'f']],
+  ['grand staff, two voices', 3405511, ['.', 'N', 'Cmd+3', 'N', 'e']],
+  ['transposing part', 3505516, ['click:884', 'Cmd+3', '5', 'e']],
+  ['single staff', 48200018, ['N', 'c', 'f', 'f', 'd', 'f', 'd', 'ArrowRight', 'f', 'f', 'Cmd+3', 'Q', '5', 'f']],
+  ['three parts', 48700000, ['N', 'g', 'e', 'f', '.', 'f', 'e', '/', '/']],
   ['grand staff, two voices', 871114, ['Cmd+Alt+2', 'N', 'a', 'Backspace', 'Cmd+c', 'd', 'g', 'd', 'T', '/', 'a', 'f', 'd', 'click:528', 'Cmd+v', 'Shift+ArrowLeft', 'e']],
 ];
 for (const [fixture, seed, actions] of REPLAYS) {
@@ -47,7 +58,7 @@ function drive(fixture: string, actions: string[]): AppHarness {
   const app = mountApp(buildDocumentState(FUZZ_FIXTURES[fixture]!()).xml);
   for (const action of actions) {
     if (action.startsWith('click:')) {
-      const notes = selectableNotes(app.xml);
+      const notes = selectableNotesOf(app.doc.coreDocument!);
       app.click(notes[Number(action.slice(6)) % notes.length]!);
     } else {
       app.press(action);
@@ -175,6 +186,60 @@ test('F29: Undo of the first voice-2 entry in a bar keeps the cursor at its onse
     assert.deepEqual([cursor.measureNumber, cursor.timestampNum / cursor.timestampDen], [4, 0.25]);
     app.press('a');
     assert.deepEqual(voiceSummary(app.xml, { voice: 2 }), after, 'the same key enters the same note again');
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F30: a plain note typed after a triplet leaves the triplet rests as they are', () => {
+  const app = drive('single staff', ['N', '3', 'Cmd+3', '0', 'c', 'T', 'c']);
+  try {
+    assert.deepEqual(importMusicXmlToCore(app.xml).tuplets.map((tuplet) => tuplet.eventIds.length), [3]);
+    assert.deepEqual(voiceSummary(app.xml, {}).slice(0, 4), ['m1@0 r 32nd', 'm1@0.083 C5 32nd~', 'm1@0.167 C5 32nd', 'm1@0.25 C5 32nd']);
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F30: a chord tone takes the value of its chord, not the armed value', () => {
+  const app = drive('transposing part', ['click:75', 'Backspace', '.', 'g', 'Shift+g']);
+  try {
+    assert.deepEqual(voiceSummary(app.xml, {}).filter((line) => line.startsWith('m2@0 ')), ['m2@0 G4 eighth', 'm2@0 G5(chord) eighth']);
+  } finally {
+    app.unmount();
+  }
+});
+
+test('F30: another value on the first unit of a triplet removes it; on a later unit it is rejected', () => {
+  const first = drive('single staff', ['6', 'N', 'Cmd+3', '4', 'f']);
+  try {
+    assert.equal(importMusicXmlToCore(first.xml).tuplets.length, 0);
+    assert.deepEqual(voiceSummary(first.xml, {}).slice(0, 3), ['m1@0 F4 eighth', 'm1@0.5 r eighth', 'm1@1 r quarter']);
+  } finally {
+    first.unmount();
+  }
+  const warn = console.warn;
+  console.warn = () => {};
+  const later = drive('single staff', ['6', 'N', 'Cmd+3', '4', 'ArrowRight']);
+  try {
+    const before = later.xml;
+    later.press('f');
+    assert.equal(later.xml, before);
+    assert.match(later.editor.editorError ?? '', /tuplet/i);
+  } finally {
+    console.warn = warn;
+    later.unmount();
+  }
+});
+
+test('F30: a value that starts before a triplet and reaches into it removes the triplet as a whole', () => {
+  const app = drive('single staff', ['N', 'c', 'f', 'f', 'd', 'f', 'd', 'ArrowRight', 'f', 'f', 'Cmd+3', 'Q', '5', 'f']);
+  try {
+    assert.equal(importMusicXmlToCore(app.xml).tuplets.length, 0);
+    assert.deepEqual(
+      voiceSummary(app.xml, {}).filter((line) => line.startsWith('m3@')),
+      ['m3@0 F5 eighth', 'm3@0.5 F5 eighth~', 'm3@1 F5 eighth', 'm3@1.5 r eighth', 'm3@2 r half'],
+    );
   } finally {
     app.unmount();
   }
