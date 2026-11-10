@@ -119,7 +119,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Cmd/Ctrl+Shift+A` ... `G` | Note explizit am Cursor einfügen | Noteneingabe |
 | `Z` `S` `X` `D` `C` `V` `G` `B` `H` `N` `J` `M` | QWERTY-Piano: `C4` bis `B4` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |
 | `Q` `2` `W` `3` `E` `R` `5` `T` `6` `Y` `7` `U` | QWERTY-Piano: `C5` bis `B5` eingeben | Noteneingabe, QWERTY-Step-Keyboard aktiv |
-| `R` | Letzte Note wiederholen, wenn in Note Input bereits eine Note eingegeben wurde; sonst Rest einfügen | Noteneditor |
+| `R` | In der Noteneingabe: letzte Note wiederholen. Außerhalb der Noteneingabe (wie MuseScore „Repeat selection“): Auswahl direkt hinter sich selbst wiederholen, die folgende Musik wird überschrieben und die Kopie ausgewählt; die Zwischenablage bleibt unverändert, am Partiturende passiert nichts | Noteneditor |
 | `0` | Rest einfügen | Noteneditor |
 | `-` | Flat fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |
 | `=` | Natural fuer die naechste Note setzen; ausserhalb Note Input an der Auswahl toggeln | Noteneditor |

@@ -1711,12 +1711,13 @@ export function useNoteEditor(
     deleteSelectedNote();
   }, [copySelectedRange, deleteSelectedNote, selectedNote, selectedNotes]);
 
-  const pasteContent = useCallback(() => {
-    const targetNote = noteInputModeRef.current
-      ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
-      : (selectedNoteRef.current ?? selectedNote);
-    if (!targetNote || !clipboard) return;
-
+  const pastePayloadAt = useCallback((
+    payload: ScoreClipboardPayload,
+    targetNote: SelectedNote,
+    mode: NoteEntryMode,
+    context: string,
+  ) => {
+    const clipboard = payload;
     const command: ScoreCommand = {
       type: 'pasteContent',
       targetPartId: targetNote.corePartId ?? coreDocument?.score.parts[0]?.id ?? 'P1',
@@ -1727,13 +1728,13 @@ export function useNoteEditor(
         timestampDen: targetNote.timestampDen,
       },
       clipboardData: clipboard,
-      mode: entryModeRef.current,
+      mode,
     };
     const commands = [command];
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
-      warnNoOpEdit('pasteContent', command);
-      return;
+      warnNoOpEdit(context, command);
+      return false;
     }
 
     const pastedSelection = clipboard.timeline
@@ -1771,11 +1772,59 @@ export function useNoteEditor(
 
     if (pastedSelection.length > 0) {
       selectMultipleNotes(pastedSelection);
-      return;
+      return true;
     }
 
     clearSelection();
-  }, [selectedNote, selectedNotes, clipboard, coreDocument, applyEditorCommands, onApplyCommands, clearSelection, resolveSelectionByEntityId, selectMultipleNotes, warnNoOpEdit, xml]);
+    return true;
+  }, [selectedNote, selectedNotes, coreDocument, applyEditorCommands, onApplyCommands, clearSelection, resolveSelectionByEntityId, selectMultipleNotes, warnNoOpEdit, xml]);
+
+  const pasteContent = useCallback(() => {
+    const targetNote = noteInputModeRef.current
+      ? (lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote)
+      : (selectedNoteRef.current ?? selectedNote);
+    if (!targetNote || !clipboard) return;
+    pastePayloadAt(clipboard, targetNote, entryModeRef.current, 'pasteContent');
+  }, [clipboard, pastePayloadAt, selectedNote]);
+
+  /**
+   * `R` outside note input: repeat the selection directly after itself, over the music that follows,
+   * and select the copy (MuseScore "Repeat selection", Score::cmdRepeatSelection). The clipboard is
+   * not touched. F5 in note-entry-mastery-ledger: `R` used to insert a rest and push the bar's last
+   * note out.
+   */
+  const repeatSelection = useCallback(() => {
+    const currentSelectedNote = selectedNoteRef.current ?? selectedNote;
+    const currentSelectedNotes = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
+    const targets = selectedTargets(currentSelectedNote, currentSelectedNotes);
+    if (!targets.length || !coreDocument) return;
+    const payload = buildClipboardPayloadFromSelection(
+      coreDocument,
+      targets.map((note) => ({
+        coreEntityId: note.coreEntityId ?? null,
+        coreMeasureId: note.coreMeasureId ?? null,
+        corePartId: note.corePartId ?? null,
+        measureNumber: note.measureNumber,
+        staffIndex: note.staffIndex,
+        voiceId: note.voiceId,
+        timestampNum: note.timestampNum,
+        timestampDen: note.timestampDen,
+      })),
+    );
+    if (!payload) {
+      setEditorError('Repeat needs complete tuplets in one part with a consistent division grid.');
+      return;
+    }
+    const last = [...targets].sort(compareSelectedNotes).at(-1)!;
+    const after = findNextRhythmicSelection(coreDocument, last)
+      ?? getSemanticNoteOrder(coreDocument).find((entry) => isNextBarStartOnStaff(last, entry))
+      ?? null;
+    if (!after) {
+      setEditorError('Nothing follows the selection to repeat it over.');
+      return;
+    }
+    pastePayloadAt(payload, after, 'overwrite', 'repeatSelection');
+  }, [coreDocument, pastePayloadAt, selectedNote, selectedNotes]);
 
   const copySelection = copySelectedRange;
   const pasteClipboard = pasteContent;
@@ -5020,6 +5069,10 @@ export function useNoteEditor(
         repeatLastInput();
         return;
       }
+      if (key === 'R' && !noteInputMode && !e.shiftKey) {
+        if (selectedNote || selectedNotes.length > 0) { e.preventDefault(); repeatSelection(); }
+        return;
+      }
       if (selectedNote) { e.preventDefault(); insertRest(); }
       return;
     }
@@ -5196,7 +5249,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
+  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, repeatSelection, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
 
   return {
     selection: {
