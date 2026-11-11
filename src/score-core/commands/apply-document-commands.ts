@@ -90,8 +90,11 @@ export function applyDocumentCommands(
     recordInputMetric('semantic-command', performance.now() - began);
     return { xml: documentState.xml, sourceMusicXml: documentState.sourceMusicXml ?? documentState.xml, coreDocument: baselineCoreDocument, diagnostics: execution.coreDiagnostics, revision: baselineCoreDocument?.revision ?? 0, appliedCommands: [], selectionRemap: {} };
   }
+  // Without a fallback the executor hands back the document it exported the XML from: normalized
+  // there, or the unchanged baseline. Normalizing it again copied the whole document a second time
+  // on every edit (gate 3 in docs/note-entry-mastery-ledger.md).
   const nextCoreDocument = execution.fallbackCommands.length === 0
-    ? (execution.coreDocument ? normalizeScoreDocument(execution.coreDocument) : null)
+    ? execution.coreDocument
     : (execution.xml ? normalizeScoreDocument(importMusicXmlToCore(execution.xml)) : null);
   const diagnostics: DocumentDiagnostic[] = [];
   const sourceMusicXml = documentState.sourceMusicXml ?? documentState.xml;

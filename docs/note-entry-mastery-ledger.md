@@ -21,9 +21,9 @@ attempt at gate 3; the owner ended the session at 21:59.
   (`buildOsmdLayoutBridge` already fixes which bars form a system; start with
   `buildDomMeasureRectsByVisualOrder`, which counts bars from the first bar of the score, and with the
   places that use a bar overlay's `domRect` as a scroll position).
-- At 4,096 notes the pending note misses its budget (172 ms p95 against 150); 111 ms of it are the
-  semantic command, which is the part to shorten for that size (one normalization instead of two,
-  export of the changed bars only).
+- At 4,096 notes the pending note is at 140 / 151 ms after iteration 26 (budget 150, missed by
+  1 ms); 96 ms of it are the semantic command. An export of the changed bars only would settle that
+  size.
 - Not in scope and untouched: M1 to M6, R7, R8, K5b, K7b, K9 to K11, E1, gate 8 surface runs,
   gate 9. Not done for iteration 25 because another session had uncommitted changes in those files:
   the line in `docs/user-manual.en.md` and `CHANGELOG.md` about the pending note.
@@ -91,7 +91,7 @@ Verification habits that matter here:
 | --- | --- | --- |
 | 1 Trust | Not met | Fuzzer: 2,000 fresh sequences of 40 actions pass (seed 560311, iteration 12 code before the UI-only changes of that iteration; `test/entry-fuzz.test.ts`, 6 fixtures, byte-level fixed point after every action). Every P0 row is fixed or not reproduced as of iteration 17; the 2,000-sequence run has to be repeated on the final commit |
 | 2 Preview equals commit | Met on iteration 18; to be repeated on the final commit | `e2e/entry-mouse-corpus.spec.ts`: ten textures (treble, bass, alto, tenor, clef change, pickup, dense two-voice, tuplet, grace, grand staff with three ledger lines) in page and continuous view at 50, 100 and 200 %, 20 of 20 cells: no change on hover, the ghost drawn in the bar it names, commit equal to the preview in pitch, onset, bar, staff, voice and value, nothing twice, the canvas in place. F2 test for idle and busy. Open beside it: M4b and M5 |
-| 3 Speed, production build | Not met; blocked on the owner for the part that is left (Decisions, "Gate 3") | Session 4, quiet machine (see Latency). Typed notes: p95 34 / 52 / 90 ms at 32 / 512 / 2,048 notes against 100 / 100 / 150 (held; 2,048 is the size the owner accepts for this session); 172 ms at 4,096 against 150 (not held). Every other edit waits for the drawing of the score: 319 / 1,170 / 2,739 ms p95 at 512 / 2,048 / 4,096 notes. Pointer preview p95 34 to 36 ms against 33 at every size, as in the baseline; the stage is taken at the second animation frame after the change, which is one frame later than the preview is on screen. Burst of ten keys a second for five seconds at 512 notes: exactly the typed notes (`e2e/entry-pending.spec.ts`) |
+| 3 Speed, production build | Not met; blocked on the owner for the part that is left (Decisions, "Gate 3") | Session 4, quiet machine (see Latency). Typed notes (iteration 26): p95 34 / 42 / 88 ms at 32 / 512 / 2,048 notes against 100 / 100 / 150 (held; 2,048 is the size the owner accepts for this session); 151 ms at 4,096 against 150 (missed by 1 ms, median 140). Every other edit waits for the drawing of the score: 314 / 1,234 / 2,767 ms p95 at 512 / 2,048 / 4,096 notes. Pointer preview p95 34 to 36 ms against 33 at every size, as in the baseline; the stage is taken at the second animation frame after the change, which is one frame later than the preview is on screen. Burst of ten keys a second for five seconds at 512 notes: exactly the typed notes (`e2e/entry-pending.spec.ts`) |
 | 4 Orientation | Met on iteration 25; to be repeated on the final commit | O1 to O5 fixed. `e2e/reference-tasks.spec.ts` checks after every key of R1 to R6, on three layouts: in note input a caret inside the viewport and the six armed fields; with the entry field open, the field; otherwise the selection named by the status line |
 | 5 Keyboard flow | Not met | R1 to R6 reproduce their fixtures by keys alone on US, UK and German keyboards (`e2e/reference-tasks.spec.ts`, iteration 23).  Keys against the MuseScore scripts: R1 57/59 (97 %), R2 233/253 (92 %), R3 163/179 (91 %), R4 40/41 (98 %), R5 40/41 (98 %), R6 65/65 (100 %). Open: K5b, K7b, K9 to K11 |
 | 6 Mouse flow | Not met | R7, R8 not built; M1 to M6 open |
@@ -289,8 +289,16 @@ visible edit and the pointer preview are measured to the second animation frame 
 | | Pointer preview, budget p95 33 | 31 / 36 | 30 / 34 | 27 / 34 | 30 / 36 | |
 | | Semantic command | 2 / 2 | 15 / 16 | 54 / 58 | 111 / 125 | |
 | | OSMD load, OSMD render | 3 / 4, 12 / 25 | 23 / 25, 122 / 135 | 88 / 94, 499 / 529 | 180 / 245, 1,215 / 1,287 | |
+| Iteration 26: the document is normalized once per edit, not twice | Visible edit: pending note on screen, budget p95 100 / 100 / 150 / 150 | 27 / 34 | 34 / 42 | 77 / 88 | 140 / 151 | 2.7, 2.5 |
+| | Pending note written to the page | 15 / 21 | 25 / 27 | 67 / 74 | 132 / 139 | |
+| | Score drawn again | 61 / 72 | 280 / 314 | 1,055 / 1,234 | 2,308 / 2,767 | |
+| | Pointer preview, budget p95 33 | 33 / 35 | 29 / 34 | 31 / 35 | 26 / 36 | |
+| | Semantic command | 2 / 2 | 13 / 14 | 47 / 50 | 96 / 105 | |
+| | OSMD load, OSMD render | 3 / 4, 11 / 26 | 23 / 26, 117 / 134 | 88 / 93, 513 / 551 | 178 / 185, 1,224 / 1,367 | |
 
-The last run is the one that counts for the committed code. Its machine was slower throughout than
+The iteration 26 run is the quietest of the session (load 2.7 at the start, 2.5 at the end) and the
+state of the code at the end of session 4.
+The run before it is the one that counts for iteration 25. Its machine was slower throughout than
 in the step 1b run (every stage, the unchanged OSMD stages included, reads 20 to 40 % higher; the
 5-minute load average was 8.8 at its start), so the two runs are not to be compared stage by stage.
 
@@ -472,10 +480,11 @@ Each can be reverted on request.
   lines or bar repeats that start before the window.
 
   *Options for the owner.*
-  0. (Small, for 4,096 notes only.) The pending note misses 150 ms there because the command itself
-     takes 111 ms: the document is normalized twice and exported whole on every edit. One
-     normalization and an export of the changed bars would bring typed notes under the budget at
-     that size. About two hours with fuzzer runs. It changes nothing for the other edits.
+  0. (Small, for 4,096 notes only.) Iteration 26 took the second normalization out of every edit:
+     the command went from 111 to 96 ms and typed notes from 155 / 172 to 140 / 151 ms, 1 ms over
+     the budget. The command still exports the whole score on every edit; an export of the changed
+     bars would settle that size. About two hours with fuzzer runs. It changes nothing for the other
+     edits.
   1. **Connect the window (steps 2 and 3).** About one focused session (6 to 8 hours) including the
      gate-2 runs. Expected from the baseline numbers of a 512-note score: every kind of edit drawn
      within about 100 to 200 ms at any length of score, for continuous view; page view stays as it
@@ -588,3 +597,4 @@ Each can be reverted on request.
 | 23 | `617c38e` | Reference tasks R3 to R6 written with fixtures and MuseScore scripts; typing them found F51 to F54, K13 to K17 and O5 | F51, F52, F53, F54, K13, K14, K15, K16, K17; T4 for R3 to R6 | every new test failed before its fix; `npm test` 1,824 passed; fuzzer 600 sequences, seed 23110911: no failure; `npm run build`; one Playwright run at load average 3 to 5 (`reference-tasks` with R1, R2, R4, R5, R6 on US, UK and German keyboards, `entry-popover`, `app.spec.ts` both projects, `notation-tools`, `entry-trust`, `entry-orientation`): 166 passed, 3 skipped (R3, row O5) | iPad, `electron:refresh` (end of batch) |
 | 24 | `b6992c9` | O5 with the probe of its row: after the first note in the lower staff the staff details of a bar held staff 1 only, `GraphicSheet.MeasureList` had one entry per bar, and the stored file had `<staves>` in bar 2 instead of bar 1. Baseline of gate 3 on a quiet machine (see Latency) | O5: the document takes over the bar numbers of the exported file; part-wide attributes stay with the first bar; `<attributes>` children are created in MusicXML order. R3 without `fixme`. T3 has a 2,048-note size and `NEX_QUALITY_SIZES` | 3 unit tests and the browser probe failed before; `npm test` 1,827 passed; fuzzer 600 sequences, seed 24111101: no failure; `npm run build`; R3 on US, UK and German keyboards and the O5 test: 4 of 4; one Playwright run (`entry-mouse-corpus`, `entry-trust`, `entry-orientation`, `reference-tasks`, `entry-popover`, `app.spec.ts` both projects): 138 passed, 1 failed (corpus, pickup in continuous view: the test read an empty document once, `ParseError: missing root element`, the reload pattern of F43 and F50); the two pickup cells again, 3 times each: 6 of 6 . A second session of the owner edited this checkout from 16:47 to 16:55 (keyboard presets, PDF import, DMG build; uncommitted, not part of this commit), that is during this Playwright run: the dev server reloaded under it, which fits the one failure. Unit tests, fuzzer, build and the R3 runs were finished before | iPad, `electron:refresh` (end of batch) |
 | 25 | `5c9b452` | Gate 3, step 1. Baseline and every step on a quiet machine (see Latency). The first form of the pending note was on the page after 15 to 115 ms but on screen only after 30 to 536 ms: an effect rebuilt all maps from the old drawing before the frame. Removing that rebuild outright failed 5 mouse tests of `app.spec.ts` ("element is not attached": the bar overlays left the page during the redraw) and R2 on two layouts (no caret at 2 keys): the rebuild was also what kept overlays and caret alive | Pending note for keyboard and MIDI entry (`src/score-input/pending-entry.ts`, `components/PendingNoteGlyph.tsx`, `hooks/useNoteEditor.ts`, `components/ScoreEditor.tsx`); the redraw after such an entry waits for the frame that shows it; bar overlays, staff geometry and caret of the old drawing stay until the new one replaces them; no rebuild of the maps from a drawing of another revision; stages `input-to-pending-commit` and `input-to-pending-frame`; `src/render-bridge/osmd/render-window.ts` with its tests, not yet used | `e2e/entry-pending.spec.ts` (4 tests, among them the burst of 50 keys at ten a second); `npm test` 1,868 passed; `npm run build`; one Playwright run on the final code (`entry-mouse-corpus`, `entry-trust`, `entry-orientation`, `entry-pending`, `reference-tasks` R1 to R6 on three layouts, `entry-popover`, `app.spec.ts` both projects, `notation-tools`): 194 of 194 at load average 4 to 13; T3 on the final build | Fuzzer (no change to the command or export path), iPad, `electron:refresh` beyond the post-commit build; manual and changelog lines (files carry another session's changes) |
+| 26 | (this commit) | At 4,096 notes the pending note took 155 / 172 ms, 111 of them in the semantic command; the Node profile of the command path shows three copies of the whole document per edit, two of them in two normalizations of the same document | `applyDocumentCommands` takes the document the executor exported from instead of normalizing it a second time | `npm test` 1,868 passed; fuzzer 600 sequences, seed 25112038: no failure; `npm run build`; `entry-mouse-corpus`, `entry-trust`, `entry-orientation`, `entry-pending`: 47 of 47; T3 at load 2.7 (see Latency) | `reference-tasks`, `app.spec.ts` (run on iteration 25, 194 of 194), iPad, `electron:refresh` beyond the post-commit build |
