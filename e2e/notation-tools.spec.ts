@@ -400,14 +400,14 @@ test('notation toolbar states active voice and entry intent in plain language', 
   await bootWithScore(page);
 
   const summary = page.getByTestId('note-input-state-summary');
-  await expect(summary).toHaveText('Navigation · Voice 1 · Insert · Single note');
+  await expect(summary).toHaveText('Navigation · Voice 1 · Standard · Single note');
   await expect(summary).toHaveAttribute('aria-live', 'off');
 
   await page.getByTitle('Toggle note input (N)').click();
   // The note-input bar has a voice button of the same title; this test means the notation tools.
   await page.getByTestId('left-notation-sidebar').getByTitle(hostShortcutHint('Voice 3 (Cmd/Ctrl+Alt/Option+3)'), { exact: true }).click();
-  await page.getByTitle(hostShortcutHint('Entry: insert (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)'), { exact: true }).click();
-  await page.getByTitle(hostShortcutHint('Multi-voice input off (Cmd/Ctrl+Shift+H)'), { exact: true }).click();
+  await page.getByTitle(hostShortcutHint('Entry mode: Standard (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)'), { exact: true }).click();
+  await page.getByTitle(hostShortcutHint('Chord input off (Cmd/Ctrl+Shift+H)'), { exact: true }).click();
 
   await expect(summary).toHaveText('Note Input · Voice 3 · Replace · Chord');
   await expect(summary).toHaveAttribute('data-active-voice', '3');
@@ -598,7 +598,7 @@ test('N duration-first editing previews and commits a three-note chord atomicall
 
   const durationMode = page.locator('button[title^="Input by duration (M)"]:visible').first();
   await expect(durationMode).toHaveAttribute('aria-pressed', 'true');
-  await expect(durationMode).toContainText('DUR C4+E4+G4');
+  await expect(durationMode).toContainText('Pitch first C4+E4+G4');
   await expect(page.getByTestId('duration-input-pitch-cursor')).toHaveAttribute('data-ghost-pitch', 'G4');
   expect(await readCurrentXml(page)).toBe(initialXml);
 
@@ -641,7 +641,7 @@ test('N duration-first mouse controls prepare chords and rests before an atomic 
   await page.locator('button[title^="Set active note to E"]:visible').first().click({ modifiers: ['Shift'] });
   await page.locator('button[title^="Set active note to G"]:visible').first().click({ modifiers: ['Shift'] });
 
-  await expect(page.locator('button[title^="Input by duration (M)"]:visible').first()).toContainText('DUR C4+E4+G4');
+  await expect(page.locator('button[title^="Input by duration (M)"]:visible').first()).toContainText('Pitch first C4+E4+G4');
   expect(await readCurrentXml(page)).toBe(initialXml);
 
   await page.locator('button[title^="Quarter note: 5"]:visible').first().click();
@@ -654,7 +654,7 @@ test('N duration-first mouse controls prepare chords and rests before an atomic 
   const chordXml = await readCurrentXml(page);
 
   await page.locator('button[title="Insert rest (R or 0)"]:visible').first().click();
-  await expect(page.locator('button[title^="Input by duration (M)"]:visible').first()).toContainText('DUR REST');
+  await expect(page.locator('button[title^="Input by duration (M)"]:visible').first()).toContainText('Pitch first REST');
   expect(await readCurrentXml(page)).toBe(chordXml);
 
   await page.locator('button[title^="Eighth note: 4"]:visible').first().click();

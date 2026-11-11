@@ -2916,6 +2916,54 @@ export function useNoteEditor(
       } satisfies ResolvedEditTarget;
     })();
 
+    // MuseScore `NoteInput::putNote`: "if a note with the same pitch already exists in the chord,
+    // remove it"; when it is the chord's only note nothing happens. Adding it again used to write the
+    // pitch twice into the chord (M4a in docs/note-entry-mastery-ledger.md).
+    if (normalizedTarget.mode === 'chord' && coreDocument) {
+      const wantedPart = normalizedTarget.corePartId?.replace(/^part:/, '') ?? null;
+      for (const part of coreDocument.score.parts) {
+        if (wantedPart && part.id.replace(/^part:/, '') !== wantedPart && part.sourcePartId !== wantedPart) continue;
+        const staff = part.staves.find((entry) => entry.staffIndex === normalizedTarget.staffIndex);
+        const measure = staff?.measures.find((entry) => entry.id === normalizedTarget.measureId)
+          ?? staff?.measures.find((entry) => entry.measureNumber === normalizedTarget.measureNumber);
+        for (const voice of measure?.voices ?? []) {
+          if (voice.voiceId !== normalizedTarget.voiceId && inputVoiceOf(voice.voiceId) !== normalizedTarget.voiceId) continue;
+          const graceIds = new Set((coreDocument.graceNotes ?? []).map((grace) => grace.eventId));
+          const tones = voice.events.filter((event) => (
+            event.kind === 'note' && !graceIds.has(event.id)
+            && event.timestampNum * normalizedTarget.timestampDen === normalizedTarget.timestampNum * event.timestampDen
+          ));
+          const same = tones.find((event) => (
+            event.kind === 'note' && event.pitch.step === normalizedTarget.step
+            && event.pitch.octave === normalizedTarget.octave && event.pitch.alter === normalizedTarget.alter
+          ));
+          if (!same || same.kind !== 'note') continue;
+          if (tones.length > 1) {
+            const removal: ScoreCommand[] = [{
+              type: 'deleteNote',
+              coreEntityId: same.id,
+              step: same.pitch.step,
+              octave: same.pitch.octave,
+              alter: same.pitch.alter,
+              isRest: false,
+              coreMeasureId: measure!.id,
+              corePartId: part.id,
+              measureNumber: measure!.measureNumber,
+              staffIndex: staff!.staffIndex,
+              voiceId: voice.voiceId,
+              timestampNum: same.timestampNum,
+              timestampDen: same.timestampDen,
+            }];
+            const cursor = selectedNoteRef.current ?? selectedNote;
+            if (applyEditorCommands(removal).xml !== xml) {
+              onApplyCommands(removal, cursor ? { selectionAnchor: toSelectionAnchor(cursor, [cursor]) } : undefined);
+            }
+          }
+          return;
+        }
+      }
+    }
+
     const advanceFrom = lastNoteInputRef.current ?? selectedNoteRef.current ?? selectedNote ?? {
       measureNumber: normalizedTarget.measureNumber,
       staffIndex: normalizedTarget.staffIndex,
@@ -2963,7 +3011,7 @@ export function useNoteEditor(
       notehead: leadsheetModeRef.current ? 'slash' : undefined,
       stem: leadsheetModeRef.current ? 'none' : undefined,
     });
-  }, [commitResolvedNoteEntry, coreDocument, selectedNote]);
+  }, [applyEditorCommands, commitResolvedNoteEntry, coreDocument, onApplyCommands, selectedNote, xml]);
 
   const insertNote = useCallback((step: string, octave: number, options?: {
     alter?: number;

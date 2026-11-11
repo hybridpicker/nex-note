@@ -62,7 +62,7 @@ export type NoteEditOperation =
   | { type: 'insertRest'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; afterTimestampNum: number; afterTimestampDen: number; durationType: string; isDotted?: boolean }
   | { type: 'insertNoteAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental; durationType: string; isDotted?: boolean; asChord?: boolean; preserveOverflow?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
   | { type: 'insertRestAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; durationType: string; isDotted?: boolean }
-  | ({ type: 'setNoteStyle'; notehead?: 'slash'; stem?: 'none' } & NoteLocator)
+  | ({ type: 'setNoteStyle'; notehead?: 'slash'; stem?: 'none' | 'up' | 'down'; hidden?: boolean } & NoteLocator)
   | ({ type: 'setGuitarFret'; string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } & NoteLocator)
   | ({ type: 'toggleGuitarTechnique'; technique: string } & NoteLocator)
   | ({ type: 'toggleArticulation'; articulation: ArticulationKind; placement?: 'above' | 'below' } & NoteLocator)

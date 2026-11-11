@@ -50,6 +50,8 @@ export interface GhostPlacementIntent {
 export interface GhostPlacementModifierState {
   shiftKey?: boolean;
   altKey?: boolean;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
 }
 
 export interface LedgerLineSegment {
@@ -151,13 +153,30 @@ export function resolveGhostPlacementIntent(input: GhostPlacementIntentInput): G
   const sortedAnchors = anchors
     .filter((anchor) => Number.isFinite(anchor.ratio) && Number.isFinite(anchor.x))
     .sort((a, b) => a.x - b.x || a.ratio - b.ratio);
-  const nearest = resolveTargetAnchor({
+  const withinReach = resolveTargetAnchor({
     pointerX,
     anchors: sortedAnchors,
     activeVoiceId: input.activeVoiceId,
     graceHitRadiusPx: input.graceHitRadiusPx ?? (noteheadWidth * 1.75),
     baseHitRadiusPx: input.baseHitRadiusPx ?? (noteheadWidth * 1.25),
   });
+  // A pointer between two onsets belongs to the nearer one, as MuseScore's `Score::getPosition`
+  // gives a click to the nearest segment. It does not open an insert point between them (M4).
+  // The onset itself is the one the rendered grid snapped to; the intent names the note or rest
+  // standing there, so that onset and place of the preview belong to the same event.
+  const allMainAnchors = sortedAnchors.filter((anchor) => anchor.kind !== 'grace');
+  const atSnappedOnset = allMainAnchors.filter((anchor) => Math.abs(anchor.ratio - snappedRatio) < 1e-6);
+  const mainAnchors = atSnappedOnset.length > 0 ? atSnappedOnset : allMainAnchors;
+  const nearest = withinReach ?? (mainAnchors.length > 0
+    ? mainAnchors.reduce((best, anchor) => {
+        const distance = Math.abs(anchor.x - pointerX);
+        const bestDistance = Math.abs(best.x - pointerX);
+        if (distance < bestDistance - 0.5) return anchor;
+        if (Math.abs(distance - bestDistance) <= 0.5 && input.activeVoiceId != null
+          && anchor.voiceId === input.activeVoiceId && best.voiceId !== input.activeVoiceId) return anchor;
+        return best;
+      })
+    : null);
 
   if (!nearest) {
     return {
@@ -168,7 +187,7 @@ export function resolveGhostPlacementIntent(input: GhostPlacementIntentInput): G
     };
   }
 
-  const dx = pointerX - nearest.x;
+  const dx = withinReach ? pointerX - nearest.x : 0;
   if (nearest.isRest) {
     return {
       mode: 'replace',
@@ -206,8 +225,11 @@ export function applyGhostPlacementModifiers<T extends { placementMode: GhostPla
   modifiers: GhostPlacementModifierState,
 ): T | null {
   if (!target) return null;
+  // MuseScore: a click adds to the chord, Shift+click replaces, Ctrl/Cmd+Shift+click inserts
+  // (handbook "Entering notes and rests"; M4 in docs/note-entry-mastery-ledger.md).
   if (modifiers.altKey) return { ...target, placementMode: 'chord' };
-  if (modifiers.shiftKey) return { ...target, placementMode: 'insert' };
+  if (modifiers.shiftKey && (modifiers.metaKey || modifiers.ctrlKey)) return { ...target, placementMode: 'insert' };
+  if (modifiers.shiftKey) return { ...target, placementMode: 'replace' };
   return target;
 }
 

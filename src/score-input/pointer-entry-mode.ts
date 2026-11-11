@@ -129,9 +129,13 @@ export function shouldCommitPointerGhostOverDirectNote(input: {
   // a replace ghost: a press selects the exact chord tone and a subsequent move
   // drags it. Chord-entry mode deliberately keeps the inverse priority so users
   // can still add a new chord tone.
+  // The priority holds for a press on the note at its own pitch. A ghost at another pitch is what
+  // the user sees and aims at; the hit rectangle of a nearby notehead (generous, and at 50 % zoom
+  // several staff steps tall) must not turn that click into a selection (M4, corpus M7).
   if (
     hitPitchedNotehead
     && directNoteSharesOnset
+    && directNoteSharesPitch
     && ghostTarget.placementMode === 'replace'
     && !input.chordInputIntent
   ) return false;
@@ -172,6 +176,8 @@ export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarge
     selectedNote?: PointerEntryLocator | null;
     noteInputAnchor?: PointerEntryLocator | null;
     recentCommitTarget?: PointerEntryLocator | null;
+    /** What stands at the target onset in the input voice, when it is a note or chord. */
+    anchorChord?: { valueMatchesArmed: boolean; hasPitch: boolean; noteCount: number } | null;
   },
 ): T | null {
   if (!target || target.placementLockedByModifier) return target;
@@ -185,56 +191,40 @@ export function resolveMuseScorePointerEntryMode<T extends PointerEntryModeTarge
       : target;
   }
 
-  const hasNoteAnchor = target.placementAnchorIsRest === false
-    || (target.placementAnchorIsRest == null && target.placementMode === 'replace');
-  const recentCommitSameOnset = pointerEntryLocatorsShareOnset(target, input.recentCommitTarget);
-  const noteInputAnchorSameOnset = hasNoteAnchor && pointerEntryLocatorsShareOnset(target, input.noteInputAnchor);
-  const selectedSameOnset = hasNoteAnchor && pointerEntryLocatorsShareOnset(target, input.selectedNote);
+  // MuseScore (handbook, "Entering notes and rests"): in note input a click adds a note to the chord
+  // at that position, and writes over a rest. Where the pointer stands around the notehead does not
+  // matter, and a plain click never pushes the following music later. Shift (replace), Alt (chord)
+  // and Ctrl/Cmd+Shift (insert) arrive here locked. M4 in docs/note-entry-mastery-ledger.md.
+  // A chord to add to is a note of the input voice at this onset. When the caller looked it up
+  // (`anchorChord` is given, null for none), that is the answer: the notehead under the pointer may
+  // belong to another voice, and then the entry goes into the input voice beside it.
+  const hasNoteAnchor = input.anchorChord !== undefined
+    ? Boolean(input.anchorChord)
+    : (target.placementAnchorIsRest === false
+      || (target.placementAnchorIsRest == null && target.placementMode !== 'insert'));
 
-  if (recentCommitSameOnset) {
+  if (pointerEntryLocatorsShareOnset(target, input.recentCommitTarget)) {
+    // The note of the click before is not in the rendered score yet: its place still reads as a rest.
     return {
       ...target,
       placementMode: 'chord',
       placementModePromotedByRecentCommit: true,
     };
   }
-  if (noteInputAnchorSameOnset) {
-    return {
-      ...target,
-      placementMode: 'chord',
-    };
+  if (input.entryMode === 'overwrite') {
+    // The mode shown as "Replace": every click replaces what stands at the onset.
+    return target.placementMode === 'replace' ? target : { ...target, placementMode: 'replace' };
   }
-  if (input.entryMode === 'insert' && hasNoteAnchor && target.placementMode === 'replace') {
-    return {
-      ...target,
-      placementMode: 'chord',
-    };
-  }
-
-  if (target.placementMode === 'chord') {
-    if (input.entryMode === 'overwrite') {
-      return {
-        ...target,
-        placementMode: 'replace',
-      };
+  if (hasNoteAnchor) {
+    // `NoteInput::putNote`: the note joins the chord only when "chord duration == input duration";
+    // otherwise the armed value is written over what stands there.
+    if (input.anchorChord && !input.anchorChord.valueMatchesArmed) {
+      return target.placementMode === 'replace' ? target : { ...target, placementMode: 'replace' };
     }
-    return {
-      ...target,
-      placementMode: 'insert',
-    };
+    return target.placementMode === 'chord' ? target : { ...target, placementMode: 'chord' };
   }
-
-  if (input.entryMode !== 'insert') return target;
-  if (selectedSameOnset) {
-    return {
-      ...target,
-      placementMode: 'replace',
-    };
+  if (target.placementAnchorIsRest === true && target.placementMode !== 'replace') {
+    return { ...target, placementMode: 'replace' };
   }
-  if (target.placementMode !== 'replace') return target;
-  if (!hasNoteAnchor) return target;
-  return {
-    ...target,
-    placementMode: 'insert',
-  };
+  return target;
 }

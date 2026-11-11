@@ -25,10 +25,16 @@ Browser-Noteneingabe soll sich wie ein Desktop-Notationstool anfühlen:
 2. Clamp `pointerX` in den schreibbaren Taktinnenraum.
    Damit sind Barline-Zonen keine gültigen Insert-Punkte.
 3. Quantisiere auf das rhythmische Raster des aktiven Segments.
-4. Bestimme den Intent relativ zum nächsten existierenden Onset:
-   - links vom Notehead: `insert`
-   - auf dem Notehead: `replace`
-   - rechts vom Notehead: `chord`
+4. Der Zeiger gehört zum nächstgelegenen existierenden Onset des Takts (MuseScore
+   `Score::getPosition`); zwischen zwei Onsets entsteht kein Einfügepunkt.
+5. Der Platzierungsmodus folgt seit November 2026 MuseScores `NoteInput::putNote`
+   (`src/score-input/pointer-entry-mode.ts`, `test/pointer-click-musescore.test.ts`):
+   - Pause am Onset: `replace` (Note mit dem aktiven Wert schreiben)
+   - Note mit demselben Wert wie der aktive: `chord`
+   - Note mit anderem Wert: `replace` mit dem aktiven Wert
+   - `Shift`: `replace`, `Alt/Option`: `chord`, `Cmd/Ctrl+Shift`: `insert`
+   Die frühere Zonenregel (links `insert`, auf dem Kopf `replace`, rechts `chord`) ist
+   entfallen: ein einfacher Klick schob die folgende Musik des Takts nach hinten.
 
 ### 3. Ghost Preview
 

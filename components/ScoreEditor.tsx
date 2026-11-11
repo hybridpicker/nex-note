@@ -2691,11 +2691,13 @@ export function resolvePointerCommitGhostTargets(
 
 function applyPointerModifiersToGhostTarget(
   target: GhostNoteTarget | null,
-  event: { shiftKey: boolean; altKey: boolean },
+  event: { shiftKey: boolean; altKey: boolean; metaKey?: boolean; ctrlKey?: boolean },
 ) {
   const resolved = applyGhostPlacementModifiers(target, {
     shiftKey: event.shiftKey,
     altKey: event.altKey,
+    metaKey: event.metaKey,
+    ctrlKey: event.ctrlKey,
   });
   if (!resolved) return null;
   return {
@@ -2733,6 +2735,39 @@ function recentCommitStillHasNote(
   return false;
 }
 
+/** The note or chord of the input voice at a pointer target, for the MuseScore click rule (M4). */
+function anchorChordAt(
+  target: GhostNoteTarget | null,
+  voiceId: number,
+  coreDocument: ScoreDocumentModel | null | undefined,
+  selectedDuration: NoteDuration | undefined,
+  isDotted: boolean | undefined,
+) {
+  if (!target || !coreDocument || !selectedDuration) return null;
+  const wantedPart = target.corePartId?.replace(/^part:/, '') ?? null;
+  const armedType = INPUT_DURATION_TO_TYPE[selectedDuration] ?? 'quarter';
+  for (const part of coreDocument.score.parts) {
+    if (wantedPart && part.id.replace(/^part:/, '') !== wantedPart && part.sourcePartId !== wantedPart) continue;
+    const staff = part.staves.find((entry) => entry.staffIndex === target.staffIndex);
+    const measure = staff?.measures.find((entry) => target.measureId === entry.id)
+      ?? staff?.measures.find((entry) => entry.measureNumber === target.measureNumber);
+    for (const voice of measure?.voices ?? []) {
+      if (voice.voiceId !== voiceId && inputVoiceOf(voice.voiceId) !== voiceId) continue;
+      const notes = voice.events.filter((event) => (
+        event.kind === 'note' && event.timestampNum * target.timestampDen === target.timestampNum * event.timestampDen
+      ));
+      const main = notes.find((event) => !event.isChord) ?? notes[0];
+      if (!main) continue;
+      return {
+        valueMatchesArmed: main.durationType === armedType && Boolean(main.isDotted) === Boolean(isDotted),
+        hasPitch: notes.some((event) => event.kind === 'note' && event.pitch.step === target.step && event.pitch.octave === target.octave && event.pitch.alter === target.alter),
+        noteCount: notes.length,
+      };
+    }
+  }
+  return null;
+}
+
 function applyEntryModeToGhostTarget(
   target: GhostNoteTarget | null,
   entryMode: NoteEntryMode,
@@ -2741,6 +2776,9 @@ function applyEntryModeToGhostTarget(
   selectedNote?: SelectedNote | null,
   noteInputAnchor?: SelectedNote | null,
   recentCommitTarget?: PointerEntryLocator | null,
+  coreDocument?: ScoreDocumentModel | null,
+  selectedDuration?: NoteDuration,
+  isDotted?: boolean,
 ) {
   if (target && target.voiceId !== selectedVoice) {
     target = {
@@ -2759,6 +2797,7 @@ function applyEntryModeToGhostTarget(
     selectedNote,
     noteInputAnchor,
     recentCommitTarget,
+    anchorChord: anchorChordAt(target, selectedVoice, coreDocument, selectedDuration, isDotted),
   });
 }
 
@@ -12613,6 +12652,9 @@ export default function ScoreEditor({
             selectedNote,
             noteInputAnchor,
             lastNoteInputCommitTargetRef.current,
+            coreDocument,
+            selectedDuration,
+            isDotted,
           ),
           interactiveEditMapRef.current,
           coreDocument,
@@ -13374,6 +13416,9 @@ export default function ScoreEditor({
           selectedNote,
           noteInputAnchor,
           lastNoteInputCommitTargetRef.current,
+          coreDocument,
+          selectedDuration,
+          isDotted,
         ),
         interactiveEditMapRef.current,
         coreDocument,
@@ -14537,6 +14582,9 @@ export default function ScoreEditor({
             selectedNote,
             noteInputAnchor,
             lastNoteInputCommitTargetRef.current,
+            coreDocument,
+            selectedDuration,
+            isDotted,
           ),
           interactiveEditMapRef.current,
           coreDocument,
@@ -14781,7 +14829,16 @@ export default function ScoreEditor({
     const viewport = viewportRef.current;
     if (!viewport) return;
 
-    const handleScroll = () => syncViewportBox();
+    const handleScroll = () => {
+      syncViewportBox();
+      // The score moved under a resting pointer (wheel, or the view following the caret). The preview
+      // was computed for what lay under the pointer before; it goes until the pointer moves again,
+      // and a click computes its own from the pointer event (F42 in docs/note-entry-mastery-ledger.md).
+      if (ghostNoteTargetRef.current && !tabletEntrySessionRef.current) {
+        visibleGhostPointerLockRef.current = null;
+        setGhostNoteTarget(null);
+      }
+    };
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
@@ -16704,6 +16761,17 @@ export default function ScoreEditor({
         >
           {error && (
             <div className="m-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
+          )}
+          {/* Why an entry was not accepted. Fixed over the page, so it moves nothing (F2, F41 in
+              docs/note-entry-mastery-ledger.md); the next accepted edit clears it. */}
+          {editorError && (
+            <div
+              role="alert"
+              data-testid="entry-rejection"
+              className="pointer-events-none fixed bottom-24 left-1/2 z-50 max-w-[min(40rem,90vw)] -translate-x-1/2 rounded-lg bg-slate-900/90 px-4 py-2 text-center text-sm font-medium text-white shadow-lg"
+            >
+              {editorError}
+            </div>
           )}
           <div className={`relative min-h-full min-w-full ${viewMode === 'page' ? 'bg-stone-200/70 p-6' : ''}`}>
             <div className={`relative ${viewMode === 'page' ? 'mx-auto w-full max-w-[1120px]' : 'min-w-full'}`}>

@@ -4543,6 +4543,8 @@ export function executeCoreCommands(
         if (event) {
           event.notehead = command.notehead;
           event.stem = command.stem;
+          // Visibility changes only when the command names it (MusicXML `print-object="no"`).
+          if (typeof command.hidden === 'boolean') event.hidden = command.hidden ? true : undefined;
         }
         break;
       }

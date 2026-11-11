@@ -206,14 +206,28 @@ test('whole-rest placement uses the active voice as the target voice', () => {
 test('horizontal intent resolves insert, replace, and chord zones around an onset', () => {
   const anchors = [{ ratio: 1, x: 120 }];
 
+  // Left of the notehead, within its reach: the left zone. The pointer-entry mode turns every zone on
+  // a note into a chord tone in the standard mode (M4, test/pointer-click-musescore.test.ts).
   assert.equal(resolveGhostPlacementIntent({
-    pointerX: 100,
+    pointerX: 112,
     snappedRatio: 1,
     slotDuration: 0.25,
     segmentStartRatio: 0,
     maxStartRatio: 3.75,
     anchors,
   }).mode, 'insert');
+  // Out of reach of every notehead the pointer belongs to the nearest onset; it used to open an
+  // insert point without an anchor there.
+  const far = resolveGhostPlacementIntent({
+    pointerX: 100,
+    snappedRatio: 1,
+    slotDuration: 0.25,
+    segmentStartRatio: 0,
+    maxStartRatio: 3.75,
+    anchors,
+  });
+  assert.equal(far.mode, 'replace');
+  assert.equal(far.anchor?.ratio, 1);
 
   const replace = resolveGhostPlacementIntent({
     pointerX: 120,
@@ -268,7 +282,9 @@ test('mouse note-entry modifiers explicitly override horizontal placement intent
   };
 
   assert.equal(applyGhostPlacementModifiers(base, {})?.placementMode, 'replace');
-  assert.equal(applyGhostPlacementModifiers(base, { shiftKey: true })?.placementMode, 'insert');
+  assert.equal(applyGhostPlacementModifiers(base, { shiftKey: true })?.placementMode, 'replace');
+  assert.equal(applyGhostPlacementModifiers({ ...base, placementMode: 'chord' as const }, { shiftKey: true })?.placementMode, 'replace');
+  assert.equal(applyGhostPlacementModifiers(base, { shiftKey: true, metaKey: true })?.placementMode, 'insert');
   assert.equal(applyGhostPlacementModifiers(base, { altKey: true })?.placementMode, 'chord');
   assert.equal(applyGhostPlacementModifiers(base, { shiftKey: true, altKey: true })?.placementMode, 'chord');
   assert.equal(applyGhostPlacementModifiers(null, { shiftKey: true }), null);

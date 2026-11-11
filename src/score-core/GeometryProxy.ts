@@ -175,12 +175,18 @@ function collectGraphicalMeasures(osmd: any): any[] {
   return out;
 }
 
-function graphicalMeasureNumber(graphicalMeasure: any): number | null {
-  const explicit = graphicalMeasure?.MeasureNumber ?? graphicalMeasure?.measureNumber;
-  if (typeof explicit === 'number') return explicit;
+/**
+ * The bar number of a rendered measure. The MusicXML number comes first: it is the number the document
+ * uses. OSMD's own `MeasureNumber` counts an implicit first bar (a pickup) as 0 and every bar after it
+ * one too low, which gave each bar of such a score the rectangle of its neighbour (F39 in
+ * docs/note-entry-mastery-ledger.md).
+ */
+export function graphicalMeasureNumber(graphicalMeasure: any): number | null {
   const parent = graphicalMeasure?.parentSourceMeasure ?? graphicalMeasure?.ParentSourceMeasure;
   const fromSource = parent?.MeasureNumberXML ?? parent?.measureNumberXML;
-  return typeof fromSource === 'number' ? fromSource : null;
+  if (typeof fromSource === 'number') return fromSource;
+  const explicit = graphicalMeasure?.MeasureNumber ?? graphicalMeasure?.measureNumber;
+  return typeof explicit === 'number' ? explicit : null;
 }
 
 function graphicalMeasureStaffIndex(graphicalMeasure: any): number | null {

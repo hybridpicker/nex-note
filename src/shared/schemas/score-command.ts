@@ -49,7 +49,7 @@ export type LegacyScoreOperation =
   | { type: 'deleteMeasure'; measureNumber: number }
   | ({ type: 'addLyric'; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end' } & NoteLocatorLike)
   | ({ type: 'removeLyricLine'; verseNumber: number } & NoteLocatorLike)
-  | ({ type: 'setNoteStyle'; notehead?: 'slash'; stem?: 'none' | 'up' | 'down' } & NoteLocatorLike)
+  | ({ type: 'setNoteStyle'; notehead?: 'slash'; stem?: 'none' | 'up' | 'down'; hidden?: boolean } & NoteLocatorLike)
   | ({ type: 'toggleStemDirection' } & NoteLocatorLike)
   | ({ type: 'setGuitarFret'; string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } & NoteLocatorLike)
   | ({ type: 'toggleGuitarTechnique'; technique: string } & NoteLocatorLike)

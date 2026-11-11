@@ -4,7 +4,9 @@ import PlaybackMixer from '@/components/PlaybackMixer';
 import type { MixerState } from '@/lib/playback-mixer';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 import NoteInputToolbar from '@/components/NoteInputToolbar';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type TranslationKey } from '@/lib/i18n';
+import { describePosition, durationLabelKey } from '@/src/score-input/position-label';
+import { inputVoiceOf } from '@/src/score-input/voice-mapping';
 import type { PlaybackState } from '@/hooks/usePlayback';
 import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, ArticulationKind, BarlineKind, DynamicKind, GuitarTechniqueKind, TupletNumber } from '@/hooks/useNoteEditor';
 import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
@@ -233,10 +235,10 @@ function Group({ children }: { children: React.ReactNode }) {
 }
 
 function accidentalSuffix(alter: number) {
-  if (alter === 2) return 'x';
-  if (alter === 1) return '#';
-  if (alter === -1) return 'b';
-  if (alter === -2) return 'bb';
+  if (alter === 2) return '𝄪';
+  if (alter === 1) return '♯';
+  if (alter === -1) return '♭';
+  if (alter === -2) return '𝄫';
   return '';
 }
 
@@ -248,24 +250,55 @@ function partLabelForSelection(coreDocument: ScoreDocumentModel | null, selected
   return part?.abbreviation ?? part?.name ?? selectedNote.corePartId ?? null;
 }
 
-function formatSelectionStatus(coreDocument: ScoreDocumentModel | null, selectedNote: SelectedNote | null) {
+type Translate = (key: TranslationKey, values?: Record<string, string | number>) => string;
+
+/** Value of the selected event as the document holds it (the rendered note does not always carry it). */
+function selectedEventValue(coreDocument: ScoreDocumentModel | null, selectedNote: SelectedNote) {
+  if (coreDocument && selectedNote.coreEntityId) {
+    for (const part of coreDocument.score.parts) {
+      for (const staff of part.staves) {
+        const measure = staff.measures.find((entry) => entry.id === selectedNote.coreMeasureId)
+          ?? (staff.staffIndex === selectedNote.staffIndex ? staff.measures.find((entry) => entry.measureNumber === selectedNote.measureNumber) : undefined);
+        for (const voice of measure?.voices ?? []) {
+          const event = voice.events.find((entry) => entry.id === selectedNote.coreEntityId);
+          if (event) return { durationType: event.durationType ?? null, isDotted: Boolean(event.isDotted) };
+        }
+      }
+    }
+  }
+  return { durationType: selectedNote.durationType ?? null, isDotted: Boolean(selectedNote.isDotted) };
+}
+
+/**
+ * The selection in a musician's words: bar and beat, pitch, value, then part, staff and voice (O4 in
+ * docs/note-entry-mastery-ledger.md; it used to end in a raw onset fraction such as `0/16`).
+ */
+export function describeSelectionStatus(coreDocument: ScoreDocumentModel | null, selectedNote: SelectedNote | null, t: Translate) {
   if (!selectedNote) return null;
-  const noteLabel = selectedNote.isRest
-    ? 'Rest'
+  const position = describePosition(coreDocument, selectedNote);
+  const pitch = selectedNote.isRest
+    ? t('status.rest')
     : `${selectedNote.step}${accidentalSuffix(selectedNote.alter)}${selectedNote.octave}`;
-  const partLabel = partLabelForSelection(coreDocument, selectedNote);
+  const value = selectedEventValue(coreDocument, selectedNote);
+  const valueKey = durationLabelKey(value.durationType);
+  const valueName = valueKey ? t(`note.duration.${valueKey}` as TranslationKey).replace(/\s*\([^)]*\)\s*$/, '') : null;
+  const valueLabel = valueName ? (value.isDotted ? `${valueName}, ${t('status.dotted')}` : valueName) : null;
+  const staffCount = coreDocument?.score.parts.find((part) => (
+    !selectedNote.corePartId || part.id === selectedNote.corePartId || part.sourcePartId === selectedNote.corePartId
+  ))?.staves.length ?? 1;
   const guitarLabel = selectedNote.guitar
     ? `String ${selectedNote.guitar.string} · Fret ${selectedNote.guitar.fret}`
     : null;
-  return [
-    noteLabel,
-    partLabel,
-    `M${selectedNote.measureNumber}`,
-    `Staff ${selectedNote.staffIndex}`,
-    `Voice ${selectedNote.voiceId}`,
-    `${selectedNote.timestampNum}/${selectedNote.timestampDen}`,
+  const text = [
+    t('status.position', position),
+    pitch,
+    valueLabel,
+    partLabelForSelection(coreDocument, selectedNote),
+    staffCount > 1 ? `${t('status.staff')} ${selectedNote.staffIndex}` : null,
+    `${t('note.voice')} ${inputVoiceOf(selectedNote.voiceId)}`,
     guitarLabel,
   ].filter(Boolean).join(' · ');
+  return { text, bar: position.bar, beat: position.beat, pitch, value: value.durationType ?? '', dotted: value.isDotted };
 }
 
 export default function NotationToolbar({
@@ -288,7 +321,8 @@ export default function NotationToolbar({
   const showPlaybackProgress = totalBeats > 0 && (isPlaying || isPaused || Boolean(selectedNote));
   const displayTempo = tempoOverride ?? 120;
   const progress = totalBeats > 0 ? Math.min(1, currentBeat / totalBeats) : 0;
-  const selectionStatus = formatSelectionStatus(coreDocument, selectedNote);
+  const selectionDescription = describeSelectionStatus(coreDocument, selectedNote, t);
+  const selectionStatus = selectionDescription?.text ?? null;
   const toolbarStatus = (isPlaying || isPaused)
     ? `${t('toolbar.measure')} ${currentMeasure}`
     : selectionStatus ?? t('toolbar.ready');
@@ -395,8 +429,14 @@ export default function NotationToolbar({
 
         {/* Status */}
         <div
-          className="min-w-[96px] max-w-[210px] shrink-0 truncate px-1 text-[11px] font-medium text-slate-500"
+          className="min-w-[96px] max-w-[380px] shrink truncate px-1 text-[11px] font-medium text-slate-500"
           title={toolbarStatus}
+          data-testid="selection-status"
+          data-status-bar={selectionDescription?.bar ?? ''}
+          data-status-beat={selectionDescription?.beat ?? ''}
+          data-status-pitch={selectionDescription?.pitch ?? ''}
+          data-status-value={selectionDescription?.value ?? ''}
+          data-status-dotted={selectionDescription?.dotted ? 'true' : 'false'}
         >
           {toolbarStatus}
         </div>

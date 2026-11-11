@@ -8,8 +8,14 @@ All notable changes to nex-note are documented here.
 
 - Note input shows a caret in the colour of the input voice at the position of the next note, and a bar with the armed note value, dot, accidental, voice, entry mode and tuplet; every field is clickable.
 
+### Changed
+
+- Mouse entry follows MuseScore: a click in note input adds a chord tone to a note of the armed value, replaces a note of another value and writes over a rest; it no longer inserts and pushes the bar when the pointer stands left of a notehead. `Shift`+click replaces, `Cmd/Ctrl+Shift`+click inserts, `Alt/Option`+click adds a chord tone.
+- The mode buttons of the notation tools read `Standard`/`Replace`, `Chord`, `Keys`, `Pitch first` and `Lead sheet` instead of `INS`/`OVR`, `CHD`, `STEP`, `DUR` and `LEAD`; the status line names bar, beat, pitch and value instead of an onset fraction; the Inspector shows pitch, value, position, voice, stem and visibility of the selected note.
+
 ### Fixed
 
+- In a score with a pickup bar the mouse preview was missing or drawn in the neighbouring bar, and a click could enter its note one bar late.
 - After undoing a note entered with the mouse, the next click in that bar previewed a chord tone on the note that was gone and entered nothing.
 - Undo during note input lost the input cursor, so later keys did nothing; Undo and Redo now keep it.
 - `W` in note input lost the cursor; `Q`/`W` now change the note just entered and move the cursor past it.

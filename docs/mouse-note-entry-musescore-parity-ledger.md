@@ -34,6 +34,11 @@ current-behavior cell is a placeholder, not a finding.
    This is a deliberate product difference that predates this program. Changing it
    would alter existing user workflows and the e2e suites, so it is NOT changed
    without an explicit decision. Recorded as B2 `PARTIAL`.
+   **Settled 2026-11-10** by the note-entry mastery program (row M4 of
+   [note-entry-mastery-ledger.md](./note-entry-mastery-ledger.md)) under its standing decision
+   that MuseScore defaults are the contract: a plain click adds to a chord of the armed value,
+   replaces a note of another value and writes over a rest; Shift+click replaces;
+   Cmd/Ctrl+Shift+click inserts; Alt+click stays chord placement.
 
 ## Capability table
 

@@ -3694,14 +3694,14 @@ test('duration-first cursor arrows move chromatically when no existing note is a
 
   await page.keyboard.press('Escape');
   await page.keyboard.press('M');
-  await expect(page.getByText(/DUR C4$/).first()).toBeVisible();
+  await expect(page.getByText(/Pitch first C4$/).first()).toBeVisible();
 
   await page.keyboard.press('ArrowUp');
-  await expect(page.getByText(/DUR C♯4$/).first()).toBeVisible();
+  await expect(page.getByText(/Pitch first C♯4$/).first()).toBeVisible();
   await page.keyboard.press('ArrowUp');
-  await expect(page.getByText(/DUR D4$/).first()).toBeVisible();
+  await expect(page.getByText(/Pitch first D4$/).first()).toBeVisible();
   await page.keyboard.press('ArrowDown');
-  await expect(page.getByText(/DUR C♯4$/).first()).toBeVisible();
+  await expect(page.getByText(/Pitch first C♯4$/).first()).toBeVisible();
   expect((await readE2EState(page))?.xml).toBe(before);
 });
 

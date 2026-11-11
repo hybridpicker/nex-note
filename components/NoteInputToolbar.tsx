@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, ArticulationKind, BarlineKind, DynamicKind, GuitarTechniqueKind, TupletNumber } from '@/hooks/useNoteEditor';
 import { AccidentalGlyph, BarlineGlyph, NoteDurationGlyph, RestGlyph } from '@/components/NotationGlyphs';
+import { describePosition } from '@/src/score-input/position-label';
+import { inputVoiceOf } from '@/src/score-input/voice-mapping';
 import { useI18n, type TranslationKey } from '@/lib/i18n';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { GUITAR_TUNINGS, resolveGuitarFretPitch, resolveGuitarTuning, type GuitarTuningId } from '@/src/score-input/guitar-fretboard';
@@ -465,10 +467,9 @@ export default function NoteInputToolbar({
   const selectedNoteContext = selectedNote
     ? [
         selectedPartLabel(coreDocument, selectedNote),
-        `m.${selectedNote.measureNumber}`,
-        `st.${selectedNote.staffIndex}`,
-        `v.${selectedNote.voiceId}`,
-        `t.${selectedNote.timestampNum}/${selectedNote.timestampDen}`,
+        t('status.position', describePosition(coreDocument, selectedNote)),
+        `${t('status.staff')} ${selectedNote.staffIndex}`,
+        `${t('note.voice')} ${inputVoiceOf(selectedNote.voiceId)}`,
         selectedNote.guitar ? `str.${selectedNote.guitar.string}` : null,
         selectedNote.guitar ? `fr.${selectedNote.guitar.fret}` : null,
       ].filter(Boolean).join(' ')
@@ -482,15 +483,15 @@ export default function NoteInputToolbar({
   const primaryInputState = [
     noteInputMode ? 'Note Input' : 'Navigation',
     `${t('note.voice')} ${selectedVoice}`,
-    entryMode === 'overwrite' ? 'Replace' : 'Insert',
+    entryMode === 'overwrite' ? 'Replace' : 'Standard',
     chordInputMode ? 'Chord' : 'Single note',
   ];
   const activeModes = [
     ...primaryInputState,
-    stepInputKeyboardMode ? 'STEP' : null,
-    inputByDurationMode ? `DUR ${preparedDurationPitchLabel || '—'}` : null,
+    stepInputKeyboardMode ? t('note.keysShort') : null,
+    inputByDurationMode ? `${t('note.pitchFirstShort')} ${preparedDurationPitchLabel || '—'}` : null,
     midiInputEnabled ? 'MIDI' : null,
-    leadsheetMode ? 'LEAD' : null,
+    leadsheetMode ? t('toolbar.leadShort') : null,
     guitarInputMode ? 'TAB' : null,
   ].filter(Boolean).join(' · ');
   const selectedHarmony = useMemo(
@@ -753,11 +754,11 @@ export default function NoteInputToolbar({
       ))}
       <TBtn
         onClick={onToggleEntryMode}
-        title={formatShortcutHint(`${t('note.entry')}: ${entryMode} (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)`)}
+        title={formatShortcutHint(`${t('note.entryMode')}: ${entryMode === 'overwrite' ? t('noteInputBar.modeReplace') : t('noteInputBar.modeStandard')} (I, Cmd/Ctrl+I, Cmd/Ctrl+Shift+I)`)}
         active={entryMode === 'overwrite'}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">{entryMode === 'overwrite' ? 'OVR' : 'INS'}</span>
+        <span className="text-[10px] font-semibold">{entryMode === 'overwrite' ? t('noteInputBar.modeReplace') : t('noteInputBar.modeStandard')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleChordInputMode}
@@ -765,7 +766,7 @@ export default function NoteInputToolbar({
         active={chordInputMode}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">CHD</span>
+        <span className="text-[10px] font-semibold">{t('note.chordShort')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleInputAudition}
@@ -781,7 +782,7 @@ export default function NoteInputToolbar({
         active={stepInputKeyboardMode}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">STEP</span>
+        <span className="text-[10px] font-semibold">{t('note.keysShort')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleInputByDurationMode}
@@ -790,7 +791,7 @@ export default function NoteInputToolbar({
         wide
       >
         <span className="text-[10px] font-semibold tracking-wider">
-          {inputByDurationMode && preparedDurationPitchLabel ? `DUR ${preparedDurationPitchLabel}` : 'DUR'}
+          {inputByDurationMode && preparedDurationPitchLabel ? `${t('note.pitchFirstShort')} ${preparedDurationPitchLabel}` : t('note.pitchFirstShort')}
         </span>
       </TBtn>
       <TBtn
@@ -827,7 +828,7 @@ export default function NoteInputToolbar({
         active={leadsheetMode}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">LEAD</span>
+        <span className="text-[10px] font-semibold">{t('toolbar.leadShort')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleGuitarInputMode}
@@ -1155,7 +1156,7 @@ export default function NoteInputToolbar({
           <TBtn title={t('note.inputAudition')} active={inputAuditionEnabled} onClick={onToggleInputAudition}>♪</TBtn>
           <TBtn title="Insert rest" disabled={!selectedNote} onClick={onInsertRest}><RestGlyph className="h-6 w-6" /></TBtn>
           <TBtn title="Delete selected note" disabled={!selectedNote} onClick={onDeleteNote}>⌫</TBtn>
-          <TBtn title="Chord input" active={chordInputMode} onClick={onToggleChordInputMode}>CHD</TBtn>
+          <TBtn title="Chord input" active={chordInputMode} onClick={onToggleChordInputMode}>{t('note.chordShort')}</TBtn>
         </Group>
         {guitarInputMode && guitarTools}
       </div>

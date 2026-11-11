@@ -6352,7 +6352,12 @@ test('note input arrow keys transpose every note in an active multi-note selecti
   hook.unmount();
 });
 
-test('note input arrows repitch the active tone after newly entered chord tones regenerate entity ids', () => {
+test('note input arrows repitch the active tone after newly entered chord tones regenerate entity ids', (context) => {
+  // New entity ids carry the time of their creation in milliseconds. Two edits inside one
+  // millisecond got the same id and the id comparison below failed once in a full run (F40 in
+  // docs/note-entry-mastery-ledger.md): give every edit of this test its own millisecond.
+  let now = Date.now();
+  context.mock.method(Date, 'now', () => { now += 1; return now; });
   const hook = renderHook(SAMPLE_XML);
   const first = makeSelectedNotes(SAMPLE_XML)
     .find((note) => !note.isRest && note.measureNumber === 1 && note.timestampNum === 0);

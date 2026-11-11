@@ -183,9 +183,13 @@ Die linke Werkzeugleiste ist zusaetzlich als Gruppe `Palette` im Command Center 
 
 | Modifier | Aktion | Kontext |
 | --- | --- | --- |
-| `Shift+Click` | Range-Auswahl oder Insert-Platzierung am Ghost-Ziel | Score |
+| Klick | Außerhalb der Noteneingabe: auswählen. In der Noteneingabe (wie MuseScore): auf einer Pause die Note mit dem aktiven Wert schreiben; auf einer Note mit demselben Wert einen Akkordton hinzufügen; auf einer Note mit anderem Wert diese durch den aktiven Wert ersetzen. Ein Klick schiebt nie die folgende Musik nach hinten. Im Modus `Replace` ersetzt jeder Klick | Score |
+| `Shift+Click` | Außerhalb der Noteneingabe: Range-Auswahl. In der Noteneingabe: ersetzen, was am Einsatz steht (wie MuseScore) | Score |
 | `Cmd/Ctrl+Click` | additive Auswahl | Score |
-| `Alt/Option+Click` | Chord-Platzierung am Ghost-Ziel | Score |
+| `Cmd/Ctrl+Shift+Click` | In der Noteneingabe: am Ghost-Ziel einfügen und die folgende Musik des Takts nach hinten schieben (wie `Cmd/Ctrl+Shift+A` … `G`) | Score, Noteneingabe |
+| `Alt/Option+Click` | Akkordton am Ghost-Ziel, unabhängig vom Notenwert | Score |
+
+Bis November 2026 hing die Platzierung davon ab, ob der Zeiger links, auf oder rechts vom Notenkopf stand (links fügte ein und schob den Takt), und `Shift+Click` fügte ein. Seit M4 des Note-Entry-Mastery-Programms gilt MuseScores Regel (`NoteInput::putNote`).
 
 ## Aktuelle Lücken im Vergleich zu MuseScore und Finale
 

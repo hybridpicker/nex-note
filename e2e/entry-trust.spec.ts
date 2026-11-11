@@ -243,3 +243,49 @@ test('F38: after Undo of a mouse-entered note the next click in that bar commits
   expect(added[0]).toContain(`m${ghost!.measure}@`);
   expect(added[0]).toContain(` ${ghostPitchLabel(ghost!.pitch)} `);
 });
+
+test('F41: a rejected entry says why on screen and moves nothing', async ({ page }, testInfo) => {
+  const oneBar = scoreXml({ beats: 4, beatType: 4, measures: 1, parts: [{ ...TREBLE }] });
+  const session = await EntrySession.boot(page, testInfo, { xml: oneBar });
+  // A whole note fills the last bar; a tuplet past the end of the score is rejected (F31).
+  await session.keys('N 7 c');
+  const canvas = await session.canvasBox();
+  const before = await session.xml();
+  await session.keys('Cmd+3');
+  expect(await session.xml(), 'the rejected tuplet changes nothing').toBe(before);
+  const message = page.getByTestId('entry-rejection');
+  await expect(message).toBeVisible();
+  await expect(message).toHaveAttribute('role', 'alert');
+  expect(((await message.textContent()) ?? '').trim().length).toBeGreaterThan(20);
+  expect((await session.canvasBox()).y, 'the message moves nothing').toBe(canvas.y);
+
+  // The next accepted entry takes the message away.
+  await session.keys('d');
+  await expect(message).toHaveCount(0);
+});
+
+test('F42: a preview does not stay on screen when the score scrolls under the resting pointer', async ({ page }, testInfo) => {
+  const tall = scoreXml({ beats: 4, beatType: 4, measures: 48, parts: [{ ...TREBLE }] });
+  const session = await EntrySession.boot(page, testInfo, { xml: tall });
+  await session.keys('N 5');
+  const point = await pointInBar(session, 2, 0.5, -6);
+  await session.move(point.x, point.y);
+  const shown = await session.ghost();
+  expect(shown, 'a ghost shows').not.toBeNull();
+
+  // The score scrolls without the pointer moving (wheel, or the view following the caret).
+  await page.getByTestId('score-viewport').evaluate((viewport) => { viewport.scrollBy({ top: 37 }); });
+  await session.settle();
+  const after = await session.ghost();
+  // Either no preview, or the preview of what now lies under the pointer; never the old one.
+  if (after) {
+    const before = await session.voice();
+    await page.mouse.down();
+    await page.mouse.up();
+    await session.settle();
+    const added = (await session.voice()).filter((line) => !before.includes(line));
+    expect(added.length).toBe(1);
+    expect(added[0]).toContain(` ${ghostPitchLabel(after.pitch)} `);
+  }
+  expect(after === null || after.pitch !== shown!.pitch || after.measure !== shown!.measure, 'the stale preview is gone').toBe(true);
+});

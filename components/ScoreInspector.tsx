@@ -6,7 +6,9 @@ import type { ArticulationKind, DynamicKind } from '@/lib/note-editor';
 import { summarizeScoreDocument, type ScoreCommand } from '@/lib/score-commands';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { findEventReference } from '@/src/score-core/query/note-editor';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type TranslationKey } from '@/lib/i18n';
+import { describePosition, durationLabelKey } from '@/src/score-input/position-label';
+import { inputVoiceOf } from '@/src/score-input/voice-mapping';
 import type { AccidentalEnclosure } from '@/src/shared/music/accidentals';
 
 interface Props {
@@ -327,6 +329,51 @@ function partScope(note: { corePartId?: string | null }) {
 
 export default function ScoreInspector({ xml, coreDocument, selection, selectedNote, selectedNotes, currentMeasure, onApplyCommands, onOpenExtractedPart }: Props) {
   const { t } = useI18n();
+  // Properties of the one selected note or rest (O3 in docs/note-entry-mastery-ledger.md).
+  const noteProperties = useMemo(() => {
+    if (!coreDocument || !selectedNote || selectedNotes.length > 1) return null;
+    let found: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number]['voices'][number]['events'][number] | null = null;
+    for (const part of coreDocument.score.parts) {
+      for (const staff of part.staves) {
+        for (const measure of staff.measures) {
+          if (selectedNote.coreMeasureId ? measure.id !== selectedNote.coreMeasureId : measure.measureNumber !== selectedNote.measureNumber) continue;
+          for (const voice of measure.voices) {
+            found = voice.events.find((event) => event.id === selectedNote.coreEntityId) ?? found;
+          }
+        }
+      }
+    }
+    if (!found) return null;
+    const event = found;
+    const position = describePosition(coreDocument, selectedNote);
+    const valueKey = durationLabelKey(event.durationType);
+    const valueName = valueKey ? t(`note.duration.${valueKey}` as TranslationKey).replace(/\s*\([^)]*\)\s*$/, '') : (event.durationType ?? '');
+    const alter = event.kind === 'note' ? event.pitch.alter : 0;
+    const accidental = alter === 2 ? '𝄪' : alter === 1 ? '♯' : alter === -1 ? '♭' : alter === -2 ? '𝄫' : '';
+    return {
+      isRest: event.kind === 'rest',
+      pitch: event.kind === 'note' ? `${event.pitch.step}${accidental}${event.pitch.octave}` : t('status.rest'),
+      value: event.isDotted ? `${valueName}, ${t('status.dotted')}` : valueName,
+      position: t('status.position', position),
+      voice: String(inputVoiceOf(event.voiceId)),
+      stem: event.stem === 'up' || event.stem === 'down' ? event.stem : 'auto',
+      hidden: Boolean(event.hidden),
+      styleCommand: (change: { stem?: 'up' | 'down'; hidden?: boolean }): ScoreCommand => ({
+        type: 'setNoteStyle',
+        coreEntityId: selectedNote.coreEntityId ?? undefined,
+        coreMeasureId: selectedNote.coreMeasureId ?? undefined,
+        corePartId: selectedNote.corePartId ?? undefined,
+        measureNumber: selectedNote.measureNumber,
+        staffIndex: selectedNote.staffIndex,
+        voiceId: selectedNote.voiceId,
+        timestampNum: selectedNote.timestampNum,
+        timestampDen: selectedNote.timestampDen,
+        notehead: event.notehead,
+        stem: 'stem' in change ? change.stem : (event.stem === 'none' || event.stem === 'up' || event.stem === 'down' ? event.stem : undefined),
+        ...('hidden' in change ? { hidden: change.hidden } : {}),
+      } as ScoreCommand),
+    };
+  }, [coreDocument, selectedNote, selectedNotes.length, t]);
   const [lyricText, setLyricText] = useState('');
   const [lyricVerse, setLyricVerse] = useState('1');
   const [staffSpacing, setStaffSpacing] = useState('');
@@ -578,9 +625,7 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
     <div className="h-full overflow-auto rounded-[2rem] border border-gray-200 bg-white p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-400">Inspector</p>
       <h3 className="mt-2 text-xl font-semibold text-gray-900">Score Commands</h3>
-      <p className="mt-2 text-sm leading-6 text-gray-600">
-        Phase 1 foundation: score-wide commands, measure operations, lyrics, text marks, and layout anchors now run through the same command layer.
-      </p>
+      <p className="mt-2 text-sm leading-6 text-gray-600">{t('inspector.intro')}</p>
       <div className="mt-4 flex flex-wrap gap-2">
         {INSPECTOR_SECTION_LABELS.map((section) => (
           <button
@@ -605,6 +650,54 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
         open={openSections.selection}
         onToggle={() => setOpenSections((state) => ({ ...state, selection: !state.selection }))}
       >
+        {noteProperties && (
+          <dl
+            data-testid="inspector-note-properties"
+            aria-label={t('inspector.noteProperties')}
+            className="mb-3 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 rounded-2xl border border-gray-200 bg-white p-3 text-sm"
+          >
+            <dt className="text-xs font-semibold text-gray-500">{t('inspector.pitch')}</dt>
+            <dd data-property="pitch" className="font-semibold text-gray-900">{noteProperties.pitch}</dd>
+            <dt className="text-xs font-semibold text-gray-500">{t('inspector.value')}</dt>
+            <dd data-property="value" className="text-gray-900">{noteProperties.value}</dd>
+            <dt className="text-xs font-semibold text-gray-500">{t('inspector.position')}</dt>
+            <dd data-property="position" className="text-gray-900">{noteProperties.position}</dd>
+            <dt className="text-xs font-semibold text-gray-500">{t('note.voice')}</dt>
+            <dd data-property="voice" className="text-gray-900">{noteProperties.voice}</dd>
+            {!noteProperties.isRest && (
+              <>
+                <dt className="text-xs font-semibold text-gray-500">{t('inspector.stem')}</dt>
+                <dd data-property="stem" className="flex gap-1">
+                  {([['auto', 'inspector.stemAuto', 'Auto'], ['up', 'inspector.stemUp', '↑'], ['down', 'inspector.stemDown', '↓']] as const).map(([stem, key, glyph]) => (
+                    <button
+                      key={stem}
+                      type="button"
+                      title={t(key)}
+                      aria-label={t(key)}
+                      aria-pressed={noteProperties.stem === stem}
+                      // Keep the keyboard focus on the score: the next key is Undo or a note.
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => onApplyCommands([noteProperties.styleCommand({ stem: stem === 'auto' ? undefined : stem })], t(key))}
+                      className={`rounded-lg px-2 py-1 text-xs font-semibold ${noteProperties.stem === stem ? 'bg-sky-100 text-sky-900' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'}`}
+                    >
+                      {glyph}
+                    </button>
+                  ))}
+                </dd>
+              </>
+            )}
+            <dt className="text-xs font-semibold text-gray-500">{t('inspector.visible')}</dt>
+            <dd data-property="visible">
+              <input
+                type="checkbox"
+                aria-label={t('inspector.visible')}
+                checked={!noteProperties.hidden}
+                onMouseDown={(event) => event.preventDefault()}
+                onChange={(event) => onApplyCommands([noteProperties.styleCommand({ hidden: !event.target.checked })], t('inspector.visible'))}
+              />
+            </dd>
+          </dl>
+        )}
         <div ref={selectionSummaryRef} tabIndex={-1} className="rounded-2xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 outline-none">
           {selection?.selectionCount
             ? `Selected ${selection.selectionCount} item(s)${range ? ` across m.${range.start.measureNumber}-${range.end.measureNumber}` : selectedNote ? ` at m.${selectedNote.measureNumber}` : ''}.`

@@ -18,25 +18,36 @@ export async function POST(req: NextRequest) {
   try {
     await writeFile(inputPath, xml, 'utf-8');
     let museScoreError = '';
+    // MuseScore is asked first and Nex Note's own exporter answers when it fails. A hanging command
+    // line used to hold the export for 60 s, and the spawn timeout alone does not end the wait when
+    // the program leaves a child behind (F43 in docs/note-entry-mastery-ledger.md).
+    const cliTimeoutMs = Math.max(500, Number(process.env.NEX_ABC_CLI_TIMEOUT_MS) || 10_000);
     await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      };
       const proc = spawn(resolveMuseScoreCli(), [inputPath, '-o', outputAbc], {
-        timeout: 60000,
         env: museScoreSpawnEnv(),
         cwd: tmpDir,
       });
+      const timer = setTimeout(() => {
+        museScoreError = `MuseScore did not answer within ${cliTimeoutMs} ms`;
+        proc.kill('SIGKILL');
+        finish();
+      }, cliTimeoutMs);
       let stderr = '';
       proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
       proc.on('error', (err: Error) => {
         museScoreError = err.message;
-        resolve();
+        finish();
       });
       proc.on('close', (code: number | null) => {
-        if (code !== 0) {
-          museScoreError = `MuseScore ABC export failed (exit ${code}): ${stderr}`;
-          resolve();
-        } else {
-          resolve();
-        }
+        if (code !== 0 && !settled) museScoreError = `MuseScore ABC export failed (exit ${code}): ${stderr}`;
+        finish();
       });
     });
     let abc = '';

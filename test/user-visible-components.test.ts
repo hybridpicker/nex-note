@@ -693,7 +693,7 @@ test('NotationToolbar exposes active-note controls when a note is selected', () 
   const texts = root.findAll((node) => typeof node.children?.[0] === 'string').map((node) => String(node.children.join('')));
   assert.ok(texts.includes('Active'));
   assert.ok(texts.includes('C4'));
-  assert.ok(root.findAllByProps({ title: 'C4 · Piano · M1 · Staff 1 · Voice 1 · 0/4' }).length > 0);
+  assert.ok(root.findAllByProps({ title: 'Bar 1, beat 1 · C4 · Quarter note · Piano · Voice 1' }).length > 0);
 
   act(() => {
     renderer?.unmount();
@@ -761,7 +761,7 @@ test('NotationToolbar exposes duration-first chord preparation inside Notation E
 
   assert.ok(durationToggle);
   assert.equal(durationToggle.props['aria-pressed'], true);
-  assert.ok(root.findAll((node) => String(node.children?.join('') ?? '') === 'DUR C4+E4+G4').length > 0);
+  assert.ok(root.findAll((node) => String(node.children?.join('') ?? '') === 'Pitch first C4+E4+G4').length > 0);
 
   act(() => {
     durationToggle.props.onClick();
@@ -1151,11 +1151,11 @@ test('NoteInputToolbar states voice and entry intent without relying on active-b
   });
 
   let summary = renderer!.root.findByProps({ 'data-testid': 'note-input-state-summary' });
-  assert.equal(nodeText(summary), 'Note Input · Voice 3 · Insert · Chord');
+  assert.equal(nodeText(summary), 'Note Input · Voice 3 · Standard · Chord');
   assert.equal(summary.props['data-active-voice'], 3);
   assert.equal(summary.props['data-entry-mode'], 'insert');
   assert.equal(summary.props['data-chord-input'], 'chord');
-  assert.equal(summary.props['aria-label'], 'Notation input state: Note Input, Voice 3, Insert, Chord');
+  assert.equal(summary.props['aria-label'], 'Notation input state: Note Input, Voice 3, Standard, Chord');
   assert.equal(summary.props['aria-live'], 'off');
 
   act(() => {
@@ -1468,7 +1468,7 @@ test('NotationToolbar exposes GuitarPro-style string and fret entry', () => {
   assert.deepEqual(toggledTechniques, ['palm-mute', 'slide']);
   const texts = root.findAll((node) => typeof node.children?.[0] === 'string').map((node) => String(node.children.join('')));
   assert.ok(texts.includes('6/12 F2'));
-  assert.ok(root.findAllByProps({ title: 'C4 · Piano · M1 · Staff 1 · Voice 1 · 0/4 · String 6 · Fret 3' }).length > 0);
+  assert.ok(root.findAllByProps({ title: 'Bar 1, beat 1 · C4 · Quarter note · Piano · Voice 1 · String 6 · Fret 3' }).length > 0);
   assert.ok(root.findAllByProps({ 'data-testid': 'guitar-tab-mini-grid' }).length > 0);
 
   act(() => {

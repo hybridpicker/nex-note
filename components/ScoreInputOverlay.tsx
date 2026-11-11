@@ -180,10 +180,10 @@ function clampAlter(alter: number): AccidentalAlter {
 
 function placementLabel(
   mode: GhostPlacementMode | undefined,
-  labels: { replace: string; insert: string; multiVoice: string },
+  labels: { replace: string; insert: string; chord: string },
 ) {
   if (mode === 'replace') return labels.replace;
-  if (mode === 'chord') return labels.multiVoice;
+  if (mode === 'chord') return labels.chord;
   return labels.insert;
 }
 
@@ -247,7 +247,7 @@ export function ScoreInputOverlay(props: ScoreInputOverlayProps): ReactElement |
   const placementLabels = {
     replace: t('note.placementReplace'),
     insert: t('note.placementInsert'),
-    multiVoice: t('note.placementMultiVoice'),
+    chord: t('note.placementChord'),
   };
   const durationKey = DURATION_I18N_KEYS[String(duration) as keyof typeof DURATION_I18N_KEYS]
     ?? 'note.duration.4';
