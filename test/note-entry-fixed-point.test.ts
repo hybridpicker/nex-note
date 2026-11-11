@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import test from 'node:test';
 
 import { buildDocumentState } from '../src/score-core/commands/apply-document-commands.ts';
@@ -65,7 +66,10 @@ const REPLAYS: Array<[string, number, string[]]> = [
   ['transposing part', 7970031, ['N', 'W', 'Cmd+Alt+2', 'c', 'R', '0', 'Shift+s']],
   ['tuplets and graces', 8070046, ['Cmd+Alt+2', 'N', 'e', 'c', 'click:907', 'Cmd+z', 'f', 'ArrowRight', 'Q', 'f', 'ArrowLeft', '5', 'e']],
   ['grand staff, two voices', 62140015, ['click:512', 'a', 'd', 'a', 'a', '3', 'f', 'Cmd+z', 'Cmd+3', 'click:738', 'g', 'Cmd+3']],
-  ['grand staff, two voices', 871114, ['Cmd+Alt+2', 'N', 'a', 'Backspace', 'Cmd+c', 'd', 'g', 'd', 'T', '/', 'a', 'f', 'd', 'click:528', 'Cmd+v', 'Shift+ArrowLeft', 'e']],
+  ['grand staff, two voices', 871114, ['Cmd+Alt+2', 'N', 'a', 'Backspace', 'Cmd+c', 'd', 'g', 'd', 'T', '/', 'a', 'f', 'd', 'click:528', 'Cmd+v', 'Shift+ArrowLeft', 'e']],  // Iteration 21 (F45): a value key on a selected grace note.
+  ['tuplets and graces', 21410220, ['click:11', 'ArrowLeft', '.', 'R']],
+  // Iteration 21 (F47): a rest of the unit's value on a unit of a half-note triplet.
+  ['single staff', 21110350, ['click:804', '7', 'R', 'Cmd+3', '0', '0', 'g', 'T', 'e', 'c', 'click:882', 'e', '/', 'Shift+g']],
 ];
 for (const [fixture, seed, actions] of REPLAYS) {
   test(`fuzzer replay passes every invariant: ${fixture}, seed ${seed}`, () => {
@@ -207,13 +211,19 @@ test('F28: a paste over the tied-to note takes the tie off the note before it', 
 });
 
 test('F29: Undo of the first voice-2 entry in a bar keeps the cursor at its onset', () => {
-  const app = drive('pickup bar', ['N', 'N', 'Delete', 'Cmd+Alt+2', '.', 'a', 'e', 'b', '5', 'f', 'a', 'b', 'a', '0', 'a']);
+  // The replay as the fuzzer recorded it, up to its last entry. `.` outside note input changes the
+  // selected rest since K1 (it armed the dot before), so the entry no longer lands on beat 2 of bar 4:
+  // the position of the cursor before the entry is read instead of being written down.
+  const app = drive('pickup bar', ['N', 'N', 'Delete', 'Cmd+Alt+2', '.', 'a', 'e', 'b', '5', 'f', 'a', 'b', 'a', '0']);
   try {
+    const before = app.editor.selectedNote!;
+    assert.equal(importMusicXmlToCore(app.xml).score.parts[0]!.staves[0]!.measures.find((measure) => measure.measureNumber === before.measureNumber)!.voices.some((voice) => voice.voiceId === 2 && voice.events.some((event) => event.kind === 'note')), false, 'voice 2 has no note in that bar yet');
+    app.press('a');
     const after = voiceSummary(app.xml, { voice: 2 });
     app.press('Cmd+z');
     const cursor = app.editor.selectedNote;
     assert.ok(cursor, 'note input keeps a cursor');
-    assert.deepEqual([cursor.measureNumber, cursor.timestampNum / cursor.timestampDen], [4, 0.25]);
+    assert.deepEqual([cursor.measureNumber, cursor.timestampNum / cursor.timestampDen], [before.measureNumber, before.timestampNum / before.timestampDen]);
     app.press('a');
     assert.deepEqual(voiceSummary(app.xml, { voice: 2 }), after, 'the same key enters the same note again');
   } finally {
@@ -232,9 +242,12 @@ test('F30: a plain note typed after a triplet leaves the triplet rests as they a
 });
 
 test('F30: a chord tone takes the value of its chord, not the armed value', () => {
-  const app = drive('transposing part', ['click:75', 'Backspace', '.', 'g', 'Shift+g']);
+  // `N` before `.`: outside note input the dot key changes the selected rest since K1, so the dot is
+  // armed in note input. The G is G5 since K12 (nearest to the F5 before it; it was G4, nearest to
+  // the middle line); the chord tone above it is G6. What the test is about is their value.
+  const app = drive('transposing part', ['click:75', 'Backspace', 'N', '.', 'g', 'Shift+g']);
   try {
-    assert.deepEqual(voiceSummary(app.xml, {}).filter((line) => line.startsWith('m2@0 ')), ['m2@0 G4 eighth', 'm2@0 G5(chord) eighth']);
+    assert.deepEqual(voiceSummary(app.xml, {}).filter((line) => line.startsWith('m2@0 ')), ['m2@0 G5 eighth', 'm2@0 G6(chord) eighth']);
   } finally {
     app.unmount();
   }

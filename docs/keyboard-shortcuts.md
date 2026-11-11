@@ -76,13 +76,14 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Cmd/Ctrl+Shift+ArrowUp` / `Cmd/Ctrl+Shift+ArrowDown` | ausgewählte Note, Akkorde oder gemischte Note/Rest-Bereiche auf den Staff darüber/darunter verschieben, wenn dort passende Rest-Slots liegen; reine Rest-Auswahl springt auf den passenden Rest im Nachbarstaff | Noteneditor |
 | `Cmd/Ctrl+ArrowUp` / `Cmd/Ctrl+ArrowDown` | ausgewählte oder zuletzt eingegebene Note eine Oktave höher/tiefer setzen | Noteneditor |
 | `Shift+ArrowUp` / `Shift+ArrowDown` | ausgewählte oder zuletzt eingegebene Note eine Oktave höher/tiefer setzen | Noteneditor |
+| `Alt/Option+Shift+ArrowUp` / `Alt/Option+Shift+ArrowDown` | ausgewählte oder zuletzt eingegebene Note um eine Stufe der Tonart höher/tiefer setzen (wie MuseScore) | Noteneditor |
 | `Cmd/Ctrl+A` | alle Noten der aktiven Stimme auswählen | Noteneditor |
 | `Cmd/Ctrl+D` | Auswahl duplizieren | Noteneditor |
 | `Alt/Option+.` / `Alt/Option+,` | Dynamik der gerade eingegebenen Note bzw. der Auswahl um eine Stufe lauter / leiser (`pp p mp mf f ff fff`); ohne Dynamik beginnt die Stufe bei `mf` (`.` ergibt `f`, `,` ergibt `mp`). Gilt nur im Part der Note | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+X` | Auswahl ausschneiden | Noteneditor |
 | `Cmd/Ctrl+C` | Auswahl kopieren | Noteneditor |
 | `Cmd/Ctrl+V` | Clipboard an aktiver Auswahl einfügen; überschreibt die folgende Musik wie in MuseScore, unabhängig vom Insert/Overwrite-Modus | Noteneditor |
-| `Delete` / `Backspace` | Auswahl löschen; bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten | Noteneditor oder Noteneingabe |
+| `Delete` / `Backspace` | Auswahl löschen; bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten. In der Noteneingabe nimmt `Backspace` die gerade eingegebene Note zurück: sie wird wieder zur Pause und der Cursor steht an ihrer Stelle (wie MuseScore), jeder weitere Druck geht eine Note weiter zurück | Noteneditor oder Noteneingabe |
 | `Shift+Delete` / `Shift+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+Shift+Delete` / `Cmd/Ctrl+Shift+Backspace` | aktive Stimme im aktuellen Takt zu einem ganzen Taktrest leeren | Noteneditor oder Noteneingabe |
@@ -95,6 +96,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `I` | Insert/Overwrite-Modus umschalten | Noteneditor |
 | `Cmd/Ctrl+I` | Insert-Modus wählen | Noteneditor |
 | `Cmd/Ctrl+Shift+I` | Overwrite/Re-pitch-kompatiblen Modus wählen | Noteneditor |
+| `1` … `9` (alle Dauertasten unten) | In der Noteneingabe den Wert für die nächste Note wählen; außerhalb der Noteneingabe den Wert der ausgewählten Note oder Pause ändern (wie MuseScore): kürzer hinterlässt Pausen, länger überschreibt die folgende Musik | Noteneditor |
 | `1` | 64tel wählen | Noteneditor |
 | `2` | 32tel wählen | Noteneditor |
 | `3` | 16tel wählen | Noteneditor |
@@ -104,8 +106,8 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `7` | Ganze wählen | Noteneditor |
 | `8` | Breve/Doppelganze wählen | Noteneditor |
 | `9` | Longa wählen | Noteneditor |
-| `.` | Punktierung ein-/ausschalten; eine neu gewählte Dauer (`1`–`9`, Toolbar) setzt den Punkt zurück (wie MuseScore), im Duration-first-Modus `M` bleibt er erhalten | Noteneditor |
-| `Q` | Dauer halbieren; in der Noteneingabe die gerade eingegebene Note, der Cursor springt hinter sie; die frei werdende Zeit wird zu Pausen | Noteneditor |
+| `.` | Punktierung ein-/ausschalten (außerhalb der Noteneingabe: an der ausgewählten Note oder Pause); eine neu gewählte Dauer (`1`–`9`, Toolbar) setzt den Punkt zurück (wie MuseScore), im Duration-first-Modus `M` bleibt er erhalten | Noteneditor |
+| `Q` | Dauer halbieren; außerhalb der Noteneingabe die ausgewählte Note, in der Noteneingabe die gerade eingegebene Note, der Cursor springt hinter sie; die frei werdende Zeit wird zu Pausen | Noteneditor |
 | `W` | Dauer verdoppeln; in der Noteneingabe die gerade eingegebene Note, der Cursor springt hinter sie | Noteneditor |
 | `Shift+Q` | punktierte Dauer eine Stufe kleiner | Noteneditor |
 | `Shift+W` | punktierte Dauer eine Stufe größer | Noteneditor |

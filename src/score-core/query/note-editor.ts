@@ -118,6 +118,7 @@ export function findEventReference(
   target: ScoreEventLocator,
 ): ScoreEventReference | null {
   if (!document) return null;
+  const graceEventIds = new Set((document.graceNotes ?? []).map((grace) => grace.eventId));
 
   for (const part of document.score.parts) {
     if (target.corePartId && part.id !== target.corePartId) continue;
@@ -132,10 +133,14 @@ export function findEventReference(
       const timestampMatches = (entry: TimedEvent) => (
         timestampsEqual(entry.timestampNum, entry.timestampDen, target.timestampNum, target.timestampDen)
       );
+      // A position names the note or rest that takes time there. A grace note stands at the same
+      // onset and comes first in the voice; it is found only when its own id is asked for (F48).
+      const atPosition = () => voice?.events.find((entry) => timestampMatches(entry) && !graceEventIds.has(entry.id))
+        ?? voice?.events.find(timestampMatches);
       const event = target.coreEntityId
         ? voice?.events.find((entry) => entry.id === target.coreEntityId && timestampMatches(entry))
-          ?? voice?.events.find(timestampMatches)
-        : voice?.events.find(timestampMatches);
+          ?? atPosition()
+        : atPosition();
       if (measure && voice && event) {
         return { part, staff, measure, voice, event };
       }

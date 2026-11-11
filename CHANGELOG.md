@@ -11,6 +11,8 @@ All notable changes to nex-note are documented here.
 
 ### Changed
 
+- A value key on a selected grace note changes the grace note; it used to rewrite the main note beside it. A rest typed on a unit of a half-note triplet keeps the unit's value, and a chord tone added to a tuplet unit behind a grace note stays in the tuplet.
+- Outside note input the value keys, the dot and `Q`/`W` change the selected note or rest, as in MuseScore; they used to arm the next value only. `Alt/Option+Shift+Up/Down` moves a note by a step of the key (it moved an octave). `Backspace` in note input takes back the note just entered and puts the cursor on its place. A letter typed on a selected rest takes its octave from the note before it.
 - `<` and `>` write hairpins over the selection, and the accent key is `Shift+V`, as in MuseScore; `Shift+.` (which types `>` on a US keyboard) no longer sets an accent. `Shift+N` (tenuto) and `Shift+O` (marcato) are added beside `Shift+-` and `Shift+6`.
 - With a note selected, `Cmd/Ctrl+T` and `Cmd/Ctrl+M` open the entry field at the note instead of the Inspector.
 - Mouse entry follows MuseScore: a click in note input adds a chord tone to a note of the armed value, replaces a note of another value and writes over a rest; it no longer inserts and pushes the bar when the pointer stands left of a notehead. `Shift`+click replaces, `Cmd/Ctrl+Shift`+click inserts, `Alt/Option`+click adds a chord tone.

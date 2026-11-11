@@ -1316,7 +1316,9 @@ function applyDurationChangeToVoice(
 ) {
   ensureStaffDivisionsForDuration(input.staff, input.measure.measureNumber, input.durationType, input.isDotted);
   const timing = resolveMeasureTiming(input.staff, input.measure);
-  const simultaneousIndices = findSimultaneousEventIndices(input.voice, input.timestampNum, input.timestampDen);
+  const graceEventIds = new Set((document.graceNotes ?? []).map((link) => link.eventId));
+  const simultaneousIndices = findSimultaneousEventIndices(input.voice, input.timestampNum, input.timestampDen)
+    .filter((index) => !graceEventIds.has(input.voice.events[index]?.id ?? ''));
   const simultaneousEvents = simultaneousIndices.map((index) => input.voice.events[index]).filter(Boolean);
   const event = simultaneousEvents[0];
   if (!event) return false;
@@ -4381,6 +4383,22 @@ export function executeCoreCommands(
       case 'changeNoteDuration': {
         const found = findVoice(nextDocument, command.measureNumber, command.staffIndex, command.voiceId, command);
         if (!found) break;
+        // A grace note takes no time: its value is how it is drawn. A value addressed to it changes
+        // that and nothing else (F45: it used to rewrite the main note at the same onset).
+        const graceIds = new Set((nextDocument.graceNotes ?? []).map((link) => link.eventId));
+        const addressedGrace = command.coreEntityId
+          ? found.voice.events.find((entry) => entry.id === command.coreEntityId && graceIds.has(entry.id)) ?? null
+          : null;
+        if (addressedGrace) {
+          const chord = nextDocument.chordGroups.find((group) => group.eventIds.includes(addressedGrace.id));
+          found.voice.events
+            .filter((entry) => entry.id === addressedGrace.id || (chord?.eventIds.includes(entry.id) && graceIds.has(entry.id)))
+            .forEach((entry) => {
+              entry.durationType = command.durationType;
+              entry.isDotted = Boolean(command.isDotted);
+            });
+          break;
+        }
         const applied = applyDurationChangeToVoice(nextDocument, {
           staff: found.staff,
           measure: found.measure,
@@ -4466,6 +4484,12 @@ export function executeCoreCommands(
             previousDuration,
           );
           rest.id = root.id;
+          // A unit of a tuplet has no plain name for its time (a third of a whole note is not a
+          // value): the rest keeps the unit's own value (F47: a half-note unit became a 64th).
+          if (rootTuplet && keepsUnit) {
+            rest.durationType = root.durationType;
+            rest.isDotted = root.isDotted;
+          }
           voice.events = voice.events
             .filter((event) => !replacedIds.has(event.id))
             .concat(rest)
