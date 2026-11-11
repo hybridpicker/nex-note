@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { scoreXml, TREBLE } from '../test/support/entry-fixtures';
+import { REFERENCE_TASKS } from '../test/support/reference-tasks';
 import { EntrySession } from './support/entry-session';
 
 /*
@@ -205,4 +206,22 @@ test('O3: the inspector shows the properties of the selected note', async ({ pag
   const restored = (await session.core()).score.parts[0]!.staves[0]!.measures[0]!.voices[0]!.events[0]!;
   expect(restored.stem ?? null).toBeNull();
   expect(restored.hidden ?? false).toBe(false);
+});
+
+test('O5: the caret follows entry in the lower staff of a piano score with a pickup bar', async ({ page }, testInfo) => {
+  // The start score of R3: 3/4, a pickup numbered 0 in the file, two staves.
+  const session = await EntrySession.boot(page, testInfo, { xml: REFERENCE_TASKS.find((task) => task.id === 'R3')!.start() });
+  await session.keys('Cmd+Home N Alt+ArrowDown 5 0');
+  for (const key of ['6', '.', 'c', 'g', 'c']) {
+    await session.keys(key);
+    const state = await session.state();
+    const caret = await session.caret();
+    expect(caret, `caret after ${key}`).not.toBeNull();
+    expect(caret!.staff, `the caret stands on the lower staff after ${key}`).toBe(2);
+    expect(caret!.measure).toBe(state.selectedNote!.measureNumber);
+    expect(caret!.inViewport).toBe(true);
+  }
+  expect((await session.state()).selectedNote!.measureNumber, 'three notes on: the cursor is in the fifth bar').toBe(5);
+  // The lower staff is still drawn: the stored file says the part has two staves.
+  expect(await session.xml()).toMatch(/<measure number="1" implicit="yes"><attributes>.*?<staves>2<\/staves>/);
 });

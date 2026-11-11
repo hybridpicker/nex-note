@@ -381,6 +381,52 @@ function findCanonicalMeasures(partNode: Pick<PartNode, 'staves'>): MeasureNode[
   return partNode.staves[0]?.measures ?? [];
 }
 
+/** Order of the children of <attributes> in MusicXML. */
+const ATTRIBUTES_CHILD_ORDER = [
+  'footnote', 'level', 'divisions', 'key', 'time', 'staves', 'part-symbol', 'instruments', 'clef',
+  'staff-details', 'transpose', 'for-part', 'directive', 'measure-style',
+];
+
+function attributesChildOrder(tag: string) {
+  const index = ATTRIBUTES_CHILD_ORDER.indexOf(tag);
+  return index >= 0 ? index : ATTRIBUTES_CHILD_ORDER.length;
+}
+
+function insertAttributesChildInOrder(attributes: XmlEl, created: XmlEl) {
+  const order = attributesChildOrder(created.tagName);
+  for (let i = 0; i < attributes.childNodes.length; i++) {
+    const child = attributes.childNodes[i] as XmlEl;
+    if (child.nodeType === 1 && attributesChildOrder(child.tagName) > order) {
+      attributes.insertBefore(created, child);
+      return created;
+    }
+  }
+  attributes.appendChild(created);
+  return created;
+}
+
+/** A child of <attributes>, created at its place in the MusicXML order when it is missing. */
+function getOrCreateAttributesChild(doc: XmlDocument, attributes: XmlEl, tag: string) {
+  return getDirectChild(attributes, tag) ?? insertAttributesChildInOrder(attributes, doc.createElement(tag));
+}
+
+/**
+ * What the first bar of a part says about the part as a whole and the model does not carry bar by
+ * bar: the number of staves, the brace, the instruments, staff details, the transposition.
+ */
+const PER_BAR_ATTRIBUTES_TAGS = new Set(['footnote', 'level', 'divisions', 'key', 'time', 'clef', 'measure-style']);
+
+function partWideAttributes(measure: XmlEl | null | undefined): XmlEl[] {
+  const attributes = measure ? getDirectChild(measure, 'attributes') : null;
+  if (!attributes) return [];
+  const out: XmlEl[] = [];
+  for (let i = 0; i < attributes.childNodes.length; i++) {
+    const child = attributes.childNodes[i] as XmlEl;
+    if (child.nodeType === 1 && !PER_BAR_ATTRIBUTES_TAGS.has(child.tagName)) out.push(child);
+  }
+  return out;
+}
+
 function syncPartMeasures(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
   const xmlParts = Array.from(doc.getElementsByTagName('part'));
   for (const partNode of coreDocument.score.parts) {
@@ -396,10 +442,13 @@ function syncPartMeasures(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
 
     const canonicalMeasures = findCanonicalMeasures(partNode);
     const orderedMeasures: XmlEl[] = [];
+    let firstBarSource: XmlEl | null = null;
+    let cloneOfFirstExisting: XmlEl | null = null;
     canonicalMeasures.forEach((coreMeasure, index) => {
       const sourceMeasure = coreMeasure.sourceMeasureNumber != null
         ? bySourceNumber.get(coreMeasure.sourceMeasureNumber) ?? null
         : null;
+      if (index === 0) firstBarSource = sourceMeasure;
       const template = sourceMeasure ?? orderedMeasures[index - 1] ?? existingMeasures[Math.max(0, index - 1)] ?? null;
       const measureEl = template ? cloneMeasureWithoutContent(template) : doc.createElement('measure');
       // A bar built from its neighbour must not inherit the neighbour's <attributes>: a copied
@@ -413,8 +462,31 @@ function syncPartMeasures(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
       } else {
         measureEl.removeAttribute('implicit');
       }
+      if (sourceMeasure && sourceMeasure === existingMeasures[0]) cloneOfFirstExisting = measureEl;
       orderedMeasures.push(measureEl);
     });
+
+    // The first bar of the part is another bar than before (a bar was inserted before it, or it was
+    // deleted): what it said about the part as a whole stays with the first bar.
+    const firstOrdered = orderedMeasures[0] ?? null;
+    if (firstOrdered && existingMeasures[0] && firstBarSource !== existingMeasures[0]) {
+      const carried = partWideAttributes(existingMeasures[0]);
+      if (carried.length > 0) {
+        for (const stale of partWideAttributes(cloneOfFirstExisting)) stale.parentNode?.removeChild(stale);
+        const staleAttributes = cloneOfFirstExisting ? getDirectChild(cloneOfFirstExisting, 'attributes') : null;
+        if (staleAttributes && !Array.from(staleAttributes.childNodes).some((child) => child.nodeType === 1)) {
+          (cloneOfFirstExisting as XmlEl | null)?.removeChild(staleAttributes);
+        }
+        let attributes = getDirectChild(firstOrdered, 'attributes');
+        if (!attributes) {
+          attributes = doc.createElement('attributes');
+          firstOrdered.insertBefore(attributes, firstOrdered.firstChild);
+        }
+        for (const child of carried) {
+          if (!getDirectChild(attributes, child.tagName)) insertAttributesChildInOrder(attributes, child.cloneNode(true) as XmlEl);
+        }
+      }
+    }
 
     for (const measure of existingMeasures) {
       xmlPart.removeChild(measure);
@@ -526,16 +598,16 @@ function updateAttributes(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
         if (!attributeSource) continue;
         const attributes = getOrCreateDirectChild(doc, xmlMeasure as XmlEl, 'attributes');
         if (attributeSource.divisions != null) {
-          setOrCreateTextElement(doc, attributes, 'divisions', String(attributeSource.divisions));
+          getOrCreateAttributesChild(doc, attributes, 'divisions').textContent = String(attributeSource.divisions);
         }
 
         if (attributeSource.keyFifths != null) {
-          const key = getOrCreateDirectChild(doc, attributes, 'key');
+          const key = getOrCreateAttributesChild(doc, attributes, 'key');
           setOrCreateTextElement(doc, key, 'fifths', String(attributeSource.keyFifths));
         }
 
         if (attributeSource.time) {
-          const time = getOrCreateDirectChild(doc, attributes, 'time');
+          const time = getOrCreateAttributesChild(doc, attributes, 'time');
           const beatGroups = attributeSource.time.beatGroups;
           const hasValidBeatGroups = Boolean(
             beatGroups
@@ -560,7 +632,7 @@ function updateAttributes(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
             if (clefData.sign) setOrCreateTextElement(doc, clef, 'sign', clefData.sign);
             if (clefData.line != null) setOrCreateTextElement(doc, clef, 'line', String(clefData.line));
             if (clefData.octaveChange) setOrCreateTextElement(doc, clef, 'clef-octave-change', String(clefData.octaveChange));
-            attributes.appendChild(clef);
+            insertAttributesChildInOrder(attributes, clef);
           }
         }
 
@@ -1516,6 +1588,25 @@ export function withFreshMusicXmlExport<T>(work: () => T): T {
   } finally {
     lastExport = kept;
   }
+}
+
+/**
+ * The export numbers the bars of the file as the document counts them. A document that goes on living
+ * beside the exported file must name its bars by those numbers: the next export finds each bar of the
+ * file by `sourceMeasureNumber`. Without this a file read with a pickup numbered 0, or a document with
+ * an inserted or deleted bar, built every bar of the next export from a neighbouring bar (O5 in
+ * docs/note-entry-mastery-ledger.md). Changes the document in place; call it on the document that is
+ * stored with the exported XML.
+ */
+export function adoptExportedMeasureNumbers(coreDocument: ScoreDocumentModel) {
+  for (const part of coreDocument.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        if (measure.sourceMeasureNumber !== measure.measureNumber) measure.sourceMeasureNumber = measure.measureNumber;
+      }
+    }
+  }
+  return coreDocument;
 }
 
 export function exportCoreToMusicXml(sourceXml: string, coreDocument: ScoreDocumentModel) {

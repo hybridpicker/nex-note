@@ -1,7 +1,7 @@
 import { applyLegacyXmlScoreCommands } from '@/src/score-core/commands/legacy-xml-executor';
 import { executeCoreCommands, supportsCoreExecution, type SelectionRemap } from '@/src/score-core/commands/core-command-executor';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
-import { exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
+import { adoptExportedMeasureNumbers, exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
 import { normalizeScoreDocument } from '@/src/score-core/normalize/normalize-score-document';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
@@ -108,7 +108,11 @@ export function executeHybridCommands(
       nextCoreDocument = unchanged ? execution.coreDocument : normalizeScoreDocument(execution.coreDocument);
       selectionRemap = { ...selectionRemap, ...execution.selectionRemap };
       coreDiagnostics.push(...execution.diagnostics);
-      if (!unchanged) nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
+      if (!unchanged) {
+        nextXml = exportCoreToMusicXml(nextXml, nextCoreDocument);
+        // `nextCoreDocument` is the fresh copy made by the normalization above.
+        adoptExportedMeasureNumbers(nextCoreDocument);
+      }
       if (hasUnsafeTags && run.some((command) => command.type === 'setGuitarFret')) {
         nextCoreDocument = importMusicXmlToCore(nextXml);
       }

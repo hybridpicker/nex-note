@@ -5,7 +5,10 @@ import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musi
 
 // Run before and after runtime changes with the same browser, server and fixture.
 // The instrument uses a real WebAudio buffer, preloaded locally, with no network.
-for (const [size, measures, parts] of [['small', 4, 1], ['medium', 32, 2], ['large', 128, 4]] as const) {
+// 32, 512, 2,048 and 4,096 notes. NEX_QUALITY_SIZES=small,medium limits a run to some of them.
+const SIZES = ([['small', 4, 1], ['medium', 32, 2], ['large-2048', 64, 4], ['large', 128, 4]] as const)
+  .filter(([size]) => !process.env.NEX_QUALITY_SIZES || process.env.NEX_QUALITY_SIZES.split(',').includes(size));
+for (const [size, measures, parts] of SIZES) {
   test(`complete software stages ${size}`, async ({ page }) => {
     test.setTimeout(360000);
     const sampleCount = Number(process.env.NEX_QUALITY_SAMPLES ?? 30);

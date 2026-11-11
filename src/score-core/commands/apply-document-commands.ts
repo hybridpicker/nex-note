@@ -1,6 +1,6 @@
 import { recordInputMetric } from '@/src/score-input/input-metrics';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
-import { exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
+import { adoptExportedMeasureNumbers, exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
 import { executeHybridCommands } from '@/src/score-core/commands/hybrid-command-executor';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { normalizeScoreDocument } from '@/src/score-core/normalize/normalize-score-document';
@@ -56,6 +56,7 @@ export function buildDocumentState(xml: string, options?: BuildDocumentStateOpti
 
   const normalizedCoreDocument = normalizeScoreDocument(coreDocument);
   const renderXml = exportCoreToMusicXml(xml, normalizedCoreDocument);
+  adoptExportedMeasureNumbers(normalizedCoreDocument);
   return finalizeDocumentState(renderXml, options?.sourceMusicXml ?? xml, normalizedCoreDocument);
 }
 
@@ -73,6 +74,7 @@ export function buildDocumentStateFromCore(
 
   const normalizedCoreDocument = normalizeScoreDocument(structuredClone(coreDocument));
   const xml = options.xml ?? exportCoreToMusicXml(options.sourceMusicXml, normalizedCoreDocument);
+  if (!options.xml) adoptExportedMeasureNumbers(normalizedCoreDocument);
   return finalizeDocumentState(xml, options.sourceMusicXml, normalizedCoreDocument);
 }
 
