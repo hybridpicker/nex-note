@@ -254,3 +254,44 @@ hooks through `test/support/app-harness.ts`.
   event the edit turned into a rest or removed is deleted with its links; graces that already stood
   before a rest are left alone.
 - **Paste overwrites** in every entry mode; `R` outside note input is Repeat selection.
+
+## November 2026 pending note and render window
+
+Gate 3 of [note-entry-mastery-ledger.md](./note-entry-mastery-ledger.md); numbers and open decisions
+are there under "Latency" and "Decisions".
+
+**Pending note.** The document changes synchronously with the key; the engraver then draws the whole
+score again, which takes as long as the score is large. Between the two the editor shows the entered
+note itself.
+
+- `hooks/useNoteEditor.ts` (`commitNoteInputUpdate`) publishes every pitched note entered by key or
+  MIDI to `src/score-input/pending-entry.ts`, with the revision of the document that holds it. Mouse
+  entry publishes nothing: its preview is at the place already, and a click keeps its timing.
+- `components/ScoreEditor.tsx` draws the entries whose revision is newer than the drawing on screen
+  (`pendingEntriesFor`), each at the place the caret logic gives for its position
+  (`resolveInputPlace`), with `components/PendingNoteGlyph.tsx`. The glyph is plain SVG in staff
+  spaces, drawn in the same pass: the engraved preview glyph is asynchronous and would miss the frame.
+- The render effect waits for the frame that shows the pending note (`afterNextPaint`) before it
+  starts the engraver, and settles the entries when its drawing has landed (`settlePendingEntries`).
+  Any other change of the document (Undo, another command) clears them.
+
+**What stays during a redraw.** The bar and system overlays, the staff geometry and
+`lastRenderGeometryRef` (snap grid, staff details and overlays of the last complete drawing) stay
+until the new drawing replaces them; the caret and the pending notes are placed with them. The snap
+grid, edit map, rendered notes and ghost index that the pointer works with are empty during the
+redraw. `renderedRevisionRef` is -1 from the start of a redraw until it has landed; the resize
+handler (`syncRenderedMap`) does nothing in that time. It used to rebuild every map from the old
+drawing after each change of the document, before the next frame, for a result the redraw replaced.
+
+**Render window (built, not connected).** `src/render-bridge/osmd/render-window.ts` cuts the bars of
+whole systems out of the stored MusicXML as text (`buildRenderWindowXml`): the bars keep their numbers
+and content, and the first is given the divisions, key, time signature (not printed), clefs, staves
+and transposition that hold there. `resolveRenderWindow` picks the systems around a focus with a
+margin; `documentAllowsRenderWindow` excludes scores with octave lines or bar repeats, whose drawing
+depends on bars before the window. The score view still gives the engraver the whole score.
+
+**Bar numbers of a stored file.** The export numbers bars as the document counts them (a pickup is
+bar 1). After every export the document takes those numbers as its `sourceMeasureNumber`
+(`adoptExportedMeasureNumbers`), because the next export finds each bar of the file by it. A file
+read with a pickup numbered 0 otherwise builds every bar from the bar before it from the second
+export on (O5 in the ledger).

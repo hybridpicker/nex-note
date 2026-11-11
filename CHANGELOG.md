@@ -8,9 +8,12 @@ All notable changes to nex-note are documented here.
 
 - Markings are typed at the cursor: one entry field for lyrics (`Cmd/Ctrl+L`), chord symbols (`Cmd/Ctrl+K`, with `Space`, `Tab` and `Cmd/Ctrl+6` to move on), dynamics and hairpins (`Alt/Option+Shift+D`), staff, system and expression text, rehearsal marks, tempo, key, time signature, clef, repeats, barlines, endings, octave and pedal lines. A key signature can start at any bar, a clef change belongs to one part, lyrics carry melisma lines.
 - Note input shows a caret in the colour of the input voice at the position of the next note, and a bar with the armed note value, dot, accidental, voice, entry mode and tuplet; every field is clickable.
+- A note typed or played in note input is on screen at once: the editor draws it at the caret's place in the frame after the key, and the engraved score takes its place when it has been drawn again. In a score of 2,048 notes that is under 90 ms instead of about a second. A rest, Delete, Undo and a value change still wait for the score to be drawn again.
 
 ### Changed
 
+- A piano score with a pickup bar numbered 0 keeps its lower staff through edits: the stored file lost `<staves>` in its first bar with the second edit, the lower staff could no longer be written on and the note-input caret did not show there. A bar inserted before bar 1 leaves staves, brace and transposition on the first bar.
+- While the score is drawn again after an edit, the caret and the bar frames of the previous drawing stay on screen.
 - Copy and paste between parts that transpose differently keeps the sound: a flute phrase pasted into a clarinet in B flat is written a major second higher.
 - A tempo typed as `Allegro q=120` keeps its word beside the metronome number, in the file as well; tempo marks of other programs in that form keep both on import.
 - A slur over a selection that crosses a barline is written. After `Delete` and `Cmd/Ctrl+X` the rests that are left are selected at once, so the next key is not lost.
