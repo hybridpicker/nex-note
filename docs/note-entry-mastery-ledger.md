@@ -7,7 +7,37 @@ that failed before the change for the stated reason.
 
 Started 2026-11-10 on `devel@fe64f3d`.
 
-## Handoff (session 2, kept current after every iteration)
+## Handoff (kept current after every iteration)
+
+**Session 4 (2026-11-11), iterations 24 and 25. Start here.** Scope was O5, R3 and a time-boxed
+attempt at gate 3; the owner ended the session at 21:59.
+
+- O5 is fixed (`b6992c9`): the cause was the export, not the caret. R3 passes on US, UK and German
+  keyboards; gate 4 holds for R1 to R6.
+- Gate 3: step 1 (pending note) is built, measured and committed (iteration 25). Steps 2 and 3 are
+  not connected. Numbers, what is left and four options are under Decisions, "Gate 3"; the gate is
+  blocked on the owner's choice. The recommended next session is option 1: connect
+  `src/render-bridge/osmd/render-window.ts` to the render effect of `components/ScoreEditor.tsx`
+  (`buildOsmdLayoutBridge` already fixes which bars form a system; start with
+  `buildDomMeasureRectsByVisualOrder`, which counts bars from the first bar of the score, and with the
+  places that use a bar overlay's `domRect` as a scroll position).
+- At 4,096 notes the pending note misses its budget (172 ms p95 against 150); 111 ms of it are the
+  semantic command, which is the part to shorten for that size (one normalization instead of two,
+  export of the changed bars only).
+- Not in scope and untouched: M1 to M6, R7, R8, K5b, K7b, K9 to K11, E1, gate 8 surface runs,
+  gate 9. Not done for iteration 25 because another session had uncommitted changes in those files:
+  the line in `docs/user-manual.en.md` and `CHANGELOG.md` about the pending note.
+- T3 as a script, with the wait for a quiet machine, is described under "Tools"; measure only below
+  a load average of 4 and write the load into the table.
+- **Two sessions in one checkout.** From 16:47 on a second session of the owner worked in this
+  working tree (keyboard presets, PDF import, DMG build), with uncommitted changes in
+  `components/NexNoteApp.tsx`, `lib/i18n.tsx`, `package.json`, the manuals and the post-commit hook.
+  Stage files by name, never `git add -A`; do not edit files that carry the other session's changes;
+  a production build for T3 contains them. Dev-server reloads caused by the other session's edits
+  showed up as one "empty document" failure in a corpus cell (6 of 6 on repeat).
+- What the old code did that is easy to break again: while the score is drawn again, the bar
+  overlays, the staff geometry and the caret of the old drawing must stay (five `app.spec.ts` mouse
+  tests and R2 fail otherwise), and a click must keep its timing (no frame of delay for mouse entry).
 
 **Session 3:** iteration 16 was committed after one hook rejection: `e2e/notation-tools.spec.ts:399`
 clicked `Voice 3` by title, which the note-input bar duplicates (50 of 51 passed, at load average up to
@@ -61,9 +91,9 @@ Verification habits that matter here:
 | --- | --- | --- |
 | 1 Trust | Not met | Fuzzer: 2,000 fresh sequences of 40 actions pass (seed 560311, iteration 12 code before the UI-only changes of that iteration; `test/entry-fuzz.test.ts`, 6 fixtures, byte-level fixed point after every action). Every P0 row is fixed or not reproduced as of iteration 17; the 2,000-sequence run has to be repeated on the final commit |
 | 2 Preview equals commit | Met on iteration 18; to be repeated on the final commit | `e2e/entry-mouse-corpus.spec.ts`: ten textures (treble, bass, alto, tenor, clef change, pickup, dense two-voice, tuplet, grace, grand staff with three ledger lines) in page and continuous view at 50, 100 and 200 %, 20 of 20 cells: no change on hover, the ghost drawn in the bar it names, commit equal to the preview in pitch, onset, bar, staff, voice and value, nothing twice, the canvas in place. F2 test for idle and busy. Open beside it: M4b and M5 |
-| 3 Speed, production build | Not met | Measured (see Latency): visible edit p95 67 / 433 / 6,712 ms against 100 / 100 / 150; pointer preview within budget at 32 and 512 notes |
-| 4 Orientation | Not met | O1 to O4 fixed, O5 open. `e2e/reference-tasks.spec.ts` checks after every key of R1, R2, R4, R5 and R6, on three layouts: in note input a caret inside the viewport and the six armed fields; with the entry field open, the field; otherwise the selection named by the status line. R3: 22 keys in the lower staff without a caret (O5) |
-| 5 Keyboard flow | Not met | R1, R2, R4, R5 and R6 reproduce their fixtures by keys alone on US, UK and German keyboards (`e2e/reference-tasks.spec.ts`, iteration 23). R3 reproduces its fixture on the US layout (run by hand in iteration 23; the test waits for O5). Keys against the MuseScore scripts: R1 57/59 (97 %), R2 233/253 (92 %), R3 163/179 (91 %), R4 40/41 (98 %), R5 40/41 (98 %), R6 65/65 (100 %). Open: K5b, K7b, K9 to K11 |
+| 3 Speed, production build | Not met; blocked on the owner for the part that is left (Decisions, "Gate 3") | Session 4, quiet machine (see Latency). Typed notes: p95 34 / 52 / 90 ms at 32 / 512 / 2,048 notes against 100 / 100 / 150 (held; 2,048 is the size the owner accepts for this session); 172 ms at 4,096 against 150 (not held). Every other edit waits for the drawing of the score: 319 / 1,170 / 2,739 ms p95 at 512 / 2,048 / 4,096 notes. Pointer preview p95 34 to 36 ms against 33 at every size, as in the baseline; the stage is taken at the second animation frame after the change, which is one frame later than the preview is on screen. Burst of ten keys a second for five seconds at 512 notes: exactly the typed notes (`e2e/entry-pending.spec.ts`) |
+| 4 Orientation | Met on iteration 25; to be repeated on the final commit | O1 to O5 fixed. `e2e/reference-tasks.spec.ts` checks after every key of R1 to R6, on three layouts: in note input a caret inside the viewport and the six armed fields; with the entry field open, the field; otherwise the selection named by the status line |
+| 5 Keyboard flow | Not met | R1 to R6 reproduce their fixtures by keys alone on US, UK and German keyboards (`e2e/reference-tasks.spec.ts`, iteration 23).  Keys against the MuseScore scripts: R1 57/59 (97 %), R2 233/253 (92 %), R3 163/179 (91 %), R4 40/41 (98 %), R5 40/41 (98 %), R6 65/65 (100 %). Open: K5b, K7b, K9 to K11 |
 | 6 Mouse flow | Not met | R7, R8 not built; M1 to M6 open |
 | 7 Every row closed | Not met | See queue |
 | 8 Surfaces and exchange | Not met | On `6ea4454`: `npm test` 1,689 passed, `npm run build`, `git diff --check`, `npm run ipad:sync` and `npm run ipad:doctor` passed; every commit of session 1 passed the pre-commit `e2e/notation-tools.spec.ts` (51) and the post-commit `electron:build` + `electron:verify`. Not run: `notation-quality-cycle --browser`, reference-fixture MusicXML/MXL round trips (no reference tasks yet), physical iPad, Linux Electron; the Xcode macOS target does not exist |
@@ -78,6 +108,7 @@ Verification habits that matter here:
 | T1a | App-level harness: `test/support/app-harness.ts` mounts `useScoreDocument` and `useNoteEditor` wired as `components/NexNoteApp.tsx` wires them (selection anchors in command meta, selection restore after history changes, `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to Undo and Redo). The older `test/support/entry-harness.ts` has no history | Built |
 | T2 | Browser session driver `e2e/support/entry-session.ts`: boots a synthetic score, key scripts in the harness syntax, pointer moves and clicks, reads the document, voice lines, ghost, caret (`note-input-caret`), armed state (`note-input-bar`), canvas box; one screenshot per step | Built in iteration 9; first used in iteration 10 |
 | T3 | Production latency run: `npm run build`, `npx next start --port 3101`, then `NEX_E2E_REUSE=1 NEX_E2E_NO_ARTIFACTS=1 NEX_QUALITY_OUTPUT=<dir> npx playwright test e2e/note-entry-performance.spec.ts` (32, 512 and 4,096 notes, 30 samples, stages from `window.__NEX_NOTE_INPUT_METRICS__`). `NEX_E2E_NO_ARTIFACTS=1` (new in `playwright.config.ts`) switches trace, screenshot and video off: the trace snapshots the DOM inside the page on every key and was about 13 % of the profiled time at 512 notes and most of the pointer-preview time at 4,096 | Built in iteration 15. Results under "Latency" |
+| T3 (session 4) | The run has a fourth size (2,048 notes, `large-2048`), `NEX_QUALITY_SIZES=small,medium,large-2048,large` to choose, `NEX_QUALITY_SAMPLES`, and two stages for the pending note: `input-to-pending-commit` (written to the page) and `input-to-pending-frame` (the frame is out). Steps: `npm run build`; wait until `uptime` shows a load average below 4; `npx next start --port 3101`; `NEX_E2E_REUSE=1 NEX_E2E_NO_ARTIFACTS=1 NEX_QUALITY_OUTPUT=<dir> npx playwright test e2e/note-entry-performance.spec.ts --project=regression`; note the load before and after. `NEX_QUALITY_PROFILE=1` writes a CPU profile per size and must not be on for numbers that go into the table | Built |
 | T4 | Reference tasks R1 to R8 as fixtures with Nex Note and MuseScore key scripts and counts. R1 exists as `test/support/keyboard-passage.ts`; its MuseScore script is not written | open |
 
 Deviation from the prompt: the tools were committed together with the F1 fix, not before it. On
@@ -156,8 +187,8 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 
 | ID | Finding | Reproduction test | Status | Commit |
 | --- | --- | --- | --- | --- |
-| S1 | Visible edit 455/495 ms at 512 notes, 3,851/4,781 ms at 4,096 (dev server, Sept 2026) | needs T3 | open | |
-| S2 | Every edit runs the semantic command over the whole document and re-renders the whole OSMD score | needs T3 | open | |
+| S1 | Visible edit 455/495 ms at 512 notes, 3,851/4,781 ms at 4,096 (dev server, Sept 2026). Production baseline of session 4: 227/241 at 512, 911/977 at 2,048, 2,100/2,357 at 4,096 | T3 (table under "Latency") and `e2e/entry-pending.spec.ts` (4 tests; before: no `pending-note` element). Step 1 of the prompt is built: a note typed or played is drawn at once by the editor at the place the caret stood on (`src/score-input/pending-entry.ts`, `components/PendingNoteGlyph.tsx`), the old drawing and the caret stay until the new drawing replaces them in one frame, and the maps are no longer rebuilt from the old drawing before that frame. Typed notes are on screen within 34 / 52 / 90 ms (p95) at 32 / 512 / 2,048 notes and 172 ms at 4,096 (budget 150). Not covered: a rest, Delete, Undo, a value change and a note typed into a bar its own entry appends still wait for the whole score to be drawn again. Steps 2 and 3 are not connected; see Decisions | blocked (owner: choose an option under Decisions, "Gate 3") | iteration 25 |
+| S2 | Every edit runs the semantic command over the whole document and re-renders the whole OSMD score | T3: semantic command 15 / 54 / 111 ms and the drawing of the score 285 / 1,043 / 2,366 ms at 512 / 2,048 / 4,096 notes, both proportional to the score. Built for steps 2 and 3, tested, not yet used by the score view: `src/render-bridge/osmd/render-window.ts` (`test/render-window.test.ts`, 8 tests) cuts the bars of whole systems out of the stored MusicXML as a file of its own, with the divisions, key, time signature, clefs, staves and transposition that hold at its first bar | blocked (owner: same decision as S1) | iteration 25 |
 | S3 | Every edit exported the whole score through the DOM of its source XML: each bar was deep-copied with all its notes and then emptied, every bar lookup scanned a live `getElementsByTagName` list (quadratic in the number of bars), and the source XML of the edit before was parsed again. 92 % of the command path at 4,096 notes (`node --cpu-prof` on `scripts/benchmark-note-entry.ts`) | benchmark table under "Latency": 1,579 → 199 ms median at 4,096 notes, 92 → 29 ms at 512. Bars are copied without their content, indexed once per part and export, and the parsed document of the last export is reused when the next export starts from its XML. The fuzzer compares the cached path with a fresh parse after every action: 900 fresh sequences pass (seed 44120000) | fixed | iteration 15 |
 
 ### P2. Orientation
@@ -168,7 +199,7 @@ input without a cursor, seed 20361111 on the grand staff), so a tools-only commi
 | O2 | The armed state was invisible with the tools panel closed | `e2e/entry-orientation.spec.ts` "O2: the note-input bar shows what is armed and follows every change" (before: `note-input-bar` did not exist). `components/NoteInputBar.tsx`: value, dot, accidental, voice, entry mode and tuplet, each a control, at the right end of the always-present row under the toolbar, so it moves nothing (the F2 canvas test covers `N`). First placed in the toolbar row, where it pushed "Note Input", "MIC REC", "Lead" and "Layout" out of view at 1280 px; moved after looking at the screenshot | fixed | iteration 16 |
 | O3 | Cryptic labels (`INS`, `CHD`, `STEP`, `DUR`, `LEAD`); wrong "Multi-voice" hover label; inspector has no note properties | `e2e/entry-orientation.spec.ts` "O3: the mode buttons carry musical words, and the preview names what a click will do" and "O3: the inspector shows the properties of the selected note" (before: the labels were there, the preview said `Multi-voice`, `inspector-note-properties` did not exist). The buttons read `Standard`/`Replace`, `Chord`, `Keys`, `Pitch first`, `Lead sheet` (translated); the chord preview says `Add to chord`; `Multi-voice input` is `Chord input`; the Inspector opens with one plain sentence and shows pitch, value, position and voice of the selected note with controls for stem and visibility (`setNoteStyle` takes `hidden`) | fixed | iteration 18 |
 | O4 | View-follow during long entry not established; status line shows a raw fraction | `e2e/entry-orientation.spec.ts` "O4: the caret stays in view through long entry at 200 % zoom" (page and continuous view, 64 notes over 16 bars, caret inside the viewport and in the cursor's bar after every key) and "O4: the status line names bar, beat, pitch and value of the selection" (before: `Rest · Flute · M1 · Staff 1 · Voice 1 · 0/48`). `src/score-input/position-label.ts`, `test/position-label.test.ts`; the status reads `Bar 1, beat 2.5 · F♯5 · Eighth note · Flute · Voice 1` | fixed | iteration 18 |
-| O5 | (found by R3) In a grand staff with a pickup bar the note-input caret was not drawn in the lower staff from the third bar on. Cause, found with the probe of the row (`Cmd+Home N Alt+Down 5 0 6 . c` on the start score of R3): not the caret but the stored file. The file numbers its pickup 0; the stored file numbers bars from 1; the document kept the numbers it was read with, and the export looked up each bar of the stored file by them. From the second export on every bar was built from the bar before it and the pickup from nothing, so what the export does not write itself moved one bar later with every edit: `<staves>2</staves>` left the first bar, the renderer read a part of one staff (`GraphicSheet.MeasureList` rows of one entry), and the lower staff had no geometry. The same shift followed any inserted or deleted bar, and a bar inserted before bar 1 of a piano score lost `<staves>` at once. `src/render-bridge/osmd/layout-render-xml.ts` looks bars up the same way (system and page breaks on the wrong bar) | `test/export-bar-templates.test.ts` (3 tests, all failed before: `<staves>` in bar 2; the document names bars `1:0, 2:1, 3:2`; no `<staves>` after an insert before bar 1), `e2e/entry-orientation.spec.ts` "O5: the caret follows entry in the lower staff of a piano score with a pickup bar" (the probe before: `caret: null` after `c` and `g`, staff details `["1:P1"]`), `e2e/reference-tasks.spec.ts` R3 without `fixme` on US, UK and German keyboards. After every export the document takes over the bar numbers of the exported file (`adoptExportedMeasureNumbers`); what the first bar says about the part as a whole (staves, brace, instruments, staff details, transposition) stays with the first bar when another bar takes its place; children of `<attributes>` are created in MusicXML order | fixed | iteration 24 |
+| O5 | (found by R3) In a grand staff with a pickup bar the note-input caret was not drawn in the lower staff from the third bar on. Cause, found with the probe of the row (`Cmd+Home N Alt+Down 5 0 6 . c` on the start score of R3): not the caret but the stored file. The file numbers its pickup 0; the stored file numbers bars from 1; the document kept the numbers it was read with, and the export looked up each bar of the stored file by them. From the second export on every bar was built from the bar before it and the pickup from nothing, so what the export does not write itself moved one bar later with every edit: `<staves>2</staves>` left the first bar, the renderer read a part of one staff (`GraphicSheet.MeasureList` rows of one entry), and the lower staff had no geometry. The same shift followed any inserted or deleted bar, and a bar inserted before bar 1 of a piano score lost `<staves>` at once. `src/render-bridge/osmd/layout-render-xml.ts` looks bars up the same way (system and page breaks on the wrong bar) | `test/export-bar-templates.test.ts` (3 tests, all failed before: `<staves>` in bar 2; the document names bars `1:0, 2:1, 3:2`; no `<staves>` after an insert before bar 1), `e2e/entry-orientation.spec.ts` "O5: the caret follows entry in the lower staff of a piano score with a pickup bar" (the probe before: `caret: null` after `c` and `g`, staff details `["1:P1"]`), `e2e/reference-tasks.spec.ts` R3 without `fixme` on US, UK and German keyboards. After every export the document takes over the bar numbers of the exported file (`adoptExportedMeasureNumbers`); what the first bar says about the part as a whole (staves, brace, instruments, staff details, transposition) stays with the first bar when another bar takes its place; children of `<attributes>` are created in MusicXML order | fixed | `b6992c9` |
 
 ### P3. Keyboard flow
 
@@ -243,6 +274,35 @@ visible edit and the pointer preview are measured to the second animation frame 
 | | Layout projection | 1 / 2 | 9 / 11 | 30 / 35 | 59 / 68 | |
 | | OSMD load | 2 / 3 | 15 / 17 | 58 / 65 | 120 / 143 | |
 | | OSMD render | 10 / 20 | 86 / 97 | 385 / 432 | 967 / 1,112 | |
+| Step 1a: pending note (first form) | Visible edit: pending note on screen (`input-to-pending-frame`) | 30 / 35 | 76 / 94 | 246 / 315 | 536 / 567 | 3.7, 5.9 |
+| | Pending note written to the page (`input-to-pending-commit`) | 15 / 19 | 24 / 37 | 66 / 74 | 115 / 129 | |
+| | Score drawn again (`input-to-note-frame`) | 62 / 66 | 254 / 321 | 980 / 1,172 | 2,176 / 2,471 | |
+| Step 1b: pending note, and no rebuild of the maps from the old drawing | Visible edit: pending note on screen | 27 / 35 | 34 / 52 | 73 / 86 | 123 / (357) | 3.9, 15.9 |
+| | Pending note written to the page | 14 / 21 | 24 / 39 | 64 / 70 | 114 / (336) | |
+| | Score drawn again | 60 / 68 | 213 / 237 | 799 / 869 | 1,966 / (6,632) | |
+| | Pointer preview, budget p95 33 | 32 / 34 | 31 / 33 | 30 / 32 | 30 / (36) | |
+| | Semantic command | 1 / 2 | 13 / 14 | 47 / 52 | 90 / (261) | |
+| | OSMD load, OSMD render | 2 / 3, 9 / 21 | 18 / 21, 88 / 100 | 60 / 66, 390 / 427 | 126 / (476), 1,085 / (3,532) | |
+| Iteration 25 as committed (the old drawing's overlays stay during the redraw; pending note for keyboard and MIDI only) | Visible edit: pending note on screen, budget p95 100 / 100 / 150 / 150 | 27 / 34 | 37 / 52 | 85 / 90 | 155 / 172 | 3.7, 2.2 |
+| | Pending note written to the page | 14 / 21 | 27 / 38 | 74 / 78 | 146 / 160 | |
+| | Score drawn again | 62 / 69 | 285 / 319 | 1,043 / 1,170 | 2,366 / 2,739 | |
+| | Pointer preview, budget p95 33 | 31 / 36 | 30 / 34 | 27 / 34 | 30 / 36 | |
+| | Semantic command | 2 / 2 | 15 / 16 | 54 / 58 | 111 / 125 | |
+| | OSMD load, OSMD render | 3 / 4, 12 / 25 | 23 / 25, 122 / 135 | 88 / 94, 499 / 529 | 180 / 245, 1,215 / 1,287 | |
+
+The last run is the one that counts for the committed code. Its machine was slower throughout than
+in the step 1b run (every stage, the unchanged OSMD stages included, reads 20 to 40 % higher; the
+5-minute load average was 8.8 at its start), so the two runs are not to be compared stage by stage.
+
+Values in brackets are disturbed: during the 4,096-note part of the step 1b run another project's
+browser tests started on the machine (load 3.9 at the start, 15.9 at the end), and every stage's p95
+tripled against its median. Two repeats of that size were started after waiting 15 minutes each for a
+quiet machine, ran at a load of 6 to 62 and are not reported.
+
+How the pending note is timed: `input-to-pending-frame` is taken in the first task after the
+animation frame that follows the change, that is when the frame with the note has been produced. The
+older stages wait for a second animation frame, which here would come only after the score has been
+drawn again. The older way reads about one frame (17 ms) later for the same event.
 
 Profile of the baseline at 4,096 notes (`NEX_QUALITY_PROFILE=1`, 16 edits, 38.5 s of CPU, about
 2.4 s per edit): OSMD `render` 41 % (of it `calculateSkyBottomLines` 23 % of the total, drawing
@@ -332,6 +392,8 @@ Each can be reverted on request.
 | 8 | In note input a longer value overwrites the following music of the bar, including a tuplet it reaches (was: rejected) | MuseScore `setNoteRest`, `makeGap` |
 | 2 | A shorter value no longer moves the following notes of the bar earlier; the freed time becomes rests after the note | MuseScore `Score::changeCRlen` |
 | 22 | Outside note input `Cmd/Ctrl+Alt+1`–`4` with notes selected moves them to that voice (was: chose the input voice only). `Cmd/Ctrl+Delete` deletes the bars of the selection (was: deleted the selection like `Delete`). `Cmd/Ctrl+B` appends a bar and `Insert` inserts one (were unbound). A bar inserted or appended no longer repeats clef, key and time signature in the file | MuseScore `voice-1`…`voice-4`, `time-delete`, `append-measure`, `insert-measure` in `shortcuts.xml`; K7, K8 |
+| 25 | A note typed or played in note input is shown at once as a pending note at the caret's place, before the score is drawn again; the bar overlays and the caret stay on screen during the redraw. The redraw after such an entry starts one frame later (60 to 68 ms at 32 notes, was 44 to 53) | Prompt, "Direction for the hard parts", speed step 1 |
+| 24 | A document read from a file with a pickup numbered 0 names its bars as the stored file does; a bar inserted before bar 1 leaves staves, brace and transposition on the first bar | O5 |
 | 23 | After `Delete` and `Cmd+X` the rests that are left are selected at once (after a cut: the first of them). `Cmd/Ctrl+Shift+Left/Right` extends the selection by bars (was: by one note). `Alt+Up/Down` crosses parts. In note input the arrow keys keep the input voice. `Cmd+Home/End` go to the top staff. Paste into a part with another transposition keeps the sound, not the written pitch | F51, K15, K16, K17, K14, F53 |
 
 ## Assertion changes
@@ -363,6 +425,74 @@ Each can be reverted on request.
 | 24 | `e2e/reference-tasks.spec.ts`, R3 | The `fixme` mark is removed | O5 is fixed; R3 runs with every assertion on three layouts |
 
 ## Decisions
+
+- **Gate 3 (speed): what was built, what it gives, and what is left for the owner to choose
+  (session 4, 2026-11-11).** The session was cut short by the owner at 21:59; of the eight hours
+  planned for the three steps about four were used, and a good part of those waiting for a machine
+  quiet enough to measure on.
+
+  *Built and measured.* Step 1, the pending note. A note typed or played in note input is drawn by
+  the editor itself in the frame after the key, at the place the caret stood on, in the ink of the
+  score; the drawing that was there and the caret stay until the new drawing takes their place in a
+  single frame (`e2e/entry-pending.spec.ts` looks at every frame). On the way: an effect rebuilt
+  every geometry map from the old drawing after each change of the document, before that frame could
+  be shown, and the new drawing threw the result away; it now waits for the new drawing. That alone
+  took the pending note at 2,048 notes from 246 to 73 ms and the full redraw from 980 to 799 ms.
+  Numbers of the committed code, median / p95 in ms, typed notes: 27 / 34 at 32 notes, 37 / 52 at
+  512, 85 / 90 at 2,048 (budgets 100 / 100 / 150: held), 155 / 172 at 4,096 (budget 150: missed by
+  22 ms; of the 155, 111 are the semantic command). Baseline: 44 / 53, 227 / 241, 911 / 977,
+  2,100 / 2,357. The pointer preview reads 34 to 36 ms p95 against 33 at every size, before and
+  after: its stage is taken one animation frame after the preview is on screen.
+
+  *What step 1 does not give.* (1) Only pitched notes entered by key or MIDI have a pending note. A
+  rest, Delete, Backspace, Undo, a value key, a hairpin, a pasted phrase, and a note typed into a bar
+  that its own entry appends are seen when the score has been drawn again: 285 / 319 ms at 512
+  notes, 1,043 / 1,170 at 2,048, 2,366 / 2,739 at 4,096. (2) While the score is drawn the page does not
+  take a key; the next note waits. Typing stays correct (burst test) but at 2,048 notes it runs at
+  about one note a second. (3) The pending note stands exactly on its pitch line and at the caret;
+  when the engraver then spaces the bar anew (a note into an empty bar) the drawn note lands up to
+  about 30 px to the left or right of it. With the rhythm of the bar unchanged it lands on the same
+  pixel. (4) Mouse entry has no pending note: the preview is at the place already, and a click keeps
+  the timing it had.
+
+  *Where the remaining time goes* (profile at 4,096 notes, baseline, 2.4 s per edit): the engraver's
+  `render` 41 % (skyline and bottom line 23 % of the total, drawing 15 %), its `load` 5 %, about a
+  third in the editor's own collection of the drawn notes and the building of bar overlays, snap grid,
+  edit map and geometry proxy, React 10 %, the semantic command 4 %. All of it grows with the score;
+  tuning single parts cannot bring 2,000 ms to 150.
+
+  *Steps 2 and 3, not connected.* One mechanism serves both: the engraver is given only the systems
+  around the viewport and the caret, as a MusicXML file of their own, so the cost of drawing and of
+  every map depends on the window and not on the score. The cutting is built and tested
+  (`src/render-bridge/osmd/render-window.ts`); the score view does not use it yet. Connecting it
+  means: padding above and below for the systems not drawn (with their measured or estimated
+  heights), a new window when the view scrolls or the cursor leaves it, bar rectangles by visual
+  order counted from the window's first bar, and the whole score drawn as today for page view, for
+  playback (the playback cursor walks the engraver's own score), for print, and for scores with octave
+  lines or bar repeats that start before the window.
+
+  *Options for the owner.*
+  0. (Small, for 4,096 notes only.) The pending note misses 150 ms there because the command itself
+     takes 111 ms: the document is normalized twice and exported whole on every edit. One
+     normalization and an export of the changed bars would bring typed notes under the budget at
+     that size. About two hours with fuzzer runs. It changes nothing for the other edits.
+  1. **Connect the window (steps 2 and 3).** About one focused session (6 to 8 hours) including the
+     gate-2 runs. Expected from the baseline numbers of a 512-note score: every kind of edit drawn
+     within about 100 to 200 ms at any length of score, for continuous view; page view stays as it
+     is. Risk: the score view is one component of 17,000 lines whose maps assume one drawing of the
+     whole score; jumps to bars outside the window, selection across windows and scroll anchoring
+     need their own tests. This is what I recommend.
+  2. **Widen step 1 instead.** Pending display for rests and for Delete (a rest glyph over the old
+     note), and a queue that lets keys through while the score is drawn. About half a session. It
+     covers typing, not Undo, paste, value changes or anything with a layout of its own, and leaves
+     the redraw at its length; it adds editor-drawn glyphs that have to match the engraver's.
+  3. **One engraver per system (or per page) with reuse of untouched systems.** The full form of
+     step 2. Also covers page view. Two to three sessions: ties, slurs, hairpins and voltas across
+     system breaks, system and page breaking, and every map have to be put together from parts. Only
+     worth it if option 1 proves too coarse.
+  4. **Accept the state.** Typing notes meets the budget up to 2,048 notes; everything else in a
+     large score stays slow. The budgets of gate 3 are then not met for those edits and the gate
+     stays blocked.
 
 - **Keys of the entry popover (K4 to K6).** MuseScore's keys where it has them and they are free:
   Cmd+L, Cmd+K, Cmd+T, Cmd+Shift+T, Cmd+E, Cmd+M, Alt+Shift+T. MuseScore has no default key for key
@@ -456,4 +586,5 @@ Each can be reverted on request.
 | 21 | `f65b2da` | K1, K2, K3 reproduced in the app harness; K12 found. The value keys now reach a selection, and that opened paths the fuzzer had not walked: three fresh seeds found F45 (seed 21110201), F47 and F48 (seed 21110347); the pre-commit file found F46 | K1, K2, K3, K12, F45, F46, F47, F48 | 12 new tests failed before (`test/entry-keyboard-flow.test.ts`, two replays in `test/note-entry-fixed-point.test.ts`); `npm test` 1,798 passed; fuzzer 600 sequences, seed 21110463: no failure; `npm run build`; one Playwright run (`reference-tasks`, `entry-popover`, `app.spec.ts` both projects, `notation-tools`, `entry-trust`, `entry-orientation`): 156 of 156 at load average 3 to 4 (the run before the fixes: 155 of 156, F46) | iPad, `electron:refresh` (end of batch) |
 | 22 | `412cddc` | K8 and K7 reproduced as failing tests (11 failed on `f65b2da`); the fuzzer on the new voice key and on the value keys found F49 | K7, K8, F49, F50 | 13 new tests failed before (`test/measure-keys-core.test.ts`, `test/entry-keyboard-flow.test.ts`, one replay); `npm test` 1,814 passed; fuzzer 900 sequences, seed 22110733: no failure; `npm run build`; one Playwright run (`reference-tasks`, `entry-popover`, `app.spec.ts` both projects, `notation-tools`, `entry-trust` with the new K8/K7 test, `entry-orientation`) at load average 3 to 5: 156 of 157, the one failure F50; `notation-tools` again alone 51 of 51 | iPad, `electron:refresh` (end of batch) |
 | 23 | `617c38e` | Reference tasks R3 to R6 written with fixtures and MuseScore scripts; typing them found F51 to F54, K13 to K17 and O5 | F51, F52, F53, F54, K13, K14, K15, K16, K17; T4 for R3 to R6 | every new test failed before its fix; `npm test` 1,824 passed; fuzzer 600 sequences, seed 23110911: no failure; `npm run build`; one Playwright run at load average 3 to 5 (`reference-tasks` with R1, R2, R4, R5, R6 on US, UK and German keyboards, `entry-popover`, `app.spec.ts` both projects, `notation-tools`, `entry-trust`, `entry-orientation`): 166 passed, 3 skipped (R3, row O5) | iPad, `electron:refresh` (end of batch) |
-| 24 | (this commit) | O5 with the probe of its row: after the first note in the lower staff the staff details of a bar held staff 1 only, `GraphicSheet.MeasureList` had one entry per bar, and the stored file had `<staves>` in bar 2 instead of bar 1. Baseline of gate 3 on a quiet machine (see Latency) | O5: the document takes over the bar numbers of the exported file; part-wide attributes stay with the first bar; `<attributes>` children are created in MusicXML order. R3 without `fixme`. T3 has a 2,048-note size and `NEX_QUALITY_SIZES` | 3 unit tests and the browser probe failed before; `npm test` 1,827 passed; fuzzer 600 sequences, seed 24111101: no failure; `npm run build`; R3 on US, UK and German keyboards and the O5 test: 4 of 4; one Playwright run (`entry-mouse-corpus`, `entry-trust`, `entry-orientation`, `reference-tasks`, `entry-popover`, `app.spec.ts` both projects): 138 passed, 1 failed (corpus, pickup in continuous view: the test read an empty document once, `ParseError: missing root element`, the reload pattern of F43 and F50); the two pickup cells again, 3 times each: 6 of 6 . A second session of the owner edited this checkout from 16:47 to 16:55 (keyboard presets, PDF import, DMG build; uncommitted, not part of this commit), that is during this Playwright run: the dev server reloaded under it, which fits the one failure. Unit tests, fuzzer, build and the R3 runs were finished before | iPad, `electron:refresh` (end of batch) |
+| 24 | `b6992c9` | O5 with the probe of its row: after the first note in the lower staff the staff details of a bar held staff 1 only, `GraphicSheet.MeasureList` had one entry per bar, and the stored file had `<staves>` in bar 2 instead of bar 1. Baseline of gate 3 on a quiet machine (see Latency) | O5: the document takes over the bar numbers of the exported file; part-wide attributes stay with the first bar; `<attributes>` children are created in MusicXML order. R3 without `fixme`. T3 has a 2,048-note size and `NEX_QUALITY_SIZES` | 3 unit tests and the browser probe failed before; `npm test` 1,827 passed; fuzzer 600 sequences, seed 24111101: no failure; `npm run build`; R3 on US, UK and German keyboards and the O5 test: 4 of 4; one Playwright run (`entry-mouse-corpus`, `entry-trust`, `entry-orientation`, `reference-tasks`, `entry-popover`, `app.spec.ts` both projects): 138 passed, 1 failed (corpus, pickup in continuous view: the test read an empty document once, `ParseError: missing root element`, the reload pattern of F43 and F50); the two pickup cells again, 3 times each: 6 of 6 . A second session of the owner edited this checkout from 16:47 to 16:55 (keyboard presets, PDF import, DMG build; uncommitted, not part of this commit), that is during this Playwright run: the dev server reloaded under it, which fits the one failure. Unit tests, fuzzer, build and the R3 runs were finished before | iPad, `electron:refresh` (end of batch) |
+| 25 | (this commit) | Gate 3, step 1. Baseline and every step on a quiet machine (see Latency). The first form of the pending note was on the page after 15 to 115 ms but on screen only after 30 to 536 ms: an effect rebuilt all maps from the old drawing before the frame. Removing that rebuild outright failed 5 mouse tests of `app.spec.ts` ("element is not attached": the bar overlays left the page during the redraw) and R2 on two layouts (no caret at 2 keys): the rebuild was also what kept overlays and caret alive | Pending note for keyboard and MIDI entry (`src/score-input/pending-entry.ts`, `components/PendingNoteGlyph.tsx`, `hooks/useNoteEditor.ts`, `components/ScoreEditor.tsx`); the redraw after such an entry waits for the frame that shows it; bar overlays, staff geometry and caret of the old drawing stay until the new one replaces them; no rebuild of the maps from a drawing of another revision; stages `input-to-pending-commit` and `input-to-pending-frame`; `src/render-bridge/osmd/render-window.ts` with its tests, not yet used | `e2e/entry-pending.spec.ts` (4 tests, among them the burst of 50 keys at ten a second); `npm test` 1,868 passed; `npm run build`; one Playwright run on the final code (`entry-mouse-corpus`, `entry-trust`, `entry-orientation`, `entry-pending`, `reference-tasks` R1 to R6 on three layouts, `entry-popover`, `app.spec.ts` both projects, `notation-tools`): 194 of 194 at load average 4 to 13; T3 on the final build | Fuzzer (no change to the command or export path), iPad, `electron:refresh` beyond the post-commit build; manual and changelog lines (files carry another session's changes) |

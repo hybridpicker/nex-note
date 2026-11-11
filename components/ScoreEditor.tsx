@@ -1,12 +1,14 @@
 'use client';
 
 import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
+import { PendingNoteGlyph } from '@/components/PendingNoteGlyph';
 
 import { applyNotationFont } from '@/lib/notation-font';
 import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } from '@/src/render-bridge/osmd/nested-tuplets';
 
-import { inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback } from '@/src/score-input/input-metrics';
-import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { afterNextPaint, inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback, markInputCommitted, markInputPainted } from '@/src/score-input/input-metrics';
+import { clearPendingEntries, getPendingEntries, getServerPendingEntries, pendingEntriesFor, settlePendingEntries, subscribePendingEntries } from '@/src/score-input/pending-entry';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { VOICE_COLOURS } from '@/components/NoteInputBar';
 import InlineEntryHost, { type InlineEntryFlowKind, type InlineEntryRequest } from '@/components/InlineEntryHost';
@@ -11943,6 +11945,19 @@ export default function ScoreEditor({
   const measureLayoutOverlaysRef = useRef<RenderedMeasureLayoutOverlay[]>([]);
   const systemLayoutOverlaysRef = useRef<RenderedSystemLayoutOverlay[]>([]);
   const staffDetailsByMeasureRef = useRef<Map<number, StaffDetail[]>>(new Map());
+  // Pending notes (gate 3): what was entered since the score was last drawn, and the geometry of that
+  // last drawing. While the score is drawn again the live maps are empty; the caret and the pending
+  // notes are placed with the last complete ones. Nothing else reads them: the pointer has no
+  // geometry until the new drawing is there.
+  const allPendingEntries = useSyncExternalStore(subscribePendingEntries, getPendingEntries, getServerPendingEntries);
+  const [renderedRevision, setRenderedRevision] = useState(-1);
+  const renderedRevisionRef = useRef(-1);
+  const lastRenderGeometryRef = useRef<{
+    grid: RenderedGhostGrid;
+    staffDetails: Map<number, StaffDetail[]>;
+    overlays: RenderedMeasureLayoutOverlay[];
+    layoutKey: string;
+  } | null>(null);
   const tintedRenderedNoteElementsRef = useRef<SVGElement[]>([]);
   const tintedVisualElementsRef = useRef<SVGElement[]>([]);
   const tintedGuitarFretElementsRef = useRef<SVGElement[]>([]);
@@ -14192,31 +14207,53 @@ export default function ScoreEditor({
 
     let cancelled = false;
     const abortController = new AbortController();
+    const layoutKey = `${viewMode}:${zoomPercent}:${renderViewportRevision}`;
+    const pendingForThisRender = pendingEntriesFor(getPendingEntries(), coreDocument?.revision ?? 0, renderedRevisionRef.current);
+    // From here until this drawing has landed, nothing on screen is a drawing of this document.
+    renderedRevisionRef.current = -1;
+    // Another zoom, view or width: the geometry of the last drawing says nothing about this one.
+    if (lastRenderGeometryRef.current?.layoutKey !== layoutKey) lastRenderGeometryRef.current = null;
+    if (pendingForThisRender.length === 0 && getPendingEntries().length > 0
+      && getPendingEntries().at(-1)!.revision !== (coreDocument?.revision ?? 0)) clearPendingEntries();
     geometryProxyRef.current.invalidate();
     clearActiveScoreTints();
     renderedNotesRef.current = [];
     renderedGhostGridRef.current = createEmptyRenderedGhostGrid();
     interactiveEditMapRef.current = createEmptyInteractiveEditMap();
     ghostNoteIndexRef.current = { byMeasureId: new Map(), bySystemStaff: new Map() };
-    staffDetailsByMeasureRef.current = new Map();
+    // The staff geometry stays with the bar overlays that are drawn from it (see below).
     lastGhostStaffIndexRef.current = null;
     lastAdvancedGhostAnchorRef.current = null;
     activeVisualTargetsRef.current.forEach((element) => tintSvgElement(element, null));
     activeVisualTargetsRef.current = [];
-    setActiveVisualTargets([]);
-    setGhostNoteTarget(null);
-    setDragPreviewTarget(null);
-    setMeasureLayoutOverlays([]);
-    setSystemLayoutOverlays([]);
-    setLoading(true);
-    setError('');
-    onRenderStart?.();
+    // The state that hangs on the old drawing. The bar and system overlays stay as they are until
+    // this drawing replaces them: they are the frame of the old drawing, which is still on screen,
+    // and the caret and the tests of the page hold on to them.
+    const resetRenderState = () => {
+      setActiveVisualTargets([]);
+      setGhostNoteTarget(null);
+      setDragPreviewTarget(null);
+      setLoading(true);
+      setError('');
+      onRenderStart?.();
+    };
+    // After a note entry the pending note has to reach the screen first: the clearing waits for
+    // that frame. The maps the pointer works with are empty from here on either way.
+    const showsPendingNote = pendingForThisRender.length > 0 && lastRenderGeometryRef.current != null;
+    if (!showsPendingNote) resetRenderState();
 
     async function render() {
       try {
         const container = containerRef.current;
         const viewport = viewportRef.current;
         if (!container) return;
+        // The entered note is on screen as a pending note: let that frame out before the score is
+        // drawn again, which blocks the page for as long as it takes.
+        if (showsPendingNote) {
+          await afterNextPaint();
+          if (cancelled || abortController.signal.aborted || !containerRef.current) return;
+          resetRenderState();
+        }
         const readyToRender = await waitForRenderableContainer(container, viewport, abortController.signal);
         if (cancelled || abortController.signal.aborted || !containerRef.current) return;
         if (!readyToRender) {
@@ -14339,6 +14376,15 @@ export default function ScoreEditor({
 
           setLoading(false);
           if (containerRef.current) containerRef.current.dataset.renderedRevision = String(coreDocument?.revision ?? 0);
+          lastRenderGeometryRef.current = {
+            grid: renderedGhostGridRef.current,
+            staffDetails: staffDetailsByMeasureRef.current,
+            overlays: refinedMeasureOverlays,
+            layoutKey,
+          };
+          renderedRevisionRef.current = coreDocument?.revision ?? 0;
+          setRenderedRevision(renderedRevisionRef.current);
+          settlePendingEntries(renderedRevisionRef.current);
           onOsmdReady(activeOsmd);
           markInputFeedback('input-to-note-frame');
         }
@@ -14446,6 +14492,10 @@ export default function ScoreEditor({
       // outside this callback can restore stale snap points after note input.
       const osmd = osmdRef.current;
       if (!osmd?.GraphicSheet) return;
+      // The drawing on screen is of another revision of the document than this one: the drawing
+      // that is on its way builds the maps. Building them here from the old drawing took as long
+      // as the score is large, before the frame after an edit could be shown, for nothing.
+      if (renderedRevisionRef.current !== (coreDocument?.revision ?? 0)) return;
       setOverlayLayerOffset(resolveOverlayLayerOffset(container));
       renderedNotesRef.current = bridgeCollectRenderedNotes(osmd, container, coreDocument);
       setRenderedNoteDebugMarkers(buildRenderedNoteDebugMarkers(renderedNotesRef.current, selectedNote, selectionConfidence));
@@ -15521,25 +15571,30 @@ export default function ScoreEditor({
     };
   }, [coreDocument, inputByDurationMode, isDotted, measureLayoutOverlays, noteInputAnchor, preparedDurationActivePitch, renderViewportRevision, selectedDuration, selectedVoice]);
 
-  // The note-input caret (O1 in docs/note-entry-mastery-ledger.md): where the next note lands, for
-  // keyboard, mouse and MIDI entry alike. It is drawn from the rendered snap grid, at the onset of the
-  // input cursor, over the cursor's staff, in the colour of the input voice.
-  const noteInputCaret = useMemo(() => {
-    if (!noteInputMode) return null;
-    const cursor = selectedNote ?? noteInputAnchor ?? null;
-    if (!cursor?.coreMeasureId) return null;
-    const grid = renderedGhostGridRef.current;
-    let domX = findRenderedGhostPointForAnchor(grid, cursor)?.domX ?? null;
+  // The geometry the caret and the pending notes are placed with: the live maps, or, while the score
+  // is being drawn again after a note entry, those of the last complete drawing.
+  const inputGeometry = () => {
+    const last = lastRenderGeometryRef.current;
+    if (renderedRevisionRef.current !== -1 || !last) {
+      return { grid: renderedGhostGridRef.current, staffDetails: staffDetailsByMeasureRef.current, overlays: measureLayoutOverlays };
+    }
+    return { grid: last.grid, staffDetails: last.staffDetails, overlays: last.overlays };
+  };
+  type InputPosition = Pick<SelectedNote, 'coreMeasureId' | 'corePartId' | 'measureNumber' | 'staffIndex' | 'voiceId' | 'timestampNum' | 'timestampDen' | 'isRest'>;
+  const resolveInputPlace = (position: InputPosition) => {
+    if (!position.coreMeasureId) return null;
+    const { grid, staffDetails, overlays } = inputGeometry();
+    let domX = findRenderedGhostPointForAnchor(grid, position)?.domX ?? null;
     if (domX == null) {
-      // A cursor inside a longer rest has no rendered event of its own: place it between its
+      // A position inside a longer rest has no rendered event of its own: place it between its
       // neighbours on the staff, by time.
-      const onset = cursor.timestampNum / Math.max(cursor.timestampDen, 1);
-      const points = getRenderedGhostStaffPoints(grid, cursor.coreMeasureId, cursor.staffIndex, { includeSynthetic: true })
+      const onset = position.timestampNum / Math.max(position.timestampDen, 1);
+      const points = getRenderedGhostStaffPoints(grid, position.coreMeasureId, position.staffIndex, { includeSynthetic: true })
         .map((point) => ({ onset: point.timestampNum / Math.max(point.timestampDen, 1), domX: point.domX }))
         .sort((left, right) => left.onset - right.onset);
       const before = points.filter((point) => point.onset <= onset + 1e-9).at(-1) ?? null;
       const after = points.find((point) => point.onset > onset + 1e-9) ?? null;
-      const overlay = measureLayoutOverlays.find((entry) => entry.measureId === cursor.coreMeasureId) ?? null;
+      const overlay = overlays.find((entry) => entry.measureId === position.coreMeasureId) ?? null;
       if (before && Math.abs(before.onset - onset) < 1e-9) domX = before.domX;
       else if (before && after) domX = before.domX + ((onset - before.onset) / (after.onset - before.onset)) * (after.domX - before.domX);
       else if (before && overlay) {
@@ -15550,12 +15605,24 @@ export default function ScoreEditor({
       } else if (after) domX = after.domX;
     }
     if (domX == null) return null;
-    const staffCandidates = (staffDetailsByMeasureRef.current.get(cursor.measureNumber) ?? [])
-      .filter((entry) => entry.staffIndex === cursor.staffIndex);
-    const staff = staffCandidates.find((entry) => cursor.corePartId && entry.corePartId === cursor.corePartId)
+    const staffCandidates = (staffDetails.get(position.measureNumber) ?? [])
+      .filter((entry) => entry.staffIndex === position.staffIndex);
+    const staff = staffCandidates.find((entry) => position.corePartId && entry.corePartId === position.corePartId)
       ?? staffCandidates[0]
       ?? null;
-    if (!staff) return null;
+    return staff ? { domX, staff } : null;
+  };
+
+  // The note-input caret (O1 in docs/note-entry-mastery-ledger.md): where the next note lands, for
+  // keyboard, mouse and MIDI entry alike. It is drawn from the rendered snap grid, at the onset of the
+  // input cursor, over the cursor's staff, in the colour of the input voice.
+  const noteInputCaret = useMemo(() => {
+    if (!noteInputMode) return null;
+    const cursor = selectedNote ?? noteInputAnchor ?? null;
+    if (!cursor?.coreMeasureId) return null;
+    const place = resolveInputPlace(cursor);
+    if (!place) return null;
+    const { domX, staff } = place;
     const space = Math.max(staff.lineDistanceDom, 4);
     const top = staff.topLineDomY - space * 1.5;
     const bottom = staff.bottomLineDomY + space * 1.5;
@@ -15569,7 +15636,46 @@ export default function ScoreEditor({
       voice: selectedVoice,
       timestamp: `${cursor.timestampNum}/${cursor.timestampDen}`,
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [measureLayoutOverlays, noteInputAnchor, noteInputMode, overlayLayerOffset, renderViewportRevision, selectedNote, selectedVoice]);
+
+  // Pending notes: entered, in the document, and not drawn by the score yet. Each stands where the
+  // caret stood when it was typed, in the ink of the score, until the drawing of its revision lands.
+  const pendingNotes = useMemo(() => {
+    const open = pendingEntriesFor(allPendingEntries, coreDocument?.revision ?? 0, renderedRevision);
+    return open.flatMap((entry) => {
+      const { note } = entry;
+      const place = resolveInputPlace({ ...note, coreMeasureId: note.coreMeasureId ?? undefined, isRest: false } as InputPosition);
+      if (!place) return [];
+      const { domX, staff } = place;
+      const clef = resolveClefAtMeasure(coreDocument, note.measureNumber, note.staffIndex, {
+        corePartId: note.corePartId,
+        measureId: note.coreMeasureId,
+      });
+      const staffStep = topLineDiatonicIndex(clef) - diatonicPitchIndex(note.step, note.octave);
+      const centerY = staff.topLineDomY + (staffStep * (staff.lineDistanceDom / 2));
+      const stemDirection = resolvePreviewStemDirection({ staffStep, voiceId: inputVoiceOf(note.voiceId) });
+      return [{
+        key: `${entry.revision}:${note.measureNumber}:${note.staffIndex}:${note.timestampNum}/${note.timestampDen}:${note.step}${note.octave}`,
+        revision: entry.revision,
+        note,
+        stemDirection,
+        x: domX + overlayLayerOffset.x,
+        y: centerY + overlayLayerOffset.y,
+        space: Math.max(staff.lineDistanceDom, 4),
+        staffStep,
+        lineCount: staff.lineCount,
+      }];
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPendingEntries, coreDocument, measureLayoutOverlays, overlayLayerOffset, renderedRevision]);
+  const newestPendingKey = pendingNotes.at(-1)?.key ?? null;
+  useLayoutEffect(() => {
+    if (!newestPendingKey) return;
+    // In the page now; on screen with the next frame.
+    markInputCommitted('input-to-pending-commit');
+    markInputPainted('input-to-pending-frame');
+  }, [newestPendingKey]);
 
   // Keep the caret in view (O4): long entry must never run out of the window.
   const noteInputCaretRef = useRef<HTMLDivElement | null>(null);
@@ -17216,6 +17322,31 @@ export default function ScoreEditor({
                     />
                   </form>
                 )}
+                {pendingNotes.map((pending) => (
+                  <div
+                    key={pending.key}
+                    aria-hidden
+                    data-testid="pending-note"
+                    data-pending-revision={pending.revision}
+                    data-pending-measure={pending.note.measureNumber}
+                    data-pending-staff={pending.note.staffIndex}
+                    data-pending-timestamp={`${pending.note.timestampNum}/${pending.note.timestampDen}`}
+                    data-pending-pitch={`${pending.note.step}${pending.note.alter > 0 ? '#'.repeat(pending.note.alter) : pending.note.alter < 0 ? 'b'.repeat(-pending.note.alter) : ''}${pending.note.octave}`}
+                    className="pointer-events-none absolute left-0 top-0"
+                  >
+                    <PendingNoteGlyph
+                      x={pending.x}
+                      y={pending.y}
+                      space={pending.space}
+                      duration={pending.note.duration}
+                      dotted={pending.note.dotted}
+                      stemDirection={pending.stemDirection}
+                      alter={pending.note.alter}
+                      staffStep={pending.staffStep}
+                      lineCount={pending.lineCount}
+                    />
+                  </div>
+                ))}
                 {noteInputCaret && (
                   <div
                     ref={noteInputCaretRef}

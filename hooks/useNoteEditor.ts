@@ -27,6 +27,7 @@ import { resolveKeyboardAccidentalShortcut, resolveKeyboardArticulationShortcut,
 import { getActiveKeyboardLayoutContext, isRepeatableNavigationKey, shortcutDigit } from '@/src/score-input/keyboard-layout';
 import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
 import { endOfEvent } from '@/src/score-input/inline-entry-navigation';
+import { publishPendingEntry } from '@/src/score-input/pending-entry';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildDurationCandidates, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { MidiPitch } from '@/src/score-input/midi-input';
@@ -1083,6 +1084,7 @@ export function useNoteEditor(
   const setOsmd = useCallback((osmd: any) => { osmdRef.current = osmd; }, []);
 
   const preparedCommandsRef = useRef<PreparedDocumentCommands | undefined>(undefined);
+  const pointerEntryRef = useRef(false);
   const applyEditorCommands = useCallback((commands: ScoreCommand[]) => {
     const prepared = prepareDocumentCommands({ xml, coreDocument }, commands);
     preparedCommandsRef.current = prepared;
@@ -2548,6 +2550,31 @@ export function useNoteEditor(
     })) return false;
     if (extendsInputSlur && inputSlur && enteredNote) inputSlur.end = enteredNote;
 
+    // The entered note is shown at once, before the score is drawn again (gate 3, pending note).
+    if (
+      enteredNote && !enteredNote.isRest && !behavior?.skipHistory && nextDocument && !pointerEntryRef.current
+      && enteredNote.step && enteredNote.octave != null
+    ) {
+      const value = behavior?.enteredValue ?? { duration: selectedDurationRef.current, dotted: isDottedRef.current };
+      publishPendingEntry({
+        revision: nextDocument.revision,
+        note: {
+          coreMeasureId: enteredNote.coreMeasureId ?? null,
+          corePartId: enteredNote.corePartId ?? null,
+          measureNumber: enteredNote.measureNumber,
+          staffIndex: enteredNote.staffIndex,
+          voiceId: enteredNote.voiceId,
+          timestampNum: enteredNote.timestampNum,
+          timestampDen: enteredNote.timestampDen,
+          step: enteredNote.step,
+          octave: enteredNote.octave,
+          alter: enteredNote.alter ?? 0,
+          duration: String(value.duration),
+          dotted: Boolean(value.dotted),
+        },
+      });
+    }
+
     if (enteredNote) {
       lastNoteInputRef.current = {
         ...enteredNote,
@@ -3138,6 +3165,10 @@ export function useNoteEditor(
   }, [applyEditorCommands, commitNoteInputUpdate, coreDocument, options, resolveRecentInputFromDocument, selectSingleNote, setSelectedAccidentalLive, warnNoOpEdit, warnRejectedEdit, xml]);
 
   const placeNoteAt = useCallback((target: ResolvedEditTarget | LegacyPointerPlacementTarget, placementOptions?: { audition?: boolean }) => {
+    // A click has its preview at the place already; the pending note is for keyboard and MIDI
+    // entry. The commit below is synchronous, the flag goes with this task's microtasks.
+    pointerEntryRef.current = true;
+    queueMicrotask(() => { pointerEntryRef.current = false; });
     const normalizedTarget = (() => {
       if ('source' in target) return target;
 

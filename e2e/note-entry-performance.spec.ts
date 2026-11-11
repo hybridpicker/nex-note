@@ -84,6 +84,9 @@ for (const [size, measures, parts] of SIZES) {
     fs.writeFileSync(`${out}/stages-${size}.json`, JSON.stringify({ size, measures, parts, instrument: 'preloaded synthetic WebAudio buffer; scheduling only', userAgent: await page.evaluate(() => navigator.userAgent), retained, summary }, null, 2));
     if (process.env.NEX_QUALITY_EXPECT_CACHE) await expect(page.getByTestId('score-canvas')).toHaveAttribute('data-glyph-bounds-cache', 'true');
     for (const stage of ['input-to-preview-frame', 'input-to-note-frame', 'input-to-audio-scheduled', 'layout-projection', 'osmd-load', 'osmd-render']) expect(retained[stage]?.length, stage).toBeGreaterThanOrEqual(sampleCount);
+    // A note typed into a bar that its own entry appends has no place on the old drawing and so no
+    // pending note; the 32-note score is filled to its end during the run.
+    expect(retained['input-to-pending-frame']?.length ?? 0, 'input-to-pending-frame').toBeGreaterThanOrEqual(sampleCount - (size === 'small' ? 4 : 0));
     expect(importMusicXmlToCore(await xml()).score.parts).toHaveLength(parts);
     expect(await notes.count()).toBeGreaterThanOrEqual(measures * parts * 8);
   });
