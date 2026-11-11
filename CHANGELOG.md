@@ -11,6 +11,7 @@ All notable changes to nex-note are documented here.
 
 ### Changed
 
+- `<` and `>` write hairpins over the selection, and the accent key is `Shift+V`, as in MuseScore; `Shift+.` (which types `>` on a US keyboard) no longer sets an accent. `Shift+N` (tenuto) and `Shift+O` (marcato) are added beside `Shift+-` and `Shift+6`.
 - With a note selected, `Cmd/Ctrl+T` and `Cmd/Ctrl+M` open the entry field at the note instead of the Inspector.
 - Mouse entry follows MuseScore: a click in note input adds a chord tone to a note of the armed value, replaces a note of another value and writes over a rest; it no longer inserts and pushes the bar when the pointer stands left of a notehead. `Shift`+click replaces, `Cmd/Ctrl+Shift`+click inserts, `Alt/Option`+click adds a chord tone.
 - The mode buttons of the notation tools read `Standard`/`Replace`, `Chord`, `Keys`, `Pitch first` and `Lead sheet` instead of `INS`/`OVR`, `CHD`, `STEP`, `DUR` and `LEAD`; the status line names bar, beat, pitch and value instead of an onset fraction; the Inspector shows pitch, value, position, voice, stem and visibility of the selected note.

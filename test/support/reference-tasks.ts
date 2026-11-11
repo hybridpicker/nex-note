@@ -20,8 +20,13 @@ import { BASS, PIANO, TREBLE, scoreXml } from './entry-fixtures.ts';
 
 export type KeyScript = string[];
 
-/** `'N 5 c d'` as tokens. */
+/**
+ * `'n 5 c d'` as tokens. Command keys are written in lower case here: in a script a capital letter is a
+ * typed capital (Shift), as in chord symbols and lyrics. `commandKeys` converts a script that names
+ * keys by their caps (`N`, `T`).
+ */
 export const keys = (script: string): KeyScript => script.trim().split(/\s+/).filter(Boolean);
+export const commandKeys = (script: string): KeyScript => keys(script).map((token) => (/^[A-Z]$/.test(token) ? token.toLowerCase() : token));
 /** Text typed character by character; a space is the `Space` key. */
 export const text = (value: string): KeyScript => [...value].map((character) => (character === ' ' ? 'Space' : character));
 /** A palette item applied from MuseScore's palette search. */
@@ -100,7 +105,7 @@ const R1: ReferenceTask = {
   id: 'R1',
   title: 'Eight bars of melody with a rest, accidentals, a tie, a triplet, a chord, a grace note, a dynamic, an accent and a slur',
   start: () => scoreXml({ beats: 4, beatType: 4, measures: 8, parts: [{ ...TREBLE }] }),
-  nex: keys(PASSAGE_1),
+  nex: commandKeys(PASSAGE_1),
   musescore: [
     ...keys('N 5 C 4 D E 5 . F 4 G'),
     ...keys('5 0 + G - B A'),
@@ -142,13 +147,20 @@ const R2_MELODY = [
   'C5w', 'E5h G5h', 'A5w', 'G5h E5h',
   'F5q E5q D5q C5q', 'D5h B4h', 'C5h D5h', 'C5w',
 ];
-const R2_MELODY_KEYS = keys('N 5 c d e f 6 g e 5 a g f e 7 d 5 e f g a 6 g e 5 f e d e 7 c c 6 e g 7 a 6 g e 5 f e d c 6 d b c d 7 c');
+const R2_MELODY_KEYS = keys('n 5 c d e f 6 g e 5 a g f e 7 d 5 e f g a 6 g e 5 f e d e 7 c c 6 e g 7 a 6 g e 5 f e d c 6 d b c d 7 c');
 /** One entry per bar: a chord on beat 1, and for the bars with two chords a second one on beat 3. */
 const R2_CHORDS: Array<[string, string?]> = [
   ['C'], ['Am7'], ['F', 'G7'], ['G7'], ['C/E'], ['Am7'], ['Dm7', 'G7b9'], ['C'],
   ['C7'], ['F'], ['F#dim7'], ['C/G'], ['Bb7'], ['G7'], ['Dm7', 'G7'], ['C6'],
 ];
 const R2_VERSES = ['Morn-ing light is ris-ing o-ver the sea_', 'Eve-ning stars are fall-ing in-to the deep sea'];
+
+/**
+ * Nex Note stores a chord symbol with an altered or added degree (`G7b9`, `Bb7#11`) as text above the
+ * staff, so that it is drawn exactly as typed (`shouldRenderHarmonyAsLiteralWords` in the exporter,
+ * asserted in e2e/inline-chord-visibility.spec.ts). Every other symbol is a harmony.
+ */
+const chordKind = (symbol: string) => (/(?:[#b]\d|add|alt)/.test(symbol.replace(/^[A-G][#b]?/, '').split('/')[0]!) ? 'words' : 'harmony');
 
 function chordKeys(nextBar: string, halfBar: string, finish: string): KeyScript {
   return R2_CHORDS.flatMap(([first, second], index) => [
@@ -206,8 +218,8 @@ const R2: ReferenceTask = {
     'm1 clef G2', 'm1 key 0', 'm1 time 4/4',
     ...voice('', 1, R2_MELODY),
     ...R2_CHORDS.flatMap(([first, second], index) => [
-      `m${index + 1} @0 harmony ${first}`,
-      ...(second ? [`m${index + 1} @2 harmony ${second}`] : []),
+      `m${index + 1} @0 ${chordKind(first)} ${first}`,
+      ...(second ? [`m${index + 1} @2 ${chordKind(second)} ${second}`] : []),
     ]),
     ...lyricLines(1, R2_VERSES[0]!),
     ...lyricLines(2, R2_VERSES[1]!),
@@ -219,6 +231,7 @@ const R2: ReferenceTask = {
     'MuseScore lyrics: Ctrl+L, Space to the next note, `-` hyphen, `_` melisma; "lyrics entry automatically starts in the space beneath the last entered verse" (handbook), so the second Ctrl+L on the first note starts verse 2.',
     'assumed: Ctrl+Home (`first-element`) puts the selection on the first note after Esc.',
     'MuseScore voltas and the end repeat come from the Repeats & jumps palette through the palette search.',
+    'G7b9 is kept as text above the staff in Nex Note (see `chordKind`); MuseScore keeps it as a chord symbol. The key count is the same.',
   ],
 };
 

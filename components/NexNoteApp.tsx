@@ -1083,7 +1083,7 @@ export default function Home({ searchParams }: HomeProps) {
     isDotted, selectedVoice, entryMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, preparedDurationActivePitch, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
     editorError,
     toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleInputByDurationMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
-    toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, applyInlineEntryCommands, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
+    toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, applyInlineEntryCommands, addHairpin, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
     changePitch, prepareInputByDurationPitch, prepareInputByDurationRest, changeInputByDurationOctave, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, setAccidentalDisplay, clearArticulations, addDynamic, toggleTie, toggleSlur,
     transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, placeNoteAt,
   } = useNoteEditor(
@@ -4012,6 +4012,17 @@ export default function Home({ searchParams }: HomeProps) {
         disabled: !selectedNote,
         disabledReason: !hasScore ? scoreRequired : !selectedNote ? noteRequired : undefined,
         onRun: () => window.dispatchEvent(new CustomEvent('nex-note:open-inline-entry', { detail: { kind } })),
+      })),
+      ...(['crescendo', 'diminuendo'] as const).map((kind) => ({
+        id: `hairpin-${kind}`,
+        title: t(`command.hairpin.${kind}`),
+        description: t('command.hairpin.description'),
+        group: textInputGroup,
+        keywords: [...textInputKeywords, 'hairpin', kind, 'wedge'],
+        shortcut: kind === 'crescendo' ? '<' : '>',
+        disabled: !selectedNote,
+        disabledReason: !hasScore ? scoreRequired : !selectedNote ? noteRequired : undefined,
+        onRun: () => addHairpin(kind),
       })),
       {
         id: 'focus-staff-text',

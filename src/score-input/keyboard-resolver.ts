@@ -223,8 +223,14 @@ export function resolveKeyboardArticulationShortcut(
   layout: KeyboardLayoutContext = UNKNOWN_KEYBOARD_LAYOUT,
 ): KeyboardArticulationShortcut | null {
   if (event.metaKey || event.ctrlKey || event.altKey || !event.shiftKey) return null;
-  if (shortcutLetter(event) === 'S') return 'staccato';
-  if (matchesShiftedBaseKey(event, '.', layout)) return 'accent';
+  // MuseScore's keys (`shortcuts.xml`): Shift+S staccato, Shift+V accent, Shift+N tenuto, Shift+O
+  // marcato. Shift+6 and Shift+- stay as Nex Note's older keys for marcato and tenuto. Shift+. is no
+  // longer the accent: on a US keyboard it types `>`, MuseScore's diminuendo hairpin (K5a).
+  const letter = shortcutLetter(event);
+  if (letter === 'S') return 'staccato';
+  if (letter === 'V') return 'accent';
+  if (letter === 'N') return 'tenuto';
+  if (letter === 'O') return 'strong-accent';
   if (matchesShiftedBaseKey(event, '6', layout)) return 'strong-accent';
   if (event.key === '\u2212' || matchesShiftedBaseKey(event, '-', layout)) return 'tenuto';
   return null;

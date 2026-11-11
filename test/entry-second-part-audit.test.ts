@@ -63,7 +63,7 @@ const KEYBOARD: Array<[string, string]> = [
   ['eighths', 'N 4 g a b'],
   ['a tied note', 'N 5 g T'],
   ['a Shift chord tone', 'N 5 g Shift+b'],
-  ['accent after an entry', 'N 5 g Shift+.'],
+  ['accent after an entry', 'N 5 g Shift+v'],
   ['staccato after an entry', 'N 5 g Shift+s'],
   ['tenuto after an entry', 'N 5 g Shift+-'],
   ['marcato after an entry', 'N 5 g Shift+6'],
@@ -76,7 +76,7 @@ const KEYBOARD: Array<[string, string]> = [
   ['a slur over entered notes', 'N 4 c d e Shift+ArrowLeft s'],
   ['an octave change after an entry', 'N 5 g Cmd+ArrowUp'],
   ['pitch-before-duration', 'N M g 5'],
-  ['accent on the selection', 'Shift+.'],
+  ['accent on the selection', 'Shift+v'],
   ['staccato on the selection', 'Shift+s'],
   ['tenuto on the selection', 'Shift+-'],
   ['marcato on the selection', 'Shift+6'],
@@ -342,7 +342,7 @@ for (const scenario of [DUET_SCENARIO, GRAND_DUO, TRIO]) {
     act(() => { harness.current.toggleTie(); });
   }, { mustChange: false });
   auditAction(scenario, 'palette clear articulations', (harness) => {
-    harness.press('Shift+.');
+    harness.press('Shift+v');
     harness.rerender();
     act(() => { harness.current.clearArticulations(); });
   }, { mustChange: false });

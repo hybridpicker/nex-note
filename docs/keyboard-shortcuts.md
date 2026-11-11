@@ -131,9 +131,10 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `T` | In der Noteneingabe den nächsten Ton bzw. kompletten Akkord mit aktiver Dauer erzeugen, alle Tonhöhen binden und einmal weiterschalten; außerhalb der Noteneingabe Tie auf der Auswahl toggeln | Noteneingabe oder Auswahl |
 | `S` | Slur toggeln | Auswahl erforderlich |
 | `Shift+S` | Staccato toggeln | Auswahl erforderlich |
-| `Shift+.` | Accent toggeln | Auswahl erforderlich |
-| `Shift+6` | Marcato/Strong Accent toggeln | Auswahl erforderlich |
-| `Shift+-` | Tenuto toggeln | Auswahl erforderlich |
+| `Shift+V` | Accent toggeln (wie MuseScore; bis November 2026 `Shift+.`) | Auswahl erforderlich |
+| `Shift+O` / `Shift+6` | Marcato/Strong Accent toggeln (`Shift+O` wie MuseScore) | Auswahl erforderlich |
+| `Shift+N` / `Shift+-` | Tenuto toggeln (`Shift+N` wie MuseScore) | Auswahl erforderlich |
+| `<` / `>` | Crescendo- bzw. Decrescendo-Gabel über die Auswahl (wie MuseScore), bei einer Note bis zu deren Ende; in der Noteneingabe an der gerade eingegebenen Note bzw. dem `Shift+Arrow`-Bereich | Auswahl erforderlich |
 | `Cmd/Ctrl+2` ... `9` | In der Noteneingabe (wie MuseScore): die aktive Dauer ist die Gesamtlänge des neuen Tuplets am Cursor (Viertel + `Cmd/Ctrl+3` = Achteltriole); der Cursor springt in die Gruppe, die Eingabedauer wird zur Einheit, getippte Tonhöhen füllen die Einheiten. Außerhalb der Noteneingabe: Dauer genau einer ausgewaehlten Note, eines Akkords oder einer Pause in ein Tuplet 2:3 bis 9:8 teilen; dieselben Aktionen sind als Toolbar-Buttons verfuegbar | Genau ein rhythmischer Anker; nicht darstellbare Dauern, Bereiche, Ties und bereits verschachtelte Tuplets werden sichtbar abgelehnt |
 | `/` | Eigene zeitlose Grace Note vor dem ausgewaehlten Anker einfuegen | Auswahl erforderlich; Hauptnote bleibt unveraendert |
 | `Cmd/Ctrl+/` | aktuellen Takt mit rhythmischen Slashes füllen | Auswahl erforderlich |
@@ -274,7 +275,8 @@ German/Austrian QWERTZ on macOS and Windows/Linux, with and without a layout map
 | Letters (`A`–`G`, `N`, `T`, `S`, `J`, `Cmd/Ctrl+Z/Y/K/T/M`) | the printed letter; the physical key is used only when the produced character is not a Latin letter (Option glyphs, non-Latin layouts) | `Cmd/Ctrl+Y` (printed Y, physical `KeyZ`) is Redo |
 | Accidentals `-` `=` `+` | the produced character | `-` flat, `Shift+0` natural, `+` (BracketRight) sharp |
 | Double accidentals `Alt/Option+-`, `Alt/Option+=` | the base character of the pressed key, from the layout map, the built-in layout table or the macOS Option glyph | `Option+-`, `Option+Shift+0` |
-| `Shift+.`, `Shift+6`, `Shift+-` | the physical base key | QWERTZ prints `:`, `&`, `_`; `Shift+ß` (`?`) stays the shortcut overview |
+| `Shift+6`, `Shift+-` | the physical base key | QWERTZ prints `&`, `_`; `Shift+ß` (`?`) stays the shortcut overview |
+| `<`, `>` hairpins | the produced character | US `Shift+,` and `Shift+.`; QWERTZ the `<` key and `Shift+<` |
 | `/` grace note, `Cmd/Ctrl+/` slash fill | the produced character | `Shift+7` |
 | Durations `1`–`9`, intervals `Alt/Option+1`–`9`, tuplets `Cmd/Ctrl+2`–`9`, TAB strings `Alt/Option+1`–`6` | a produced digit, or the physical digit row when a modifier or the layout replaced the character | plain `Shift+digit` never selects a duration (`Shift+7` is `/`) |
 | QWERTY piano (`P`) | physical positions, named by their US letters | bottom-left key (printed `Y`) is `C4` |

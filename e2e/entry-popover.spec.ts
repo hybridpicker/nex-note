@@ -159,3 +159,19 @@ test('K4: lyrics are typed under the notes: Space, hyphen, melisma and a second 
     'lyric 2 D5@m1:1 "ning" end',
   ]);
 });
+
+test('K4: a key typed right after the key that opens the field lands in the field', async ({ page }, testInfo) => {
+  const session = await EntrySession.boot(page, testInfo, { xml: TUNE, screenshots: false });
+  await session.clickNotehead(0);
+  const before = await session.xml();
+  // No waiting between the keys, as fast typing or a key script sends them.
+  await page.evaluate(() => {
+    const send = (init: KeyboardEventInit) => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+    send({ key: 'l', code: 'KeyL', ctrlKey: true });
+    const field = document.activeElement as HTMLInputElement | null;
+    (window as typeof window & { __focusAfterOpen?: string }).__focusAfterOpen = `${field?.tagName}:${field?.getAttribute('aria-label') ?? ''}`;
+  });
+  expect(await page.evaluate(() => (window as typeof window & { __focusAfterOpen?: string }).__focusAfterOpen), 'the field has the focus when the opening key returns').toBe('INPUT:Lyrics');
+  expect(await session.xml()).toBe(before);
+  await page.keyboard.press('Escape');
+});

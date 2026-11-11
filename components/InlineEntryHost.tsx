@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
 import InlineEntryPopover, { type InlineEntryAdvance } from '@/components/InlineEntryPopover';
 import type { SelectedNote } from '@/hooks/useNoteEditor';
@@ -136,8 +136,9 @@ export default function InlineEntryHost(props: InlineEntryHostProps) {
     place(position, BELOW.has(kind)) ?? { left: 24, top: 24 }
   ), [place]);
 
-  // A new request opens the popover at the selection (or at the place the request names).
-  useEffect(() => {
+  // A new request opens the popover at the selection (or at the place the request names). In the
+  // layout phase, so that the field exists and has the focus before the next key event.
+  useLayoutEffect(() => {
     if (!request) { setEntry(null); return; }
     if (request.serial === handledSerial.current) return;
     handledSerial.current = request.serial;

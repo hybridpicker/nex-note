@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /*
  * The shared inline-entry popover (K4 to K6 in docs/note-entry-mastery-ledger.md): one text field
@@ -70,6 +70,14 @@ export default function InlineEntryPopover(props: InlineEntryPopoverProps) {
     input.focus();
     if (input.value) input.select();
   }, [positionKey]);
+  // Opened from the Command Center, the field gets the focus before the Command Center closes and
+  // hands the focus back to the page: take it once more after that.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (inputRef.current && document.activeElement !== inputRef.current) inputRef.current.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const parsed = value.trim() ? preview(value) : null;
   const commit = (advance: InlineEntryAdvance | null) => {

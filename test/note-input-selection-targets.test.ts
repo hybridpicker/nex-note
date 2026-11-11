@@ -39,7 +39,7 @@ function run(script: string) {
 }
 
 test('an accent typed after a note marks that note, and the next letter goes to the next slot', () => {
-  const result = run('N 5 c Shift+. d');
+  const result = run('N 5 c Shift+v d');
   assert.deepEqual(result.marks, ['0:C5[accent]', '1:D5', '2:r']);
 });
 

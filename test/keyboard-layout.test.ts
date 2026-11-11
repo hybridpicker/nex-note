@@ -137,7 +137,12 @@ for (const layout of LAYOUTS) {
 
       test(`${label}: Shift+. Shift+6 Shift+- and Shift+S name physical keys`, () => {
         const articulation = (input: Press) => resolveKeyboardArticulationShortcut(press(layout, platform, input), context);
-        assert.equal(articulation({ code: 'Period', shift: true }), 'accent');
+        // Shift+. was the accent until K5a: it types `>` on a US keyboard, MuseScore's diminuendo
+        // hairpin. The accent is MuseScore's Shift+V, tenuto also Shift+N, marcato also Shift+O.
+        assert.equal(articulation({ code: 'Period', shift: true }), null);
+        assert.equal(articulation({ code: 'KeyV', shift: true }), 'accent');
+        assert.equal(articulation({ code: 'KeyN', shift: true }), 'tenuto');
+        assert.equal(articulation({ code: 'KeyO', shift: true }), 'strong-accent');
         assert.equal(articulation({ code: 'Digit6', shift: true }), 'strong-accent');
         assert.equal(articulation({ ...flatKey[layout], shift: true }), 'tenuto');
         assert.equal(articulation({ code: 'KeyS', shift: true }), 'staccato');

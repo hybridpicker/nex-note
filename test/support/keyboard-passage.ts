@@ -4,7 +4,8 @@ import { importMusicXmlToCore } from '../../src/musicxml-adapter/import/import-m
 
 // Digits are durations: 3 sixteenth, 4 eighth, 5 quarter, 6 half, 7 whole. "." dots, "0" is a rest,
 // "+" and "-" are one-shot accidentals, "T" ties into the next note, Cmd+3 makes a triplet, Shift+letter
-// adds a chord tone, "/" adds a grace note, Shift+. is accent, Alt+. is a louder dynamic, S slurs.
+// adds a chord tone, "/" adds a grace note, Shift+V is accent (MuseScore's key), Alt+. is a louder
+// dynamic, S slurs.
 export const PASSAGE_1 = [
   'N',
   '5 c 4 d e 5 . f 4 g',                  // bar 1: quarter, two eighths, dotted quarter, eighth
@@ -12,7 +13,7 @@ export const PASSAGE_1 = [
   '6 g 5 f e T',                           // bars 3-4: half, quarter, quarter tied over the barline
   '4 d c 5 Cmd+3 c d e 5 d',               // bar 4: eighths, an eighth triplet, quarter
   '5 c Shift+e Shift+g d / 6 e',           // bar 5: chord, quarter with a grace note, half
-  '5 c Alt+. d Shift+. e s f g s a 6 b',   // bars 6-7: dynamic, accent, slur E to G
+  '5 c Alt+. d Shift+v e s f g s a 6 b',   // bars 6-7: dynamic, accent, slur E to G
   '7 c',                                   // bar 8: whole note
 ].join(' ');
 

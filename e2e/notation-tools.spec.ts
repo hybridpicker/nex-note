@@ -2049,7 +2049,7 @@ test('keyboard passage 1 (mixed values, accidentals, tie, triplet, chord, grace,
   await page.keyboard.press('Control+Home');
   // The browser sends the US layout's key and code values; Playwright names keys by physical code.
   const playwrightKey: Record<string, string> = {
-    '+': 'Shift+Equal', '-': 'Minus', '/': 'Slash', '.': 'Period', 'Shift+.': 'Shift+Period',
+    '+': 'Shift+Equal', '-': 'Minus', '/': 'Slash', '.': 'Period', 'Shift+v': 'Shift+v',
     'Alt+.': 'Alt+Period', 'Cmd+3': 'Control+3', 'Shift+e': 'Shift+e', 'Shift+g': 'Shift+g',
   };
   for (const token of PASSAGE_1.split(/\s+/)) await page.keyboard.press(playwrightKey[token] ?? token);

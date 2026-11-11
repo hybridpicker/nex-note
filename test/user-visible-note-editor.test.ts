@@ -5753,7 +5753,7 @@ test('keyboard articulation shortcuts use the semantic toggle path', () => {
   });
   act(() => {
     hook.current.handleKeyDown(makeKeyboardEvent('S', { shiftKey: true }));
-    hook.current.handleKeyDown(makeKeyboardEvent('>', { shiftKey: true, code: 'Period' }));
+    hook.current.handleKeyDown(makeKeyboardEvent('V', { shiftKey: true, code: 'KeyV' }));
     hook.current.handleKeyDown(makeKeyboardEvent('^', { shiftKey: true, code: 'Digit6' }));
     hook.current.handleKeyDown(makeKeyboardEvent('_', { shiftKey: true, code: 'Minus' }));
   });

@@ -26,6 +26,7 @@ import { buildNoteEntryCommitCommands, toResolvedEditLocator } from '@/src/score
 import { resolveKeyboardAccidentalShortcut, resolveKeyboardArticulationShortcut, resolveKeyboardChordInputShortcut, resolveKeyboardDeleteAction, resolveKeyboardDurationShortcut, resolveKeyboardEditTarget, resolveKeyboardEntryModeShortcut, resolveKeyboardIntervalShortcut, resolveKeyboardTupletShortcut } from '@/src/score-input/keyboard-resolver';
 import { getActiveKeyboardLayoutContext, isRepeatableNavigationKey, shortcutDigit } from '@/src/score-input/keyboard-layout';
 import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
+import { endOfEvent } from '@/src/score-input/inline-entry-navigation';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildDurationCandidates, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { MidiPitch } from '@/src/score-input/midi-input';
@@ -4004,6 +4005,36 @@ export function useNoteEditor(
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml, resolveEditTargets]);
 
+  /** A hairpin over the selection (or the note just entered), up to the end of its last note. */
+  const addHairpin = useCallback((kind: 'crescendo' | 'diminuendo') => {
+    const editTargets = resolveEditTargets();
+    const targets = [...selectedTargets(editTargets.note, editTargets.notes)].sort(compareSelectedNotes);
+    const first = targets[0];
+    const last = targets[targets.length - 1];
+    if (!first || !last) return;
+    const stop = endOfEvent(coreDocument, {
+      corePartId: last.corePartId ?? null, staffIndex: last.staffIndex, voiceId: last.voiceId, measureNumber: last.measureNumber,
+      coreMeasureId: last.coreMeasureId ?? null, coreEntityId: last.coreEntityId ?? null, timestampNum: last.timestampNum, timestampDen: last.timestampDen,
+    });
+    if (!stop) return;
+    const commands: ScoreCommand[] = [{
+      type: 'addWedge',
+      kind,
+      ...(first.corePartId ? { corePartId: first.corePartId } : {}),
+      staffIndex: first.staffIndex,
+      startMeasureNumber: first.measureNumber,
+      startTimestampNum: first.timestampNum,
+      startTimestampDen: first.timestampDen,
+      stopMeasureNumber: stop.measureNumber,
+      stopTimestampNum: stop.timestampNum,
+      stopTimestampDen: stop.timestampDen,
+      placement: 'below',
+    } as ScoreCommand];
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) return;
+    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
+  }, [applyEditorCommands, coreDocument, onApplyCommands, resolveEditTargets, selectedNote, selectedNotes, xml]);
+
   const setAccidentalDisplay = useCallback((cautionary: boolean, enclosure: AccidentalEnclosure) => {
     const targets = selectedTargets(selectedNote, selectedNotes)
       .filter((entry) => !entry.isRest && Boolean(entry.writtenAccidental));
@@ -5080,7 +5111,7 @@ export function useNoteEditor(
       return;
     }
 
-    if (key === 'N') {
+    if (key === 'N' && !e.shiftKey) {
       e.preventDefault();
       toggleNoteInput();
       return;
@@ -5200,6 +5231,15 @@ export function useNoteEditor(
       if (noteInputModeRef.current || selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
         activateTie();
+      }
+      return;
+    }
+
+    // MuseScore `add-hairpin` and `add-hairpin-reverse`: the characters `<` and `>` as typed.
+    if ((e.key === '<' || e.key === '>') && !metaKey && !e.altKey) {
+      if (selectedNote || selectedNotes.length > 0) {
+        e.preventDefault();
+        keepingInputCursor(() => addHairpin(e.key === '<' ? 'crescendo' : 'diminuendo'));
       }
       return;
     }
@@ -5538,7 +5578,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, repeatSelection, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
+  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, addHairpin, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, repeatSelection, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
 
   return {
     selection: {
@@ -5632,6 +5672,7 @@ export function useNoteEditor(
     insertSlash,
     setHarmonyAtSelection,
     applyInlineEntryCommands,
+    addHairpin,
     fillSlashMeasure,
     navigateNote,
     extendSelection,

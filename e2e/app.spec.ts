@@ -3966,7 +3966,7 @@ test('browser articulation shortcuts toggle selected note markings', async ({ pa
 
   await clickRenderedNotehead(page, 0);
   await page.getByTestId('score-viewport').press('Shift+S');
-  await page.getByTestId('score-viewport').press('Shift+.');
+  await page.getByTestId('score-viewport').press('Shift+V');
   await page.getByTestId('score-viewport').press('Shift+6');
   await page.getByTestId('score-viewport').press('Shift+Minus');
 

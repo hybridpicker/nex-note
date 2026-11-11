@@ -7,6 +7,7 @@ import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } fro
 
 import { inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback } from '@/src/score-input/input-metrics';
 import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { VOICE_COLOURS } from '@/components/NoteInputBar';
 import InlineEntryHost, { type InlineEntryFlowKind, type InlineEntryRequest } from '@/components/InlineEntryHost';
 import type { EntryPosition } from '@/src/score-input/inline-entry-navigation';
@@ -14713,7 +14714,10 @@ export default function ScoreEditor({
     if (!selectedNote) return;
     if (kind === 'chord' ? !onSetChordSymbol : !onApplyInlineEntry) return;
     inlineEntrySerialRef.current += 1;
-    setInlineEntryRequest({ kind, serial: inlineEntrySerialRef.current });
+    const serial = inlineEntrySerialRef.current;
+    // The field is open and focused when the key that asked for it returns: the next key, typed at
+    // once, belongs to the field and must not reach the score.
+    flushSync(() => setInlineEntryRequest({ kind, serial }));
   }, [onApplyInlineEntry, onSetChordSymbol, selectedNote]);
 
   useEffect(() => {
