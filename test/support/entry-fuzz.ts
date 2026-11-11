@@ -167,8 +167,11 @@ function errorIssues(xml: string) {
 }
 
 /** Lanes an action may legitimately change: the selection's lanes and the entry lane of each staff touched. */
-function addressedLanes(app: AppHarness): Set<Lane> {
+function addressedLanes(app: AppHarness, action?: FuzzAction): Set<Lane> {
   const allowed = new Set<Lane>();
+  // Outside note input the voice keys move the selected notes into that voice (K7): the action names
+  // its target lane.
+  const voiceKey = /^Cmd\+Alt\+([1-4])$/.exec(action ?? '');
   const core = app.doc.coreDocument;
   const selection: SelectedNote[] = [
     ...(app.editor.selectedNotes ?? []),
@@ -180,6 +183,9 @@ function addressedLanes(app: AppHarness): Set<Lane> {
     allowed.add(laneKey(partId, entry.staffIndex, entry.voiceId));
     const entryVoice = storedVoiceFor(core, { corePartId: partId, staffIndex: entry.staffIndex }, app.editor.selectedVoice);
     allowed.add(laneKey(partId, entry.staffIndex, entryVoice));
+    if (voiceKey && !app.editor.noteInputMode) {
+      allowed.add(laneKey(partId, entry.staffIndex, storedVoiceFor(core, { corePartId: partId, staffIndex: entry.staffIndex }, Number(voiceKey[1]))));
+    }
   }
   return allowed;
 }
@@ -223,7 +229,7 @@ export function runSequence(fixture: string, seed: number, actions: FuzzAction[]
       const action = actions[step]!;
       const isHistory = action === 'Cmd+z' || action === 'Cmd+Shift+z';
       const before = laneContents(app.xml);
-      const allowed = addressedLanes(app);
+      const allowed = addressedLanes(app, action);
       try {
         applyAction(app, action);
       } catch (thrown) {

@@ -37,6 +37,7 @@ import { inspectResolvedEditTarget } from '@/src/score-input/note-entry-validato
 import type { ResolvedEditTarget } from '@/src/score-input/types';
 import type { ScoreDocumentSelectedDuration, ScoreDocumentSelectionAnchor } from '@/src/score-session/types';
 import type { ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
+import { beatOfOnset, formatBeat } from '@/src/score-input/position-label';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import { resolveNextEnharmonicPitch, writtenAccidentalToAlter, type AccidentalEnclosure, type WrittenAccidental } from '@/src/shared/music/accidentals';
 import { diatonicPitchIndex, keyFifthsAlterForStep, pitchFromDiatonicIndex, resolveDiatonicIntervalAbove, resolveKeyFifthsAtMeasure, resolveMeasureAccidentalAlter, resolvePitchNameEntry, type DiatonicIntervalNumber, topLineDiatonicIndex, resolveClefAtMeasure } from '@/src/score-input/staff-pitch';
@@ -2163,6 +2164,176 @@ export function useNoteEditor(
 
     clearSelection();
   }, [applyEditorCommands, clearSelection, onApplyCommands, resolveSelectionFromDocument, selectSingleNote, selectedNote, warnNoOpEdit, xml]);
+
+  /**
+   * K8: bars from the keyboard, after MuseScore's `insert-measure` (Ins), `append-measure` (Ctrl+B)
+   * and `time-delete` (Ctrl+Del). Insert and delete act on the bars the selection touches and leave
+   * the selection on the first event of the bar that now stands there.
+   */
+  const editBars = useCallback((action: 'insertBefore' | 'append' | 'delete') => {
+    const anchor = selectedNoteRef.current ?? selectedNote;
+    const targets = selectedNotes.length > 0 ? selectedNotes : anchor ? [anchor] : [];
+    const barCount = coreDocument?.score.parts[0]?.staves[0]?.measures.length ?? 0;
+    if (!barCount) return false;
+    if (action !== 'append' && (!anchor || !targets.length)) return false;
+    const first = targets.length ? Math.min(...targets.map((note) => note.measureNumber)) : barCount;
+    const last = targets.length ? Math.max(...targets.map((note) => note.measureNumber)) : barCount;
+    const commands: ScoreCommand[] = action === 'append'
+      ? [{ type: 'insertMeasureAfter', measureNumber: barCount }]
+      : action === 'insertBefore'
+        ? [{ type: 'insertMeasureBefore', measureNumber: first }]
+        : Array.from({ length: last - first + 1 }, () => ({ type: 'deleteMeasure' as const, measureNumber: first }));
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml) {
+      const rejected = next.diagnostics.find((entry) => entry.code.endsWith('_rejected'));
+      setEditorError(rejected?.message ?? 'The bars could not be changed here.');
+      return true;
+    }
+    setEditorError(null);
+    onApplyCommands(commands, { selectionAnchor: null });
+    if (action === 'append' || !anchor) return true;
+    const landingBar = Math.min(first, next.coreDocument?.score.parts[0]?.staves[0]?.measures.length ?? first);
+    const landing = buildSemanticSelectionEntries(next.coreDocument)
+      .filter((entry) => entry.measureNumber === landingBar && entry.staffIndex === anchor.staffIndex && (!anchor.corePartId || entry.corePartId === anchor.corePartId))
+      .sort((left, right) => left.voiceId - right.voiceId || left.timestampNum / Math.max(left.timestampDen, 1) - right.timestampNum / Math.max(right.timestampDen, 1))[0];
+    if (!landing) {
+      clearSelection();
+      return true;
+    }
+    const resolved = toSelectedNote(landing);
+    lastNoteInputRef.current = null;
+    selectSingleNote(resolved, { visualOnly: false, text: null, measureNumber: resolved.measureNumber, staffIndex: resolved.staffIndex });
+    return true;
+  }, [applyEditorCommands, clearSelection, coreDocument, onApplyCommands, selectSingleNote, selectedNote, selectedNotes, xml]);
+
+  /**
+   * K7: MuseScore's `voice-1` … `voice-4` in normal mode (`Score::changeSelectedElementsVoice`). The
+   * selected notes go to the target voice where it has a rest, or join a chord of the same value
+   * there; a rest stays behind. Where the target voice has other music, nothing is moved and a
+   * sentence says where. Returns false when there is nothing to move (the key then only chooses the
+   * input voice).
+   */
+  const moveSelectionToVoice = useCallback((inputVoice: 1 | 2 | 3 | 4) => {
+    const document = coreDocument;
+    if (!document) return false;
+    const anchor = selectedNoteRef.current ?? selectedNote;
+    const chosen = (selectedNotes.length > 0 ? selectedNotes : anchor ? [anchor] : [])
+      .filter((note) => !note.isRest && inputVoiceOf(note.voiceId) !== inputVoice);
+    if (!chosen.length) return false;
+    const graceIds = new Set(document.graceNotes.map((grace) => grace.eventId));
+    const sources = chosen
+      .map((note) => ({ note, ref: findEventReference(document, note) }))
+      .filter((entry): entry is { note: SelectedNote; ref: NonNullable<ReturnType<typeof findEventReference>> } => Boolean(entry.ref && entry.ref.event.kind === 'note' && !graceIds.has(entry.ref.event.id)))
+      .sort((left, right) => left.note.measureNumber - right.note.measureNumber
+        || left.ref.event.timestampNum / Math.max(left.ref.event.timestampDen, 1) - right.ref.event.timestampNum / Math.max(right.ref.event.timestampDen, 1)
+        || Number(left.ref.event.isChord) - Number(right.ref.event.isChord));
+    if (!sources.length) return false;
+    const reject = (message: string) => { setEditorError(message); return true; };
+    if (sources.some(({ ref }) => document.tuplets.some((tuplet) => tuplet.eventIds.includes(ref.event.id)))) {
+      return reject('Notes of a tuplet cannot be moved to another voice one by one. Cut the tuplet and paste it into the other voice.');
+    }
+    const inserts: ScoreCommand[] = [];
+    const marks: ScoreCommand[] = [];
+    const ties: ScoreCommand[] = [];
+    const removals: ScoreCommand[] = [];
+    const written = new Set<string>();
+    const samePitch = (left: TimedEvent, right: TimedEvent) => left.kind === 'note' && right.kind === 'note'
+      && left.pitch.step === right.pitch.step && left.pitch.octave === right.pitch.octave && left.pitch.alter === right.pitch.alter;
+    for (const [index, { note, ref }] of sources.entries()) {
+      const event = ref.event;
+      if (event.kind !== 'note') continue;
+      const targetVoiceId = storedVoiceFor(document, { corePartId: ref.part.id, staffIndex: ref.staff.staffIndex }, inputVoice);
+      const targetVoice = ref.measure.voices.find((voice) => voice.voiceId === targetVoiceId) ?? null;
+      const start = event.timestampNum;
+      const end = start + event.durationDivisions;
+      const inTheWay = (targetVoice?.events ?? []).filter((entry) => (
+        entry.kind === 'note' && !graceIds.has(entry.id)
+        && entry.timestampDen === event.timestampDen
+        && entry.timestampNum < end && entry.timestampNum + entry.durationDivisions > start
+      ));
+      const joins = inTheWay.length > 0 && inTheWay.every((entry) => entry.timestampNum === start && entry.durationDivisions === event.durationDivisions);
+      if (inTheWay.length > 0 && !joins) {
+        return reject(`Voice ${inputVoice} already has other music at bar ${note.measureNumber}, beat ${formatBeat(beatOfOnset(event.timestampNum, event.timestampDen, 4))}. Nothing was moved.`);
+      }
+      if (inTheWay.some((entry) => samePitch(entry, event))) {
+        return reject(`Voice ${inputVoice} already has this note at bar ${note.measureNumber}. Nothing was moved.`);
+      }
+      const locator = {
+        coreMeasureId: ref.measure.id,
+        corePartId: ref.part.id,
+        measureNumber: ref.measure.measureNumber,
+        staffIndex: ref.staff.staffIndex,
+        voiceId: targetVoiceId,
+        timestampNum: event.timestampNum,
+        timestampDen: event.timestampDen,
+      };
+      const onsetKey = `${locator.measureNumber}:${locator.staffIndex}:${locator.timestampNum}/${locator.timestampDen}`;
+      inserts.push({
+        type: 'insertNoteAt',
+        ...locator,
+        step: event.pitch.step,
+        octave: event.pitch.octave,
+        alter: event.pitch.alter,
+        ...(event.writtenAccidental ? { writtenAccidental: event.writtenAccidental } : {}),
+        durationType: event.durationType ?? 'quarter',
+        isDotted: Boolean(event.isDotted),
+        asChord: joins || written.has(onsetKey),
+        preserveOverflow: false,
+      } as ScoreCommand);
+      if (!written.has(onsetKey) && !joins) {
+        for (const articulation of event.articulations ?? []) {
+          marks.push({ type: 'toggleArticulation', articulation, ...locator } as ScoreCommand);
+        }
+      }
+      written.add(onsetKey);
+      // A tie goes along when the note it runs into is moved as well.
+      const continues = event.tieStart && sources.slice(index + 1).some((later) => (
+        samePitch(later.ref.event, event)
+        && (later.note.measureNumber > note.measureNumber || later.ref.event.timestampNum >= end)
+      ));
+      if (continues) {
+        ties.push({ type: 'toggleTie', coreEntityId: null, ...locator, step: event.pitch.step, octave: event.pitch.octave, alter: event.pitch.alter } as ScoreCommand);
+      }
+      removals.push({
+        type: 'deleteNote',
+        coreEntityId: event.id,
+        coreMeasureId: ref.measure.id,
+        corePartId: ref.part.id,
+        measureNumber: ref.measure.measureNumber,
+        staffIndex: ref.staff.staffIndex,
+        voiceId: ref.voice.voiceId,
+        timestampNum: event.timestampNum,
+        timestampDen: event.timestampDen,
+      } as ScoreCommand);
+    }
+    const commands = [...inserts, ...marks, ...removals, ...ties];
+    const next = applyEditorCommands(commands);
+    if (next.xml === xml || next.diagnostics.some((entry) => entry.code.endsWith('_rejected'))) {
+      const rejected = next.diagnostics.find((entry) => entry.code.endsWith('_rejected'));
+      return reject(rejected?.message ?? `These notes cannot be moved to voice ${inputVoice}.`);
+    }
+    setEditorError(null);
+    onApplyCommands(commands, { selectionAnchor: null });
+    setSelectedVoiceLive(inputVoice);
+    const firstInsert = inserts[0] as Extract<ScoreCommand, { type: 'insertNoteAt' }>;
+    const landed = buildSemanticSelectionEntries(next.coreDocument).filter((entry) => (
+      !entry.isRest
+      && (inserts as Array<Extract<ScoreCommand, { type: 'insertNoteAt' }>>).some((insert) => (
+        insert.measureNumber === entry.measureNumber && insert.staffIndex === entry.staffIndex && insert.voiceId === entry.voiceId
+        && (!insert.corePartId || insert.corePartId === entry.corePartId)
+        && timestampsEqual(insert.timestampNum, insert.timestampDen, entry.timestampNum, entry.timestampDen)
+        && insert.step === entry.step && insert.octave === entry.octave
+      ))
+    )).map((entry) => toSelectedNote(entry));
+    const first = landed.find((entry) => entry.measureNumber === firstInsert.measureNumber && timestampsEqual(entry.timestampNum, entry.timestampDen, firstInsert.timestampNum, firstInsert.timestampDen)) ?? landed[0];
+    if (first) {
+      selectSingleNote(first, { visualOnly: false, text: null, measureNumber: first.measureNumber, staffIndex: first.staffIndex });
+      setSelectedVoiceLive(inputVoice);
+    } else {
+      clearSelection();
+    }
+    return true;
+  }, [applyEditorCommands, clearSelection, coreDocument, onApplyCommands, selectSingleNote, selectedNote, selectedNotes, setSelectedVoiceLive, xml]);
 
   function resolveSelectionByEntityId(document: ScoreDocumentModel | null, entityId: string | null | undefined) {
     if (!document || !entityId) return null;
@@ -5190,7 +5361,11 @@ export function useNoteEditor(
       : altNumberKeyMap[e.key] ?? voiceCodeMatch?.[1] ?? null;
     if ((e.ctrlKey || e.metaKey) && e.altKey && voiceShortcut) {
       e.preventDefault();
-      setSelectedVoiceLive(Number(voiceShortcut) as 1 | 2 | 3 | 4);
+      const voice = Number(voiceShortcut) as 1 | 2 | 3 | 4;
+      // Outside note input the key moves the selected notes to that voice (K7); otherwise, and with
+      // a rest or nothing selected, it chooses the voice the next entry goes to.
+      if (!noteInputModeRef.current && moveSelectionToVoice(voice)) return;
+      setSelectedVoiceLive(voice);
       return;
     }
 
@@ -5220,6 +5395,20 @@ export function useNoteEditor(
       hasSelection: Boolean(selectedNote || selectedNotes.length > 0),
       noteInputMode,
     });
+    if (deleteAction === 'deleteBars') {
+      e.preventDefault();
+      editBars('delete');
+      return;
+    }
+    if (e.key === 'Insert' && !metaKey && !e.altKey && !e.shiftKey) {
+      if (editBars('insertBefore')) e.preventDefault();
+      return;
+    }
+    if (key === 'B' && metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      editBars('append');
+      return;
+    }
     if (deleteAction === 'delete') {
       e.preventDefault();
       if (e.key === 'Backspace' && noteInputModeRef.current && takeBackLastEntry()) return;
@@ -5646,7 +5835,7 @@ export function useNoteEditor(
       }
       return;
     }
-  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, addHairpin, takeBackLastEntry, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, repeatSelection, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
+  }, [coreDocument, selectedNote, selectedNotes.length, selectedVisual, Boolean(clipboard), duplicateSelection, copySelectedRange, pasteContent, deleteSelectedNote, rippleDelete, clearMeasureVoice, applyDurationTransform, applyAccidentalChoice, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, fillSlashMeasure, changeInputByDurationOctave, changeOctave, changePitch, replaceSelectedPitchAndAdvance, replaceSelectedVoicePitchAtAnchor, insertNote, insertGuitarFret, insertRest, moveInputByDurationPitchCursor, navigateNote, extendSelection, navigateToMeasureBoundary, navigateToScoreBoundary, navigateVertical, selectAllInVoice, toggleStemDirection, toggleSlashNotehead, toggleArticulation, addHairpin, takeBackLastEntry, editBars, moveSelectionToVoice, activateTie, toggleSlur, handleNoteClick, clearSelection, transposeSelectedBySemitone, respellEnharmonically, moveSelectedNoteToAdjacentStaff, prepareInputByDurationPitch, prepareInputByDurationRest, removeLastPreparedDurationTone, toggleInputByDurationMode, toggleNoteInput, toggleStepInputKeyboardMode, repeatLastInput, repeatSelection, commitPreparedDurationInput, setChordInputModeLive, setDuration, setEntryModeLive, setInputByDurationModeLive, setIsDottedLive, setNoteInputModeLive, setPreparedDurationPitchesLive, setStepInputKeyboardModeLive, setSelectedDurationLive, setSelectedVoiceLive, setSelectedGuitarStringLive, resolveEditTargets, selectSingleNote, beyondScoreCursor, enterBeyondScore]);
 
   return {
     selection: {

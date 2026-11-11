@@ -150,3 +150,114 @@ test('F48: a chord tone added to a tuplet unit behind a grace note belongs to th
   assert.match(unit.join(' | '), /\+G\d eighth \[3:2\]/, 'the chord tone is a unit of the triplet');
   app.unmount();
 });
+
+/*
+ * K8: bars from the keyboard. MuseScore `shortcuts.xml`: `insert-measure` Ins (one bar before the
+ * selection), `append-measure` Ctrl+B (one bar at the end), `time-delete` Ctrl+Del (the selected bars).
+ */
+const barCount = (xml: string) => (xml.match(/<measure /g) ?? []).length;
+
+test('K8: Insert puts an empty bar before the bar of the selection and selects it', () => {
+  const app = mountApp(TUNE(2));
+  const startXml = app.xml;
+  select(app, 1);
+  app.press('Insert');
+  assert.equal(barCount(app.xml), 3);
+  assert.deepEqual(notes(app.xml), ['m2 v1 @0 C4 quarter', 'm2 v1 @1 D4 quarter', 'm2 v1 @2 E4 quarter', 'm2 v1 @3 F4 quarter']);
+  assert.deepEqual(summarizeScore(app.xml).filter((line) => / (key|time|clef) /.test(line)), ['m1 key 2', 'm1 time 4/4', 'm1 clef G2']);
+  assert.equal(app.editor.selectedNote?.measureNumber, 1);
+  assert.equal(app.editor.selectedNote?.isRest, true);
+  app.undo();
+  assert.equal(app.xml, startXml);
+  app.unmount();
+});
+
+test('K8: Cmd+B appends a bar at the end and leaves the selection where it is', () => {
+  const app = mountApp(TUNE());
+  select(app, 2);
+  const before = notes(app.xml);
+  app.press('Cmd+b');
+  assert.equal(barCount(app.xml), 3);
+  assert.deepEqual(notes(app.xml), before);
+  assert.equal(app.editor.selectedNote?.measureNumber, 1);
+  assert.equal(app.editor.selectedNote?.step, 'E');
+  app.unmount();
+});
+
+test('K8: Cmd+Delete removes the bar of the selection; the last bar of a score stays, with a sentence', () => {
+  const app = mountApp(TUNE(2));
+  const startXml = app.xml;
+  select(app, 1);
+  app.press('Cmd+Delete');
+  assert.equal(barCount(app.xml), 1);
+  assert.deepEqual(notes(app.xml), []);
+  assert.deepEqual(summarizeScore(app.xml).filter((line) => / (key|time|clef) /.test(line)), ['m1 key 2', 'm1 time 4/4', 'm1 clef G2'], 'the score keeps its clef, key and time signature');
+  assert.equal(app.editor.selectedNote?.measureNumber, 1);
+  const oneBar = app.xml;
+  app.press('Cmd+Delete');
+  assert.equal(app.xml, oneBar);
+  assert.match(String(app.editor.editorError ?? ''), /last bar/i);
+  app.undo();
+  assert.equal(app.xml, startXml);
+  app.unmount();
+});
+
+/*
+ * K7 (voices): MuseScore `voice-1` … `voice-4` (Ctrl+Alt+1–4) in normal mode move the selected notes
+ * to that voice (`Score::changeSelectedElementsVoice`): they go where the target voice has a rest or a
+ * chord of the same value, and a rest stays behind.
+ */
+test('K7: Cmd+Alt+2 outside note input moves the selected notes to voice 2 and leaves rests behind', () => {
+  const app = mountApp(TUNE());
+  const startXml = app.xml;
+  select(app, 1);
+  app.press('Shift+ArrowRight Cmd+Alt+2');
+  const pitched = summarizeScore(app.xml).filter((line) => /^m1 v\d /.test(line) && !/ rest /.test(line));
+  assert.deepEqual(pitched.sort(), ['m1 v1 @0 C4 quarter', 'm1 v1 @3 F4 quarter', 'm1 v2 @1 D4 quarter', 'm1 v2 @2 E4 quarter']);
+  assert.equal(app.editor.selectedVoice, 2);
+  assert.equal(app.editor.selectedNote?.step, 'D');
+  assert.equal(((app.editor.selectedNote!.voiceId - 1) % 4) + 1, 2, 'the selection follows the notes into voice 2');
+  app.undo();
+  assert.equal(app.xml, startXml);
+  app.unmount();
+});
+
+test('K7: notes are not moved onto other music of the target voice; a sentence says so', () => {
+  const app = mountApp(TUNE());
+  select(app, 1);
+  app.press('Cmd+Alt+2');
+  const moved = app.xml;
+  // Voice 1 has C, rest, E, F now; moving the voice-2 D back is fine, moving E onto … nothing in the way.
+  // Put a half note in voice 1 over beats 2 and 3, then try to move the voice-2 D (beat 2) onto it.
+  select(app, 0);
+  app.press('6');
+  const blocked = app.xml;
+  assert.notEqual(blocked, moved);
+  app.click(selectableNotes(app.xml).find((note) => note.measureNumber === 1 && note.step === 'D' && !note.isRest)!);
+  app.press('Cmd+Alt+1');
+  assert.equal(app.xml, blocked, 'nothing changes');
+  assert.match(String(app.editor.editorError ?? ''), /voice 1 already has/i);
+  app.unmount();
+});
+
+test('K7: with a rest selected, or in note input, Cmd+Alt+2 only chooses the input voice', () => {
+  const app = mountApp(TUNE());
+  const startXml = app.xml;
+  select(app, 1);
+  app.press('N Cmd+Alt+2');
+  assert.equal(app.xml, startXml);
+  assert.equal(app.editor.selectedVoice, 2);
+  app.unmount();
+});
+
+test('F49: a value key on a unit of a tuplet inside a tuplet is rejected with a sentence', () => {
+  const app = mountApp(TUNE());
+  select(app, 0);
+  app.press('Cmd+3 Cmd+3');
+  const nested = app.xml;
+  assert.match(nested, /<tuplet number="2" type="start"/, 'a triplet inside a triplet');
+  app.press('5');
+  assert.equal(app.xml, nested, 'nothing changes');
+  assert.match(String(app.editor.editorError ?? ''), /tuplet/i);
+  app.unmount();
+});

@@ -86,6 +86,10 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Delete` / `Backspace` | Auswahl löschen; bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten. In der Noteneingabe nimmt `Backspace` die gerade eingegebene Note zurück: sie wird wieder zur Pause und der Cursor steht an ihrer Stelle (wie MuseScore), jeder weitere Druck geht eine Note weiter zurück | Noteneditor oder Noteneingabe |
 | `Shift+Delete` / `Shift+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
+| `Insert` | einen leeren Takt vor dem Takt der Auswahl einfügen; die Auswahl steht danach im neuen Takt (wie MuseScore `Ins`). Vor Takt 1 übernimmt der neue Takt Schlüssel, Tonart und Taktart; vor einem Auftakt wird nichts eingefügt | Noteneditor oder Noteneingabe |
+| `Cmd/Ctrl+B` | einen Takt am Ende anhängen (wie MuseScore) | Noteneditor oder Noteneingabe |
+| `Cmd/Ctrl+Delete` (Mac-Laptop: `Fn+Cmd+Backspace`) | die Takte der Auswahl löschen, die folgende Musik rückt nach (wie MuseScore `Ctrl+Del`). Schlüssel, Tonart und Taktart eines gelöschten Takts bleiben bei der Musik danach; der letzte Takt einer Partitur bleibt stehen | Noteneditor oder Noteneingabe |
+| `Cmd/Ctrl+Alt/Option+1` … `4` | in der Noteneingabe und ohne ausgewählte Note: Stimme für die nächste Eingabe wählen. Außerhalb der Noteneingabe mit ausgewählten Noten: diese Noten in die Stimme verschieben (wie MuseScore); in der alten Stimme bleiben Pausen. Steht in der Zielstimme dort andere Musik, wird nichts verschoben und ein Satz sagt, wo | Noteneditor |
 | `Cmd/Ctrl+Shift+Delete` / `Cmd/Ctrl+Shift+Backspace` | aktive Stimme im aktuellen Takt zu einem ganzen Taktrest leeren | Noteneditor oder Noteneingabe |
 
 ## Note Input

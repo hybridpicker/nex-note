@@ -2,7 +2,7 @@ import { midiNoteToPitch } from '@/src/score-input/midi-input';
 import { noteTypeToDivisions } from '@/lib/note-editor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
-import type { ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
+import type { MeasureAttributes, ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
 import {
   chooseDistinctGuitarFingeringsForPitches,
   chooseGuitarFingeringForPitch,
@@ -35,6 +35,7 @@ const CORE_SUPPORTED_COMMANDS = new Set([
   'fitPartToInstrument',
   'applyPracticeProfile',
   'insertMeasureAfter',
+  'insertMeasureBefore',
   'deleteMeasure',
   'changeNotePitch',
   'setAccidentalDisplay',
@@ -440,6 +441,33 @@ function cloneMeasureForInsertion(
       id: `${sourceMeasure.id}:attr:${nextMeasureNumber}:${index}`,
     })),
   };
+}
+
+/**
+ * What a deleted bar says about divisions, key, time signature and clefs goes to the bar after it,
+ * unless that bar says so itself: the music that follows keeps the state it was written in (K8).
+ */
+function carryAttributesToFollowingBar(
+  removed: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+  following: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
+) {
+  if (!removed.attributes.length) return;
+  const carried: MeasureAttributes = { id: `${following.id}:attr:carried`, clefs: [] };
+  const own = following.attributes;
+  for (const entry of removed.attributes) {
+    if (entry.divisions != null) carried.divisions = entry.divisions;
+    if (entry.keyFifths != null) carried.keyFifths = entry.keyFifths;
+    if (entry.time) carried.time = structuredClone(entry.time);
+    for (const clef of entry.clefs) {
+      carried.clefs = carried.clefs.filter((candidate) => candidate.staffIndex !== clef.staffIndex).concat(structuredClone(clef));
+    }
+  }
+  if (own.some((entry) => entry.divisions != null)) delete carried.divisions;
+  if (own.some((entry) => entry.keyFifths != null)) delete carried.keyFifths;
+  if (own.some((entry) => entry.time)) delete carried.time;
+  carried.clefs = carried.clefs.filter((clef) => !own.some((entry) => entry.clefs.some((candidate) => candidate.staffIndex === clef.staffIndex)));
+  if (carried.divisions == null && carried.keyFifths == null && !carried.time && !carried.clefs.length) return;
+  following.attributes = [carried, ...own];
 }
 
 /** Layout hints are keyed by measure number; shift those after an inserted or deleted bar. */
@@ -1333,6 +1361,9 @@ function applyDurationChangeToVoice(
   const tuplet = document.tuplets.find((entry) => entry.eventIds.includes(event.id));
   if (tuplet) {
     if (event.durationType === input.durationType && Boolean(event.isDotted) === Boolean(input.isDotted)) return true;
+    // A unit of a tuplet inside a tuplet lives in two ratios at once; growing it used up units of the
+    // outer tuplet and left the inner one with a single member (F49). Its value is not changed here.
+    if (document.tuplets.filter((entry) => entry.eventIds.includes(event.id)).length > 1) return 'tuplet-value' as const;
     const actualNotes = tuplet.actualNotes ?? 3;
     const normalNotes = tuplet.normalNotes ?? 2;
     const scaled = (requestedDuration * normalNotes) / actualNotes;
@@ -2581,7 +2612,14 @@ function buildAppendedBar(
   measureNumber: number,
 ) {
   const inserted = cloneMeasureForInsertion(reference, measureNumber);
+  // The new bar is written in the state in force at the reference bar and says nothing about it
+  // itself: a repeated time signature or clef is drawn again by other programs.
+  inserted.attributes = [];
   const timing = resolveMeasureTiming(staff, reference);
+  // A pickup is shorter than its time signature; the bar built from it is a whole bar.
+  const barDivisions = timing.timeSignature
+    ? Math.max(1, Math.round((timing.timeSignature.beats * timing.divisions * 4) / timing.timeSignature.beatType))
+    : timing.durationDivisions;
   const firstVoice = [...inserted.voices].sort((a, b) => a.voiceId - b.voiceId)[0];
   if (firstVoice) {
     firstVoice.events = buildRestEventsForSpan(
@@ -2590,8 +2628,8 @@ function buildAppendedBar(
       staff.staffIndex,
       firstVoice.voiceId,
       0,
-      timing.durationDivisions,
-      timing.durationDivisions,
+      barDivisions,
+      barDivisions,
     );
     inserted.voices = [firstVoice];
   }
@@ -4210,17 +4248,59 @@ export function executeCoreCommands(
         renumberMeasures(nextDocument);
         break;
       }
+      case 'insertMeasureBefore': {
+        // MuseScore `insert-measure`: an empty bar before the given bar. It is written in the state
+        // in force there: after bar 1 that is the state of the bar before; before bar 1 the new bar
+        // takes over clef, key and time signature, and the old first bar stops repeating them.
+        const targets = nextDocument.score.parts.flatMap((part) => part.staves.map((staff) => ({
+          staff,
+          index: staff.measures.findIndex((measure) => measure.measureNumber === command.measureNumber),
+        }))).filter((entry) => entry.index >= 0);
+        if (!targets.length) break;
+        if (targets.some((entry) => entry.index === 0 && entry.staff.measures[0]?.implicit)) {
+          diagnostics.push({ level: 'warning', code: 'measure_command_rejected', message: 'A bar cannot be inserted before the pickup bar.' });
+          break;
+        }
+        targets.forEach(({ staff, index }) => {
+          const reference = staff.measures[index]!;
+          const inserted = buildAppendedBar(staff, index > 0 ? staff.measures[index - 1]! : reference, command.measureNumber);
+          if (index === 0) {
+            inserted.attributes = reference.attributes;
+            reference.attributes = [];
+          }
+          staff.measures.splice(index, 0, inserted);
+        });
+        shiftLayoutHintsAfterMeasure(nextDocument, command.measureNumber - 1, 1);
+        renumberMeasures(nextDocument);
+        break;
+      }
       case 'deleteMeasure': {
+        if (nextDocument.score.parts.every((part) => part.staves.every((staff) => staff.measures.length <= 1))) {
+          diagnostics.push({ level: 'warning', code: 'measure_command_rejected', message: 'The last bar of a score cannot be deleted.' });
+          break;
+        }
+        const removedEventIds = new Set<string>();
         nextDocument.score.parts.forEach((part) => {
           part.staves.forEach((staff) => {
             const index = staff.measures.findIndex((measure) => measure.measureNumber === command.measureNumber);
             if (index >= 0) {
+              const removed = staff.measures[index]!;
+              const following = staff.measures[index + 1];
+              if (following) carryAttributesToFollowingBar(removed, following);
+              removed.voices.forEach((voice) => voice.events.forEach((event) => removedEventIds.add(event.id)));
               staff.measures.splice(index, 1);
             }
           });
         });
         shiftLayoutHintsAfterMeasure(nextDocument, command.measureNumber, -1);
         renumberMeasures(nextDocument);
+        // Slurs, ties, tuplets, lyrics and chords of the deleted notes go with them; a tie that ran
+        // into the deleted bar ends.
+        removeDeletedEventReferences(nextDocument, removedEventIds);
+        nextDocument.tuplets = nextDocument.tuplets
+          .map((tuplet) => ({ ...tuplet, eventIds: tuplet.eventIds.filter((eventId) => !removedEventIds.has(eventId)) }))
+          .filter((tuplet) => tuplet.eventIds.length > 0);
+        pruneDanglingTieStarts(nextDocument);
         break;
       }
       case 'addStartRepeat': {

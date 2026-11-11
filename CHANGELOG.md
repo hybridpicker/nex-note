@@ -11,6 +11,8 @@ All notable changes to nex-note are documented here.
 
 ### Changed
 
+- Bars from the keyboard, as in MuseScore: `Insert` puts an empty bar before the selection, `Cmd/Ctrl+B` appends one, `Cmd/Ctrl+Delete` deletes the bars of the selection. Deleting the first bar no longer loses clef, key and time signature, a bar added after a pickup is a whole bar, and new bars no longer repeat clef, key and time signature in the exported file.
+- Outside note input `Cmd/Ctrl+Alt/Option+1`–`4` moves the selected notes to that voice (it only chose the input voice). In note input, and with a rest or nothing selected, it chooses the voice as before.
 - A value key on a selected grace note changes the grace note; it used to rewrite the main note beside it. A rest typed on a unit of a half-note triplet keeps the unit's value, and a chord tone added to a tuplet unit behind a grace note stays in the tuplet.
 - Outside note input the value keys, the dot and `Q`/`W` change the selected note or rest, as in MuseScore; they used to arm the next value only. `Alt/Option+Shift+Up/Down` moves a note by a step of the key (it moved an octave). `Backspace` in note input takes back the note just entered and puts the cursor on its place. A letter typed on a selected rest takes its octave from the note before it.
 - `<` and `>` write hairpins over the selection, and the accent key is `Shift+V`, as in MuseScore; `Shift+.` (which types `>` on a US keyboard) no longer sets an accent. `Shift+N` (tenuto) and `Shift+O` (marcato) are added beside `Shift+-` and `Shift+6`.

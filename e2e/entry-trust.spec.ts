@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 import { scoreXml, TREBLE } from '../test/support/entry-fixtures';
+import { summarizeScore } from '../test/support/score-summary';
 import { EntrySession } from './support/entry-session';
 
 /*
@@ -288,4 +289,33 @@ test('F42: a preview does not stay on screen when the score scrolls under the re
     expect(added[0]).toContain(` ${ghostPitchLabel(after.pitch)} `);
   }
   expect(after === null || after.pitch !== shown!.pitch || after.measure !== shown!.measure, 'the stale preview is gone').toBe(true);
+});
+
+test('K8 and K7: bars are inserted, appended and deleted, and notes move to another voice, by keys in the real app', async ({ page }, testInfo) => {
+  const quarters = (steps: string) => steps.split('').map((step) => (
+    `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>quarter</type></note>`
+  )).join('');
+  const tune = scoreXml({ beats: 4, beatType: 4, measures: 2, fifths: 2, parts: [{ ...TREBLE, content: { '1:1': quarters('CDEF'), '2:1': quarters('GABC') } }] });
+  const session = await EntrySession.boot(page, testInfo, { xml: tune });
+  const bars = async () => ((await session.xml()).match(/<measure /g) ?? []).length;
+  const pitched = async () => summarizeScore(await session.xml()).filter((line) => / v\d @/.test(line) && !/ rest /.test(line));
+
+  await session.clickNotehead(0);
+  await session.keys('Insert');
+  expect(await bars()).toBe(3);
+  expect((await pitched())[0]).toBe('m2 v1 @0 C4 quarter');
+  expect(summarizeScore(await session.xml()).filter((line) => / (key|time|clef) /.test(line))).toEqual(['m1 key 2', 'm1 time 4/4', 'm1 clef G2']);
+
+  await session.keys('Cmd+b');
+  expect(await bars()).toBe(4);
+
+  // The selection stands in the new first bar: Cmd+Delete takes that bar away again.
+  await session.keys('Cmd+Delete');
+  expect(await bars()).toBe(3);
+  expect((await pitched())[0]).toBe('m1 v1 @0 C4 quarter');
+
+  // Two notes go to voice 2; rests stay behind in voice 1.
+  await session.clickNotehead(1);
+  await session.keys('Shift+ArrowRight Cmd+Alt+2');
+  expect((await pitched()).filter((line) => /^m1 /.test(line)).sort()).toEqual(['m1 v1 @0 C4 quarter', 'm1 v1 @3 F4 quarter', 'm1 v2 @1 D4 quarter', 'm1 v2 @2 E4 quarter']);
 });

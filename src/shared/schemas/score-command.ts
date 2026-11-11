@@ -46,6 +46,7 @@ export type LegacyScoreOperation =
   | { type: 'setClef'; sign: 'G' | 'F' | 'C'; line: 1 | 2 | 3 | 4 | 5; measureNumber?: number; staffIndex?: number; corePartId?: string | null }
   | { type: 'removeClefChange'; measureNumber: number; staffIndex?: number }
   | { type: 'insertMeasureAfter'; measureNumber: number }
+  | { type: 'insertMeasureBefore'; measureNumber: number }
   | { type: 'deleteMeasure'; measureNumber: number }
   | ({ type: 'addLyric'; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end' } & NoteLocatorLike)
   | ({ type: 'removeLyricLine'; verseNumber: number } & NoteLocatorLike)
@@ -388,7 +389,7 @@ function ensureMeasureSpan(record: Record<string, unknown>, issues: string[], op
 function getCategory(type: string): ScoreCommandCategory {
   if (['setKey', 'setTimeSignature', 'setClef', 'removeClefChange', 'setPartTranspose'].includes(type)) return 'attributes';
   if (['setSystemBreak', 'setPageBreak', 'setMeasureLayoutHint', 'applyPracticeProfile'].includes(type)) return 'layoutHints';
-  if (['insertMeasureAfter', 'deleteMeasure', 'addStartRepeat', 'addEndRepeat', 'addVolta2', 'setEnding', 'setMeasureRepeat'].includes(type)) return 'structure';
+  if (['insertMeasureAfter', 'insertMeasureBefore', 'deleteMeasure', 'addStartRepeat', 'addEndRepeat', 'addVolta2', 'setEnding', 'setMeasureRepeat'].includes(type)) return 'structure';
   if (['addSegno', 'addCoda', 'addDacapo', 'addDalsegno', 'addFine', 'addToCoda', 'addTempoText', 'setCueNote'].includes(type)) return 'notation';
   if (['setSwing'].includes(type)) return 'layoutHints';
   if (['setInstrumentChange', 'setMultiMeasureRest'].includes(type)) return 'structure';
@@ -732,6 +733,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       if (command.staffIndex != null) ensureNumber(command, 'staffIndex', issues, { min: 1 });
       break;
     case 'insertMeasureAfter':
+    case 'insertMeasureBefore':
     case 'deleteMeasure':
       ensureNumber(command, 'measureNumber', issues, { min: 1 });
       break;

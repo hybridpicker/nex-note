@@ -2031,7 +2031,9 @@ test('eight-bar keyboard replacement preserves correction and MusicXML reopen', 
   const exported = testInfo.outputPath('eight-bars.mxl');
   await download.saveAs(exported);
   await page.keyboard.press('Control+w');
-  await expect.poll(async () => (await readE2EState(page))?.xml).toBe('');
+  // The dev server compiles the export route on its first call and can reload the page right here
+  // (F43, F50): a read that lands in the reload is taken again.
+  await expect.poll(async () => (await readE2EState(page).catch(() => null))?.xml).toBe('');
   await page.locator('input[type="file"]').first().setInputFiles(exported);
   // Reopening .mxl runs convert, layout-cleanup and apply-operations routes in
   // sequence; on a cold dev server their first compile alone can exceed 5s.

@@ -70,6 +70,8 @@ const REPLAYS: Array<[string, number, string[]]> = [
   ['tuplets and graces', 21410220, ['click:11', 'ArrowLeft', '.', 'R']],
   // Iteration 21 (F47): a rest of the unit's value on a unit of a half-note triplet.
   ['single staff', 21110350, ['click:804', '7', 'R', 'Cmd+3', '0', '0', 'g', 'T', 'e', 'c', 'click:882', 'e', '/', 'Shift+g']],
+  // Iteration 22 (F49): a value key on a unit of a tuplet inside a tuplet.
+  ['tuplets and graces', 22410576, ['N', 'Shift+g', 'N', '/', 'click:187', 'd', 'ArrowRight', 'Cmd+3', 'Cmd+3', '5']],
 ];
 for (const [fixture, seed, actions] of REPLAYS) {
   test(`fuzzer replay passes every invariant: ${fixture}, seed ${seed}`, () => {

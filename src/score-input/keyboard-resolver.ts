@@ -13,7 +13,7 @@ import {
 } from '@/src/score-input/keyboard-layout';
 
 export type KeyboardEntryMode = 'insert' | 'overwrite';
-export type KeyboardDeleteAction = 'delete' | 'rippleDelete' | 'clearMeasureVoice';
+export type KeyboardDeleteAction = 'delete' | 'rippleDelete' | 'clearMeasureVoice' | 'deleteBars';
 export type KeyboardEntryModeShortcutAction = 'toggle' | KeyboardEntryMode;
 export type KeyboardChordInputShortcutAction = 'toggleChordInput' | 'focusChordSymbol';
 export type KeyboardDurationShortcutAction =
@@ -145,6 +145,8 @@ export function resolveKeyboardDeleteAction(input: ResolveKeyboardDeleteActionIn
   if (isDeleteKey && input.shiftKey && (input.metaKey || input.ctrlKey)) return 'clearMeasureVoice';
   if (isDeleteKey && input.shiftKey) return 'rippleDelete';
   if (normalizedKey === 'BACKSPACE' && (input.metaKey || input.ctrlKey)) return 'rippleDelete';
+  // MuseScore `time-delete` (Ctrl+Del): the bars of the selection go, and the music after them moves up.
+  if (normalizedKey === 'DELETE' && (input.metaKey || input.ctrlKey)) return 'deleteBars';
   if (isDeleteKey) return 'delete';
   return null;
 }
