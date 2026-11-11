@@ -989,6 +989,7 @@ function buildDirectionElement(
   placement?: string,
   spanNumber?: number,
   timing?: { timestampNum?: number; timestampDen?: number; divisions?: number },
+  tempoText?: string,
 ) {
   if (kind === 'harmony') {
     if (NO_CHORD_PATTERN.test(value)) {
@@ -1135,6 +1136,15 @@ function buildDirectionElement(
     const words = doc.createElement(safeKind);
     words.textContent = value;
     directionType.appendChild(words);
+  }
+  if (kind === 'metronome' && tempoText) {
+    // "Allegro ♩ = 120": the word and the number are one direction, as MuseScore and Finale write it.
+    const wordsType = doc.createElement('direction-type');
+    const words = doc.createElement('words');
+    words.setAttribute('font-weight', 'bold');
+    words.textContent = tempoText;
+    wordsType.appendChild(words);
+    direction.appendChild(wordsType);
   }
   direction.appendChild(directionType);
   if (kind === 'metronome') {
@@ -1367,6 +1377,7 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
             timestampDen: direction.timestampDen,
             divisions: measureDivisions,
           },
+          direction.text,
         ));
       }
 
@@ -1386,6 +1397,8 @@ function updateMeasureContent(doc: XmlDocument, coreDocument: ScoreDocumentModel
           direction.staffIndex ?? 1,
           direction.placement,
           direction.number,
+          undefined,
+          direction.text,
         ));
       }
       if (directionCursor > 0) xmlMeasure.appendChild(buildBackup(doc, directionCursor));

@@ -78,3 +78,34 @@ test('K5: staff text can stand on any beat of its bar', () => {
   const lines = run(xml, [{ type: 'addWords', text: 'pizz.', measureNumber: 2, staffIndex: 1, placement: 'above', timestampNum: 2, timestampDen: 4 } as ScoreCommand]);
   assert.ok(lines.includes('m2 @2 words pizz.'), lines.filter((line) => /words/.test(line)).join(' | '));
 });
+
+test('F52: a tempo mark with a word and a metronome number keeps both', () => {
+  const xml = scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [{ ...TREBLE }] });
+  const both = run(xml, [{ type: 'addTempoText', text: 'Allegro ♩ = 120', measureNumber: 1, bpm: 120 }]);
+  assert.ok(both.includes('m1 @0 metronome 120 "Allegro"'), both.join(' | '));
+  const numberOnly = run(xml, [{ type: 'addTempoText', text: '♩ = 96', measureNumber: 1, bpm: 96 }]);
+  assert.deepEqual(numberOnly.filter((line) => / @0 /.test(line)), ['m1 @0 metronome 96']);
+  // A new tempo at the same bar replaces the old one, word and number.
+  const replaced = run(xml, [
+    { type: 'addTempoText', text: 'Allegro ♩ = 120', measureNumber: 1, bpm: 120 },
+    { type: 'addTempoText', text: 'Largo ♩ = 50', measureNumber: 1, bpm: 50 },
+  ]);
+  assert.deepEqual(replaced.filter((line) => / @0 /.test(line)), ['m1 @0 metronome 50 "Largo"']);
+  // A tempo mark written by another program as words and metronome in one direction keeps both.
+  const foreign = xml.replace('</attributes>', '</attributes><direction placement="above"><direction-type><words font-weight="bold">Vivace</words></direction-type><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>144</per-minute></metronome></direction-type><sound tempo="144"/></direction>');
+  assert.ok(summarizeScore(foreign).includes('m1 @0 metronome 144 "Vivace"'));
+  assert.ok(run(foreign, [{ type: 'setSystemBreak', measureNumber: 2 } as ScoreCommand]).includes('m1 @0 metronome 144 "Vivace"'), 'and keeps them through an edit');
+});
+
+test('F54: a slur over a selection that crosses a barline is written', () => {
+  const xml = scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [{ ...TREBLE, content: { '1:1': quarters('CDEF'), '2:1': quarters('GABC') } }] });
+  const state = buildDocumentState(xml);
+  const measureId = state.coreDocument!.score.parts[0]!.staves[0]!.measures[0]!.id;
+  // As the editor sends it: the start with the id of its bar, the stop by bar number.
+  const lines = run(xml, [{
+    type: 'toggleSlur', coreMeasureId: measureId, corePartId: state.coreDocument!.score.parts[0]!.id,
+    measureNumber: 1, staffIndex: 1, voiceId: 1, timestampNum: 8, timestampDen: 16,
+    stopLocator: { measureNumber: 2, staffIndex: 1, voiceId: 1, timestampNum: 4, timestampDen: 16 },
+  } as ScoreCommand]);
+  assert.deepEqual(lines.filter((line) => line.startsWith('slur')), ['slur E4@m1:2 > A4@m2:1']);
+});

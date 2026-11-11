@@ -11,6 +11,10 @@ All notable changes to nex-note are documented here.
 
 ### Changed
 
+- Copy and paste between parts that transpose differently keeps the sound: a flute phrase pasted into a clarinet in B flat is written a major second higher.
+- A tempo typed as `Allegro q=120` keeps its word beside the metronome number, in the file as well; tempo marks of other programs in that form keep both on import.
+- A slur over a selection that crosses a barline is written. After `Delete` and `Cmd/Ctrl+X` the rests that are left are selected at once, so the next key is not lost.
+- Navigation: `Cmd/Ctrl+Shift+Left/Right` extends the selection by bars, `Alt/Option+Up/Down` crosses parts, `Cmd/Ctrl+Home/End` go to the top staff, the arrow keys leave a second voice where it ends, and in note input they keep the chosen voice.
 - Bars from the keyboard, as in MuseScore: `Insert` puts an empty bar before the selection, `Cmd/Ctrl+B` appends one, `Cmd/Ctrl+Delete` deletes the bars of the selection. Deleting the first bar no longer loses clef, key and time signature, a bar added after a pickup is a whole bar, and new bars no longer repeat clef, key and time signature in the exported file.
 - Outside note input `Cmd/Ctrl+Alt/Option+1`–`4` moves the selected notes to that voice (it only chose the input voice). In note input, and with a rest or nothing selected, it chooses the voice as before.
 - A value key on a selected grace note changes the grace note; it used to rewrite the main note beside it. A rest typed on a unit of a half-note triplet keeps the unit's value, and a chord tone added to a tuplet unit behind a grace note stays in the tuplet.

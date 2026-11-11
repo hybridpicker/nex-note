@@ -14,6 +14,7 @@ import {
 } from '@/src/score-input/guitar-fretboard';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import type { ClipboardAbsoluteEvent, ClipboardTargetOffset, ClipboardTimedDirection, ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
+import { partTransposition, transposePitchByInterval } from '@/src/score-core/query/clipboard';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
 import { applyRhythmSpellingToDocument, type RhythmSpellingTarget } from '@/src/layout/rhythm-speller';
 
@@ -730,6 +731,15 @@ function clampDurationToMeasure(
 /** The part and measure a command or locator names, when it names one. */
 function commandScope(command: object) {
   return command as { coreMeasureId?: string | null; corePartId?: string | null };
+}
+
+/**
+ * The scope for the far end of a command that spans bars (a slur's last note, the stop of a line):
+ * the same part, but not the bar id of the start, which would look the stop up in the first bar
+ * (F54: a slur across a barline was not written).
+ */
+function commandPartScope(command: object) {
+  return { corePartId: commandScope(command).corePartId ?? null };
 }
 
 function resolveVoiceScope(
@@ -4999,7 +5009,7 @@ export function executeCoreCommands(
           : null;
         const stopEvent = stopLocator
           ? (() => {
-              const stopFound = findVoice(nextDocument, stopLocator.measureNumber, stopLocator.staffIndex, stopLocator.voiceId, commandScope(command));
+              const stopFound = findVoice(nextDocument, stopLocator.measureNumber, stopLocator.staffIndex, stopLocator.voiceId, commandPartScope(command));
               const resolved = stopFound?.voice.events[findEventIndex(stopFound.voice, stopLocator.timestampNum, stopLocator.timestampDen)];
               return resolved?.kind === 'note' ? resolved : null;
             })()
@@ -5039,7 +5049,7 @@ export function executeCoreCommands(
           command.stopLocator.measureNumber,
           command.stopLocator.staffIndex,
           command.stopLocator.voiceId,
-          commandScope(command),
+          commandPartScope(command),
         );
         const stopEvent = stopFound?.voice.events[
           findEventIndex(stopFound.voice, command.stopLocator.timestampNum, command.stopLocator.timestampDen)
@@ -5898,7 +5908,7 @@ export function executeCoreCommands(
           .map((d) => d.number!);
         const wedgeNumber = usedWedgeNumbers.length > 0 ? Math.max(...usedWedgeNumbers) + 1 : 1;
         const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex, commandScope(command));
-        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandScope(command));
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandPartScope(command));
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `wedge:${wedgeNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
@@ -5936,7 +5946,7 @@ export function executeCoreCommands(
           .map((d) => d.number!);
         const pedalNumber = usedPedalNumbers.length > 0 ? Math.max(...usedPedalNumbers) + 1 : 1;
         const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex, commandScope(command));
-        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandScope(command));
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandPartScope(command));
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `pedal:${pedalNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
@@ -5979,7 +5989,7 @@ export function executeCoreCommands(
         const ottavaSize = command.kind === '15ma' || command.kind === '15mb' ? 15 : 8;
         const ottavaPlacement = command.placement ?? (ottavaUp ? 'above' : 'below');
         const startAdded = ensureMeasure(nextDocument, command.startMeasureNumber, command.staffIndex, commandScope(command));
-        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandScope(command));
+        const stopAdded = ensureMeasure(nextDocument, command.stopMeasureNumber, command.staffIndex, commandPartScope(command));
         if (startAdded) {
           startAdded.measure.directions.push({
             id: `ottava:${ottavaNumber}:start:${command.startMeasureNumber}:${Date.now()}`,
@@ -6025,6 +6035,22 @@ export function executeCoreCommands(
           clipboardData.durationDivisions *= factor;
           clipboardData.timeline.forEach(entry => { entry.absStart *= factor; entry.event.timestampNum *= factor; entry.event.timestampDen *= factor; entry.event.durationDivisions *= factor; });
           clipboardData.timedDirections.forEach(entry => { entry.absStart *= factor; });
+        }
+        // Copied music keeps its sound (F53): between parts that transpose differently the written
+        // pitch moves by the difference, as in MuseScore, Dorico and Finale.
+        if (clipboardData.sourceTranspose) {
+          const targetTranspose = partTransposition(target.part);
+          const chromatic = clipboardData.sourceTranspose.chromatic - targetTranspose.chromatic;
+          const diatonic = clipboardData.sourceTranspose.diatonic - targetTranspose.diatonic;
+          if (chromatic !== 0 || diatonic !== 0) {
+            clipboardData.timeline.forEach((entry) => {
+              if (entry.event.kind !== 'note') return;
+              entry.event.pitch = transposePitchByInterval(entry.event.pitch, diatonic, chromatic);
+              entry.event.writtenAccidental = undefined;
+              entry.event.accidentalCautionary = undefined;
+              entry.event.accidentalEnclosure = undefined;
+            });
+          }
         }
         const targetAbsoluteOffset = buildTargetAbsoluteOffset(target.staff, command.targetOffset);
         if (targetAbsoluteOffset == null) break;
@@ -6593,7 +6619,9 @@ export function executeCoreCommands(
         const staff = part?.staves.find((s) => s.staffIndex === (command.staffIndex ?? 1));
         const measure = staff?.measures.find((m) => m.measureNumber === command.measureNumber);
         if (measure) {
-          measure.directions = measure.directions.filter((d) => d.kind !== 'metronome' || d.staffIndex !== (command.staffIndex ?? 1));
+          // A new tempo mark replaces the one at this bar (a batch can hold both: the staff of a
+          // direction written a moment ago is still unset).
+          measure.directions = measure.directions.filter((d) => d.kind !== 'metronome' || (d.staffIndex ?? 1) !== (command.staffIndex ?? 1));
           const dir: any = {
             id: `tempo:${command.measureNumber}`,
             kind: 'metronome',
@@ -6605,6 +6633,10 @@ export function executeCoreCommands(
             dir.kind = 'words';
             dir.value = command.text;
           }
+          // "Allegro ♩ = 120" is a word and a number: the word stays with the metronome mark (F52:
+          // only the number was stored).
+          const tempoWords = command.bpm != null ? (command.text ?? '').replace(/\s*(?:♩|q)?\s*=\s*\d+\s*$/, '').trim() : '';
+          if (tempoWords) dir.text = tempoWords;
           measure.directions.push(dir);
         }
         break;

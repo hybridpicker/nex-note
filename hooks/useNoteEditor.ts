@@ -195,6 +195,8 @@ interface NoteClickOptions {
   visualStaffIndex?: number | null;
   /** The part the clicked text belongs to, so a text direction is removed from that part only. */
   visualPartId?: string | null;
+  /** Keyboard navigation along a staff: the cursor moves, the chosen input voice stays (K17). */
+  keepInputVoice?: boolean;
 }
 
 interface VisualSelection {
@@ -466,12 +468,45 @@ function findSelectionIndex(ordered: SelectedNote[], current: SelectedNote) {
   return ordered.findIndex((entry) => selectedNotesPositionallyEqual(entry, current));
 }
 
+/**
+ * Where a voice ends, navigation goes on in the first voice of the same staff (K13): a second voice
+ * exists only in the bars that use it, and the arrow keys must not stop at its last note.
+ * `next`: the first event of the nearest later bar; `prev`: the last event before the current onset,
+ * or with `firstOfBar` the first event of the nearest earlier bar.
+ */
+function findStaffFallback(
+  document: ScoreDocumentModel | null | undefined,
+  current: SelectedNote,
+  direction: 'prev' | 'next',
+  firstOfBar: boolean,
+): SelectedNote | null {
+  const staff = getSemanticNoteOrder(document).filter((entry) => (
+    entry.staffIndex === current.staffIndex
+    && (!current.corePartId || !entry.corePartId || entry.corePartId === current.corePartId)
+  ));
+  if (!staff.length) return null;
+  const firstVoice = Math.min(...staff.map((entry) => entry.voiceId));
+  if (current.voiceId === firstVoice) return null;
+  const lane = staff.filter((entry) => entry.voiceId === firstVoice);
+  const onset = (entry: SelectedNote) => entry.timestampNum / Math.max(entry.timestampDen, 1);
+  if (direction === 'next') return lane.find((entry) => entry.measureNumber > current.measureNumber) ?? null;
+  if (firstOfBar) {
+    const earlier = lane.filter((entry) => entry.measureNumber < current.measureNumber);
+    const bar = earlier.at(-1)?.measureNumber;
+    return bar == null ? null : earlier.find((entry) => entry.measureNumber === bar) ?? null;
+  }
+  return lane.filter((entry) => (
+    entry.measureNumber < current.measureNumber
+    || (entry.measureNumber === current.measureNumber && onset(entry) < onset(current) - 1e-9)
+  )).at(-1) ?? null;
+}
+
 function findAdjacentSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote, direction: 'prev' | 'next') {
   const ordered = getSelectionLaneOrder(document, current);
   const currentIndex = findSelectionIndex(ordered, current);
   if (currentIndex < 0) return null;
   const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-  if (nextIndex < 0 || nextIndex >= ordered.length) return null;
+  if (nextIndex < 0 || nextIndex >= ordered.length) return findStaffFallback(document, current, direction, false);
   return ordered[nextIndex];
 }
 
@@ -651,7 +686,7 @@ function findMeasureBoundary(document: ScoreDocumentModel | null | undefined, cu
   if (currentIndex < 0) return null;
   if (direction === 'next') {
     const firstInNext = ordered.findIndex((entry) => entry.measureNumber > current.measureNumber);
-    return firstInNext >= 0 ? ordered[firstInNext] : null;
+    return firstInNext >= 0 ? ordered[firstInNext] : findStaffFallback(document, current, 'next', true);
   }
   // direction === 'prev'
   const firstInCurrent = ordered.findIndex((entry) => entry.measureNumber === current.measureNumber);
@@ -659,22 +694,33 @@ function findMeasureBoundary(document: ScoreDocumentModel | null | undefined, cu
     // Already at the first note of this measure — jump to first of previous measure
     const prevMeasure = current.measureNumber - 1;
     const firstInPrev = ordered.findIndex((entry) => entry.measureNumber === prevMeasure);
-    return firstInPrev >= 0 ? ordered[firstInPrev] : null;
+    return firstInPrev >= 0 ? ordered[firstInPrev] : findStaffFallback(document, current, 'prev', true);
   }
   return firstInCurrent >= 0 ? ordered[firstInCurrent] : null;
 }
 
 function findVerticalSelection(document: ScoreDocumentModel | null | undefined, current: SelectedNote, direction: 'up' | 'down'): SelectedNote | null {
-  const ordered = getSemanticNoteOrder(document);
-  const sameMoment = ordered.filter((entry) => (
-    entry.measureNumber === current.measureNumber
-    && timestampsEqual(entry.timestampNum, entry.timestampDen, current.timestampNum, current.timestampDen)
-    && entry.corePartId === current.corePartId
-  ));
+  // MuseScore `up-chord` / `down-chord`: the note above or below in a chord, then the next voice, the
+  // next staff and the next part (K16: the keys stopped at the border of a part). A staff that has
+  // no event at this very onset offers what sounds there: its latest event at or before it.
+  const partOrder = new Map((document?.score.parts ?? []).map((part, index) => [part.id, index]));
+  const partRank = (entry: SelectedNote) => partOrder.get(entry.corePartId ?? '') ?? 0;
+  const onset = (entry: SelectedNote) => entry.timestampNum / Math.max(entry.timestampDen, 1);
+  const lanes = new Map<string, SelectedNote[]>();
+  for (const entry of getSemanticNoteOrder(document)) {
+    if (entry.measureNumber !== current.measureNumber || onset(entry) > onset(current) + 1e-9) continue;
+    const key = `${partRank(entry)}:${entry.staffIndex}:${entry.voiceId}`;
+    lanes.set(key, [...(lanes.get(key) ?? []), entry]);
+  }
+  const sameMoment = [...lanes.values()].flatMap((lane) => {
+    const latest = Math.max(...lane.map(onset));
+    return lane.filter((entry) => Math.abs(onset(entry) - latest) < 1e-9);
+  });
   if (!sameMoment.length) return null;
 
   const ranked = sameMoment.sort((a, b) => (
-    a.staffIndex - b.staffIndex
+    partRank(a) - partRank(b)
+    || a.staffIndex - b.staffIndex
     || a.voiceId - b.voiceId
     || compareSelectedNotes(a, b)
   ));
@@ -784,9 +830,20 @@ function crossStaffInsertionKey(target: SelectedNote) {
 }
 
 function findScoreBoundary(document: ScoreDocumentModel | null | undefined, direction: 'start' | 'end'): SelectedNote | null {
+  // MuseScore `first-element` and `last-element`: the top staff of the score. The order of all
+  // entries of a score ranks parts by pitch name at equal positions, so its first entry could be a
+  // rest of the third part (K14).
+  const topPart = document?.score.parts[0];
+  const topStaff = topPart?.staves[0];
   const ordered = getSemanticNoteOrder(document);
-  if (!ordered.length) return null;
-  return direction === 'start' ? ordered[0] : ordered[ordered.length - 1];
+  const lane = topPart && topStaff
+    ? ordered.filter((entry) => entry.staffIndex === topStaff.staffIndex && (!entry.corePartId || entry.corePartId === topPart.id))
+    : [];
+  const firstVoice = lane.length ? Math.min(...lane.map((entry) => entry.voiceId)) : null;
+  const top = lane.filter((entry) => entry.voiceId === firstVoice);
+  const candidates = top.length ? top : ordered;
+  if (!candidates.length) return null;
+  return direction === 'start' ? candidates[0] : candidates[candidates.length - 1];
 }
 
 function selectedTargets(selectedNote: SelectedNote | null, selectedNotes: SelectedNote[]) {
@@ -1444,7 +1501,7 @@ export function useNoteEditor(
     if (noteInputModeRef.current) {
       lastNoteInputRef.current = note;
       options?.onActiveNotePreview?.(note);
-      if (!clickOptions?.additive && !clickOptions?.range) {
+      if (!clickOptions?.additive && !clickOptions?.range && !clickOptions?.keepInputVoice) {
         // A MuseScore/Finale left hand is stored as voice 5-8; it is input voice 1-4.
         setSelectedVoiceLive(inputVoiceOf(note.voiceId));
       }
@@ -1584,7 +1641,9 @@ export function useNoteEditor(
     return null;
   }, [coreDocument, selectedNote, selectedVisual]);
 
-  const deleteSelectedNote = useCallback(() => {
+  const deleteSelectedNote = useCallback((behaviour?: unknown) => {
+    // Buttons pass their click event here; only the cut asks for the collapsed selection.
+    const collapseToFirst = Boolean(behaviour && typeof behaviour === 'object' && (behaviour as { collapseToFirst?: unknown }).collapseToFirst === true);
     const visualDeleteCommand = findSelectedVisualDeleteCommand();
     if (visualDeleteCommand) {
       dbg.editor(`deleteVisual type=${visualDeleteCommand.type}`);
@@ -1629,9 +1688,25 @@ export function useNoteEditor(
       warnNoOpEdit('deleteSelection', commands[0]!);
       return;
     }
-    onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(currentSelectedNote, currentSelectedNotes) });
-    clearSelection();
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, findSelectedVisualDeleteCommand, warnNoOpEdit, xml]);
+    // After a cut the selection is the first rest of what was cut: Paste there puts it back, and
+    // Right is the next beat.
+    const first = [...targets].sort(compareSelectedNotes)[0]!;
+    const anchor = collapseToFirst ? toSelectionAnchor(first, [first]) : toSelectionAnchor(currentSelectedNote, currentSelectedNotes);
+    onApplyCommands(commands, { selectionAnchor: anchor });
+    // The selection is there at once, on the rests that are left (F51): the next key must not meet
+    // an empty selection while the document is rendered.
+    const restored = resolveSelectionAnchor(next.coreDocument, anchor);
+    if (!restored.length) {
+      clearSelection();
+      return;
+    }
+    const focus = restored.find((note) => note.coreEntityId === anchor?.anchorEntityId) ?? restored[restored.length - 1]!;
+    selectedNotesRef.current = restored;
+    setSelectedNotes(restored);
+    setSelectedNoteLive(focus);
+    setSelectedVisualLive({ visualOnly: false, text: null, measureNumber: focus.measureNumber, staffIndex: focus.staffIndex });
+    lastSelectedRef.current = focus;
+  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, findSelectedVisualDeleteCommand, setSelectedNoteLive, setSelectedVisualLive, warnNoOpEdit, xml]);
 
   const rippleDelete = useCallback(() => {
     const targetNote = noteInputModeRef.current
@@ -1748,7 +1823,7 @@ export function useNoteEditor(
     const targets = selectedTargets(currentSelectedNote, currentSelectedNotes);
     if (!targets.length) return;
     copySelectedRange();
-    deleteSelectedNote();
+    deleteSelectedNote({ collapseToFirst: true });
   }, [copySelectedRange, deleteSelectedNote, selectedNote, selectedNotes]);
 
   const pastePayloadAt = useCallback((
@@ -4686,13 +4761,13 @@ export function useNoteEditor(
     if (!next) return;
     dbg.editor(`navigateNote ${direction} → m.${next.measureNumber} ts=${next.timestampNum}/${next.timestampDen}`);
     announceSemanticSelectionNavigation();
-    handleNoteClick(next);
+    handleNoteClick(next, { keepInputVoice: true });
     options?.onActiveNotePreview?.(next);
   }, [coreDocument, selectedNote, handleNoteClick, options]);
 
   // Extend or shrink the selection by one note in the given direction.
   // The anchor (lastSelectedRef) stays fixed; selectedNote acts as the moving focus.
-  const extendSelection = useCallback((direction: 'prev' | 'next') => {
+  const extendSelection = useCallback((direction: 'prev' | 'next', unit: 'note' | 'bar' = 'note') => {
     // MuseScore: during note input the note just entered is the selection, so a range grows
     // from it (after "c d e", two Shift+Left select C to E), not from the cursor slot.
     const entered = resolveEditTargets().note;
@@ -4706,7 +4781,9 @@ export function useNoteEditor(
       return;
     }
     const focus = startsFromEntered && entered ? entered : (selectedNote ?? anchor);
-    const adjacent = findAdjacentSelection(coreDocument, focus, direction);
+    // By bar (K15, MuseScore `select-next-measure`): to the first event of the next bar, or back to
+    // the first event of this bar and then of the bar before.
+    const adjacent = unit === 'bar' ? findMeasureBoundary(coreDocument, focus, direction) : findAdjacentSelection(coreDocument, focus, direction);
     if (!adjacent) return;
     dbg.editor(`extendSelection ${direction} anchor=m.${anchor.measureNumber}/ts=${anchor.timestampNum} focus=m.${focus.measureNumber}/ts=${focus.timestampNum} → m.${adjacent.measureNumber}/ts=${adjacent.timestampNum}`);
     const rangeNotes = resolveRangeSelection(coreDocument, anchor, adjacent);
@@ -4723,7 +4800,7 @@ export function useNoteEditor(
     if (!target) return;
     dbg.editor(`navigateMeasure ${direction} → m.${target.measureNumber} ts=${target.timestampNum}/${target.timestampDen}`);
     announceSemanticSelectionNavigation();
-    handleNoteClick(target);
+    handleNoteClick(target, { keepInputVoice: true });
     options?.onActiveNotePreview?.(target);
   }, [coreDocument, selectedNote, handleNoteClick, options]);
 
@@ -4742,7 +4819,7 @@ export function useNoteEditor(
     if (!target) return;
     dbg.editor(`navigateScoreBoundary ${direction} → m.${target.measureNumber} ts=${target.timestampNum}/${target.timestampDen}`);
     announceSemanticSelectionNavigation();
-    handleNoteClick(target);
+    handleNoteClick(target, { keepInputVoice: true });
     options?.onActiveNotePreview?.(target);
   }, [coreDocument, handleNoteClick, options]);
 
@@ -5236,7 +5313,7 @@ export function useNoteEditor(
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
         copySelectedRange();
-        deleteSelectedNote();
+        deleteSelectedNote({ collapseToFirst: true });
       }
       return;
     }
@@ -5685,8 +5762,8 @@ export function useNoteEditor(
     if (e.key === 'ArrowDown' && e.shiftKey) { e.preventDefault(); changeOctave(-1); return; }
 
     // Shift+horizontal arrows: extend or shrink the selection by one note.
-    if (e.key === 'ArrowLeft' && e.shiftKey) { e.preventDefault(); extendSelection('prev'); return; }
-    if (e.key === 'ArrowRight' && e.shiftKey) { e.preventDefault(); extendSelection('next'); return; }
+    if (e.key === 'ArrowLeft' && e.shiftKey) { e.preventDefault(); extendSelection('prev', metaKey ? 'bar' : 'note'); return; }
+    if (e.key === 'ArrowRight' && e.shiftKey) { e.preventDefault(); extendSelection('next', metaKey ? 'bar' : 'note'); return; }
 
     // Ctrl/Cmd+Arrow: jump by measure.
     if (e.key === 'ArrowLeft' && metaKey) { e.preventDefault(); navigateToMeasureBoundary('prev'); return; }

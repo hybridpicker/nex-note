@@ -70,7 +70,7 @@ export function summarizeScore(xml: string): string[] {
         }
         for (const direction of measure.directions) {
           const onset = ` @${beat(direction.timestampNum, direction.timestampDen)}`;
-          lines.push(`${where}${onset} ${direction.kind}${direction.value != null && direction.value !== '' ? ` ${direction.value}` : ''}`);
+          lines.push(`${where}${onset} ${direction.kind}${direction.value != null && direction.value !== '' ? ` ${direction.value}` : ''}${direction.text ? ` "${direction.text}"` : ''}`);
         }
         if (measure.rightEnding) lines.push(`${where} ending ${measure.rightEnding.number} ${measure.rightEnding.type}`);
         if (measure.rightBarline && measure.rightBarline !== 'regular') lines.push(`${where} right ${measure.rightBarline}`);

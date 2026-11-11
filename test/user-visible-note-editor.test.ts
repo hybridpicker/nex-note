@@ -5299,8 +5299,12 @@ test('Delete shortcut removes the selected note and clears the selection anchor'
 
   const remainingCount = flattenVoiceEvents(hook.xml).filter((event) => event.kind === 'note').length;
   assert.equal(remainingCount, baselineCount - 1);
-  assert.equal(hook.current.selectedNote, null);
-  assert.equal(hook.current.selectedNotes.length, 0);
+  // The rest that is left is selected at once (F51 in docs/note-entry-mastery-ledger.md): in the app
+  // the selection anchor put it there one render later, and a key in between met no selection.
+  assert.equal(hook.current.selectedNote?.isRest, true);
+  assert.equal(hook.current.selectedNote?.measureNumber, notes[1]!.measureNumber);
+  assert.equal(hook.current.selectedNote?.timestampNum, notes[1]!.timestampNum);
+  assert.equal(hook.current.selectedNotes.length, 1);
   hook.unmount();
 });
 
@@ -5402,8 +5406,9 @@ test('Cut shortcut copies the selection to the clipboard and deletes the selecte
   const remainingCount = flattenVoiceEvents(hook.xml).filter((event) => event.kind === 'note').length;
   assert.equal(remainingCount, baselineCount - 1);
   assert.equal(hook.current.clipboardCount, 1);
-  assert.equal(hook.current.selectedNote, null);
-  assert.equal(hook.current.selectedNotes.length, 0);
+  // The rest left by the cut is selected at once (F51): Paste there puts the note back.
+  assert.equal(hook.current.selectedNote?.isRest, true);
+  assert.equal(hook.current.selectedNotes.length, 1);
   hook.unmount();
 });
 

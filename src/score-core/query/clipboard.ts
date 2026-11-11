@@ -94,6 +94,33 @@ function buildDirectionEntries(document: ScoreDocumentModel, staffIndices: Set<n
   });
 }
 
+/**
+ * How far a part's written pitch stands from its sound, in semitones and in staff steps, octaves
+ * included. A clarinet in B flat: -2 and -1 (it sounds a major second below what is written).
+ */
+export function partTransposition(part: { chromaticTranspose?: number; diatonicTranspose?: number; transposeOctaveChange?: number }) {
+  const octaves = part.transposeOctaveChange ?? 0;
+  const chromatic = part.chromaticTranspose ?? 0;
+  const diatonic = part.diatonicTranspose ?? Math.round((chromatic * 7) / 12);
+  return { chromatic: chromatic + 12 * octaves, diatonic: diatonic + 7 * octaves };
+}
+
+const STEP_NAMES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const STEP_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+
+/** A pitch moved by an interval of `diatonic` staff steps and `chromatic` semitones. */
+export function transposePitchByInterval<T extends { step: string; alter: number; octave: number }>(pitch: T, diatonic: number, chromatic: number): T {
+  const stepIndex = STEP_NAMES.indexOf(pitch.step);
+  if (stepIndex < 0 || (diatonic === 0 && chromatic === 0)) return pitch;
+  const midi = pitch.octave * 12 + STEP_SEMITONES[stepIndex]! + pitch.alter + chromatic;
+  let position = pitch.octave * 7 + stepIndex + diatonic;
+  let alter = midi - (Math.floor(position / 7) * 12 + STEP_SEMITONES[((position % 7) + 7) % 7]!);
+  // More than a double accidental is not a spelling: take the neighbouring letter.
+  while (alter > 2) { position += 1; alter = midi - (Math.floor(position / 7) * 12 + STEP_SEMITONES[((position % 7) + 7) % 7]!); }
+  while (alter < -2) { position -= 1; alter = midi - (Math.floor(position / 7) * 12 + STEP_SEMITONES[((position % 7) + 7) % 7]!); }
+  return { ...pitch, step: STEP_NAMES[((position % 7) + 7) % 7]!, alter, octave: Math.floor(position / 7) };
+}
+
 export function buildClipboardPayloadFromSelection(
   document: ScoreDocumentModel | null | undefined,
   selection: ScoreEventLocator[],
@@ -193,6 +220,7 @@ export function buildClipboardPayloadFromSelection(
     kind: 'score-content',
     version: 1,
     sourceDivisions,
+    sourceTranspose: partTransposition(selectedRefs[0]!.part),
     tuplets: document.tuplets.filter(t => t.eventIds.every(id => selectedEventIds.has(id))).map(t => structuredClone(t)),
     graceNotes: document.graceNotes.filter(g => selectedEventIds.has(g.eventId)).map(g => structuredClone(g)),
     durationDivisions: Math.max(1, clipEnd - clipStart),

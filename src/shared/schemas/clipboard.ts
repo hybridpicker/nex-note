@@ -26,6 +26,8 @@ export interface ScoreClipboardPayload {
   kind: 'score-content';
   version: 1;
   sourceDivisions?: number;
+  /** Written-to-sounding transposition of the part the content was copied from (MusicXML `<transpose>`). */
+  sourceTranspose?: { chromatic: number; diatonic: number };
   tuplets?: TupletSpan[];
   graceNotes?: GraceNoteLink[];
   durationDivisions: number;

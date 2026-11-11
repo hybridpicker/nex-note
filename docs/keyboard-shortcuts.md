@@ -69,9 +69,10 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | --- | --- | --- |
 | `ArrowLeft` / `ArrowRight` | vorherige/nächste Note auswählen | Noteneditor |
 | `Shift+ArrowLeft` / `Shift+ArrowRight` | Auswahl nach links/rechts erweitern | Noteneditor |
+| `Cmd/Ctrl+Shift+ArrowLeft` / `Cmd/Ctrl+Shift+ArrowRight` | Auswahl taktweise erweitern bzw. zurücknehmen: bis zur ersten Note des nächsten Takts (wie MuseScore) | Noteneditor |
 | `Cmd/Ctrl+ArrowLeft` / `Cmd/Ctrl+ArrowRight` | zur vorherigen/nächsten Taktgrenze springen | Noteneditor |
 | `Cmd/Ctrl+Home` / `Cmd/Ctrl+End` | zum Anfang/Ende der Partitur springen | Noteneditor |
-| `Alt/Option+ArrowUp` / `Alt/Option+ArrowDown` | vertikal zwischen Stimmen/Systemen am gleichen Zeitpunkt navigieren | Noteneditor |
+| `Alt/Option+ArrowUp` / `Alt/Option+ArrowDown` | vertikal navigieren: Akkordton, Stimme, System und Stimme/Part darüber bzw. darunter (über Part-Grenzen hinweg, wie MuseScore); ohne Ereignis am selben Zeitpunkt das, was dort klingt | Noteneditor |
 | `ArrowUp` / `ArrowDown` | ausgewählte Note chromatisch um einen Halbton transponieren | Noteneditor |
 | `Cmd/Ctrl+Shift+ArrowUp` / `Cmd/Ctrl+Shift+ArrowDown` | ausgewählte Note, Akkorde oder gemischte Note/Rest-Bereiche auf den Staff darüber/darunter verschieben, wenn dort passende Rest-Slots liegen; reine Rest-Auswahl springt auf den passenden Rest im Nachbarstaff | Noteneditor |
 | `Cmd/Ctrl+ArrowUp` / `Cmd/Ctrl+ArrowDown` | ausgewählte oder zuletzt eingegebene Note eine Oktave höher/tiefer setzen | Noteneditor |

@@ -4,7 +4,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 import { mountApp } from './support/app-harness.ts';
-import { scoreXml, TREBLE } from './support/entry-fixtures.ts';
+import { BASS, CLARINET_BB, scoreXml, TREBLE } from './support/entry-fixtures.ts';
 import { selectableNotes } from './support/entry-harness.ts';
 import { summarizeScore } from './support/score-summary.ts';
 
@@ -259,5 +259,116 @@ test('F49: a value key on a unit of a tuplet inside a tuplet is rejected with a 
   app.press('5');
   assert.equal(app.xml, nested, 'nothing changes');
   assert.match(String(app.editor.editorError ?? ''), /tuplet/i);
+  app.unmount();
+});
+
+test('K13: the arrow keys leave a voice that ends: the selection goes on in the first voice of the staff', () => {
+  const app = mountApp(scoreXml({ beats: 4, beatType: 4, measures: 3, parts: [{ ...TREBLE, content: { '1:1': quarters('CDEF'), '2:1': quarters('GABC'), '3:1': quarters('DEFG') } }] }));
+  const at = () => `${app.editor.selectedNote?.measureNumber}:${app.editor.selectedNote?.timestampNum}:${app.editor.selectedNote?.isRest ? 'rest' : app.editor.selectedNote?.step}:v${((app.editor.selectedNote!.voiceId - 1) % 4) + 1}`;
+  // Bar 2 goes to voice 2 as a whole; voice 2 exists in bar 2 only.
+  app.click(selectableNotes(app.xml).find((note) => note.measureNumber === 2 && note.timestampNum === 0 && !note.isRest)!);
+  app.press('Shift+ArrowRight Shift+ArrowRight Shift+ArrowRight Cmd+Alt+2');
+  assert.equal(at(), '2:0:G:v2');
+  app.press('Cmd+ArrowRight');
+  assert.equal(at(), '3:0:D:v1', 'Cmd+Right goes to the next bar');
+  app.press('Cmd+ArrowLeft');
+  assert.equal(at(), '2:0:rest:v1', 'and back into the first voice of bar 2');
+  app.press('Alt+ArrowDown');
+  app.press('ArrowRight ArrowRight ArrowRight');
+  assert.equal(at(), '2:12:C:v2', 'the last note of voice 2');
+  app.press('ArrowRight');
+  assert.equal(at(), '3:0:D:v1', 'Right goes on into bar 3');
+  app.press('Cmd+ArrowLeft Alt+ArrowDown');
+  assert.equal(at(), '2:0:G:v2');
+  app.press('ArrowLeft');
+  assert.equal(at(), '1:12:F:v1', 'Left from the first note of voice 2 goes to the note before it in voice 1');
+  app.unmount();
+});
+
+test('K14: Cmd+Home and Cmd+End go to the first and the last position of the top staff, whatever the other parts hold', () => {
+  const app = mountApp(scoreXml({ beats: 4, beatType: 4, measures: 4, parts: [{ ...TREBLE, id: 'P1', content: { '1:1': quarters('CDEF') } }, { ...CLARINET_BB, id: 'P2' }, { ...BASS, id: 'P3' }] }));
+  app.click(selectableNotes(app.xml).find((note) => note.corePartId === 'part:P2' && note.measureNumber === 2)!);
+  app.press('Cmd+Home');
+  assert.equal(app.editor.selectedNote?.corePartId, 'part:P1');
+  assert.equal(app.editor.selectedNote?.measureNumber, 1);
+  assert.equal(app.editor.selectedNote?.step, 'C');
+  assert.equal(app.editor.selectedNote?.isRest, false);
+  app.press('Cmd+End');
+  assert.equal(app.editor.selectedNote?.corePartId, 'part:P1');
+  assert.equal(app.editor.selectedNote?.measureNumber, 4);
+  app.unmount();
+});
+
+test('F53: a phrase copied to a transposing part keeps its sounding pitch', () => {
+  // Flute (concert pitch), clarinet in B flat (written a major second above its sound), cello.
+  const app = mountApp(scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [
+    { ...TREBLE, id: 'P1', content: { '1:1': quarters('CDEF').replace(/<octave>4/g, '<octave>5') } },
+    { ...CLARINET_BB, id: 'P2' },
+    { ...BASS, id: 'P3' },
+  ] }));
+  const startXml = app.xml;
+  app.press('Cmd+Home Shift+ArrowRight Shift+ArrowRight Shift+ArrowRight Cmd+c');
+  app.click(selectableNotes(app.xml).find((note) => note.corePartId === 'part:P2' && note.measureNumber === 1)!);
+  app.press('Cmd+v');
+  const pitches = (part: string) => summarizeScore(app.xml).filter((line) => line.startsWith(`${part} m1 v`) && !/ rest /.test(line)).map((line) => line.split(' ')[4]);
+  assert.deepEqual(pitches('P2'), ['D5', 'E5', 'F#5', 'G5'], 'written a major second higher: the clarinet sounds C D E F');
+  // Back into the flute from the clarinet: the flute gets what the clarinet sounds.
+  app.press('Cmd+c');
+  app.click(selectableNotes(app.xml).find((note) => note.corePartId === 'part:P3' && note.measureNumber === 1)!);
+  app.press('Cmd+v');
+  assert.deepEqual(pitches('P3'), ['C5', 'D5', 'E5', 'F5'], 'concert pitch again in a part that does not transpose');
+  app.undo();
+  app.undo();
+  assert.equal(app.xml, startXml);
+  app.unmount();
+});
+
+test('K15: Cmd+Shift+Right extends the selection to the first note of the next bar, Cmd+Shift+Left takes it back', () => {
+  // MuseScore `select-next-measure` / `select-prev-measure` (Ctrl+Shift+Right / Left).
+  const app = mountApp(scoreXml({ beats: 4, beatType: 4, measures: 3, parts: [{ ...TREBLE, content: { '1:1': quarters('CDEF'), '2:1': quarters('GABC'), '3:1': quarters('DEFG') } }] }));
+  select(app, 0);
+  app.press('Cmd+Shift+ArrowRight');
+  assert.equal(app.editor.selectedNotes.length, 5, 'bar 1 and the first note of bar 2');
+  assert.equal(app.editor.selectedNote?.measureNumber, 2);
+  app.press('Cmd+Shift+ArrowRight');
+  assert.equal(app.editor.selectedNotes.length, 9);
+  app.press('Cmd+Shift+ArrowLeft');
+  assert.equal(app.editor.selectedNotes.length, 5);
+  app.unmount();
+});
+
+test('K16: Alt+Down and Alt+Up go to the staff below and above, across parts, at the same time in the bar', () => {
+  // MuseScore `down-chord` / `up-chord` (Alt+Down / Alt+Up).
+  const app = mountApp(scoreXml({ beats: 4, beatType: 4, measures: 2, parts: [
+    { ...TREBLE, id: 'P1', content: { '1:1': quarters('CDEF') } },
+    { ...CLARINET_BB, id: 'P2' },
+    { ...BASS, id: 'P3', content: { '1:1': `<note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note><note><pitch><step>G</step><octave>2</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>` } },
+  ] }));
+  const at = () => `${app.editor.selectedNote?.corePartId}:${app.editor.selectedNote?.timestampNum}:${app.editor.selectedNote?.isRest ? 'rest' : app.editor.selectedNote?.step}`;
+  select(app, 3);
+  assert.equal(at(), 'part:P1:12:F');
+  app.press('Alt+ArrowDown');
+  assert.equal(at(), 'part:P2:0:rest', 'the whole-bar rest of the clarinet sounds at beat 4');
+  app.press('Alt+ArrowDown');
+  assert.equal(at(), 'part:P3:0:C', 'from the rest, which starts on beat 1: what stands there in the cello');
+  app.press('Alt+ArrowDown');
+  assert.equal(at(), 'part:P3:0:C', 'the bottom staff is the end');
+  app.press('ArrowRight Alt+ArrowUp');
+  assert.equal(at(), 'part:P2:0:rest', 'from beat 3 of the cello up: the rest that sounds there');
+  app.press('Alt+ArrowUp');
+  assert.equal(at(), 'part:P1:0:C');
+  app.unmount();
+});
+
+test('K17: in note input the arrow keys move the cursor and keep the chosen voice', () => {
+  const app = mountApp(scoreXml({ beats: 4, beatType: 4, measures: 3, parts: [{ ...TREBLE, content: { '1:1': quarters('CDEF'), '2:1': quarters('GABC') } }] }));
+  select(app, 0);
+  app.press('N Cmd+Alt+2 Cmd+ArrowRight');
+  assert.equal(app.editor.selectedVoice, 2, 'Cmd+Right keeps voice 2');
+  app.press('ArrowRight ArrowLeft Cmd+Home Cmd+ArrowRight');
+  assert.equal(app.editor.selectedVoice, 2, 'so do Right, Left and Cmd+Home');
+  app.press('5 e');
+  assert.deepEqual(summarizeScore(app.xml).filter((line) => /^m2 v2 /.test(line) && !/ rest /.test(line)), ['m2 v2 @0 E5 quarter'], 'the note goes into voice 2 of bar 2 (first note of the voice: nearest the middle line)');
+  assert.equal(notes(app.xml).filter((line) => /^m2 v1 /.test(line)).length, 4, 'voice 1 of bar 2 is untouched');
   app.unmount();
 });

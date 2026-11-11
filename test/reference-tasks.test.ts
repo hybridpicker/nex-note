@@ -25,6 +25,14 @@ test('T4 R1: the key script reproduces the fixture exactly (keys through the edi
   harness.unmount();
 });
 
+for (const id of ['R4', 'R5'] as const) test(`T4 ${id}: the key script reproduces the fixture exactly (keys through the editor hook)`, () => {
+  const task = referenceTask(id);
+  const harness = mountApp(task.start());
+  harness.press(task.nex.map((token) => token.replace(/^Cmd\+([A-Z])$/, (_, letter: string) => `Cmd+${letter.toLowerCase()}`)).join(' '));
+  assert.deepEqual(summarizeScore(harness.xml).sort(), [...task.expected!].sort());
+  harness.unmount();
+});
+
 test('T4: every Nex Note script needs at most 110 % of the keys of its MuseScore script', () => {
   for (const task of REFERENCE_TASKS) {
     if (task.nex.length === 0) continue;

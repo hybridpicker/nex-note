@@ -171,6 +171,8 @@ export interface DirectionNode {
   id: string;
   kind: string;
   value?: string;
+  /** The word of a tempo mark ("Allegro") that stands before the metronome number of this direction. */
+  text?: string;
   // Span-direction pairing number (used by wedge and octave-shift to match start/stop).
   number?: number;
   placement?: string;

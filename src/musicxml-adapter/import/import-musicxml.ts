@@ -465,7 +465,15 @@ function directionTimestamp(element: XmlElement, cursorPositions: Map<XmlElement
 function buildDirections(measure: XmlElement, measureNumber: number, divisions: number): DirectionNode[] {
   const cursorPositions = measureChildCursorPositions(measure);
   const directions = directChildrenByTag(measure, 'direction').map((direction, index): DirectionNode | null => {
-    const directionType = direction.getElementsByTagName('direction-type')[0];
+    const directionTypes = Array.from(direction.getElementsByTagName('direction-type'));
+    // A tempo mark is a word and a metronome number in one direction ("Allegro ♩ = 120"). It is one
+    // metronome direction that carries the word; read as its first part alone it lost the number.
+    const tempoWords = directionTypes.length === 2
+      && firstElementChild(directionTypes[0])?.tagName === 'words'
+      && firstElementChild(directionTypes[1])?.tagName === 'metronome'
+      ? (firstElementChild(directionTypes[0])?.textContent ?? '').trim()
+      : '';
+    const directionType = tempoWords ? directionTypes[1] : directionTypes[0];
     const firstChild = firstElementChild(directionType);
     const kind = firstChild?.tagName ?? 'direction';
     const hasSwingPlayback = direction.getElementsByTagName('swing').length > 0;
@@ -504,6 +512,7 @@ function buildDirections(measure: XmlElement, measureNumber: number, divisions: 
       id: makeId('dir', measureNumber, index),
       kind,
       value,
+      ...(tempoWords ? { text: tempoWords } : {}),
       number: spanNumber,
       placement: direction.getAttribute('placement') ?? undefined,
       measureNumber,
