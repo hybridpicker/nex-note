@@ -27,14 +27,14 @@ export type LegacyScoreOperation =
   | ({ type: 'editRhythm'; operation: 'insert' | 'delete' | 'resize'; scope: 'voice' | 'instrument' | 'score'; endMeasureNumber: number; durationType: string; isDotted?: boolean } & NoteLocatorLike)
   | ({ type: 'rippleDelete' } & NoteLocatorLike)
   | { type: 'rippleDeleteRange'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
-  | { type: 'setKey'; fifths: number }
+  | { type: 'setKey'; fifths: number; measureNumber?: number }
   | { type: 'transposeDocumentChromatic'; semitones: number }
   | { type: 'setTempo'; bpm: number }
   | { type: 'setTitle'; title: string }
   | { type: 'setSubtitle'; subtitle: string }
   | { type: 'setArranger'; arranger: string }
   | { type: 'setComposer'; composer: string }
-  | { type: 'addStartRepeat' }
+  | { type: 'addStartRepeat'; measureNumber?: number }
   | { type: 'addEndRepeat'; measureNumber?: number }
   | { type: 'addVolta2' }
   | { type: 'setEnding'; measureNumber: number; number: string; endingType: 'start' | 'stop' | 'discontinue' }
@@ -43,7 +43,7 @@ export type LegacyScoreOperation =
   | { type: 'fillSlashMeasure'; measureNumber: number; staffIndex?: number; voiceId?: number; stem?: 'none'; corePartId?: string | null }
   | ({ type: 'duplicateNote' } & NoteLocatorLike)
   | { type: 'setTimeSignature'; beats: number; beatType: number; beatGroups?: number[]; measureNumber?: number }
-  | { type: 'setClef'; sign: 'G' | 'F' | 'C'; line: 1 | 2 | 3 | 4 | 5; measureNumber?: number; staffIndex?: number }
+  | { type: 'setClef'; sign: 'G' | 'F' | 'C'; line: 1 | 2 | 3 | 4 | 5; measureNumber?: number; staffIndex?: number; corePartId?: string | null }
   | { type: 'removeClefChange'; measureNumber: number; staffIndex?: number }
   | { type: 'insertMeasureAfter'; measureNumber: number }
   | { type: 'deleteMeasure'; measureNumber: number }
@@ -57,8 +57,8 @@ export type LegacyScoreOperation =
   | ({ type: 'setSlurPlacement'; placement: 'above' | 'below'; stopLocator: NoteLocatorLike } & NoteLocatorLike)
   | { type: 'addRehearsalMark'; text: string; measureNumber: number }
   | { type: 'addRehearsalMarksEvery'; interval: number; startMeasureNumber?: number; endMeasureNumber?: number; style?: 'letters' | 'numbers' }
-  | { type: 'addWords'; text: string; measureNumber: number; placement?: 'above' | 'below'; corePartId?: string | null; staffIndex?: number }
-  | { type: 'addExpressionText'; text: string; measureNumber: number; placement?: 'above' | 'below'; corePartId?: string | null; staffIndex?: number }
+  | { type: 'addWords'; text: string; measureNumber: number; placement?: 'above' | 'below'; corePartId?: string | null; staffIndex?: number; timestampNum?: number; timestampDen?: number }
+  | { type: 'addExpressionText'; text: string; measureNumber: number; placement?: 'above' | 'below'; corePartId?: string | null; staffIndex?: number; timestampNum?: number; timestampDen?: number }
   | {
       type: 'addAnalysisAnnotation';
       text: string;
@@ -115,7 +115,7 @@ export type LegacyScoreOperation =
   | { type: 'clearRangeArticulations'; range: { start: NoteLocatorLike; end: NoteLocatorLike } }
   | { type: 'insertNoteAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; step: string; octave: number; alter: number; writtenAccidental?: WrittenAccidental; durationType: string; isDotted?: boolean; asChord?: boolean; preserveOverflow?: boolean; notehead?: 'slash'; stem?: 'none'; guitar?: { string: 1 | 2 | 3 | 4 | 5 | 6; fret: number; tuning?: string; techniques?: string[] } }
   | { type: 'insertRestAt'; coreMeasureId?: string | null; corePartId?: string | null; measureNumber: number; staffIndex: number; voiceId: number; timestampNum: number; timestampDen: number; durationType: string; isDotted?: boolean }
-  | ({ type: 'setLyricLine'; verseNumber: number; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end' } & NoteLocatorLike)
+  | ({ type: 'setLyricLine'; verseNumber: number; text: string; syllabic?: 'single' | 'begin' | 'middle' | 'end'; extend?: 'start' | 'stop' | 'continue' } & NoteLocatorLike)
   | {
       type: 'addTuplet';
       convertRange?: boolean;
@@ -514,6 +514,7 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       break;
     case 'setKey':
       ensureNumber(command, 'fifths', issues, { min: -7, max: 7 });
+      if (command.measureNumber != null) ensureNumber(command, 'measureNumber', issues, { min: 1 });
       break;
     case 'transposeDocumentChromatic':
       ensureNumber(command, 'semitones', issues, { min: -24, max: 24 });
@@ -651,7 +652,11 @@ export function normalizeScoreCommand(input: unknown): ValidatedScoreCommand {
       }
       if (type === 'transposeChromatic') ensureNumber(command, 'semitones', issues, { min: -24, max: 24 });
       if (type === 'addLyric' || type === 'setLyricLine' || type === 'removeLyricLine') {
-        if (type !== 'removeLyricLine') ensureString(command, 'text', issues);
+        // A melisma line ends on a note without a syllable: the text may be empty when `extend` is set.
+        if (type !== 'removeLyricLine' && !(type === 'setLyricLine' && command.extend != null && command.text === '')) ensureString(command, 'text', issues);
+        if (command.extend != null && !['start', 'stop', 'continue'].includes(String(command.extend))) {
+          issues.push('extend must be start, stop, or continue');
+        }
         if (command.syllabic != null && !['single', 'begin', 'middle', 'end'].includes(String(command.syllabic))) {
           issues.push('syllabic must be single, begin, middle, or end');
         }

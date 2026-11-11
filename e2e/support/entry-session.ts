@@ -332,9 +332,18 @@ export class EntrySession {
   }
 
   async noteheadCenter(index: number) {
-    const box = await this.page.locator('[data-testid="score-canvas"] .vf-notehead').nth(index).boundingBox();
-    if (!box) throw new Error(`Notehead ${index} is not rendered`);
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    // The score is drawn again after an edit; a box read in between belongs to a detached node.
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const drawn = await this.page.getByTestId('score-canvas').evaluate((element) => (
+        (element as HTMLElement).dataset.documentRevision === (element as HTMLElement).dataset.renderedRevision
+      )).catch(() => false);
+      const box = drawn
+        ? await this.page.locator('[data-testid="score-canvas"] .vf-notehead').nth(index).boundingBox({ timeout: 1_000 }).catch(() => null)
+        : null;
+      if (box) return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(`Notehead ${index} is not rendered`);
   }
 
   // -------------------------------------------------------------------------------------------

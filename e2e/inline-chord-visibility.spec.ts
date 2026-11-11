@@ -107,7 +107,7 @@ test('Command+K opens inline chord entry even when command search is focused @sm
   await expect(scoreSvg).toBeVisible({ timeout: 15_000 });
 
   await page.locator('[data-testid="score-canvas"] .vf-tabnote').first().click({ force: true });
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await page.getByTitle(/^Search commands \(/).click();
   await expect(page.getByPlaceholder('Search commands, exports, notation tools...')).toBeFocused();
   await page.keyboard.press(`${MOD}+K`);
 
@@ -132,7 +132,7 @@ test('command search accepts MuseScore-style chord symbols directly @smoke', asy
     await expect(scoreSvg).toBeVisible({ timeout: 15_000 });
 
     await clickFirstVisibleTabFret(page, chord);
-    await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+    await page.getByTitle(/^Search commands \(/).click();
     const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
     await expect(commandSearch).toBeFocused();
     await commandSearch.fill(chord);
@@ -164,7 +164,7 @@ test('command search writes chords in imported TAB scores with staff details @sm
   expect(visibleTabNotesBefore).toBeGreaterThan(0);
 
   await page.locator('[data-testid="score-canvas"] .vf-tabnote').first().click({ force: true });
-  await page.getByTitle('Commands (Cmd/Ctrl+K)').click();
+  await page.getByTitle(/^Search commands \(/).click();
   const commandSearch = page.getByPlaceholder('Search commands, exports, notation tools...');
   await expect(commandSearch).toBeFocused();
   await commandSearch.fill('Fm7');

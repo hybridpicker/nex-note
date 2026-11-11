@@ -82,14 +82,14 @@ export function applyLegacyXmlScoreCommands(xml: string, commands: ScoreCommand[
     switch (command.type) {
       case 'duplicateNote': duplicateNote(doc, command); break;
       case 'removeArticulations': removeArticulations(doc); break;
-      case 'setKey': setKey(doc, command.fifths); break;
+      case 'setKey': setKey(doc, command.fifths, command.measureNumber ?? 1); break;
       case 'transposeDocumentChromatic': transposeDocumentChromatically(doc, command.semitones); break;
       case 'setTempo': setTempo(doc, command.bpm); break;
       case 'setTitle': setTitle(doc, command.title); break;
       case 'setSubtitle': setSubtitle(doc, command.subtitle); break;
       case 'setArranger': setArranger(doc, command.arranger); break;
       case 'setComposer': setComposer(doc, command.composer); break;
-      case 'addStartRepeat': addStartRepeat(doc); break;
+      case 'addStartRepeat': addStartRepeat(doc, command.measureNumber ?? 1); break;
       case 'addEndRepeat': addEndRepeat(doc, command.measureNumber); break;
       case 'addVolta2': addVolta2(doc); break;
       case 'setEnding': setEnding(doc, command.measureNumber, command.number, command.endingType); break;
@@ -138,13 +138,13 @@ function removeArticulations(doc: XmlDocument) {
   }
 }
 
-function setKey(doc: XmlDocument, fifths: number) {
+function setKey(doc: XmlDocument, fifths: number, measureNumber = 1) {
   const parts = Array.from(doc.getElementsByTagName('part'));
   const firstMeasures = parts
-    .map((part) => Array.from(part.getElementsByTagName('measure')).find((measure) => parseInt(measure.getAttribute('number') ?? '0', 10) === 1))
+    .map((part) => Array.from(part.getElementsByTagName('measure')).find((measure) => parseInt(measure.getAttribute('number') ?? '0', 10) === measureNumber))
     .filter((measure): measure is XmlEl => Boolean(measure));
 
-  const targets = firstMeasures.length > 0 ? firstMeasures : [getMeasure(doc, 1) ?? doc.getElementsByTagName('measure')[0]].filter((measure): measure is XmlEl => Boolean(measure));
+  const targets = firstMeasures.length > 0 ? firstMeasures : [getMeasure(doc, measureNumber) ?? doc.getElementsByTagName('measure')[0]].filter((measure): measure is XmlEl => Boolean(measure));
   targets.forEach((measure) => {
     const attributes = getOrCreateDirectChild(doc, measure, 'attributes');
     const key = getOrCreateDirectChild(doc, attributes, 'key');
@@ -336,8 +336,8 @@ function setCreator(doc: XmlDocument, type: 'arranger' | 'composer', value: stri
 function setArranger(doc: XmlDocument, arranger: string) { setCreator(doc, 'arranger', arranger); }
 function setComposer(doc: XmlDocument, composer: string) { setCreator(doc, 'composer', composer); }
 
-function addStartRepeat(doc: XmlDocument) {
-  const measure = getMeasure(doc, 1) ?? doc.getElementsByTagName('measure')[0];
+function addStartRepeat(doc: XmlDocument, measureNumber = 1) {
+  const measure = getMeasure(doc, measureNumber) ?? doc.getElementsByTagName('measure')[0];
   if (!measure) return;
   const barline = doc.createElement('barline');
   barline.setAttribute('location', 'left');

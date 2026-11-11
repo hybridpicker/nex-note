@@ -1242,6 +1242,13 @@ test('inspector disabled note-scoped text workflows explain selection requiremen
 
 test('file lifecycle covers library open, save-as, downloads, and new-file reset', async ({ page }) => {
   test.slow();
+  // The dev server compiles an API route on its first call and then reloads every open page; a
+  // reload between the answer and the download lost the download in some runs (F43 in
+  // docs/note-entry-mastery-ledger.md). Compile both export routes before the page is open.
+  for (const route of ['/api/export-abc', '/api/download']) {
+    const warmUp = await page.request.post(route, { data: { xml: fixtureXml, filename: 'warm-up.musicxml' } });
+    expect(warmUp.ok(), `${route} answers`).toBe(true);
+  }
   await bootWithScore(page);
 
   page.once('dialog', async (dialog) => {
@@ -1276,14 +1283,24 @@ test('file lifecycle covers library open, save-as, downloads, and new-file reset
   await expect(appHeader.getByText('renamed-score.musicxml')).toBeVisible();
   await armRenamedReloadBoot();
 
-  const abcDownload = page.waitForEvent('download');
-  await appHeader.getByTitle('Export ABC').click();
-  expect((await abcDownload).suggestedFilename()).toBe('renamed-score.abc');
+  // The dev server rebuilds while the test opens the library and its previews ("[Fast Refresh]
+  // rebuilding" in the trace) and then reloads the page; an export on its way at that moment never
+  // reaches the browser (F43). Such a run asks again once the renamed score is back.
+  const downloadFrom = async (title: string) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const pending = page.waitForEvent('download', { timeout: 20_000 }).catch(() => null);
+      await appHeader.getByTitle(title).click();
+      const download = await pending;
+      if (download) return download;
+      await ensureRenamedScoreLoaded();
+    }
+    throw new Error(`"${title}" produced no download`);
+  };
+
+  expect((await downloadFrom('Export ABC')).suggestedFilename()).toBe('renamed-score.abc');
   await ensureRenamedScoreLoaded();
 
-  const mxlDownload = page.waitForEvent('download');
-  await appHeader.getByTitle('Download .mxl').click();
-  expect((await mxlDownload).suggestedFilename()).toBe('renamed-score.mxl');
+  expect((await downloadFrom('Download .mxl')).suggestedFilename()).toBe('renamed-score.mxl');
   await ensureRenamedScoreLoaded();
 
   await expect(appHeader.getByTitle('New file')).toBeVisible();

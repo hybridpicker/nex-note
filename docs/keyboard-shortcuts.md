@@ -179,6 +179,28 @@ Inspector-Sektionen selbst sind zusaetzlich als Gruppe `Inspector` organisiert; 
 
 Die linke Werkzeugleiste ist zusaetzlich als Gruppe `Palette` im Command Center organisiert; Suchbegriffe wie `palette transpose`, `palette dynamics`, `palette barlines` oder `palette selection tools` oeffnen direkt die passende Palette-Sektion und setzen den Fokus auf das erste verfuegbare Werkzeug.
 
+## Eingabe an der Einfügemarke (Popover, November 2026)
+
+Ein gemeinsames Eingabefeld erscheint an der Einfügemarke bzw. an der Auswahl. Es zeigt das erkannte Ergebnis, bevor etwas geschrieben wird. `Enter` schreibt als ein Undo-Schritt und schließt, `Escape` schließt ohne Spur. Voraussetzung ist eine Auswahl oder die Noteneingabe.
+
+| Shortcut | Eingabe | Was getippt wird |
+| --- | --- | --- |
+| `Cmd/Ctrl+L` | Liedtext (wie MuseScore) | Silbe; `Space` nächste Note, `-` Trennstrich und nächste Note, `_` Melisma, `Shift+Space` zurück, `ArrowDown`/`ArrowUp` nächste/vorige Strophe, `Enter` fertig. Auf einer Note mit Strophe 1 beginnt die Eingabe in Strophe 2. `Alt/Option+-` und `Alt/Option+_` tippen die Zeichen selbst |
+| `Cmd/Ctrl+K` | Akkordsymbol (wie MuseScore) | `Cmaj7`, `F#dim7`, `C/E`; `Space` nächster Schlag bzw. nächste Note/Pause, `Shift+Space` zurück, `Tab` oder `Cmd/Ctrl+ArrowRight` nächster Takt, `Shift+Tab` oder `Cmd/Ctrl+ArrowLeft` voriger Takt, `;` nächster Schlag, `:` voriger Schlag, `Cmd/Ctrl+1` … `7` um einen Notenwert weiter (`6` = Halbe) |
+| `Alt/Option+Shift+D` | Dynamik | `pp`, `mf`, `sfz` …; `<`, `>`, `cresc`, `dim` schreiben eine Gabel über die Auswahl (bei einer Note bis zu deren Ende) |
+| `Cmd/Ctrl+T` | Notenzeilentext (wie MuseScore) | beliebiger Text an der Position |
+| `Cmd/Ctrl+Shift+T` | Systemtext (wie MuseScore) | beliebiger Text |
+| `Cmd/Ctrl+E` | Vortragsbezeichnung (wie MuseScore) | z. B. `dolce` |
+| `Cmd/Ctrl+M` | Studierzeichen (wie MuseScore) | Buchstabe oder Zahl |
+| `Alt/Option+Shift+T` | Tempo (wie MuseScore) | `Allegro`, `q=96`, `Allegro q=96` |
+| `Alt/Option+Shift+K` | Tonart ab dem Takt der Auswahl | `D`, `Bb`, `f#m`, `2#`, `3b`, `0` |
+| `Alt/Option+Shift+M` | Taktart ab dem Takt | `3/4`, `6/8`, `c`, `3+2/8` |
+| `Alt/Option+Shift+C` | Schlüssel ab dem Takt, nur in dieser Notenzeile | `treble`, `bass`, `alto`, `tenor` (auch `g`, `f`, `c3`, `c4`) |
+| `Alt/Option+Shift+R` | Wiederholungen, Taktstriche, Voltenklammern | `|:`, `:|`, `||`, `|]`, `1.`, `2.` (Klammern über die gewählten Takte) |
+| `Alt/Option+Shift+O` | Linien über die Auswahl | `8va`, `8vb`, `15ma`, `15mb`, `ped` |
+
+MuseScore hat für Tonart, Taktart, Schlüssel, Wiederholungen und Linien keinen Standard-Shortcut (Palettensuche `Ctrl+F9`); nex-note folgt hier dem Muster von MuseScores Tempo-Taste `Alt+Shift+T`. Ohne Auswahl öffnen `Cmd/Ctrl+T` und `Cmd/Ctrl+M` weiterhin das Inspector-Feld. MuseScores `Ctrl+D` (Dynamik) bleibt in nex-note „Auswahl duplizieren“ (siehe „Dynamics from the keyboard“); das Dynamikfeld liegt deshalb auf `Alt/Option+Shift+D`.
+
 ## Mouse Modifier
 
 | Modifier | Aktion | Kontext |

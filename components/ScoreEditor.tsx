@@ -8,6 +8,9 @@ import { nestedTupletRenderXml, drawNestedTupletBrackets, hasNestedTuplets } fro
 import { inputMetricsEnabled, recordInputMetric, markInputStart, markInputFeedback } from '@/src/score-input/input-metrics';
 import { useEffect, useLayoutEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { VOICE_COLOURS } from '@/components/NoteInputBar';
+import InlineEntryHost, { type InlineEntryFlowKind, type InlineEntryRequest } from '@/components/InlineEntryHost';
+import type { EntryPosition } from '@/src/score-input/inline-entry-navigation';
+import type { ScoreCommand } from '@/src/shared/schemas/score-command';
 import type { NoteDuration, NoteEntryMode, SelectedNote } from '@/hooks/useNoteEditor';
 import type { PlaybackCursorTarget, PlaybackPlayheadSnapshot, PlaybackState } from '@/hooks/usePlayback';
 import { getBugReportContext, getBugReportEvents, recordBugReportEvent } from '@/lib/bug-report-recorder';
@@ -186,6 +189,8 @@ interface Props {
   }) => void;
   onPlaceNoteAt: (target: ResolvedEditTarget, options?: { audition?: boolean }) => void;
   onSetChordSymbol?: (value: string, targetNote?: SelectedNote | null) => void;
+  /** Commit the commands of the inline-entry popover as one Undo step. */
+  onApplyInlineEntry?: (commands: ScoreCommand[]) => { ok: boolean; message?: string };
   onSetGuitarFret?: (targetNote: SelectedNote, fret: number) => void;
   onPlaybackSeekRequest?: (target: PlaybackCursorTarget) => void;
   dragTransposeMode?: DragTransposeMode;
@@ -11841,6 +11846,7 @@ export default function ScoreEditor({
   onNoteClick,
   onPlaceNoteAt,
   onSetChordSymbol,
+  onApplyInlineEntry,
   onSetGuitarFret,
   onPlaybackSeekRequest,
   dragTransposeMode = 'chromatic',
@@ -11908,13 +11914,8 @@ export default function ScoreEditor({
   const [findVisible, setFindVisible] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [findStatus, setFindStatus] = useState<string | null>(null);
-  const [inlineChordEditor, setInlineChordEditor] = useState<{
-    left: number;
-    top: number;
-    value: string;
-    targetKey: string;
-    targetNote: SelectedNote | null;
-  } | null>(null);
+  const [inlineEntryRequest, setInlineEntryRequest] = useState<InlineEntryRequest | null>(null);
+  const inlineEntrySerialRef = useRef(0);
   const [inlineGuitarFretEditor, setInlineGuitarFretEditor] = useState<{
     left: number;
     top: number;
@@ -11952,7 +11953,6 @@ export default function ScoreEditor({
   const lastGhostStaffIndexRef = useRef<number | null>(null);
   const dragSessionRef = useRef<DragTransposeSession | null>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
-  const inlineChordInputRef = useRef<HTMLInputElement>(null);
   const inlineGuitarFretInputRef = useRef<HTMLInputElement>(null);
   const selectedDurationRef = useRef<Props['selectedDuration']>(selectedDuration);
   const isDottedRef = useRef(isDotted);
@@ -12999,12 +12999,11 @@ export default function ScoreEditor({
         ? clamp(harmonyEditTarget.rect.x - 2, 4, Math.max(4, containerWidth - 118))
         : Math.max(4, harmonyEditTarget.rect.x - 2);
       const top = Math.max(4, harmonyEditTarget.rect.y - 6);
-      setInlineChordEditor({
-        left,
-        top,
-        value: harmonyEditTarget.value,
-        targetKey: selectedNoteKeyFor(harmonyEditTarget.note) ?? 'harmony',
-        targetNote: harmonyEditTarget.note,
+      inlineEntrySerialRef.current += 1;
+      setInlineEntryRequest({
+        kind: 'chord',
+        serial: inlineEntrySerialRef.current,
+        at: { note: harmonyEditTarget.note, left, top, value: harmonyEditTarget.value },
       });
       return;
     }
@@ -14708,63 +14707,69 @@ export default function ScoreEditor({
 
   const selectedNoteKey = selectedNoteKeyFor(selectedNote);
 
-  const openInlineChordEditor = useCallback(() => {
-    if (!selectedNote || !onSetChordSymbol) return;
-    const rendered = findRenderedSelectionTarget(selectedNote, renderedNotesRef.current, coreDocument);
-    const overlay = measureLayoutOverlaysRef.current.find((entry) => (
-      (selectedNote.coreMeasureId && entry.measureId === selectedNote.coreMeasureId)
-      || entry.measureNumber === selectedNote.measureNumber
-    )) ?? null;
-    const visibleRect = overlay
-      ? visibleMeasureRectForStaff(overlay, staffDetailsByMeasureRef.current, coreDocument)
-      : null;
-    const x = rendered?.domCenter.x ?? (visibleRect ? visibleRect.x + Math.min(48, visibleRect.width * 0.18) : 24);
-    const y = rendered?.domRect.y ?? visibleRect?.y ?? 24;
-    const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
-    const left = containerWidth > 0
-      ? clamp(x - 18, 4, Math.max(4, containerWidth - 118))
-      : Math.max(4, x - 18);
-    const top = Math.max(4, y - 34);
-    setInlineChordEditor({
-      left,
-      top,
-      value: resolveSelectedHarmony(coreDocument, selectedNote),
-      targetKey: selectedNoteKey ?? 'selection',
-      targetNote: selectedNote,
-    });
-  }, [coreDocument, onSetChordSymbol, selectedNote, selectedNoteKey]);
+  // The inline-entry popover (K4 to K6 in docs/note-entry-mastery-ledger.md): lyrics, chord symbols,
+  // dynamics, text, key, time, clef, repeats and lines are typed at the caret or selection.
+  const openInlineEntry = useCallback((kind: InlineEntryFlowKind) => {
+    if (!selectedNote) return;
+    if (kind === 'chord' ? !onSetChordSymbol : !onApplyInlineEntry) return;
+    inlineEntrySerialRef.current += 1;
+    setInlineEntryRequest({ kind, serial: inlineEntrySerialRef.current });
+  }, [onApplyInlineEntry, onSetChordSymbol, selectedNote]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const handleFocusInlineChord = () => {
-      openInlineChordEditor();
+    const handleFocusInlineChord = () => openInlineEntry('chord');
+    const handleOpenInlineEntry = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind?: InlineEntryFlowKind }>).detail?.kind;
+      if (kind) openInlineEntry(kind);
     };
     window.addEventListener('nex-note:focus-inline-chord-symbol', handleFocusInlineChord);
-    return () => window.removeEventListener('nex-note:focus-inline-chord-symbol', handleFocusInlineChord);
-  }, [openInlineChordEditor]);
+    window.addEventListener('nex-note:open-inline-entry', handleOpenInlineEntry);
+    return () => {
+      window.removeEventListener('nex-note:focus-inline-chord-symbol', handleFocusInlineChord);
+      window.removeEventListener('nex-note:open-inline-entry', handleOpenInlineEntry);
+    };
+  }, [openInlineEntry]);
 
-  useEffect(() => {
-    if (!inlineChordEditor) return;
-    const timer = window.setTimeout(() => {
-      inlineChordInputRef.current?.focus();
-      inlineChordInputRef.current?.select();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [inlineChordEditor]);
+  const closeInlineEntry = useCallback(() => {
+    setInlineEntryRequest(null);
+    // The next key is a note or a shortcut again.
+    viewportRef.current?.focus();
+  }, []);
 
-  useEffect(() => {
-    setInlineChordEditor((current) => {
-      if (!current) return current;
-      if (!selectedNoteKey || current.targetKey !== selectedNoteKey) return null;
-      return current;
-    });
-  }, [selectedNoteKey]);
-
-  const commitInlineChordEditor = useCallback(() => {
-    const value = inlineChordInputRef.current?.value.trim() ?? '';
-    if (value) onSetChordSymbol?.(value, inlineChordEditor?.targetNote ?? null);
-    setInlineChordEditor(null);
-  }, [inlineChordEditor, onSetChordSymbol]);
+  /** Where the popover stands for a position: at its onset, above the staff or below it. */
+  const placeInlineEntry = useCallback((position: EntryPosition, below: boolean) => {
+    const overlays = measureLayoutOverlaysRef.current;
+    const overlay = overlays.find((entry) => position.coreMeasureId && entry.measureId === position.coreMeasureId)
+      ?? overlays.find((entry) => entry.measureNumber === position.measureNumber && staffIndexForMeasureId(coreDocument, entry.measureId) === position.staffIndex)
+      ?? overlays.find((entry) => entry.measureNumber === position.measureNumber)
+      ?? null;
+    if (!overlay) return null;
+    const onset = position.timestampNum / Math.max(position.timestampDen, 1);
+    const points = getRenderedGhostStaffPoints(renderedGhostGridRef.current, overlay.measureId, position.staffIndex, { includeSynthetic: true })
+      .map((point) => ({ onset: point.timestampNum / Math.max(point.timestampDen, 1), domX: point.domX }))
+      .sort((left, right) => left.onset - right.onset);
+    const exact = points.find((point) => Math.abs(point.onset - onset) < 1e-9) ?? null;
+    const before = points.filter((point) => point.onset <= onset + 1e-9).at(-1) ?? null;
+    const after = points.find((point) => point.onset > onset + 1e-9) ?? null;
+    const barEnd = overlay.domRect.x + overlay.domRect.width;
+    let domX = exact?.domX ?? null;
+    if (domX == null && before && after) domX = before.domX + ((onset - before.onset) / (after.onset - before.onset)) * (after.domX - before.domX);
+    else if (domX == null && before) domX = before.domX + Math.min(1, (onset - before.onset) / Math.max(1 - before.onset, 1e-9)) * (barEnd - before.domX - 8);
+    else if (domX == null) domX = after?.domX ?? overlay.domRect.x + 24;
+    const staffCandidates = (staffDetailsByMeasureRef.current.get(position.measureNumber) ?? [])
+      .filter((entry) => entry.staffIndex === position.staffIndex);
+    const staff = staffCandidates.find((entry) => position.corePartId && entry.corePartId === position.corePartId)
+      ?? staffCandidates[0]
+      ?? null;
+    const space = Math.max(staff?.lineDistanceDom ?? 10, 4);
+    const topLine = staff?.topLineDomY ?? overlay.domRect.y;
+    const bottomLine = staff?.bottomLineDomY ?? overlay.domRect.y + overlay.domRect.height;
+    const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
+    const left = containerWidth > 0 ? clamp(domX - 18, 4, Math.max(4, containerWidth - 260)) : Math.max(4, domX - 18);
+    const top = below ? bottomLine + space * 2.5 : Math.max(4, topLine - space * 2 - 64);
+    return { left: left + overlayLayerOffset.x, top: top + overlayLayerOffset.y };
+  }, [coreDocument, overlayLayerOffset]);
 
   useEffect(() => {
     if (!inlineGuitarFretEditor) return;
@@ -17161,37 +17166,16 @@ export default function ScoreEditor({
                     data-layout-total-weight={overlay.totalWidthWeight.toFixed(3)}
                   />
                 ))}
-                {inlineChordEditor && (
-                  <form
-                    className="pointer-events-auto absolute z-30"
-                    data-testid="inline-chord-symbol-editor"
-                    style={{
-                      left: `${inlineChordEditor.left}px`,
-                      top: `${inlineChordEditor.top}px`,
-                    }}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      commitInlineChordEditor();
-                    }}
-                  >
-                    <input
-                      ref={inlineChordInputRef}
-                      defaultValue={inlineChordEditor.value}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          commitInlineChordEditor();
-                        } else if (event.key === 'Escape') {
-                          event.preventDefault();
-                          setInlineChordEditor(null);
-                        }
-                      }}
-                      aria-label="Inline chord symbol"
-                      placeholder="Cmaj7"
-                      className="h-7 w-28 rounded-md border border-nex-accent bg-white px-2 text-xs font-semibold text-nex-ink shadow-lg outline-none ring-2 ring-white/90 placeholder:text-slate-300"
-                    />
-                  </form>
-                )}
+                <InlineEntryHost
+                  request={inlineEntryRequest}
+                  coreDocument={coreDocument ?? null}
+                  selectedNote={selectedNote}
+                  selectedNotes={selectedNotes}
+                  place={placeInlineEntry}
+                  onSetChordSymbol={onSetChordSymbol}
+                  onApplyInlineEntry={onApplyInlineEntry}
+                  onClose={closeInlineEntry}
+                />
                 {inlineGuitarFretEditor && (
                   <form
                     className="pointer-events-auto absolute z-30"

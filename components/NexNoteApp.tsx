@@ -1,6 +1,7 @@
 'use client';
 
 import { refreshActiveKeyboardLayout, shortcutLetter } from '@/src/score-input/keyboard-layout';
+import { INLINE_ENTRY_SHORTCUT_LABELS, resolveInlineEntryShortcut } from '@/src/score-input/inline-entry';
 import { resolveKeyboardHistoryShortcut } from '@/src/score-input/keyboard-resolver';
 import { buildPartsArchive } from '@/lib/parts-archive';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
@@ -1082,7 +1083,7 @@ export default function Home({ searchParams }: HomeProps) {
     isDotted, selectedVoice, entryMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, preparedDurationActivePitch, leadsheetMode, guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
     editorError,
     toggleNoteInput, toggleEntryMode, toggleChordInputMode, toggleStepInputKeyboardMode, toggleInputByDurationMode, toggleLeadsheetMode, toggleGuitarInputMode, handleNoteClick, handleKeyDown, setDuration, setAccidental,
-    toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
+    toggleDotted, setVoice, insertRest, insertSlash, insertGuitarFret, setGuitarFretAtNote, setGuitarTuning, toggleGuitarTechnique, fillSlashMeasure, setHarmonyAtSelection, applyInlineEntryCommands, deleteSelectedNote, duplicateSelection, copySelection, cutSelection, pasteClipboard, clearSelection, restoreSelection, setOsmd,
     changePitch, prepareInputByDurationPitch, prepareInputByDurationRest, changeInputByDurationOctave, replaceSelectedPitchAndAdvance, changeOctave, insertNote, insertMidiChord, toggleArticulation, setAccidentalDisplay, clearArticulations, addDynamic, toggleTie, toggleSlur,
     transposeSemitones, commitDraggedPitch, commitDraggedGuitarString, setBarline, addGraceNoteAtSelection, addTupletToSelection, addIntervalAbove, placeNoteAt,
   } = useNoteEditor(
@@ -1445,6 +1446,19 @@ export default function Home({ searchParams }: HomeProps) {
           setLeftNotationSidebarCollapsed((collapsed) => !collapsed);
         }
         recordBugReportEvent('workspace', 'workspace-shortcut', { source: 'keyboard', action: workspaceShortcut });
+        return;
+      }
+      // Keys typed into the inline-entry popover belong to it.
+      if (target?.closest?.('[data-testid="inline-entry-popover"]')) return;
+      // Inline entry at the caret or selection (K4 to K6 in docs/note-entry-mastery-ledger.md).
+      const inlineEntryKind = xml && selectedNote && !isTextEntry && !printView ? resolveInlineEntryShortcut(e, letter) : null;
+      if (inlineEntryKind && inlineEntryKind !== 'chord') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.repeat) return;
+        setCommandCenterOpen(false);
+        window.dispatchEvent(new CustomEvent('nex-note:open-inline-entry', { detail: { kind: inlineEntryKind } }));
+        recordBugReportEvent('workspace', 'open-inline-entry', { source: 'keyboard', kind: inlineEntryKind });
         return;
       }
       if (metaKey && isKeyK) {
@@ -3987,6 +4001,18 @@ export default function Home({ searchParams }: HomeProps) {
         disabledReason: !hasScore ? scoreRequired : !selectedNote ? noteRequired : undefined,
         onRun: () => window.dispatchEvent(new CustomEvent('nex-note:focus-inline-chord-symbol')),
       },
+      // The inline-entry popover for every kind of marking (K4 to K6 in docs/note-entry-mastery-ledger.md).
+      ...(Object.keys(INLINE_ENTRY_SHORTCUT_LABELS) as Array<keyof typeof INLINE_ENTRY_SHORTCUT_LABELS>).map((kind) => ({
+        id: `inline-entry-${kind}`,
+        title: t('command.inlineEntry.title', { what: t(`entry.label.${kind}`) }),
+        description: t(`entry.hint.${kind}`),
+        group: textInputGroup,
+        keywords: [...textInputKeywords, kind, 'type at the cursor', 'popover'],
+        shortcut: INLINE_ENTRY_SHORTCUT_LABELS[kind],
+        disabled: !selectedNote,
+        disabledReason: !hasScore ? scoreRequired : !selectedNote ? noteRequired : undefined,
+        onRun: () => window.dispatchEvent(new CustomEvent('nex-note:open-inline-entry', { detail: { kind } })),
+      })),
       {
         id: 'focus-staff-text',
         title: t('command.staffText.title'),
@@ -4853,6 +4879,7 @@ export default function Home({ searchParams }: HomeProps) {
       pencilOnlyInput={(pencilInputDevice || pencilFocus) && noteInputMode && !printView}
       onPlaceNoteAt={viewOnly ? () => undefined : placeNoteAt}
       onSetChordSymbol={viewOnly ? undefined : setHarmonyAtSelection}
+      onApplyInlineEntry={viewOnly ? undefined : applyInlineEntryCommands}
       onSetGuitarFret={viewOnly ? undefined : setGuitarFretAtNote}
       onPlaybackSeekRequest={viewOnly ? undefined : (target) => { void seekToCursorTarget(target); }}
       dragTransposeMode={transposeMode}

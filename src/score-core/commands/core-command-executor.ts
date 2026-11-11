@@ -1494,20 +1494,24 @@ function upsertLyricLine(
   verseNumber: number,
   text: string,
   syllabic?: 'single' | 'begin' | 'middle' | 'end',
+  extend?: 'start' | 'stop' | 'continue',
 ) {
   const existing = document.lyricLines.find((line) => line.eventId === eventId && line.verseNumber === verseNumber);
   if (existing) {
     existing.text = text;
     existing.syllabic = syllabic;
+    if (extend) existing.extend = extend;
+    else delete existing.extend;
     return existing;
   }
-  const created = {
+  const created: ScoreDocumentModel['lyricLines'][number] = {
     id: `lyric:${eventId}:${verseNumber}`,
     eventId,
     verseNumber,
     text,
     syllabic,
-  } as const;
+    ...(extend ? { extend } : {}),
+  };
   document.lyricLines.push(created);
   return created;
 }
@@ -3989,7 +3993,8 @@ export function executeCoreCommands(
         break;
       }
       case 'setKey':
-        applyToMatchingMeasures(nextDocument, 1, ({ partIndex, staffIndex, measureIndex }) => {
+        // From the given bar on (MusicXML: attributes hold until the next change); bar 1 by default.
+        applyToMatchingMeasures(nextDocument, command.measureNumber ?? 1, ({ partIndex, staffIndex, measureIndex }) => {
           const attributes = ensureMeasureAttributes(nextDocument, partIndex, staffIndex, measureIndex);
           attributes.keyFifths = command.fifths;
         });
@@ -4077,6 +4082,8 @@ export function executeCoreCommands(
         const targetStaff = command.staffIndex ?? 1;
         applyToMatchingMeasures(nextDocument, targetMeasure, ({ partIndex, staffIndex, measureIndex }) => {
           if (staffIndex + 1 !== targetStaff) return;
+          // Staff numbers restart in every part: a clef change belongs to the part that is named.
+          if (!commandTargetsPart(nextDocument.score.parts[partIndex]!, command.corePartId)) return;
           const attributes = ensureMeasureAttributes(nextDocument, partIndex, staffIndex, measureIndex);
           const existing = attributes.clefs.find((clef) => clef.staffIndex === targetStaff);
           if (existing) {
@@ -4217,7 +4224,7 @@ export function executeCoreCommands(
       case 'addStartRepeat': {
         nextDocument.score.parts.forEach((part) => {
           part.staves.forEach((staff) => {
-            const measure = staff.measures.find((entry) => entry.measureNumber === 1);
+            const measure = staff.measures.find((entry) => entry.measureNumber === (command.measureNumber ?? 1));
             if (measure) measure.leftBarline = 'repeat-start';
           });
         });
@@ -5024,8 +5031,8 @@ export function executeCoreCommands(
               placement: command.placement ?? 'above',
               measureNumber: command.measureNumber,
               staffIndex: staff.staffIndex,
-              timestampNum: 0,
-              timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+              timestampNum: command.timestampNum ?? 0,
+              timestampDen: command.timestampDen ?? Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
             });
           });
         });
@@ -5045,8 +5052,8 @@ export function executeCoreCommands(
               placement: command.placement ?? 'above',
               measureNumber: command.measureNumber,
               staffIndex: staff.staffIndex,
-              timestampNum: 0,
-              timestampDen: Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
+              timestampNum: command.timestampNum ?? 0,
+              timestampDen: command.timestampDen ?? Math.max((measure.attributes[0]?.divisions ?? 1) * 4, 1),
             });
           });
         });
@@ -5313,7 +5320,7 @@ export function executeCoreCommands(
             syllabic: command.syllabic,
           });
           event.lyrics = lyrics.sort((a, b) => (a.verseNumber ?? 1) - (b.verseNumber ?? 1));
-          upsertLyricLine(nextDocument, event.id, command.verseNumber, command.text, command.syllabic);
+          upsertLyricLine(nextDocument, event.id, command.verseNumber, command.text, command.syllabic, command.extend);
         }
         break;
       }

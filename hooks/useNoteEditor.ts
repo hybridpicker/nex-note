@@ -3700,6 +3700,24 @@ export function useNoteEditor(
     return true;
   }, [applyEditorCommands, onApplyCommands, selectedNote, warnNoOpEdit, xml]);
 
+  /**
+   * Commit the commands of the inline-entry popover as one Undo step. The selection (or the input
+   * cursor) stays where it is. Returns the reason when the score does not accept them.
+   */
+  const applyInlineEntryCommands = useCallback((commands: ScoreCommand[]): { ok: boolean; message?: string } => {
+    if (commands.length === 0) return { ok: true };
+    const prepared = prepareDocumentCommands({ xml, coreDocument }, commands);
+    const rejection = prepared.result.diagnostics.find((diagnostic) => diagnostic.code.endsWith('_rejected'));
+    if (rejection) return { ok: false, message: rejection.message };
+    if (prepared.result.xml === xml) return { ok: false, message: 'Nothing changed.' };
+    preparedCommandsRef.current = prepared;
+    const target = selectedNoteRef.current ?? selectedNote;
+    const applied = onApplyCommands(commands, {
+      selectionAnchor: noteInputModeRef.current || !target ? null : toSelectionAnchor(target, selectedNotesRef.current),
+    });
+    return applied ? { ok: true } : { ok: false, message: 'The score validation did not accept this input.' };
+  }, [coreDocument, onApplyCommands, selectedNote, xml]);
+
   const fillSlashMeasure = useCallback(() => {
     const targetNote = selectedNoteRef.current ?? selectedNote;
     if (!targetNote) return;
@@ -5613,6 +5631,7 @@ export function useNoteEditor(
     insertRest,
     insertSlash,
     setHarmonyAtSelection,
+    applyInlineEntryCommands,
     fillSlashMeasure,
     navigateNote,
     extendSelection,

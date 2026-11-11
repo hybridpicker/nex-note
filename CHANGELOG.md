@@ -6,10 +6,12 @@ All notable changes to nex-note are documented here.
 
 ### Added
 
+- Markings are typed at the cursor: one entry field for lyrics (`Cmd/Ctrl+L`), chord symbols (`Cmd/Ctrl+K`, with `Space`, `Tab` and `Cmd/Ctrl+6` to move on), dynamics and hairpins (`Alt/Option+Shift+D`), staff, system and expression text, rehearsal marks, tempo, key, time signature, clef, repeats, barlines, endings, octave and pedal lines. A key signature can start at any bar, a clef change belongs to one part, lyrics carry melisma lines.
 - Note input shows a caret in the colour of the input voice at the position of the next note, and a bar with the armed note value, dot, accidental, voice, entry mode and tuplet; every field is clickable.
 
 ### Changed
 
+- With a note selected, `Cmd/Ctrl+T` and `Cmd/Ctrl+M` open the entry field at the note instead of the Inspector.
 - Mouse entry follows MuseScore: a click in note input adds a chord tone to a note of the armed value, replaces a note of another value and writes over a rest; it no longer inserts and pushes the bar when the pointer stands left of a notehead. `Shift`+click replaces, `Cmd/Ctrl+Shift`+click inserts, `Alt/Option`+click adds a chord tone.
 - The mode buttons of the notation tools read `Standard`/`Replace`, `Chord`, `Keys`, `Pitch first` and `Lead sheet` instead of `INS`/`OVR`, `CHD`, `STEP`, `DUR` and `LEAD`; the status line names bar, beat, pitch and value instead of an onset fraction; the Inspector shows pitch, value, position, voice, stem and visibility of the selected note.
 
