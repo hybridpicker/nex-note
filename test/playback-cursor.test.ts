@@ -201,8 +201,8 @@ test('buildMeasureBeatRanges respects per-measure time signatures from the score
   };
 
   assert.deepEqual(buildMeasureBeatRanges(coreDocument, parsed), [
-    { measureNumber: 1, startBeat: 0, endBeat: 4 },
-    { measureNumber: 2, startBeat: 4, endBeat: 7 },
+    { measureNumber: 1, startBeat: 0, endBeat: 4, beats: 4, beatType: 4 },
+    { measureNumber: 2, startBeat: 4, endBeat: 7, beats: 3, beatType: 4 },
   ]);
 });
 
@@ -218,10 +218,10 @@ test('buildPlaybackMeasureBeatRanges expands simple repeats for Play-button seek
   };
 
   assert.deepEqual(buildPlaybackMeasureBeatRanges(coreDocument, parsed), [
-    { measureNumber: 1, startBeat: 0, endBeat: 4 },
-    { measureNumber: 2, startBeat: 4, endBeat: 8 },
-    { measureNumber: 1, startBeat: 8, endBeat: 12 },
-    { measureNumber: 2, startBeat: 12, endBeat: 16 },
+    { measureNumber: 1, startBeat: 0, endBeat: 4, beats: 4, beatType: 4 },
+    { measureNumber: 2, startBeat: 4, endBeat: 8, beats: 4, beatType: 4 },
+    { measureNumber: 1, startBeat: 8, endBeat: 12, beats: 4, beatType: 4 },
+    { measureNumber: 2, startBeat: 12, endBeat: 16, beats: 4, beatType: 4 },
   ]);
 
   assert.equal(resolveStartScoreSeconds({
@@ -251,11 +251,11 @@ test('buildPlaybackMeasureBeatRanges skips first endings on the repeat pass and 
   };
 
   assert.deepEqual(buildPlaybackMeasureBeatRanges(coreDocument, parsed), [
-    { measureNumber: 1, startBeat: 0, endBeat: 4 },
-    { measureNumber: 2, startBeat: 4, endBeat: 8 },
-    { measureNumber: 1, startBeat: 8, endBeat: 12 },
-    { measureNumber: 3, startBeat: 12, endBeat: 16 },
-    { measureNumber: 4, startBeat: 16, endBeat: 20 },
+    { measureNumber: 1, startBeat: 0, endBeat: 4, beats: 4, beatType: 4 },
+    { measureNumber: 2, startBeat: 4, endBeat: 8, beats: 4, beatType: 4 },
+    { measureNumber: 1, startBeat: 8, endBeat: 12, beats: 4, beatType: 4 },
+    { measureNumber: 3, startBeat: 12, endBeat: 16, beats: 4, beatType: 4 },
+    { measureNumber: 4, startBeat: 16, endBeat: 20, beats: 4, beatType: 4 },
   ]);
   assert.equal(resolveStartScoreSeconds({
     parsed,
@@ -348,7 +348,8 @@ test('resolveStartScoreSeconds falls back to time zero when the project just ope
   }), 0);
 });
 
-test('playback UI publishing is throttled during playback but never delays structural changes', () => {
+test('playback UI publishing reaches React only at measure changes while playing', () => {
+  // Per-frame motion is drawn by the score from the transport; React re-renders per measure.
   assert.equal(shouldPublishPlaybackPosition({
     isPlaying: true,
     previousTimeMs: 1_000,
@@ -359,10 +360,10 @@ test('playback UI publishing is throttled during playback but never delays struc
   assert.equal(shouldPublishPlaybackPosition({
     isPlaying: true,
     previousTimeMs: 1_000,
-    nextTimeMs: 1_064,
+    nextTimeMs: 1_500,
     measureChanged: false,
     hasPublishedPlayhead: true,
-  }), true);
+  }), false);
   assert.equal(shouldPublishPlaybackPosition({
     isPlaying: true,
     previousTimeMs: 1_000,
@@ -469,4 +470,33 @@ test('applySwingToMidiNotes delays offbeat eighth notes for imported swing playb
 
   assert.deepEqual(swung.map((note) => Number(note.time.toFixed(3))), [0, 0.333, 0.5, 0.833]);
   assert.deepEqual(swung.map((note) => Number(note.duration.toFixed(3))), [0.5, 0.167, 0.5, 0.167]);
+});
+
+test('cursor targets and selected notes use whole-note positions in every time signature', () => {
+  // Measure 2 of the document is 3/4 (beats 4..7 at 120 bpm: 2 s .. 3.5 s).
+  const coreDocument = makeCoreDocument();
+  const parsed = {
+    rawNotes: [],
+    notes: [],
+    tempos: [{ bpm: 120, time: 0 }],
+    durationSeconds: 8,
+    timeSignatureNumerator: 4,
+    timeSignatureDenominator: 4,
+  };
+  // Beat 2 of the 3/4 bar: a quarter (1/4 whole) into it, at 2.5 s. Reading the timestamp as a
+  // fraction of the bar used to start a quarter of the bar in (2.375 s).
+  assert.equal(resolveStartScoreSeconds({
+    parsed,
+    selectedNote: { measureNumber: 2, timestampNum: 1, timestampDen: 4 } as never,
+    currentScoreSeconds: 0,
+    coreDocument,
+    justOpened: false,
+  }), 2.5);
+  assert.deepEqual(scoreSecondsToCursorTargetForDocument(2.5, parsed, coreDocument), {
+    measureNumber: 2,
+    timestampNum: 16,
+    timestampDen: 64,
+  });
+  // The last instant of a bar stays in that bar instead of naming the next bar.
+  assert.equal(scoreSecondsToCursorTargetForDocument(3.499, parsed, coreDocument).measureNumber, 2);
 });

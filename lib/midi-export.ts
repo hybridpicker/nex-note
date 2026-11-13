@@ -4,6 +4,7 @@ import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-music
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import type { DirectionNode, MeasureNode, PartNode, StaffNode, TimedEvent } from '@/src/score-core/model/types';
 import { cleanMuseScoreStderr } from './musescore-stderr';
+import { buildPlaybackMeasureOrder } from './playback-measure-order';
 import {
   musicXmlProgramToToneProgram,
   resolveInstrumentIdFromName,
@@ -237,21 +238,31 @@ function measureFallbackDurationTicks(measure: MeasureNode) {
   return Math.max(eventEnd, MIDI_PPQ * 4);
 }
 
-function buildMeasureTiming(staff: StaffNode) {
-  const startTicks = new Map<string, number>();
-  let cursorTicks = 0;
-
-  for (const measure of staff.measures) {
+/**
+ * Where each measure pass starts, in playback order: repeats and first/second endings are
+ * unrolled with the same order the playback timeline uses (lib/playback-measure-order.ts).
+ */
+function buildMeasureTiming(staff: StaffNode, order: number[] | null) {
+  const durations = staff.measures.map((measure) => {
     const timing = getEffectiveMeasureTimingFromStaff(staff, { measureId: measure.id });
     const duration = timing
       ? divisionsToTicks(timing.durationDivisions, timing.divisions)
       : measureFallbackDurationTicks(measure);
-    const safeDuration = Math.max(1, duration || measureFallbackDurationTicks(measure));
-    startTicks.set(measure.id, cursorTicks);
-    cursorTicks += safeDuration;
+    return Math.max(1, duration || measureFallbackDurationTicks(measure));
+  });
+  const passes: Array<{ measure: MeasureNode; startTicks: number }> = [];
+  let cursorTicks = 0;
+  for (const measureIndex of order ?? staff.measures.map((_, index) => index)) {
+    const measure = staff.measures[measureIndex];
+    if (!measure) continue;
+    passes.push({ measure, startTicks: cursorTicks });
+    cursorTicks += durations[measureIndex] ?? 1;
   }
+  return { passes };
+}
 
-  return { startTicks };
+function scorePlaybackOrder(parts: PartNode[]) {
+  return buildPlaybackMeasureOrder(parts[0]?.staves[0]?.measures);
 }
 
 function tempoFromDirection(direction: DirectionNode) {
@@ -263,11 +274,11 @@ function tempoFromDirection(direction: DirectionNode) {
 function collectFallbackTempoEvents(parts: PartNode[]) {
   const events = new Map<number, number>();
 
+  const order = scorePlaybackOrder(parts);
   for (const part of parts) {
     for (const staff of part.staves) {
-      const timing = buildMeasureTiming(staff);
-      for (const measure of staff.measures) {
-        const measureStart = timing.startTicks.get(measure.id) ?? 0;
+      const timing = buildMeasureTiming(staff, order);
+      for (const { measure, startTicks: measureStart } of timing.passes) {
         for (const direction of measure.directions) {
           const bpm = tempoFromDirection(direction);
           if (!bpm) continue;
@@ -287,11 +298,11 @@ function collectFallbackTempoEvents(parts: PartNode[]) {
 function collectFallbackTimeSignatureEvents(parts: PartNode[]) {
   const events = new Map<number, number[]>();
 
+  const order = scorePlaybackOrder(parts);
   for (const part of parts) {
     for (const staff of part.staves) {
-      const timing = buildMeasureTiming(staff);
-      for (const measure of staff.measures) {
-        const measureStart = timing.startTicks.get(measure.id) ?? 0;
+      const timing = buildMeasureTiming(staff, order);
+      for (const { measure, startTicks: measureStart } of timing.passes) {
         for (const attributes of measure.attributes) {
           const time = attributes.time;
           if (!time?.beats || !time.beatType) continue;
@@ -326,6 +337,7 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
 
   let noteCount = 0;
   let channelIndex = 0;
+  const playbackOrder = scorePlaybackOrder(core.score.parts);
 
   for (const part of core.score.parts) {
     const playbackInstrument = resolveMidiInstrumentSound(resolvePartInstrumentId(part));
@@ -343,12 +355,12 @@ export function buildFallbackMidiFromMusicXml(xml: string) {
       track.channel = playbackInstrument.percussion ? 9 : nextMidiChannel(channelIndex++);
       track.instrument.number = musicXmlProgramToToneProgram(playbackInstrument.midiProgram);
 
-      const timing = buildMeasureTiming(staff);
+      const timing = buildMeasureTiming(staff, playbackOrder);
       const voiceIds = [...new Set(staff.measures.flatMap(measure => measure.voices.map(voice => voice.voiceId)))];
       for (const voiceId of voiceIds) {
-        const entries = staff.measures.flatMap(measure => (measure.voices.find(voice => voice.voiceId === voiceId)?.events ?? [])
+        const entries = timing.passes.flatMap(({ measure, startTicks }) => (measure.voices.find(voice => voice.voiceId === voiceId)?.events ?? [])
           .filter((event): event is Extract<TimedEvent, { kind: 'note' }> => event.kind === 'note' && !event.hidden)
-          .map(event => ({ event, ticks: (timing.startTicks.get(measure.id) ?? 0) + eventOffsetTicks(event) })));
+          .map(event => ({ event, ticks: startTicks + eventOffsetTicks(event) })));
         const rendered: Array<{ midi: number; ticks: number; durationTicks: number; velocity: number }> = [];
         const pendingTies = new Map<number, typeof rendered[number]>();
         const graceGroups = new Map<number, typeof entries>();

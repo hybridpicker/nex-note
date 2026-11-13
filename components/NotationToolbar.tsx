@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 import PlaybackMixer from '@/components/PlaybackMixer';
 import type { MixerState } from '@/lib/playback-mixer';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
@@ -7,7 +9,7 @@ import NoteInputToolbar from '@/components/NoteInputToolbar';
 import { useI18n, type TranslationKey } from '@/lib/i18n';
 import { describePosition, durationLabelKey } from '@/src/score-input/position-label';
 import { inputVoiceOf } from '@/src/score-input/voice-mapping';
-import type { PlaybackState } from '@/hooks/usePlayback';
+import type { PlaybackState, PlaybackTransport } from '@/hooks/usePlayback';
 import type { NoteDuration, AccidentalChoice, NoteEntryMode, SelectedNote, ArticulationKind, BarlineKind, DynamicKind, GuitarTechniqueKind, TupletNumber } from '@/hooks/useNoteEditor';
 import type { GuitarTuningId } from '@/src/score-input/guitar-fretboard';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
@@ -27,6 +29,8 @@ interface Props {
   currentMeasure: number;
   totalBeats: number;
   currentBeat: number;
+  /** Live playback clock: while playing, the progress bar follows it every frame. */
+  playbackTransport?: PlaybackTransport | null;
   coreDocument: ScoreDocumentModel | null;
   midiLoading: boolean;
   hasMidi: boolean;
@@ -302,7 +306,7 @@ export function describeSelectionStatus(coreDocument: ScoreDocumentModel | null,
 }
 
 export default function NotationToolbar({
-  playbackState, currentMeasure, totalBeats, currentBeat, midiLoading,
+  playbackState, currentMeasure, totalBeats, currentBeat, playbackTransport = null, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome, onMixerChange,
   noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
@@ -321,6 +325,28 @@ export default function NotationToolbar({
   const showPlaybackProgress = totalBeats > 0 && (isPlaying || isPaused || Boolean(selectedNote));
   const displayTempo = tempoOverride ?? 120;
   const progress = totalBeats > 0 ? Math.min(1, currentBeat / totalBeats) : 0;
+  const progressFillRef = useRef<HTMLDivElement | null>(null);
+  const followsTransport = isPlaying && Boolean(playbackTransport) && totalBeats > 0;
+  useEffect(() => {
+    // React publishes the position once per measure while playing; draw the bar per frame.
+    if (!followsTransport || !playbackTransport) return;
+    let frame = 0;
+    let lastWidth = '';
+    const draw = () => {
+      const position = playbackTransport.read();
+      const fill = progressFillRef.current;
+      if (position && fill) {
+        const width = `${(Math.min(1, Math.max(0, position.location.beats / totalBeats)) * 100).toFixed(2)}%`;
+        if (width !== lastWidth) {
+          fill.style.width = width;
+          lastWidth = width;
+        }
+      }
+      frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [followsTransport, playbackTransport, totalBeats]);
   const selectionDescription = describeSelectionStatus(coreDocument, selectedNote, t);
   const selectionStatus = selectionDescription?.text ?? null;
   const toolbarStatus = (isPlaying || isPaused)
@@ -598,7 +624,12 @@ export default function NotationToolbar({
             onSeek(ratio * totalBeats);
           }}
         >
-          <div data-testid="playback-progress-fill" className="h-full rounded-full bg-nex-accent transition-none" style={{ width: `${progress * 100}%` }} />
+          <div
+            ref={progressFillRef}
+            data-testid="playback-progress-fill"
+            className="h-full rounded-full bg-nex-accent transition-none"
+            style={followsTransport ? undefined : { width: `${progress * 100}%` }}
+          />
         </div>
       )}
 

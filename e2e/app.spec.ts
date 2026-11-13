@@ -1689,7 +1689,11 @@ test('tempo changes during playback keep the playhead position', async ({ page }
     (window as typeof window & { __NEX_NOTE_E2E_OSCILLATOR_STARTS__?: number })
       .__NEX_NOTE_E2E_OSCILLATOR_STARTS__ ?? 0
   ))).toBeGreaterThan(0);
-  await expect(page.getByTestId('score-playhead')).toHaveCSS('transition-property', /left/);
+  // The playhead is moved per frame by a compositor transform, without a CSS transition that
+  // would trail the sound.
+  await expect(page.getByTestId('score-playhead')).toBeVisible();
+  await expect(page.getByTestId('score-playhead')).toHaveCSS('will-change', 'transform');
+  await expect(page.getByTestId('score-playhead')).toHaveCSS('transition-duration', '0s');
 
   const readPlayheadMs = async () => Number.parseInt(await viewport.getAttribute('data-playback-time-ms') || '0', 10);
   await expect.poll(readPlayheadMs, { timeout: 5_000 }).toBeGreaterThan(100);

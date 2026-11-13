@@ -2,8 +2,19 @@
 
 import { channelGainFactor, type MixerState } from '@/lib/playback-mixer';
 import { captureInputMetric, markInputFeedback } from '@/src/score-input/input-metrics';
-import { useRef, useState, useCallback, useEffect, type RefObject } from 'react';
+import { startTransition, useRef, useState, useCallback, useEffect, type RefObject } from 'react';
 import { dbg } from '@/lib/debug';
+import { probeAudio, probeMark, probeRegisterAudioContext } from '@/lib/playback-sync-probe';
+import { createAudibleClock, readPlaybackLatencyCalibrationSeconds, type AudibleClock } from '@/lib/playback-clock';
+import { createPlaybackTicker, type PlaybackTicker } from '@/lib/playback-ticker';
+import {
+  beatsToSeconds as timelineBeatsToSeconds,
+  buildPlaybackTimeline,
+  secondsToBeats,
+  type PlaybackLocation,
+  type PlaybackSwing,
+  type PlaybackTimeline,
+} from '@/lib/playback-timeline';
 import {
   resolveMidiInstrumentSound,
   resolveMidiSoundFromToneProgram,
@@ -17,6 +28,7 @@ import {
 } from '@/lib/playback-sample-bank';
 import type { SelectedNote } from '@/hooks/useNoteEditor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
+import { buildPlaybackMeasureOrder } from '@/lib/playback-measure-order';
 import type { ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
 
 const LOCAL_SOUNDFONT_OPTIONS = {
@@ -36,9 +48,40 @@ export interface PlaybackPlayheadSnapshot extends PlaybackCursorTarget {
   currentTimeMs: number;
   currentTimeSeconds: number;
   progressWithinMeasure: number;
+  /** Position inside the measure in whole notes (the unit of score event timestamps). */
+  positionWholes: number;
+  /** Index of this pass through the measure in playback order (repeats unrolled). */
+  spanIndex: number;
   startTimeMs: number;
   startTimeSeconds: number;
   isPaused: boolean;
+}
+
+export interface PlaybackTransportPosition {
+  /** True while sound is playing; false shows the stopped/paused position. */
+  playing: boolean;
+  /** Score seconds the listener hears now (or the stopped/paused position). */
+  scoreSeconds: number;
+  location: PlaybackLocation;
+  timeline: PlaybackTimeline;
+  /** Measure that sounds after this one (repeats unrolled), so the playhead can glide into it. */
+  nextMeasureNumber: number | null;
+  /** Changes whenever playback starts, stops, seeks or restarts. */
+  generation: number;
+}
+
+/**
+ * Read-only view of the playback clock for per-frame drawing. `read(atMs)` answers "what does
+ * the listener hear at performance time atMs" from the audio output clock, without React.
+ */
+export interface PlaybackTransport {
+  read(atMs?: number): PlaybackTransportPosition | null;
+  audioContext(): AudioContext | null;
+  /**
+   * Called synchronously when a run starts or ends (play, pause, stop, seek, end of piece), so
+   * drawing can start with the sound instead of after React has re-rendered.
+   */
+  subscribe(listener: () => void): () => void;
 }
 
 type PlaybackPlayer = import('soundfont-player').Player;
@@ -82,22 +125,34 @@ interface ParsedMidi {
   durationSeconds: number;
   timeSignatureNumerator: number;
   timeSignatureDenominator?: number;
+  /** Swing applied to the notes; the timeline removes it again to place the playhead. */
+  swing?: PlaybackSwing | null;
 }
 
 interface MeasureBeatRange {
   measureNumber: number;
   startBeat: number;
   endBeat: number;
+  beats?: number;
+  beatType?: number;
 }
 
-const LOOKAHEAD_S = 1.5;   // schedule 1.5s ahead — handles main-thread blocks up to ~1s
-const LATE_TOLERANCE_S = 0.20; // still play notes up to 200ms past their scheduled time
+// Audio is scheduled against the AudioContext clock from a worker timer (lib/playback-ticker.ts),
+// SCHEDULER_TICK_MS apart, for the next LOOKAHEAD_S. The look-ahead covers main-thread blocks of
+// that length; a longer block moves the whole transport later (sound and picture together)
+// instead of playing notes late or dropping them.
+const LOOKAHEAD_S = 0.3;
+const SCHEDULER_TICK_MS = 25;
+// A note must reach the audio graph at least this long before it is due.
+const MIN_SCHEDULE_LEAD_S = 0.008;
+// Playback starts this long after Play: enough for the first notes to be handed to the audio
+// thread before they are due.
+const START_LEAD_S = 0.015;
 const SOUND_FONT_LOAD_TIMEOUT_MS = 5000;
 const PLAYHEAD_END_EPSILON_S = 0.02;
 const PLAYHEAD_RENDER_LEAD_S = 0;
-const PLAYHEAD_UI_UPDATE_INTERVAL_MS = 64;
-const PLAYBACK_SCHEDULER_INTERVAL_S = 0.05;
 const PLAYHEAD_PROGRESS_EPSILON = 0.002;
+const CURSOR_TIMESTAMP_DEN = 64;
 
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const MIDI_TIME_EPSILON_S = 0.001;
@@ -434,27 +489,7 @@ export function normalizeMidiNotes(notes: MidiNote[]): MidiNote[] {
 }
 
 function secondsToScoreBeatsUnclamped(seconds: number, parsed: Pick<ParsedMidi, 'tempos'>): number {
-  const clampedSeconds = Math.max(0, seconds);
-  const { tempos } = parsed;
-  let remainingSeconds = clampedSeconds;
-  let beatCount = 0;
-
-  for (let i = 0; i < tempos.length; i++) {
-    const bpm = tempos[i].bpm;
-    const currentStart = tempos[i].time;
-    const nextStart = tempos[i + 1]?.time ?? Number.POSITIVE_INFINITY;
-    const segmentDuration = Math.max(0, nextStart - currentStart);
-
-    if (remainingSeconds <= segmentDuration) {
-      return beatCount + (remainingSeconds / (60 / bpm));
-    }
-
-    beatCount += segmentDuration / (60 / bpm);
-    remainingSeconds -= segmentDuration;
-  }
-
-  const lastBpm = tempos[tempos.length - 1]?.bpm ?? 120;
-  return beatCount + (remainingSeconds / (60 / lastBpm));
+  return secondsToBeats(seconds, parsed.tempos);
 }
 
 function positiveModulo(value: number, divisor: number) {
@@ -571,6 +606,8 @@ export function buildMeasureBeatRanges(
       measureNumber: index + 1,
       startBeat: index * fallbackBeatsPerMeasure,
       endBeat: (index + 1) * fallbackBeatsPerMeasure,
+      beats: Math.max(parsed.timeSignatureNumerator, 1),
+      beatType: Math.max(parsed.timeSignatureDenominator ?? 4, 1),
     }));
   }
 
@@ -586,48 +623,9 @@ export function buildMeasureBeatRanges(
       measureNumber: measure.measureNumber,
       startBeat,
       endBeat: beatCursor,
+      ...(timing?.timeSignature ? { beats: timing.timeSignature.beats, beatType: timing.timeSignature.beatType } : {}),
     };
   });
-}
-
-function parseEndingNumbers(numberString: string | null | undefined): string[] {
-  return String(numberString ?? '').split(',').map((entry) => entry.trim()).filter(Boolean);
-}
-
-function buildEndingNumberMap(referenceStaff: ScoreDocumentModel['score']['parts'][number]['staves'][number]) {
-  const activeEndings = new Set<string>();
-  return referenceStaff.measures.map((measure) => {
-    const numbers = new Set<string>();
-    const leftNumbers = parseEndingNumbers(measure.leftEnding?.number);
-    const rightNumbers = parseEndingNumbers(measure.rightEnding?.number);
-
-    if (measure.leftEnding?.type === 'start') {
-      leftNumbers.forEach((number) => activeEndings.add(number));
-    }
-    activeEndings.forEach((number) => numbers.add(number));
-    leftNumbers.forEach((number) => numbers.add(number));
-    rightNumbers.forEach((number) => numbers.add(number));
-
-    if (measure.rightEnding?.type === 'stop' || measure.rightEnding?.type === 'discontinue') {
-      rightNumbers.forEach((number) => activeEndings.delete(number));
-    }
-
-    return numbers;
-  });
-}
-
-function shouldIncludeMeasureForPass(endingNumbers: Set<string>, passNumber: number) {
-  return endingNumbers.size === 0 || endingNumbers.has(String(passNumber));
-}
-
-function hasRepeatPlaybackStructure(coreDocument: ScoreDocumentModel | null | undefined) {
-  const referenceStaff = coreDocument?.score.parts[0]?.staves[0];
-  return Boolean(referenceStaff?.measures.some((measure) => (
-    measure.leftBarline === 'repeat-start'
-    || measure.rightBarline === 'repeat-end'
-    || measure.leftEnding
-    || measure.rightEnding
-  )));
 }
 
 export function buildPlaybackMeasureBeatRanges(
@@ -635,57 +633,45 @@ export function buildPlaybackMeasureBeatRanges(
   parsed: ParsedMidi,
 ): MeasureBeatRange[] {
   const writtenRanges = buildMeasureBeatRanges(coreDocument, parsed);
-  const referenceStaff = coreDocument?.score.parts[0]?.staves[0];
-  if (!referenceStaff?.measures?.length || !hasRepeatPlaybackStructure(coreDocument)) {
-    return writtenRanges;
-  }
+  const order = buildPlaybackMeasureOrder(coreDocument?.score.parts[0]?.staves[0]?.measures);
+  if (!order) return writtenRanges;
 
-  const endingNumbersByMeasure = buildEndingNumberMap(referenceStaff);
   const playbackRanges: MeasureBeatRange[] = [];
   let beatCursor = 0;
-  let repeatStartIndex = 0;
-  let postRepeatPass: number | null = null;
-
-  const appendMeasure = (measureIndex: number) => {
+  for (const measureIndex of order) {
     const writtenRange = writtenRanges[measureIndex];
-    if (!writtenRange) return;
-    const beatsInMeasure = Math.max(writtenRange.endBeat - writtenRange.startBeat, 0);
+    if (!writtenRange) continue;
     const startBeat = beatCursor;
-    beatCursor += beatsInMeasure;
-    playbackRanges.push({
-      measureNumber: writtenRange.measureNumber,
-      startBeat,
-      endBeat: beatCursor,
-    });
-  };
-
-  referenceStaff.measures.forEach((measure, measureIndex) => {
-    const endingNumbers = endingNumbersByMeasure[measureIndex] ?? new Set<string>();
-    if (postRepeatPass != null && endingNumbers.size === 0) {
-      postRepeatPass = null;
-    }
-    if (measure.leftBarline === 'repeat-start') {
-      repeatStartIndex = measureIndex;
-    }
-
-    const currentPass = postRepeatPass ?? 1;
-    if (shouldIncludeMeasureForPass(endingNumbers, currentPass)) {
-      appendMeasure(measureIndex);
-    }
-
-    if (measure.rightBarline === 'repeat-end') {
-      for (let repeatedIndex = repeatStartIndex; repeatedIndex <= measureIndex; repeatedIndex += 1) {
-        const repeatedEndingNumbers = endingNumbersByMeasure[repeatedIndex] ?? new Set<string>();
-        if (shouldIncludeMeasureForPass(repeatedEndingNumbers, 2)) {
-          appendMeasure(repeatedIndex);
-        }
-      }
-      repeatStartIndex = measureIndex + 1;
-      postRepeatPass = 2;
-    }
-  });
-
+    beatCursor += Math.max(writtenRange.endBeat - writtenRange.startBeat, 0);
+    playbackRanges.push({ ...writtenRange, startBeat, endBeat: beatCursor });
+  }
   return playbackRanges.length ? playbackRanges : writtenRanges;
+}
+
+/**
+ * Measure ranges that agree with the MIDI rendering. The server renderer (MuseScore) and the
+ * built-in renderer both unroll repeats; if a rendering did not (its last note ends inside the
+ * written length although the unrolled score is longer), the written order is used so the
+ * playhead does not jump ahead of the sound after the first repeat.
+ */
+export function resolveRenderedMeasureBeatRanges(
+  coreDocument: ScoreDocumentModel | null | undefined,
+  parsed: ParsedMidi,
+): MeasureBeatRange[] {
+  const playbackRanges = buildPlaybackMeasureBeatRanges(coreDocument, parsed);
+  const writtenRanges = buildMeasureBeatRanges(coreDocument, parsed);
+  const unrolledEnd = playbackRanges[playbackRanges.length - 1]?.endBeat ?? 0;
+  const writtenEnd = writtenRanges[writtenRanges.length - 1]?.endBeat ?? 0;
+  if (unrolledEnd <= writtenEnd + 1e-6 || !parsed.notes.length) return playbackRanges;
+  const lastNoteEndBeats = Math.max(...parsed.notes.map((note) => secondsToBeats(note.time + note.duration, parsed.tempos)));
+  if (lastNoteEndBeats <= writtenEnd + 0.25) {
+    dbg.warn('playback', 'MIDI rendering did not unroll repeats; the playhead follows the written order');
+    return writtenRanges;
+  }
+  if (lastNoteEndBeats > unrolledEnd + 0.25) {
+    dbg.warn('playback', `MIDI rendering is longer than the unrolled score (${lastNoteEndBeats.toFixed(2)} > ${unrolledEnd.toFixed(2)} beats): jumps such as D.C./D.S. are not followed by the playhead`);
+  }
+  return playbackRanges;
 }
 
 export function resolveFullPlaybackDurationSeconds(
@@ -693,7 +679,7 @@ export function resolveFullPlaybackDurationSeconds(
   parsed: ParsedMidi,
   audibleDurationSeconds = parsed.durationSeconds,
 ) {
-  const measureBeatRanges = buildPlaybackMeasureBeatRanges(coreDocument, parsed);
+  const measureBeatRanges = resolveRenderedMeasureBeatRanges(coreDocument, parsed);
   const fullScoreDurationSeconds = measureBeatRanges.length
     ? beatsToSeconds(measureBeatRanges[measureBeatRanges.length - 1].endBeat, parsed)
     : 0;
@@ -701,27 +687,7 @@ export function resolveFullPlaybackDurationSeconds(
 }
 
 function secondsToScoreBeats(seconds: number, parsed: ParsedMidi): number {
-  const clampedSeconds = Math.max(0, Math.min(seconds, parsed.durationSeconds));
-  const { tempos } = parsed;
-  let remainingSeconds = clampedSeconds;
-  let beatCount = 0;
-
-  for (let i = 0; i < tempos.length; i++) {
-    const bpm = tempos[i].bpm;
-    const currentStart = tempos[i].time;
-    const nextStart = tempos[i + 1]?.time ?? Number.POSITIVE_INFINITY;
-    const segmentDuration = Math.max(0, nextStart - currentStart);
-
-    if (remainingSeconds <= segmentDuration) {
-      return beatCount + (remainingSeconds / (60 / bpm));
-    }
-
-    beatCount += segmentDuration / (60 / bpm);
-    remainingSeconds -= segmentDuration;
-  }
-
-  const lastBpm = tempos[tempos.length - 1]?.bpm ?? 120;
-  return beatCount + (remainingSeconds / (60 / lastBpm));
+  return secondsToBeats(Math.max(0, Math.min(seconds, parsed.durationSeconds)), parsed.tempos);
 }
 
 export function scoreSecondsToCursorTarget(seconds: number, parsed: ParsedMidi): PlaybackCursorTarget {
@@ -736,42 +702,59 @@ export function scoreSecondsToCursorTargetForDocument(
   return scoreSecondsToCursorTargetWithMeasures(seconds, parsed, buildPlaybackMeasureBeatRanges(coreDocument, parsed));
 }
 
+const timelineCache = new WeakMap<MeasureBeatRange[], { parsed: ParsedMidi; timeline: PlaybackTimeline }>();
+
+/** The playback timeline of a MIDI rendering and its measure ranges (cached per ranges array). */
+export function playbackTimelineFor(parsed: ParsedMidi, measureBeatRanges: MeasureBeatRange[]): PlaybackTimeline {
+  const cached = timelineCache.get(measureBeatRanges);
+  if (cached?.parsed === parsed) return cached.timeline;
+  const timeline = buildPlaybackTimeline({
+    ranges: measureBeatRanges,
+    tempos: parsed.tempos,
+    durationSeconds: parsed.durationSeconds,
+    swing: parsed.swing ?? null,
+    fallbackTimeSignature: {
+      beats: Math.max(parsed.timeSignatureNumerator, 1),
+      beatType: Math.max(parsed.timeSignatureDenominator ?? 4, 1),
+    },
+  });
+  timelineCache.set(measureBeatRanges, { parsed, timeline });
+  return timeline;
+}
+
+/** Cursor target of a location: the position inside the measure in whole notes. */
+function locationToCursorTarget(location: PlaybackLocation): PlaybackCursorTarget {
+  return {
+    measureNumber: location.measureNumber,
+    timestampNum: Math.max(0, Math.round(location.positionWholes * CURSOR_TIMESTAMP_DEN)),
+    timestampDen: CURSOR_TIMESTAMP_DEN,
+  };
+}
+
 function scoreSecondsToCursorTargetWithMeasures(
   seconds: number,
   parsed: ParsedMidi,
   measureBeatRanges: MeasureBeatRange[],
 ): PlaybackCursorTarget {
-  const scoreBeats = secondsToScoreBeats(seconds, parsed);
-  const targetIndex = measureBeatRanges.findIndex((range, index) => (
-    scoreBeats < range.endBeat
-    || index === measureBeatRanges.length - 1
-  ));
-  const targetMeasure = measureBeatRanges[targetIndex] ?? measureBeatRanges[0] ?? { measureNumber: 1, startBeat: 0, endBeat: quarterBeatsPerMeasure(parsed) };
-  const beatsInMeasure = Math.max(targetMeasure.endBeat - targetMeasure.startBeat, 0.0001);
-  const beatWithinMeasure = Math.max(0, Math.min(scoreBeats - targetMeasure.startBeat, beatsInMeasure));
-  const timestampDen = 64;
-  const rawTimestampNum = Math.max(0, Math.round((beatWithinMeasure / beatsInMeasure) * timestampDen));
-  const overflowMeasure = rawTimestampNum >= timestampDen && beatWithinMeasure > 0 ? 1 : 0;
-  const nextMeasure = measureBeatRanges[targetIndex + 1] ?? measureBeatRanges.find((range) => range.startBeat >= targetMeasure.endBeat);
-
-  return {
-    measureNumber: overflowMeasure ? (nextMeasure?.measureNumber ?? targetMeasure.measureNumber + 1) : targetMeasure.measureNumber,
-    timestampNum: overflowMeasure ? 0 : rawTimestampNum,
-    timestampDen,
-  };
+  return locationToCursorTarget(playbackTimelineFor(parsed, measureBeatRanges).locate(seconds));
 }
 
+/**
+ * Score beats of a cursor target. Cursor targets, like score events, give the position inside
+ * the measure in whole notes.
+ */
 function cursorTargetToScoreBeats(
   target: PlaybackCursorTarget,
   measureBeatRanges: MeasureBeatRange[],
   parsed: Pick<ParsedMidi, 'timeSignatureNumerator' | 'timeSignatureDenominator'>,
 ) {
+  const wholes = target.timestampNum / Math.max(target.timestampDen, 1);
   const range = measureBeatRanges.find((entry) => entry.measureNumber === target.measureNumber);
   if (!range) {
     const fallbackBeatsPerMeasure = quarterBeatsPerMeasure(parsed);
-    return Math.max(0, (target.measureNumber - 1) * fallbackBeatsPerMeasure) + (target.timestampNum / Math.max(target.timestampDen, 1)) * fallbackBeatsPerMeasure;
+    return Math.max(0, (target.measureNumber - 1) * fallbackBeatsPerMeasure) + Math.min(wholes * 4, fallbackBeatsPerMeasure);
   }
-  return range.startBeat + (target.timestampNum / Math.max(target.timestampDen, 1)) * (range.endBeat - range.startBeat);
+  return range.startBeat + Math.max(0, Math.min(wholes * 4, range.endBeat - range.startBeat));
 }
 
 function cursorTargetToScoreSeconds(
@@ -814,8 +797,8 @@ export function shouldPublishPlaybackPosition(params: {
   measureChanged: boolean;
   hasPublishedPlayhead: boolean;
 }) {
-  if (!params.hasPublishedPlayhead || !params.isPlaying || params.measureChanged) return true;
-  return Math.abs(params.nextTimeMs - params.previousTimeMs) >= PLAYHEAD_UI_UPDATE_INTERVAL_MS;
+  // During playback only structural changes reach React state; per-frame motion is imperative.
+  return !params.hasPublishedPlayhead || !params.isPlaying || params.measureChanged;
 }
 
 function buildPlayheadSnapshot(
@@ -826,24 +809,16 @@ function buildPlayheadSnapshot(
   isPaused: boolean,
 ): PlaybackPlayheadSnapshot {
   const clampedScoreSeconds = clampScoreSeconds(scoreSeconds, parsed);
-  const scoreBeats = secondsToScoreBeats(clampedScoreSeconds, parsed);
-  const cursorTarget = scoreSecondsToCursorTargetWithMeasures(clampedScoreSeconds, parsed, measureBeatRanges);
-  const activeRange = measureBeatRanges.find((range, index) => (
-    scoreBeats < range.endBeat
-    || index === measureBeatRanges.length - 1
-  ));
-  const progressWithinMeasure = activeRange
-    ? Math.max(0, Math.min(
-      (scoreBeats - activeRange.startBeat) / Math.max(activeRange.endBeat - activeRange.startBeat, 0.0001),
-      1,
-    ))
-    : cursorTarget.timestampNum / Math.max(cursorTarget.timestampDen, 1);
-
+  // Measure, position and progress come from one location, so they always agree (the measure
+  // can no longer roll over while the progress still belongs to the previous measure).
+  const location = playbackTimelineFor(parsed, measureBeatRanges).locate(clampedScoreSeconds);
   return {
-    ...cursorTarget,
+    ...locationToCursorTarget(location),
     currentTimeMs: Math.round(clampedScoreSeconds * 1000),
     currentTimeSeconds: clampedScoreSeconds,
-    progressWithinMeasure,
+    progressWithinMeasure: location.progress,
+    positionWholes: location.positionWholes,
+    spanIndex: location.spanIndex,
     startTimeMs: Math.round(clampScoreSeconds(startSeconds, parsed) * 1000),
     startTimeSeconds: clampScoreSeconds(startSeconds, parsed),
     isPaused,
@@ -867,7 +842,7 @@ export function resolveStartScoreSeconds(params: {
     justOpened,
   } = params;
 
-  const measureBeatRanges = buildPlaybackMeasureBeatRanges(coreDocument, parsed);
+  const measureBeatRanges = resolveRenderedMeasureBeatRanges(coreDocument, parsed);
   if (selectedNote) {
     return clampScoreSeconds(noteToScoreSeconds(selectedNote, parsed, measureBeatRanges), parsed);
   }
@@ -888,28 +863,7 @@ export function resolveStartScoreSeconds(params: {
 }
 
 function beatsToSeconds(beats: number, parsed: Pick<ParsedMidi, 'tempos'>): number {
-  const { tempos } = parsed;
-  let remainingBeats = Math.max(0, beats);
-  let cursorSeconds = 0;
-
-  for (let i = 0; i < tempos.length; i++) {
-    const bpm = tempos[i].bpm;
-    const segEndSeconds = tempos[i + 1]?.time ?? Number.POSITIVE_INFINITY;
-    const segDurationSeconds = segEndSeconds - cursorSeconds;
-    const segBeats = Number.isFinite(segDurationSeconds)
-      ? segDurationSeconds / (60 / bpm)
-      : Number.POSITIVE_INFINITY;
-
-    if (remainingBeats <= segBeats) {
-      return cursorSeconds + remainingBeats * (60 / bpm);
-    }
-
-    remainingBeats -= segBeats;
-    cursorSeconds = segEndSeconds;
-  }
-
-  const lastBpm = tempos[tempos.length - 1]?.bpm ?? 120;
-  return cursorSeconds + remainingBeats * (60 / lastBpm);
+  return timelineBeatsToSeconds(beats, parsed.tempos);
 }
 
 function noteToScoreSeconds(note: SelectedNote, parsed: ParsedMidi, measureBeatRanges: MeasureBeatRange[]): number {
@@ -943,7 +897,7 @@ function buildPlaybackCompare(
   parsed: ParsedMidi,
   coreDocument: ScoreDocumentModel | null,
 ) {
-  const measureBeatRanges = buildPlaybackMeasureBeatRanges(coreDocument, parsed);
+  const measureBeatRanges = resolveRenderedMeasureBeatRanges(coreDocument, parsed);
   const anchorSeconds = noteToScoreSeconds(note, parsed, measureBeatRanges);
   const midiWindowStart = Math.max(0, anchorSeconds - 0.75);
   const midiWindowEnd = Math.min(parsed.durationSeconds, anchorSeconds + 3.0);
@@ -1057,6 +1011,8 @@ export function usePlayback(options?: {
   const [midiLoading, setMidiLoading]         = useState(false);
   const [hasMidi, setHasMidi]                 = useState(false);
   const [playbackError, setPlaybackError]     = useState<string | null>(null);
+  const playbackErrorRef = useRef<string | null>(null);
+  playbackErrorRef.current = playbackError;
   const [tempoOverride, setTempoOverride]     = useState<number | null>(null);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -1068,6 +1024,7 @@ export function usePlayback(options?: {
   const audioCtxRef         = useRef<AudioContext | null>(null);
   const playersRef          = useRef<Map<SoundfontInstrumentName, PlaybackPlayer>>(new Map());
   const playerLoadsRef      = useRef<Map<SoundfontInstrumentName, Promise<PlaybackPlayer>>>(new Map());
+  const playerPreloadsRef   = useRef<Map<SoundfontInstrumentName, Promise<void>>>(new Map());
   const sampleBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const sampleLoadsRef = useRef<Map<string, Promise<AudioBuffer>>>(new Map());
   const playerCacheGenerationRef = useRef(0);
@@ -1081,9 +1038,14 @@ export function usePlayback(options?: {
   const resumeScoreTimeRef  = useRef<number>(0);   // score-seconds to resume from
   const playbackStartScoreTimeRef = useRef<number>(0);
   const nextNoteIdxRef      = useRef<number>(0);
-  const nextMetroIdxRef     = useRef<number>(0);   // index into metro beat list
-  const rafRef              = useRef<number>(0);
-  const lastSchedulerAcTimeRef = useRef(Number.NEGATIVE_INFINITY);
+  const nextClickIdxRef     = useRef<number>(0);   // index into the timeline's metronome clicks
+  // Score seconds where the current run starts; the playhead waits there until it is heard.
+  const runStartScoreRef    = useRef<number>(0);
+  const tickerRef           = useRef<PlaybackTicker | null>(null);
+  const audibleClockRef     = useRef<{ ac: AudioContext; clock: AudibleClock } | null>(null);
+  const scheduledHandleEndsRef = useRef<Map<PlaybackNoteHandle, number>>(new Map());
+  const lastPublishedSpanRef = useRef<number>(-1);
+  const transportShiftCountRef = useRef(0);
   const playbackGenerationRef = useRef(0);
   const playRequestIdRef = useRef(0);
   const scheduledPlaybackHandlesRef = useRef<Set<PlaybackNoteHandle>>(new Set());
@@ -1115,7 +1077,7 @@ export function usePlayback(options?: {
   useEffect(() => {
     previewGenerationRef.current += 1;
     stopScheduledPlayback({ resetAudioContext: true });
-    cancelAnimationFrame(rafRef.current);
+    tickerRef.current?.stop();
     isPlayingRef.current = false;
     playbackStateRef.current = 'stopped';
     setPlaybackState('stopped');
@@ -1128,7 +1090,7 @@ export function usePlayback(options?: {
     if (cache.parsed === parsed && cache.coreDocument === coreDocument && cache.ranges.length > 0) {
       return cache.ranges;
     }
-    const ranges = buildPlaybackMeasureBeatRanges(coreDocument, parsed);
+    const ranges = resolveRenderedMeasureBeatRanges(coreDocument, parsed);
     playbackGeometryCacheRef.current = { parsed, coreDocument, ranges };
     return ranges;
   }, []);
@@ -1149,24 +1111,32 @@ export function usePlayback(options?: {
       timestampNum: snapshot.timestampNum,
       timestampDen: snapshot.timestampDen,
     };
-    const currentMeasureChanged = currentMeasureRef.current !== snapshot.measureNumber;
     currentMeasureRef.current = snapshot.measureNumber;
     currentBeatRef.current = nextBeat;
 
+    // While playing, React only hears about measure changes. The playhead, the highlight and
+    // follow-scrolling are drawn every frame by the score itself from `transport` (see
+    // components/ScoreEditor.tsx); re-rendering the app per frame is what made them late.
     const shouldPublishPosition = !playbackPlayheadsEqual(playheadRef.current, snapshot)
       && shouldPublishPlaybackPosition({
-        isPlaying: playbackStateRef.current === 'playing',
+        isPlaying: playbackStateRef.current === 'playing' && isPlayingRef.current,
         previousTimeMs: currentTimeMsRef.current,
         nextTimeMs: snapshot.currentTimeMs,
-        measureChanged: currentMeasureChanged,
+        measureChanged: lastPublishedSpanRef.current !== snapshot.spanIndex,
         hasPublishedPlayhead: playheadRef.current != null,
       });
     if (!shouldPublishPosition) return;
 
+    lastPublishedSpanRef.current = snapshot.spanIndex;
     playbackCursorTargetRef.current = nextCursorTarget;
     playheadRef.current = snapshot;
     currentTimeMsRef.current = snapshot.currentTimeMs;
-    setPlaybackPosition((current) => {
+    // During playback the measure display may lag a frame or two; a non-urgent render must not
+    // block the frames that draw the playhead.
+    const publish = playbackStateRef.current === 'playing' && isPlayingRef.current
+      ? startTransition
+      : (update: () => void) => update();
+    publish(() => setPlaybackPosition((current) => {
       if (
         current.currentMeasure === snapshot.measureNumber
         && Math.abs(current.currentBeat - nextBeat) < 0.0001
@@ -1181,14 +1151,22 @@ export function usePlayback(options?: {
         playhead: snapshot,
         currentTimeMs: snapshot.currentTimeMs,
       };
-    });
+    }));
   }, [getPlaybackMeasureBeatRanges]);
 
   function getAc(): AudioContext {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
       audioCtxRef.current = new AudioContext();
+      probeRegisterAudioContext(audioCtxRef.current);
     }
     return audioCtxRef.current;
+  }
+
+  function getAudibleClock(ac: AudioContext) {
+    if (audibleClockRef.current?.ac !== ac) {
+      audibleClockRef.current = { ac, clock: createAudibleClock(ac, { calibrationSeconds: readPlaybackLatencyCalibrationSeconds }) };
+    }
+    return audibleClockRef.current.clock;
   }
 
   function stopHandleSet(handles: Set<PlaybackNoteHandle>) {
@@ -1210,6 +1188,7 @@ export function usePlayback(options?: {
     previewGenerationRef.current += 1;
     const ac = audioCtxRef.current;
     stopHandleSet(scheduledPlaybackHandlesRef.current);
+    scheduledHandleEndsRef.current.clear();
     stopHandleSet(previewSampleHandlesRef.current);
     playersRef.current.forEach((player) => {
       try {
@@ -1224,6 +1203,7 @@ export function usePlayback(options?: {
       audioCtxRef.current = null;
       playersRef.current.clear();
       playerLoadsRef.current.clear();
+      playerPreloadsRef.current.clear();
       sampleBuffersRef.current.clear();
       sampleLoadsRef.current.clear();
     }
@@ -1231,11 +1211,72 @@ export function usePlayback(options?: {
 
   function stopScheduledPlaybackHandles() {
     stopHandleSet(scheduledPlaybackHandlesRef.current);
+    scheduledHandleEndsRef.current.clear();
+  }
+
+  /**
+   * Loads an instrument in the background from the locally served soundfonts only (never the
+   * remote fallback host, never the oscillator fallback), so the first Play does not wait for
+   * downloading and decoding. Failures are silent; Play then loads the instrument as usual.
+   */
+  function preloadPlayer(soundfont: SoundfontInstrumentName) {
+    if (playersRef.current.has(soundfont) || playerLoadsRef.current.has(soundfont) || playerPreloadsRef.current.has(soundfont)) return;
+    if (typeof (globalThis as { __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: unknown }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__ === 'function') return;
+    const cacheGeneration = playerCacheGenerationRef.current;
+    const ac = getAc();
+    const preload = (async () => {
+      const soundfontModule = await import('soundfont-player');
+      const instrument = soundfontModule.instrument ?? soundfontModule.default?.instrument;
+      if (typeof instrument !== 'function') return;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const player = await Promise.race([
+          instrument(ac, soundfont as import('soundfont-player').InstrumentName, LOCAL_SOUNDFONT_OPTIONS),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('soundfont preload timed out')), SOUND_FONT_LOAD_TIMEOUT_MS);
+          }),
+        ]);
+        if (cacheGeneration !== playerCacheGenerationRef.current || ac !== audioCtxRef.current || playersRef.current.has(soundfont)) {
+          try { player.stop(); } catch { /* stale preload */ }
+          return;
+        }
+        playersRef.current.set(soundfont, player);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    })().catch((err) => {
+      dbg.info('playback', `background preload of ${soundfont} skipped:`, err);
+    }).finally(() => {
+      if (playerPreloadsRef.current.get(soundfont) === preload) playerPreloadsRef.current.delete(soundfont);
+    });
+    playerPreloadsRef.current.set(soundfont, preload);
+  }
+
+  function preloadPlaybackInstruments(parsed: ParsedMidi) {
+    const sampleBank = sampleBankRef.current;
+    if (sampleBank) {
+      const filenames = new Set(parsed.notes.map((note) => (
+        resolvePlaybackSampleFilename(sampleBank, coreDocumentRef.current, note.partId, note.midi)
+      )).filter((filename): filename is string => Boolean(filename)));
+      filenames.forEach((filename) => {
+        void ensureSampleBuffer(filename).catch(() => undefined);
+      });
+      return;
+    }
+    new Set(parsed.notes.map((note) => (
+      note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current)
+    ))).forEach((soundfont) => preloadPlayer(soundfont));
   }
 
   async function ensurePlayer(soundfont: SoundfontInstrumentName): Promise<PlaybackPlayer> {
     const cachedPlayer = playersRef.current.get(soundfont);
     if (cachedPlayer) return cachedPlayer;
+    const inFlightPreload = playerPreloadsRef.current.get(soundfont);
+    if (inFlightPreload) {
+      await inFlightPreload;
+      const preloaded = playersRef.current.get(soundfont);
+      if (preloaded) return preloaded;
+    }
     const existingLoad = playerLoadsRef.current.get(soundfont);
     if (existingLoad) return existingLoad;
 
@@ -1343,81 +1384,171 @@ export function usePlayback(options?: {
     await Promise.all([...soundfonts].map((soundfont) => ensurePlayer(soundfont)));
   }
 
+  // ── Timeline and transport ──────────────────────────────────────────────────
+  function getTimeline(parsed: ParsedMidi) {
+    return playbackTimelineFor(parsed, getPlaybackMeasureBeatRanges(parsed));
+  }
+
+  /** Score seconds the listener hears at performance time `atMs`, or null when not playing. */
+  function audibleScoreSeconds(atMs?: number) {
+    const ac = audioCtxRef.current;
+    const parsed = parsedMidiRef.current;
+    if (!ac || !parsed || !isPlayingRef.current) return null;
+    const scale = resolvePlaybackTempoScale(parsed, tempoOverrideRef.current);
+    const heard = (getAudibleClock(ac).audibleTime(atMs) - originAcTimeRef.current) * scale;
+    // Before the first note is heard the playhead waits at the start of the run.
+    return Math.max(runStartScoreRef.current, Math.min(heard, parsed.durationSeconds));
+  }
+
+  const transportListenersRef = useRef<Set<() => void>>(new Set());
+  function notifyTransport() {
+    transportListenersRef.current.forEach((listener) => {
+      try {
+        listener();
+      } catch (err) {
+        dbg.warn('playback', 'transport listener failed:', err);
+      }
+    });
+  }
+
+  const transportRef = useRef<PlaybackTransport | null>(null);
+  if (!transportRef.current) {
+    transportRef.current = {
+      subscribe(listener) {
+        transportListenersRef.current.add(listener);
+        return () => { transportListenersRef.current.delete(listener); };
+      },
+      read(atMs) {
+        const parsed = parsedMidiRef.current;
+        if (!parsed) return null;
+        const timeline = getTimeline(parsed);
+        const heard = audibleScoreSeconds(atMs);
+        const playing = heard != null;
+        const scoreSeconds = heard ?? clampScoreSeconds(resumeScoreTimeRef.current, parsed);
+        const location = timeline.locate(scoreSeconds);
+        return {
+          playing,
+          scoreSeconds,
+          location,
+          timeline,
+          nextMeasureNumber: timeline.spans[location.spanIndex + 1]?.measureNumber ?? null,
+          generation: playbackGenerationRef.current,
+        };
+      },
+      audioContext: () => audioCtxRef.current,
+    };
+  }
+
   // ── Look-ahead scheduler ────────────────────────────────────────────────────
-  // Runs every SCHEDULER_INTERVAL_MS. Schedules notes that fall within the
-  // next LOOKAHEAD_S window. This avoids creating all AudioBufferSourceNodes
-  // at once (which crashes the AudioContext on long pieces).
+  // Every SCHEDULER_TICK_MS (worker timer) hand the notes and clicks of the next LOOKAHEAD_S to
+  // the audio graph at their exact AudioContext time. Creating all nodes at once crashes the
+  // AudioContext on long pieces, so only the window is scheduled.
+  function startNoteAt(note: MidiNote, startAt: number, scale: number, ac: AudioContext) {
+    const multiplicity = Math.max(1, note.multiplicity ?? 1);
+    const gainBoost = Math.sqrt(multiplicity);
+    const mixFactor = channelGainFactor(mixerRef.current, note.partId);
+    if (mixFactor <= 0) return;
+    const gain = Math.max(0.05, Math.min(1.5, note.velocity * 0.9 * gainBoost * mixFactor));
+    const sampleBank = sampleBankRef.current;
+    let handle: unknown;
+    let handleDuration = note.duration / scale;
+    if (sampleBank) {
+      const filename = resolvePlaybackSampleFilename(sampleBank, coreDocumentRef.current, note.partId, note.midi);
+      if (!filename) return;
+      const buffer = sampleBuffersRef.current.get(filename);
+      if (!buffer) {
+        dbg.warn('playback', `skip local template sample ${filename} because it is not loaded`);
+        probeAudio({ midi: note.midi, partId: note.partId ?? null, scoreSeconds: note.time, idealAc: startAt, startAc: startAt, nowAc: ac.currentTime, skipped: true });
+        return;
+      }
+      handle = startAudioSample(ac, buffer, startAt, gain);
+      handleDuration = buffer.duration;
+    } else {
+      const soundfont = note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current);
+      const player = playersRef.current.get(soundfont);
+      if (!player) {
+        dbg.warn('playback', `skip note ${midiName(note.midi)} because ${soundfont} is not loaded`);
+        probeAudio({ midi: note.midi, partId: note.partId ?? null, scoreSeconds: note.time, idealAc: startAt, startAc: startAt, nowAc: ac.currentTime, skipped: true });
+        return;
+      }
+      handle = startPlaybackNote(player, note.midi, startAt, {
+        duration: note.duration / scale,
+        gain,
+      });
+    }
+    probeAudio({
+      midi: note.midi,
+      partId: note.partId ?? null,
+      scoreSeconds: note.time,
+      idealAc: startAt,
+      startAc: Math.max(startAt, ac.currentTime),
+      nowAc: ac.currentTime,
+    });
+    if (isStoppablePlaybackHandle(handle)) {
+      scheduledPlaybackHandlesRef.current.add(handle);
+      scheduledHandleEndsRef.current.set(handle, startAt + handleDuration + 0.5);
+    }
+  }
+
+  function pruneFinishedHandles(nowAc: number) {
+    scheduledHandleEndsRef.current.forEach((endAc, handle) => {
+      if (endAc >= nowAc) return;
+      scheduledHandleEndsRef.current.delete(handle);
+      scheduledPlaybackHandlesRef.current.delete(handle);
+    });
+  }
+
   function runSchedulerTick() {
     const ac       = audioCtxRef.current;
     const parsed   = parsedMidiRef.current;
     if (!ac || !parsed || !isPlayingRef.current) return;
 
     const scale = resolvePlaybackTempoScale(parsed, tempoOverrideRef.current);
+    const timeline = getTimeline(parsed);
+    const clicks = timeline.clicks;
+    const metronomeOn = metronomeEnabledRef.current;
+    const nowAc = ac.currentTime;
+    const earliestAc = nowAc + MIN_SCHEDULE_LEAD_S;
+    const scheduleUntilAc = nowAc + LOOKAHEAD_S;
 
-    const nowAc            = ac.currentTime;
-    const scheduleUntilAc  = nowAc + LOOKAHEAD_S;
-    let i = nextNoteIdxRef.current;
-
-    while (i < parsed.notes.length) {
-      const note        = parsed.notes[i];
-      const noteAcTime  = originAcTimeRef.current + note.time / scale;
-
-      if (noteAcTime > scheduleUntilAc) break;
-
-      if (noteAcTime >= nowAc - LATE_TOLERANCE_S) {
-        // Play at scheduled time, or immediately if slightly late
-        const startAt = Math.max(noteAcTime, nowAc);
-        const multiplicity = Math.max(1, note.multiplicity ?? 1);
-        const gainBoost = Math.sqrt(multiplicity);
-        const mixFactor = channelGainFactor(mixerRef.current, note.partId);
-        if (mixFactor <= 0) {
-          i++;
-          continue;
-        }
-        const gain = Math.max(0.05, Math.min(1.5, note.velocity * 0.9 * gainBoost * mixFactor));
-        const sampleBank = sampleBankRef.current;
-        let handle: unknown;
-        let handleDuration = note.duration / scale;
-        if (sampleBank) {
-          const filename = resolvePlaybackSampleFilename(sampleBank, coreDocumentRef.current, note.partId, note.midi);
-          if (!filename) {
-            i++;
-            continue;
-          }
-          const buffer = sampleBuffersRef.current.get(filename);
-          if (!buffer) {
-            dbg.warn('playback', `skip local template sample ${filename} because it is not loaded`);
-            i++;
-            continue;
-          }
-          handle = startAudioSample(ac, buffer, startAt, gain);
-          handleDuration = buffer.duration;
-        } else {
-          const soundfont = note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current);
-          const player = playersRef.current.get(soundfont);
-          if (!player) {
-            dbg.warn('playback', `skip note ${midiName(note.midi)} because ${soundfont} is not loaded`);
-            i++;
-            continue;
-          }
-          handle = startPlaybackNote(player, note.midi, startAt, {
-            duration: note.duration / scale,
-            gain,
-          });
-        }
-        if (isStoppablePlaybackHandle(handle)) {
-          scheduledPlaybackHandlesRef.current.add(handle);
-          window.setTimeout(() => {
-            scheduledPlaybackHandlesRef.current.delete(handle);
-          }, Math.max(1000, (handleDuration + LOOKAHEAD_S + 0.25) * 1000));
-        }
-      } else {
-        dbg.warn('playback', `skip late note ${midiName(note.midi)} at ${note.time.toFixed(3)}s`);
-      }
-      i++;
+    // The main thread was blocked longer than the look-ahead: the next sound is already due.
+    // Move the whole transport later instead of playing it late or dropping it, so every note
+    // keeps its rhythm and the playhead (which reads the same origin) stays on the sound.
+    const nextNote = parsed.notes[nextNoteIdxRef.current];
+    const nextClick = metronomeOn ? clicks[nextClickIdxRef.current] : undefined;
+    const nextDueAc = Math.min(
+      nextNote ? originAcTimeRef.current + nextNote.time / scale : Number.POSITIVE_INFINITY,
+      nextClick ? originAcTimeRef.current + nextClick.seconds / scale : Number.POSITIVE_INFINITY,
+    );
+    if (nextDueAc < earliestAc) {
+      const shift = earliestAc - nextDueAc;
+      originAcTimeRef.current += shift;
+      transportShiftCountRef.current += 1;
+      probeMark('transport-shift', { shiftMs: shift * 1000 });
+      dbg.warn('playback', `scheduler was ${(shift * 1000).toFixed(0)} ms late; transport moved later to keep sound and playhead together`);
     }
 
+    let i = nextNoteIdxRef.current;
+    while (i < parsed.notes.length) {
+      const note = parsed.notes[i]!;
+      const noteAcTime = originAcTimeRef.current + note.time / scale;
+      if (noteAcTime > scheduleUntilAc) break;
+      startNoteAt(note, noteAcTime, scale, ac);
+      i++;
+    }
     nextNoteIdxRef.current = i;
+
+    let c = nextClickIdxRef.current;
+    while (c < clicks.length) {
+      const click = clicks[c]!;
+      const clickAcTime = originAcTimeRef.current + click.seconds / scale;
+      if (clickAcTime > scheduleUntilAc) break;
+      // Keep advancing while the metronome is off so switching it on clicks from here.
+      if (metronomeOn && clickAcTime >= earliestAc) scheduleClick(ac, clickAcTime, click.downbeat);
+      c++;
+    }
+    nextClickIdxRef.current = c;
+    pruneFinishedHandles(nowAc);
   }
 
   // ── Metronome click via Web Audio oscillator ───────────────────────────────
@@ -1432,80 +1563,61 @@ export function usePlayback(options?: {
     gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04); // 40ms decay
     osc.start(time);
     osc.stop(time + 0.04);
-
+    const handle: PlaybackNoteHandle = {
+      stop(when?: number) {
+        try { osc.stop(Math.max(ac.currentTime, when ?? ac.currentTime)); } catch { /* already stopped */ }
+      },
+    };
+    scheduledPlaybackHandlesRef.current.add(handle);
+    scheduledHandleEndsRef.current.set(handle, time + 0.1);
   }
 
-  // Schedule metronome beats in the look-ahead window
-  function runMetronomeTick(ac: AudioContext, parsed: ParsedMidi, scale: number) {
-    if (!metronomeEnabledRef.current) return;
-
-    const spBeat     = resolvePlaybackQuarterBeatSeconds(parsed, tempoOverrideRef.current);
-    const beatsPerM  = parsed.timeSignatureNumerator;
-    const duration   = parsed.durationSeconds / scale;
-    const until      = ac.currentTime + LOOKAHEAD_S;
-
-    // Advance nextMetroIdxRef to stay ahead of ac.currentTime
-    while (true) {
-      const beatTime = originAcTimeRef.current + nextMetroIdxRef.current * spBeat;
-      if (beatTime >= ac.currentTime - 0.005) break; // found first future (or almost-now) beat
-      nextMetroIdxRef.current++;
-      if (nextMetroIdxRef.current * spBeat > duration + 1) return;
-    }
-
-    let idx = nextMetroIdxRef.current;
-    while (true) {
-      const beatTime = originAcTimeRef.current + idx * spBeat;
-      if (beatTime > until) break;
-      if (beatTime > originAcTimeRef.current + duration) break;
-
-      const isDownbeat = idx % beatsPerM === 0;
-      scheduleClick(ac, beatTime, isDownbeat);
-      idx++;
-    }
-    nextMetroIdxRef.current = idx;
+  function firstClickIndexAtOrAfter(parsed: ParsedMidi, scoreSeconds: number) {
+    const clicks = getTimeline(parsed).clicks;
+    const index = clicks.findIndex((click) => click.seconds >= scoreSeconds - 1e-4);
+    return index === -1 ? clicks.length : index;
   }
 
-  // ── RAF loop — scheduling + UI updates ─────────────────────────────────────
-  // Runs at ~60fps (~16ms). Much more reliable than setInterval for Web Audio.
-  function startRaf(parsed: ParsedMidi) {
-    const generation = playbackGenerationRef.current;
-    function tick() {
-      if (generation !== playbackGenerationRef.current) return;
-      if (!isPlayingRef.current) return;
-      const ac = audioCtxRef.current;
-      if (!ac) return;
+  function firstNoteIndexAtOrAfter(parsed: ParsedMidi, scoreSeconds: number) {
+    const index = parsed.notes.findIndex((note) => note.time >= scoreSeconds - 0.01);
+    return index === -1 ? parsed.notes.length : index;
+  }
 
-      const scale = resolvePlaybackTempoScale(parsed, tempoOverrideRef.current);
-      const nowAc = ac.currentTime;
+  function finishPlayback(parsed: ParsedMidi) {
+    tickerRef.current?.stop();
+    isPlayingRef.current = false;
+    playbackGenerationRef.current += 1;
+    playbackStateRef.current = 'stopped';
+    setPlaybackState('stopped');
+    setIsPaused(false);
+    resumeScoreTimeRef.current = parsed.durationSeconds;
+    nextNoteIdxRef.current     = 0;
+    scheduledPlaybackHandlesRef.current.clear();
+    scheduledHandleEndsRef.current.clear();
+    notifyTransport();
+    syncPlaybackPositionState(parsed.durationSeconds, parsed);
+  }
 
-      // Audio is scheduled against the AudioContext clock, not the paint
-      // cadence. A 50 ms scheduler pass with a 1.5 s look-ahead is both more
-      // precise under rendering load and substantially cheaper than doing the
-      // same work on every animation frame.
-      if (nowAc - lastSchedulerAcTimeRef.current >= PLAYBACK_SCHEDULER_INTERVAL_S) {
-        lastSchedulerAcTimeRef.current = nowAc;
-        runSchedulerTick();
-        runMetronomeTick(ac, parsed, scale);
-      }
-
-      const scoreTime = (nowAc - originAcTimeRef.current) * scale;
-      const clamped = resolveVisiblePlayheadSeconds(scoreTime, parsed, true);
-      syncPlaybackPositionState(clamped, parsed);
-
-      if (scoreTime >= parsed.durationSeconds) {
-        isPlayingRef.current = false;
-        playbackStateRef.current = 'stopped';
-        setPlaybackState('stopped');
-        setIsPaused(false);
-        resumeScoreTimeRef.current = parsed.durationSeconds;
-        nextNoteIdxRef.current     = 0;
-        scheduledPlaybackHandlesRef.current.clear();
-        syncPlaybackPositionState(parsed.durationSeconds, parsed);
-        return;
-      }
-      rafRef.current = requestAnimationFrame(tick);
+  function onSchedulerTick() {
+    const parsed = parsedMidiRef.current;
+    if (!parsed || !isPlayingRef.current) return;
+    runSchedulerTick();
+    const heard = audibleScoreSeconds();
+    if (heard == null) return;
+    if (heard >= parsed.durationSeconds - 1e-3) {
+      finishPlayback(parsed);
+      return;
     }
-    rafRef.current = requestAnimationFrame(tick);
+    syncPlaybackPositionState(heard, parsed);
+  }
+  const onSchedulerTickRef = useRef(onSchedulerTick);
+  onSchedulerTickRef.current = onSchedulerTick;
+
+  function ensureTicker() {
+    if (!tickerRef.current) {
+      tickerRef.current = createPlaybackTicker(() => onSchedulerTickRef.current(), SCHEDULER_TICK_MS);
+    }
+    return tickerRef.current;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -1551,7 +1663,9 @@ export function usePlayback(options?: {
     const swingUnit = options?.coreDocument?.swingUnit ?? 'eighth';
     const playbackCacheKey = `${xml}\n<!-- nex-note-playback swing=${swingRatio ?? 'none'} unit=${swingUnit} -->`;
     if (loadedXmlRef.current === playbackCacheKey && parsedMidiRef.current) {
-      setPlaybackError(null);
+      // Only touch state when there is an error to clear: inside a click handler React re-renders
+      // the whole app synchronously before playback can start.
+      if (playbackErrorRef.current) setPlaybackError(null);
       return true;
     }
     const existingLoad = midiLoadRef.current;
@@ -1629,16 +1743,19 @@ export function usePlayback(options?: {
           return false;
         }
 
-        const parsed: ParsedMidi = { rawNotes, notes, tempos, durationSeconds, timeSignatureNumerator, timeSignatureDenominator };
+        const swing = Number.isFinite(swingRatio) && swingRatio != null && Math.abs(swingRatio - 0.5) >= 0.001
+          ? { ratio: swingRatio, unit: swingUnit === '16th' ? '16th' as const : 'eighth' as const }
+          : null;
+        const parsed: ParsedMidi = { rawNotes, notes, tempos, durationSeconds, timeSignatureNumerator, timeSignatureDenominator, swing };
         playbackGeometryCacheRef.current = {
           parsed,
           coreDocument: coreDocumentRef.current,
-          ranges: buildPlaybackMeasureBeatRanges(coreDocumentRef.current, parsed),
+          ranges: resolveRenderedMeasureBeatRanges(coreDocumentRef.current, parsed),
         };
         setTotalBeats(Math.ceil(secondsToScoreBeats(durationSeconds, parsed)));
         parsedMidiRef.current = parsed;
         playbackStartScoreTimeRef.current = 0;
-        const initialSnapshot = buildPlayheadSnapshot(0, 0, parsed, buildPlaybackMeasureBeatRanges(options?.coreDocument ?? null, parsed), false);
+        const initialSnapshot = buildPlayheadSnapshot(0, 0, parsed, resolveRenderedMeasureBeatRanges(options?.coreDocument ?? null, parsed), false);
         const initialCursorTarget = {
           measureNumber: initialSnapshot.measureNumber,
           timestampNum: initialSnapshot.timestampNum,
@@ -1646,6 +1763,7 @@ export function usePlayback(options?: {
         };
         playbackCursorTargetRef.current = initialCursorTarget;
         playheadRef.current = initialSnapshot;
+        lastPublishedSpanRef.current = initialSnapshot.spanIndex;
         currentMeasureRef.current = initialSnapshot.measureNumber;
         currentBeatRef.current = 0;
         currentTimeMsRef.current = 0;
@@ -1661,6 +1779,13 @@ export function usePlayback(options?: {
         loadedXmlRef.current = playbackCacheKey;
         setHasMidi(true);
         setPlaybackError(null);
+        if (loadOptions?.silent) {
+          // The score is idle and its MIDI is ready: get its instruments ready for the first Play.
+          const idle = (globalThis as { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+          const preload = () => { if (parsedMidiRef.current === parsed) preloadPlaybackInstruments(parsed); };
+          if (typeof idle === 'function') idle(preload, { timeout: 2_000 });
+          else setTimeout(preload, 0);
+        }
         dbg.playback(`OK — ${notes.length} normalized notes from ${rawNotes.length} raw MIDI notes, ${midi.tracks.length} tracks, ${durationSeconds.toFixed(1)}s, ${avgBpm}bpm, timeSig=${timeSignatureNumerator}/${timeSignatureDenominator}`);
         if (duplicateSummary.duplicateGroupCount > 0) {
           dbg.info(
@@ -1727,8 +1852,10 @@ export function usePlayback(options?: {
       const ac = getAc();
       await activatePlaybackAudioContext(ac);
 
+      probeMark('play-context');
       // Load every track's own soundfont before starting the scheduler.
       await ensurePlaybackPlayers(parsed);
+      probeMark('play-players');
       if (playRequestId !== playRequestIdRef.current) return false;
 
       const fromScore = Number.isFinite(startScoreSeconds)
@@ -1749,34 +1876,38 @@ export function usePlayback(options?: {
       }
       const scale = resolvePlaybackTempoScale(parsed, tempoOverrideRef.current);
 
-      // originAcTimeRef: the ac.currentTime at which score-time 0 would occur
-      originAcTimeRef.current = ac.currentTime - fromScore / scale;
+      // Stop whatever an earlier run left scheduled; the context and loaded sounds stay.
+      stopScheduledPlaybackHandles();
+      playersRef.current.forEach((player) => {
+        try { player.stop(); } catch { /* nothing active */ }
+      });
 
-      // Find the first note index at or after fromScore
-      nextNoteIdxRef.current = parsed.notes.findIndex(n => n.time >= fromScore - 0.01);
-      if (nextNoteIdxRef.current === -1) nextNoteIdxRef.current = parsed.notes.length;
+      // originAcTimeRef: the AudioContext time at which score-time 0 would sound. The first note
+      // is due START_LEAD_S from now, so it reaches the audio thread before it is needed.
+      originAcTimeRef.current = ac.currentTime + START_LEAD_S - fromScore / scale;
+      runStartScoreRef.current = fromScore;
+      nextNoteIdxRef.current = firstNoteIndexAtOrAfter(parsed, fromScore);
+      nextClickIdxRef.current = firstClickIndexAtOrAfter(parsed, fromScore);
+      getAudibleClock(ac);
 
-      // Reset metronome beat index to the first beat at or after fromScore
-      nextMetroIdxRef.current = Math.max(0, Math.floor(secondsToScoreBeats(fromScore, parsed)) - 1);
-
-      cancelAnimationFrame(rafRef.current);
       playbackGenerationRef.current += 1;
-      lastSchedulerAcTimeRef.current = Number.NEGATIVE_INFINITY;
       isPlayingRef.current = true;
       playbackStateRef.current = 'playing';
-      setPlaybackState('playing');
-      setIsPaused(false);
-      setPlaybackError(null);
-      justOpenedRef.current = false;
-      syncPlaybackPositionState(fromScore, parsed);
-
-      // Schedule the opening window synchronously. The first animation frame can
-      // be throttled while the packaged app finishes an initial MIDI/sample load,
-      // which would otherwise make the first note look late and skip it.
+      lastPublishedSpanRef.current = -1;
+      // Schedule the opening window synchronously, before React re-renders for the new state.
       runSchedulerTick();
+      ensureTicker().start();
+      notifyTransport();
 
-      // RAF handles subsequent scheduling and UI — no setInterval needed
-      startRaf(parsed);
+      justOpenedRef.current = false;
+      // Sound is already scheduled and the score draws from the transport; the app's re-render
+      // for the new state is non-urgent so it cannot hold up the first frames of the playhead.
+      startTransition(() => {
+        setPlaybackState('playing');
+        setIsPaused(false);
+        if (playbackErrorRef.current) setPlaybackError(null);
+      });
+      syncPlaybackPositionState(fromScore, parsed);
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Playback could not start.';
@@ -1786,33 +1917,36 @@ export function usePlayback(options?: {
     }
   }, [options?.coreDocument, options?.selectedMeasureNumbers, options?.selectedNote, options?.selectedNoteRef, playbackState, syncPlaybackPositionState]);
 
+  /** Ends the current run without changing React state. */
+  function haltRun() {
+    tickerRef.current?.stop();
+    stopScheduledPlayback();
+    const wasPlaying = isPlayingRef.current;
+    isPlayingRef.current = false;
+    playbackGenerationRef.current += 1;
+    if (wasPlaying) notifyTransport();
+  }
+
   const pause = useCallback(() => {
     if (!isPlayingRef.current) return;
     playRequestIdRef.current += 1;
-    const ac = audioCtxRef.current;
     const parsed = parsedMidiRef.current;
+    // Resume from what was heard, not from what the audio graph had already rendered.
+    const heard = audibleScoreSeconds();
+    if (heard != null) resumeScoreTimeRef.current = heard;
 
-    if (ac && parsed) {
-      const scale = resolvePlaybackTempoScale(parsed, tempoOverrideRef.current);
-      resumeScoreTimeRef.current = (ac.currentTime - originAcTimeRef.current) * scale;
-    }
-
-    stopScheduledPlayback();
-    isPlayingRef.current = false;
-    cancelAnimationFrame(rafRef.current);
+    haltRun();
     playbackStateRef.current = 'paused';
     setPlaybackState('paused');
     setIsPaused(true);
     if (parsed) {
       syncPlaybackPositionState(resumeScoreTimeRef.current, parsed);
     }
-  }, [syncPlaybackPositionState]);
+  }, [syncPlaybackPositionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stop = useCallback(() => {
     playRequestIdRef.current += 1;
-    stopScheduledPlayback();
-    isPlayingRef.current = false;
-    cancelAnimationFrame(rafRef.current);
+    haltRun();
     const parsed = parsedMidiRef.current;
     resumeScoreTimeRef.current = playbackStartScoreTimeRef.current;
     nextNoteIdxRef.current     = 0;
@@ -1827,6 +1961,7 @@ export function usePlayback(options?: {
       playbackCursorTargetRef.current = null;
       playheadRef.current = null;
       currentTimeMsRef.current = 0;
+      lastPublishedSpanRef.current = -1;
       setPlaybackPosition({
         currentMeasure: 1,
         currentBeat: 0,
@@ -1835,26 +1970,23 @@ export function usePlayback(options?: {
         currentTimeMs: 0,
       });
     }
-  }, [syncPlaybackPositionState]);
+  }, [syncPlaybackPositionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const seek = useCallback(async (beatPosition: number) => {
     const parsed = parsedMidiRef.current;
     if (!parsed) return;
-    resumeScoreTimeRef.current = beatsToSeconds(beatPosition, parsed);
+    const wasPlaying = isPlayingRef.current;
+    if (wasPlaying) haltRun();
+    resumeScoreTimeRef.current = clampScoreSeconds(beatsToSeconds(beatPosition, parsed), parsed);
     justOpenedRef.current = false;
     syncPlaybackPositionState(resumeScoreTimeRef.current, parsed);
-    if (isPlayingRef.current) {
-      stopScheduledPlayback({ resetAudioContext: true });
-      cancelAnimationFrame(rafRef.current);
-      isPlayingRef.current = false;
-      await play(resumeScoreTimeRef.current);
-    }
-  }, [play, syncPlaybackPositionState]);
+    if (wasPlaying) await play(resumeScoreTimeRef.current);
+  }, [play, syncPlaybackPositionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const seekToCursorTarget = useCallback(async (target: PlaybackCursorTarget) => {
     const parsed = parsedMidiRef.current;
     if (!parsed) return;
-    const measureBeatRanges = buildPlaybackMeasureBeatRanges(options?.coreDocument ?? null, parsed);
+    const measureBeatRanges = getPlaybackMeasureBeatRanges(parsed);
     resumeScoreTimeRef.current = clampScoreSeconds(cursorTargetToScoreSeconds(target, parsed, measureBeatRanges), parsed);
     playbackStartScoreTimeRef.current = resumeScoreTimeRef.current;
     justOpenedRef.current = false;
@@ -1862,7 +1994,7 @@ export function usePlayback(options?: {
     setPlaybackState('stopped');
     setIsPaused(false);
     syncPlaybackPositionState(resumeScoreTimeRef.current, parsed);
-  }, [options?.coreDocument, syncPlaybackPositionState]);
+  }, [getPlaybackMeasureBeatRanges, syncPlaybackPositionState]);
 
   const setTempo = useCallback((bpm: number) => {
     if (!Number.isFinite(bpm) || bpm <= 0) return;
@@ -1870,48 +2002,52 @@ export function usePlayback(options?: {
     const parsed = parsedMidiRef.current;
     const ac = audioCtxRef.current;
     if (parsed && ac && isPlayingRef.current) {
+      // Re-anchor at the render clock: notes already handed to the output keep their time, the
+      // rest is rescheduled at the new tempo from the same score position.
       const tempoChange = resolvePlaybackTempoChangeOrigin({
         parsed,
-        currentAcSeconds: ac.currentTime,
+        currentAcSeconds: ac.currentTime + MIN_SCHEDULE_LEAD_S,
         originAcSeconds: originAcTimeRef.current,
         currentTempoOverride: tempoOverrideRef.current,
         nextTempoOverride: bpm,
       });
       const currentScoreSeconds = tempoChange.currentScoreSeconds;
-
       originAcTimeRef.current = tempoChange.originAcSeconds;
-      resumeScoreTimeRef.current = currentScoreSeconds;
-      nextNoteIdxRef.current = parsed.notes.findIndex((note) => note.time >= currentScoreSeconds - 0.01);
-      if (nextNoteIdxRef.current === -1) nextNoteIdxRef.current = parsed.notes.length;
-      nextMetroIdxRef.current = Math.max(0, Math.floor(secondsToScoreBeats(currentScoreSeconds, parsed)) - 1);
+      nextNoteIdxRef.current = firstNoteIndexAtOrAfter(parsed, currentScoreSeconds + 0.01);
+      nextClickIdxRef.current = firstClickIndexAtOrAfter(parsed, currentScoreSeconds);
       stopScheduledPlaybackHandles();
-      syncPlaybackPositionState(currentScoreSeconds, parsed);
+      tempoOverrideRef.current = bpm;
+      runSchedulerTick();
+      const heard = audibleScoreSeconds();
+      resumeScoreTimeRef.current = heard ?? currentScoreSeconds;
+      syncPlaybackPositionState(resumeScoreTimeRef.current, parsed);
     }
 
     tempoOverrideRef.current = bpm;
     setTempoOverride(bpm);
-  }, [syncPlaybackPositionState]);
+  }, [syncPlaybackPositionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startFromNote = useCallback(async (note: SelectedNote | null) => {
     const parsed = parsedMidiRef.current;
     if (!parsed || !note) return;
 
-    const measureBeatRanges = buildPlaybackMeasureBeatRanges(options?.coreDocument ?? null, parsed);
-    resumeScoreTimeRef.current = Math.max(0, Math.min(noteToScoreSeconds(note, parsed, measureBeatRanges), parsed.durationSeconds));
+    const measureBeatRanges = getPlaybackMeasureBeatRanges(parsed);
+    // In a repeated passage, a click while playing restarts from the pass being heard.
+    const heard = audibleScoreSeconds();
+    const wholes = note.timestampNum / Math.max(note.timestampDen, 1);
+    const fromTimeline = playbackTimelineFor(parsed, measureBeatRanges).secondsAt(note.measureNumber, wholes, heard ?? undefined);
+    resumeScoreTimeRef.current = clampScoreSeconds(fromTimeline ?? noteToScoreSeconds(note, parsed, measureBeatRanges), parsed);
     playbackStartScoreTimeRef.current = resumeScoreTimeRef.current;
     justOpenedRef.current = false;
-    syncPlaybackPositionState(resumeScoreTimeRef.current, parsed);
     dbg.playback(`startFromNote m.${note.measureNumber} ts=${note.timestampNum}/${note.timestampDen} score=${resumeScoreTimeRef.current.toFixed(2)}s`);
     if (dbg.enabled()) {
       dbg.midi(formatDebugJson('start compare', buildPlaybackCompare(note, parsed, options?.coreDocument ?? null)));
     }
 
-    stopScheduledPlayback({ resetAudioContext: true });
-    cancelAnimationFrame(rafRef.current);
-    isPlayingRef.current = false;
-
+    // Keep the AudioContext and the loaded instruments: restarting must not reload sounds.
+    haltRun();
     await play(resumeScoreTimeRef.current);
-  }, [options?.coreDocument, play, syncPlaybackPositionState]);
+  }, [getPlaybackMeasureBeatRanges, options?.coreDocument, play]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const previewNote = useCallback(async (note: SelectedNote | null) => {
     if (!note || note.isRest) return;
@@ -2016,7 +2152,9 @@ export function usePlayback(options?: {
   }, [options?.coreDocument]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => {
-    cancelAnimationFrame(rafRef.current);
+    tickerRef.current?.dispose();
+    tickerRef.current = null;
+    isPlayingRef.current = false;
     playerCacheGenerationRef.current += 1;
     playersRef.current.forEach((player) => {
       try { player.stop(); } catch { /* Ignore cleanup failures during unmount. */ }
@@ -2036,5 +2174,6 @@ export function usePlayback(options?: {
     metronomeEnabled, setMetronomeEnabled,
     loadMidi, ensureMidiLoaded, preloadMidi, prewarm, play, pause, stop, seek, seekToCursorTarget, startFromNote, previewNote, previewNotes,
     setTempo, setMixer,
+    transport: transportRef.current,
   };
 }

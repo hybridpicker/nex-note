@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statfsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statfsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {
@@ -101,6 +101,18 @@ async function main() {
     '--json',
   ]);
   result('Capacitor packages', packages.status === 0, packages.status === 0 ? 'installed' : 'run `npm install`');
+
+  // Offline playback samples are not in git. Without them the app downloads each instrument from
+  // GitHub at its first Play (about 1.5 s before the first note, measured for a four-part score).
+  const soundfontDirectory = path.join(root, 'public', 'soundfonts', 'FluidR3_GM');
+  const soundfontCount = existsSync(soundfontDirectory)
+    ? readdirSync(soundfontDirectory).filter((name) => name.endsWith('-mp3.js')).length
+    : 0;
+  if (soundfontCount > 0) {
+    result('Offline playback samples', true, `${soundfontCount} instruments in public/soundfonts (bundled by ipad:sync)`);
+  } else {
+    console.log('○ Offline playback samples: missing; run `npm run soundfonts:fetch` before `npm run ipad:sync` so the first Play does not wait for downloads');
+  }
 
   if (origin) {
     if (await probeNexNoteServer(origin)) {

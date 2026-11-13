@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
@@ -43,6 +43,16 @@ if (buildInfo.sourceFingerprint !== localBuildState.sourceFingerprint) {
     `bundle fingerprint ${buildInfo.sourceFingerprint} does not match local source `
     + localBuildState.sourceFingerprint,
   );
+}
+
+// Offline playback samples are optional in git but belong in the app: without them every first
+// Play of an instrument downloads it from GitHub (about 1.5 s before the first note).
+const packagedSoundfonts = path.join(path.dirname(buildInfoPath), 'public', 'soundfonts', 'FluidR3_GM');
+const packagedSoundfontCount = existsSync(packagedSoundfonts)
+  ? readdirSync(packagedSoundfonts).filter((name) => name.endsWith('-mp3.js')).length
+  : 0;
+if (packagedSoundfontCount === 0) {
+  console.warn('Warning: the packaged app has no offline playback samples; run `npm run soundfonts:fetch` before building.');
 }
 
 console.log(`Verified packaged Nex Note app from ${describeBuildState(localBuildState)}.`);

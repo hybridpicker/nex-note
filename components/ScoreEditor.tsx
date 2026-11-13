@@ -15,12 +15,13 @@ import InlineEntryHost, { type InlineEntryFlowKind, type InlineEntryRequest } fr
 import type { EntryPosition } from '@/src/score-input/inline-entry-navigation';
 import type { ScoreCommand } from '@/src/shared/schemas/score-command';
 import type { NoteDuration, NoteEntryMode, SelectedNote } from '@/hooks/useNoteEditor';
-import type { PlaybackCursorTarget, PlaybackPlayheadSnapshot, PlaybackState } from '@/hooks/usePlayback';
+import type { PlaybackCursorTarget, PlaybackPlayheadSnapshot, PlaybackState, PlaybackTransport } from '@/hooks/usePlayback';
 import { getBugReportContext, getBugReportEvents, recordBugReportEvent } from '@/lib/bug-report-recorder';
 import { dbg } from '@/lib/debug';
 import { readClientVisualDebugEnabled } from '@/lib/debug-flags';
 import { resolveMusicXmlMetadataDrawOptions } from '@/lib/musicxml-metadata-display';
-import { resolveReachedPlaybackOnset } from '@/lib/playback-highlight';
+import { buildPlaybackGeometry, type PlaybackGeometry, type PlaybackPlayheadPlacement } from '@/lib/playback-geometry';
+import { probeGeometry, probeVisual, selectedNoteMidi, syncProbe } from '@/lib/playback-sync-probe';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { projectOsmdLayoutXml } from '@/src/render-bridge/osmd/layout-render-xml';
 import { installOsmdGlyphBoundsCache } from '@/src/render-bridge/osmd/glyph-bounds-cache';
@@ -178,6 +179,8 @@ interface Props {
   playbackActive: boolean;
   playbackCursorTarget: PlaybackCursorTarget | null;
   playbackPlayhead: PlaybackPlayheadSnapshot | null;
+  /** Live playback clock; the score draws the playhead and highlight from it every frame. */
+  playbackTransport?: PlaybackTransport | null;
   followPlayback?: boolean;
   onNoteClick: (note: SelectedNote | null, options?: {
     additive?: boolean;
@@ -3843,22 +3846,6 @@ function findNearestMeasureOverlayForPoint(
     ))[0]?.overlay ?? null;
 }
 
-function resolvePlayheadRect(
-  playhead: PlaybackPlayheadSnapshot,
-  overlays: RenderedMeasureLayoutOverlay[],
-  staffDetailsByMeasure: Map<number, StaffDetail[]>,
-) {
-  const overlay = overlays.find((entry) => entry.measureNumber === playhead.measureNumber);
-  if (!overlay) return null;
-  const visibleRect = visibleMeasureRectForAllStaves(overlay, staffDetailsByMeasure);
-  return {
-    x: visibleRect.x + (visibleRect.width * playhead.progressWithinMeasure),
-    y: visibleRect.y,
-    height: visibleRect.height,
-    measureNumber: playhead.measureNumber,
-  };
-}
-
 // Prefer the browser's real SVG transform matrix when available. Imported scores
 // can introduce nested transforms/margins where OSMD's domToSvg helper is less
 // reliable than converting through the rendered <svg> directly.
@@ -5470,48 +5457,6 @@ function positionCursorToMeasure(osmd: any, measureNumber: number) {
   } catch (err) {
     dbg.warn('score', 'playback cursor positioning failed:', err);
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function positionPlaybackCursor(osmd: any, target: PlaybackCursorTarget) {
-  const cursor = osmd.cursor;
-  if (!cursor) return;
-  try {
-    cursor.reset();
-    const targetTs = target.timestampNum / Math.max(target.timestampDen, 1);
-    let iters = 0;
-    while (!cursor.iterator.EndReached && iters < 20000) {
-      iters++;
-      const measureNumber: number = cursor.iterator.CurrentMeasureIndex + 1;
-      const ts = cursor.iterator.CurrentSourceTimestamp;
-      const tsValue: number = ts?.RealValue ?? (ts ? ts.Numerator / ts.Denominator : 0);
-      if (measureNumber > target.measureNumber) break;
-      if (measureNumber === target.measureNumber && tsValue >= targetTs - 0.015) break;
-      cursor.next();
-    }
-    cursor.show();
-  } catch (err) {
-    dbg.warn('score', 'playback cursor positioning failed:', err);
-  }
-}
-
-// Set pointer-events:none on OSMD cursor DOM elements so they never block note clicks
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function patchCursorPointerEvents(osmd: any) {
-  try {
-    // Try the known property names across OSMD versions
-    const el = osmd.cursor?.cursorElement ?? osmd.cursor?.CursorElement;
-    if (el) {
-      (el as HTMLElement).style.pointerEvents = 'none';
-      return;
-    }
-    // Fallback: find by attribute on the OSMD container
-    const container = osmd.container as HTMLElement | undefined;
-    if (container) {
-      container.querySelectorAll<HTMLElement>('[class*="osmd-cursor"], [class*="Cursor"]')
-        .forEach(e => { e.style.pointerEvents = 'none'; });
-    }
-  } catch { /* ignore */ }
 }
 
 function isSuppressedOsmdNoise(args: unknown[]) {
@@ -11845,6 +11790,7 @@ export default function ScoreEditor({
   playbackActive,
   playbackCursorTarget,
   playbackPlayhead,
+  playbackTransport = null,
   followPlayback = true,
   onNoteClick,
   onPlaceNoteAt,
@@ -11873,6 +11819,7 @@ export default function ScoreEditor({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const osmdRef = useRef<any>(null);
   const renderedNotesRef = useRef<RenderedNote[]>([]);
+  const playheadElementRef = useRef<HTMLDivElement | null>(null);
   const ghostNoteIndexRef = useRef<GhostNoteSpatialIndex>({ byMeasureId: new Map(), bySystemStaff: new Map() });
   const geometryProxyRef = useRef(new GeometryProxy());
   const activeVisualTargetsRef = useRef<SVGElement[]>([]);
@@ -12180,52 +12127,11 @@ export default function ScoreEditor({
     return true;
   }, []);
 
-  const scrollPlaybackTargetIntoView = useCallback((target: PlaybackCursorTarget, behavior: ScrollBehavior = 'smooth') => {
+  /** Keeps the playhead visible: page to its system when it changes, centre it horizontally. */
+  const scrollPlaybackPlacementIntoView = useCallback((placement: PlaybackPlayheadPlacement, behavior: ScrollBehavior = 'smooth') => {
     const viewport = viewportRef.current;
     if (!viewport) return false;
-    const overlay = measureLayoutOverlaysRef.current.find((entry) => entry.measureNumber === target.measureNumber);
-    if (!overlay) return false;
-
-    const rect = visibleMeasureRectForStaff(overlay, staffDetailsByMeasureRef.current, coreDocument);
-    const marginX = Math.min(160, Math.max(32, viewport.clientWidth * 0.18));
-    const marginY = Math.min(140, Math.max(32, viewport.clientHeight * 0.22));
-    const viewportLeft = viewport.scrollLeft;
-    const viewportTop = viewport.scrollTop;
-    const viewportRight = viewportLeft + viewport.clientWidth;
-    const viewportBottom = viewportTop + viewport.clientHeight;
-    const rectRight = rect.x + rect.width;
-    const rectBottom = rect.y + rect.height;
-
-    let nextLeft = viewportLeft;
-    let nextTop = viewportTop;
-    if (rect.x < viewportLeft + marginX) {
-      nextLeft = rect.x - marginX;
-    } else if (rectRight > viewportRight - marginX) {
-      nextLeft = rectRight - viewport.clientWidth + marginX;
-    }
-    if (rect.y < viewportTop + marginY) {
-      nextTop = rect.y - marginY;
-    } else if (rectBottom > viewportBottom - marginY) {
-      nextTop = rectBottom - viewport.clientHeight + marginY;
-    }
-
-    nextLeft = clamp(nextLeft, 0, Math.max(viewport.scrollWidth - viewport.clientWidth, 0));
-    nextTop = clamp(nextTop, 0, Math.max(viewport.scrollHeight - viewport.clientHeight, 0));
-    if (Math.abs(nextLeft - viewportLeft) < 1 && Math.abs(nextTop - viewportTop) < 1) return true;
-
-    viewport.scrollTo({ left: nextLeft, top: nextTop, behavior });
-    return true;
-  }, [coreDocument]);
-
-  const scrollPlaybackPlayheadIntoView = useCallback((playhead: PlaybackPlayheadSnapshot, behavior: ScrollBehavior = 'smooth') => {
-    const viewport = viewportRef.current;
-    if (!viewport) return false;
-    const rect = resolvePlayheadRect(playhead, measureLayoutOverlaysRef.current, staffDetailsByMeasureRef.current);
-    if (!rect) return false;
-    const activeMeasureOverlay = measureLayoutOverlaysRef.current.find((entry) => entry.measureNumber === playhead.measureNumber) ?? null;
-    const activeSystemOverlay = activeMeasureOverlay
-      ? systemLayoutOverlaysRef.current.find((entry) => entry.systemIndex === activeMeasureOverlay.systemIndex) ?? null
-      : null;
+    const activeSystemOverlay = systemLayoutOverlaysRef.current.find((entry) => entry.systemIndex === placement.systemIndex) ?? null;
 
     const marginX = Math.min(220, Math.max(48, viewport.clientWidth * 0.25));
     const topDockOffset = 24;
@@ -12236,23 +12142,24 @@ export default function ScoreEditor({
 
     let nextLeft = viewportLeft;
     let nextTop = viewportTop;
-    if (rect.x < viewportLeft + marginX || rect.x > viewportRight - marginX) {
-      nextLeft = rect.x - (viewport.clientWidth / 2);
+    if (placement.x < viewportLeft + marginX || placement.x > viewportRight - marginX) {
+      nextLeft = placement.x - (viewport.clientWidth / 2);
     }
     if (activeSystemOverlay) {
       const systemTop = Math.max(activeSystemOverlay.domRect.y - topDockOffset, 0);
       if (lastPlaybackFollowSystemRef.current !== activeSystemOverlay.systemIndex) {
         nextTop = systemTop;
-      } else if (rect.y < viewportTop + topDockOffset) {
+      } else if (placement.y < viewportTop + topDockOffset) {
         nextTop = systemTop;
-      } else if (rect.y + rect.height > viewportBottom - topDockOffset) {
+      } else if (placement.y + placement.height > viewportBottom - topDockOffset) {
         nextTop = systemTop;
       }
-    } else if (rect.y < viewportTop + topDockOffset) {
-      nextTop = rect.y - topDockOffset;
-    } else if (rect.y + rect.height > viewportBottom - topDockOffset) {
-      nextTop = rect.y + rect.height - viewport.clientHeight + topDockOffset;
+    } else if (placement.y < viewportTop + topDockOffset) {
+      nextTop = placement.y - topDockOffset;
+    } else if (placement.y + placement.height > viewportBottom - topDockOffset) {
+      nextTop = placement.y + placement.height - viewport.clientHeight + topDockOffset;
     }
+    lastPlaybackFollowSystemRef.current = placement.systemIndex;
 
     nextLeft = clamp(nextLeft, 0, Math.max(viewport.scrollWidth - viewport.clientWidth, 0));
     nextTop = clamp(nextTop, 0, Math.max(viewport.scrollHeight - viewport.clientHeight, 0));
@@ -12260,7 +12167,7 @@ export default function ScoreEditor({
 
     viewport.scrollTo({ left: nextLeft, top: nextTop, behavior });
     return true;
-  }, [coreDocument]);
+  }, []);
 
   const scrollToPageNumber = useCallback((pageNumber: number, behavior: ScrollBehavior = 'smooth') => {
     const viewport = viewportRef.current;
@@ -12317,12 +12224,28 @@ export default function ScoreEditor({
     const overlay = findMeasureOverlayForPoint(measureLayoutOverlaysRef.current, domPoint)
       ?? findNearestMeasureOverlayForPoint(measureLayoutOverlaysRef.current, domPoint);
     if (!overlay) return;
-    const visibleRect = visibleMeasureRectForStaff(overlay, staffDetailsByMeasureRef.current, coreDocument);
-    const ratio = clamp((domPoint.x - visibleRect.x) / Math.max(visibleRect.width, 1), 0, 1);
+    // Seek to the musical position under the click, through the same note geometry the playhead
+    // uses, so the playhead lands where the user clicked. Cursor targets are in whole notes.
+    const timing = getEffectiveMeasureTiming(coreDocument, { measureId: overlay.measureId, measureNumber: overlay.measureNumber });
+    const lengthWholes = timing ? timing.durationDivisions / Math.max(timing.divisions, 1) / 4 : 1;
+    const measureRect = visibleMeasureRectForAllStaves(overlay, staffDetailsByMeasureRef.current);
+    const geometry = buildPlaybackGeometry(
+      [{ measureNumber: overlay.measureNumber, x: measureRect.x, y: measureRect.y, width: measureRect.width, height: measureRect.height, systemIndex: overlay.systemIndex }],
+      renderedNotesRef.current
+        .filter((entry) => entry.note.measureNumber === overlay.measureNumber)
+        .map((entry) => ({
+          measureNumber: entry.note.measureNumber,
+          positionWholes: entry.note.timestampNum / Math.max(entry.note.timestampDen, 1),
+          x: entry.domCenter.x,
+          isRest: Boolean(entry.note.isRest),
+          item: entry,
+        })),
+    );
+    const positionWholes = geometry.positionForX(overlay.measureNumber, domPoint.x, lengthWholes) ?? 0;
     onPlaybackSeekRequest({
       measureNumber: overlay.measureNumber,
-      timestampNum: Math.round(ratio * 64),
-      timestampDen: 64,
+      timestampNum: Math.round(positionWholes * 960),
+      timestampDen: 960,
     });
   }, [coreDocument, onPlaybackSeekRequest, playbackState]);
 
@@ -14436,52 +14359,19 @@ export default function ScoreEditor({
   }, [selectedNote, noteInputMode]);
 
   useEffect(() => {
+    // The playhead line and the note highlight replace OSMD's own cursor during playback; they
+    // are drawn per frame by the playback loop below. Positioning the OSMD cursor walked the
+    // score from its start on every update and was never on the sounding note between onsets.
+    lastPlaybackFollowMeasureRef.current = null;
+    lastPlaybackFollowSystemRef.current = null;
     const osmd = osmdRef.current;
     if (!osmd?.GraphicSheet) return;
-
-    if (!playbackActive || !playbackCursorTarget) {
-      lastPlaybackFollowMeasureRef.current = null;
-      lastPlaybackFollowSystemRef.current = null;
-      if (osmd.cursor) {
-        osmd.cursor.hide();
-      }
-      return;
-    }
-
     try {
-      if (!osmd.cursor) {
-        osmd.enableOrDisableCursors(true);
-        patchCursorPointerEvents(osmd);
-      }
-      positionPlaybackCursor(osmd, playbackCursorTarget);
+      osmd.cursor?.hide();
     } catch (err) {
-      dbg.warn('score', 'playback cursor update failed:', err);
+      dbg.warn('score', 'cursor hide failed:', err);
     }
-
-    if (followPlayback) {
-      const behavior: ScrollBehavior = lastPlaybackFollowMeasureRef.current === playbackCursorTarget.measureNumber
-        ? 'auto'
-        : 'smooth';
-      if (playbackPlayhead) {
-        scrollPlaybackPlayheadIntoView(playbackPlayhead, behavior);
-      } else {
-        scrollPlaybackTargetIntoView(playbackCursorTarget, behavior);
-      }
-    }
-    const activeMeasureOverlay = measureLayoutOverlaysRef.current.find((entry) => entry.measureNumber === playbackCursorTarget.measureNumber) ?? null;
-    lastPlaybackFollowSystemRef.current = activeMeasureOverlay?.systemIndex ?? null;
-    lastPlaybackFollowMeasureRef.current = playbackCursorTarget.measureNumber;
-  }, [
-    followPlayback,
-    noteInputAnchor,
-    noteInputMode,
-    playbackActive,
-    playbackCursorTarget,
-    playbackPlayhead,
-    scrollPlaybackPlayheadIntoView,
-    scrollPlaybackTargetIntoView,
-    selectedNote,
-  ]);
+  }, [playbackActive]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -14953,22 +14843,8 @@ export default function ScoreEditor({
       tintedGuitarFretElements.add(element);
     };
 
-    if (playbackActive && playbackPlayhead) {
-      // Highlight only notes whose onset has actually been reached by the visible playhead.
-      const notesInMeasure = renderedNotesRef.current.filter(
-        (e) => e.note.measureNumber === playbackPlayhead.measureNumber,
-      );
-      if (notesInMeasure.length > 0) {
-        const activeOnset = resolveReachedPlaybackOnset(
-          notesInMeasure.map((entry) => entry.note),
-          playbackPlayhead.progressWithinMeasure,
-        );
-        if (activeOnset) {
-          notesInMeasure
-            .filter((e) => timestampsEqual(e.note.timestampNum, e.note.timestampDen, activeOnset.timestampNum, activeOnset.timestampDen))
-            .forEach((e) => tintAndTrackRenderedNote(e.tintElement, '#1a56db'));
-        }
-      }
+    if (playbackActive) {
+      // The played-note highlight is drawn by the playback loop, frame by frame.
     } else {
       // Selection highlighting when not playing. During note input the blue
       // focus stays on the last entered note/rest while the input cursor can
@@ -15035,7 +14911,212 @@ export default function ScoreEditor({
     tintedGuitarFretElementsRef.current = [...tintedGuitarFretElements];
 
     return clearActiveScoreTints;
-  }, [activeVisualTargets, clearActiveScoreTints, coreDocument, noteInputAnchor, noteInputMode, playbackActive, playbackPlayhead, selectedNote, selectedNotes, visualSelectionOnly, xml]);
+  }, [activeVisualTargets, clearActiveScoreTints, coreDocument, noteInputAnchor, noteInputMode, playbackActive, selectedNote, selectedNotes, visualSelectionOnly, xml]);
+
+  // ── Playback loop ────────────────────────────────────────────────────────────────────────
+  // While playing, every animation frame asks the transport what the listener hears when this
+  // frame reaches the screen, and writes the playhead (a compositor transform), the highlight
+  // and the follow-scroll straight to the DOM. Nothing here goes through React state.
+  const playbackActiveRef = useRef(playbackActive);
+  playbackActiveRef.current = playbackActive;
+  useEffect(() => {
+    if (!playbackTransport) return;
+    let running = false;
+    let seenReactActive = playbackActiveRef.current;
+    let frameHandle = 0;
+    let lastFrameTime = 0;
+    const recentFrameDeltas: number[] = [];
+    let frameIntervalMs = 1000 / 60;
+    let geometrySource: { notes: RenderedNote[]; overlays: RenderedMeasureLayoutOverlay[] } | null = null;
+    let geometry: PlaybackGeometry<RenderedNote> | null = null;
+    let activeOnsetKey: string | null = null;
+    let tinted: SVGElement[] = [];
+    let lastTransform = '';
+    let lastHeight = -1;
+    let lastMeasureAttr = '';
+    let lastFollowMeasure: number | null = null;
+    let framesSinceFollow = 0;
+    let lastTimeAttrAt = 0;
+
+    const untint = () => {
+      tinted.forEach((element) => tintRenderedNote(element, null));
+      tinted = [];
+    };
+
+    const currentGeometry = () => {
+      const notes = renderedNotesRef.current;
+      const overlays = measureLayoutOverlaysRef.current;
+      if (geometry && geometrySource?.notes === notes && geometrySource.overlays === overlays) return geometry;
+      geometrySource = { notes, overlays };
+      geometry = buildPlaybackGeometry(
+        overlays.map((overlay) => {
+          const rect = visibleMeasureRectForAllStaves(overlay, staffDetailsByMeasureRef.current);
+          return { measureNumber: overlay.measureNumber, x: rect.x, y: rect.y, width: rect.width, height: rect.height, systemIndex: overlay.systemIndex };
+        }),
+        notes.map((entry) => {
+          const positionWholes = entry.note.timestampNum / Math.max(entry.note.timestampDen, 1);
+          return {
+            measureNumber: entry.note.measureNumber,
+            positionWholes,
+            x: entry.domCenter.x,
+            isRest: Boolean(entry.note.isRest),
+            isMeasureRest: Boolean(entry.note.isRest && entry.note.durationType === 'whole' && positionWholes === 0),
+            item: entry,
+          };
+        }),
+      );
+      activeOnsetKey = null;
+      if (syncProbe()) {
+        probeGeometry(notes.map((entry) => ({
+          measureNumber: entry.note.measureNumber,
+          positionWholes: entry.note.timestampNum / Math.max(entry.note.timestampDen, 1),
+          midi: selectedNoteMidi(entry.note),
+          x: entry.domCenter.x,
+          y: entry.domCenter.y,
+        })));
+      }
+      return geometry;
+    };
+
+    const draw = (frameTime: number) => {
+      // The frame drawn now is on screen one refresh later; show what is heard then.
+      const position = playbackTransport.read(frameTime + frameIntervalMs);
+      if (!position?.playing) {
+        stopLoop();
+        return;
+      }
+      if (seenReactActive !== playbackActiveRef.current) {
+        // React's selection tints were just cleared or re-applied; draw the highlight again.
+        seenReactActive = playbackActiveRef.current;
+        activeOnsetKey = null;
+      }
+      const playheadElement = playheadElementRef.current;
+      const viewport = viewportRef.current;
+      const { location } = position;
+      const span = position.timeline.spans[location.spanIndex];
+      const activeGeometry = currentGeometry();
+      const placement = activeGeometry.place(
+        location.measureNumber,
+        location.positionWholes,
+        span?.lengthWholes ?? location.positionWholes,
+        position.nextMeasureNumber,
+      );
+
+      if (playheadElement && placement) {
+        const transform = `translate3d(${placement.x.toFixed(2)}px, ${(placement.y - 6).toFixed(2)}px, 0)`;
+        if (transform !== lastTransform) {
+          playheadElement.style.transform = transform;
+          lastTransform = transform;
+        }
+        if (Math.abs(placement.height - lastHeight) > 0.5) {
+          playheadElement.style.height = `${placement.height + 12}px`;
+          lastHeight = placement.height;
+        }
+        const measureAttr = String(placement.measureNumber);
+        if (measureAttr !== lastMeasureAttr) {
+          playheadElement.setAttribute('data-playhead-measure', measureAttr);
+          playheadElement.style.visibility = 'visible';
+          lastMeasureAttr = measureAttr;
+        }
+      }
+
+      const onset = activeGeometry.onsetAt(location.measureNumber, location.positionWholes);
+      const onsetKey = onset ? `${location.spanIndex}:${onset.key}` : null;
+      if (onsetKey !== activeOnsetKey) {
+        activeOnsetKey = onsetKey;
+        untint();
+        onset?.items.forEach((entry) => {
+          if (!entry.tintElement) return;
+          tintRenderedNote(entry.tintElement, '#1a56db');
+          tinted.push(entry.tintElement);
+        });
+        if (onset && syncProbe()) {
+          probeVisual({
+            measureNumber: onset.measureNumber,
+            positionWholes: onset.positionWholes,
+            pitches: onset.items.map((entry) => selectedNoteMidi(entry.note)).filter((midi): midi is number => midi != null),
+          });
+        }
+      }
+
+      if (followPlayback && placement) {
+        framesSinceFollow += 1;
+        const measureChanged = lastFollowMeasure !== placement.measureNumber;
+        if (measureChanged || framesSinceFollow >= 12) {
+          scrollPlaybackPlacementIntoView(placement, measureChanged ? 'smooth' : 'auto');
+          lastFollowMeasure = placement.measureNumber;
+          framesSinceFollow = 0;
+        }
+      }
+
+      if (viewport && frameTime - lastTimeAttrAt >= 100) {
+        viewport.setAttribute('data-playback-time-ms', String(Math.round(position.scoreSeconds * 1000)));
+        lastTimeAttrAt = frameTime;
+      }
+    };
+
+    const frame = (frameTime: number) => {
+      if (!running) return;
+      if (lastFrameTime > 0) {
+        const delta = frameTime - lastFrameTime;
+        if (delta > 4 && delta < 100) {
+          recentFrameDeltas.push(delta);
+          if (recentFrameDeltas.length > 30) recentFrameDeltas.shift();
+          // The display refresh is the shortest recent interval: slow frames are late, not longer.
+          frameIntervalMs = Math.max(6, Math.min(34, Math.min(...recentFrameDeltas)));
+        }
+      }
+      lastFrameTime = frameTime;
+      try {
+        draw(frameTime);
+      } catch (err) {
+        dbg.warn('score', 'playback frame failed:', err);
+      }
+      if (running) frameHandle = requestAnimationFrame(frame);
+    };
+
+    function startLoop() {
+      if (running) return;
+      running = true;
+      lastFrameTime = 0;
+      activeOnsetKey = null;
+      lastTransform = '';
+      lastHeight = -1;
+      lastMeasureAttr = '';
+      lastFollowMeasure = null;
+      framesSinceFollow = 0;
+      // Draw at once: the sound starts within milliseconds of Play.
+      draw(performance.now());
+      if (running) frameHandle = requestAnimationFrame(frame);
+    }
+
+    function stopLoop() {
+      if (!running) return;
+      running = false;
+      cancelAnimationFrame(frameHandle);
+      untint();
+      const playheadElement = playheadElementRef.current;
+      if (playheadElement) playheadElement.style.visibility = 'hidden';
+      lastMeasureAttr = '';
+    }
+
+    const syncRunState = () => {
+      if (playbackTransport.read()?.playing) startLoop();
+      else stopLoop();
+    };
+    const unsubscribe = playbackTransport.subscribe(syncRunState);
+    syncRunState();
+    return () => {
+      unsubscribe();
+      stopLoop();
+    };
+  }, [followPlayback, playbackTransport, scrollPlaybackPlacementIntoView]);
+
+  useEffect(() => {
+    // Outside playback the attribute shows the stopped/paused position.
+    if (playbackActive) return;
+    viewportRef.current?.setAttribute('data-playback-time-ms', playbackPlayhead ? String(playbackPlayhead.currentTimeMs) : '');
+  }, [playbackActive, playbackPlayhead]);
 
   // Attach/detach pointer listener on the window so clicks always arrive even
   // when OSMD's inner <svg> elements swallow the event. The handler itself
@@ -16854,7 +16935,6 @@ export default function ScoreEditor({
           data-playback-active={playbackActive && playbackCursorTarget ? 'true' : 'false'}
           data-playback-measure={playbackCursorTarget?.measureNumber ?? ''}
           data-playback-timestamp={playbackCursorTarget ? `${playbackCursorTarget.timestampNum}/${playbackCursorTarget.timestampDen}` : ''}
-          data-playback-time-ms={playbackPlayhead?.currentTimeMs ?? ''}
           data-note-input-gesture-policy={noteInputMode && !inputByDurationMode ? 'direct-entry' : 'navigation'}
           data-tablet-entry-phase={tabletEntryVisual.phase}
           className="h-full overflow-auto outline-none"
@@ -16899,31 +16979,22 @@ export default function ScoreEditor({
               <div
                 className="pointer-events-none absolute inset-0 z-20"
               >
-                {playbackActive && playbackPlayhead && (() => {
-                  const rect = resolvePlayheadRect(
-                    playbackPlayhead,
-                    measureLayoutOverlays,
-                    staffDetailsByMeasureRef.current,
-                  );
-                  if (!rect) return null;
-                  return (
-                    <div
-                      className="absolute top-0 w-0"
-                      data-testid="score-playhead"
-                      data-playhead-measure={rect.measureNumber}
-                      style={{
-                        left: `${rect.x}px`,
-                        top: `${rect.y - 6}px`,
-                        height: `${rect.height + 12}px`,
-                        borderLeft: '2px solid #2563eb',
-                        boxShadow: '0 0 0 1px rgba(255,255,255,0.9)',
-                        transition: 'left 48ms linear, top 80ms ease, height 80ms ease',
-                        transform: 'translateZ(0)',
-                        willChange: 'left, top, height',
-                      }}
-                    />
-                  );
-                })()}
+                {playbackTransport && (
+                  // Always mounted; placed, revealed and moved by the playback loop (a compositor
+                  // transform per frame). React never writes its position, so a re-render cannot
+                  // move it back, and nothing has to mount when Play is pressed.
+                  <div
+                    ref={playheadElementRef}
+                    className="absolute left-0 top-0 w-0"
+                    data-testid="score-playhead"
+                    style={{
+                      visibility: 'hidden',
+                      borderLeft: '2px solid #2563eb',
+                      boxShadow: '0 0 0 1px rgba(255,255,255,0.9)',
+                      willChange: 'transform',
+                    }}
+                  />
+                )}
                 {measureLayoutOverlays.map((overlay) => {
                   const staffIndex = staffIndexForMeasureId(coreDocument, overlay.measureId);
                   const visibleRect = visibleMeasureRectForStaff(overlay, staffDetailsByMeasureRef.current, coreDocument);

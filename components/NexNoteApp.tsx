@@ -102,6 +102,7 @@ import { useI18n } from '@/lib/i18n';
 import { writeLeftNotationSidebarCollapsed } from '@/lib/left-notation-sidebar';
 import { type NativeEditCommand, shouldUseNativeMenuClipboardCommand, shouldUseNativeMenuHistoryCommand } from '@/lib/native-clipboard-shortcuts';
 import { preferFlatsForKeySignature } from '@/src/score-input/midi-input';
+import { installPlaybackSyncProbe, probeMark, syncProbeRequested } from '@/lib/playback-sync-probe';
 
 const ScoreEditor = dynamic(() => import('@/components/ScoreEditor'), { ssr: false });
 const ScorePreview = dynamic(() => import('@/components/ScorePreview'), { ssr: false });
@@ -714,6 +715,10 @@ export default function Home({ searchParams }: HomeProps) {
   const [pencilFocus, setPencilFocus] = useState(false);
   const [pencilInputDevice, setPencilInputDevice] = useState(false);
   useEffect(() => {
+    // Playback sync measurement (docs/playback-sync.md); dormant unless requested.
+    if (syncProbeRequested()) installPlaybackSyncProbe();
+  }, []);
+  useEffect(() => {
     if (window.matchMedia('(pointer: coarse)').matches) {
       setPencilFocus(true);
       setPencilInputDevice(true);
@@ -1067,7 +1072,7 @@ export default function Home({ searchParams }: HomeProps) {
   const {
     playbackState, currentMeasure, currentBeat, totalBeats, midiLoading,
     ensureMidiLoaded, preloadMidi, prewarm, play, pause, stop, seek, seekToCursorTarget, startFromNote, previewNote, previewNotes, setTempo, tempoOverride, hasMidi, playbackError, playbackCursorTarget, playhead,
-    metronomeEnabled, setMetronomeEnabled, setMixer,
+    metronomeEnabled, setMetronomeEnabled, setMixer, transport: playbackTransport,
   } = usePlayback({ coreDocument, selectedNoteRef: playbackSelectedNoteRef, selectedMeasureNumbers, sampleBank: playbackSampleBank });
 
   const markMidiReady = useCallback((loadedXml: string) => {
@@ -1524,6 +1529,7 @@ export default function Home({ searchParams }: HomeProps) {
           const startKey = playbackStartNoteKeyRef.current;
           const noteKey = startNote ? playbackNoteKey(startNote) : null;
           const fromNote = startNote && (playbackState === 'stopped' || noteKey !== startKey) ? startNote : null;
+          probeMark('press');
           void (async () => {
             const [ready] = await Promise.all([
               ensureMidiLoaded(xml),
@@ -3290,6 +3296,7 @@ export default function Home({ searchParams }: HomeProps) {
 
   const handlePlay = useCallback(async () => {
     if (!xml) return;
+    probeMark('press');
     recordBugReportEvent('playback', 'play-request', {
       fromState: playbackState,
       selectedNote: activePlaybackNote ? {
@@ -3300,10 +3307,12 @@ export default function Home({ searchParams }: HomeProps) {
         timestampDen: activePlaybackNote.timestampDen,
       } : null,
     });
+    probeMark('play-handler');
     const [ready] = await Promise.all([
       ensureMidiLoaded(xml),
       prewarm(),
     ]);
+    probeMark('play-ready');
     if (!ready) return;
     markMidiReady(xml);
     playbackStartNoteKeyRef.current = activePlaybackNote ? playbackNoteKey(activePlaybackNote) : null;
@@ -4885,6 +4894,7 @@ export default function Home({ searchParams }: HomeProps) {
       playbackActive={viewOnly ? false : playbackState === 'playing'}
       playbackCursorTarget={viewOnly ? null : playbackCursorTarget}
       playbackPlayhead={viewOnly ? null : playhead}
+      playbackTransport={viewOnly ? null : playbackTransport}
       followPlayback={!viewOnly}
       onNoteClick={viewOnly ? () => undefined : handleScoreNoteClick}
       pencilOnlyInput={(pencilInputDevice || pencilFocus) && noteInputMode && !printView}
@@ -5245,6 +5255,7 @@ export default function Home({ searchParams }: HomeProps) {
                     currentMeasure={currentMeasure}
                     totalBeats={totalBeats}
                     currentBeat={currentBeat}
+                    playbackTransport={playbackTransport}
                     coreDocument={deferredCoreDocument}
                     midiLoading={midiLoading}
                     hasMidi={hasMidi}
