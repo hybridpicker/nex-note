@@ -13935,7 +13935,11 @@ export default function ScoreEditor({
               return clientRectToContainer(container, noteRect);
             })
             : [];
-          if (coreDocument && (clickedVisualTargets.length > 0 || e.shiftKey || e.metaKey || e.ctrlKey)) {
+          // Shift or Cmd/Ctrl on empty space picks the nearest note so a note
+          // range can be extended. When measures are already selected the click
+          // extends them instead, and picking a note would replace them by it.
+          const modifierPicksNote = (e.shiftKey || e.metaKey || e.ctrlKey) && currentSelection.length === 0;
+          if (coreDocument && (clickedVisualTargets.length > 0 || modifierPicksNote)) {
             nearest = bridgeResolveSemanticMeasureClickTarget(
               coreDocument,
               measureBridge.measureId,
@@ -13944,7 +13948,7 @@ export default function ScoreEditor({
               measureOverlay?.domRect ?? null,
             );
           }
-          if (!nearest && (clickedVisualTargets.length > 0 || e.shiftKey || e.metaKey || e.ctrlKey)) {
+          if (!nearest && (clickedVisualTargets.length > 0 || modifierPicksNote)) {
             nearest = findNearestRenderedNoteInMeasure(renderedNotesRef.current, domPoint, measureBridge.measureNumber);
           }
         }

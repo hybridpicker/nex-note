@@ -15,5 +15,8 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exit 0
 fi
 
-echo "nex-note post-commit: building macOS app artifacts"
-npm run electron:build
+# The DMG is built from the new commit in a separate checkout and in the background, so the
+# commit returns at once and uncommitted work in progress is neither included nor disturbed.
+# Result: dist/dmg/Nex Note-latest.dmg (log: dist/dmg/build.log).
+echo "nex-note post-commit: building the latest DMG in the background"
+npm run --silent dmg:latest -- --background || echo "nex-note post-commit: could not start the DMG build"

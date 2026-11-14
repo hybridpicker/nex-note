@@ -13,6 +13,7 @@ import {
   type PersistedChatTaskState,
 } from '@/lib/chat-task-state';
 import { useI18n } from '@/lib/i18n';
+import { ARRANGER_PRESETS, arrangerPresetText } from '@/lib/arranger-presets';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -323,8 +324,8 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
     }));
   }, [scoreKey]);
 
-  async function send() {
-    const msg = input.trim();
+  async function send(preset?: string) {
+    const msg = (preset ?? input).trim();
     if (!msg || (isBenchmark && !xml)) return;
     setInput('');
     setMessages((m) => [...m, { role: 'user', text: msg }]);
@@ -611,6 +612,31 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
         <div ref={bottomRef} />
       </div>
 
+      {/* Arranger quick actions: one click sends the request, Alt/Option+click puts it in the input to edit. */}
+      {xml && !isBenchmark && !pendingConfirmation && (
+        <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label={locale === 'de' ? 'Arrangieren' : 'Arrange'} data-testid="arranger-presets">
+          {ARRANGER_PRESETS.map((preset) => {
+            const text = arrangerPresetText(preset, locale);
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={loading}
+                data-arranger-preset={preset.id}
+                title={`${text.hint}${selection?.selectionCount ? (locale === 'de' ? ' (für die Auswahl)' : ' (for the selection)') : ''}`}
+                onClick={(event) => {
+                  if (event.altKey) setInput(preset.prompt);
+                  else return send(preset.prompt);
+                }}
+                className="rounded-full border border-nex-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-nex-accent hover:text-nex-accent disabled:opacity-40"
+              >
+                {text.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Input */}
       <div className="flex gap-2 items-end">
         <textarea
@@ -646,7 +672,7 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
           {copyState === 'copied' ? t('chat.copied') : copyState === 'failed' ? t('chat.copyFailed') : t('chat.copyLog')}
         </button>
         <button
-          onClick={send}
+          onClick={() => send()}
           disabled={!input.trim() || loading || (isBenchmark && !xml)}
           className="nex-brand-active px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30 transition-colors shrink-0"
         >

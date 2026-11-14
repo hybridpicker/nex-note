@@ -56,6 +56,8 @@ export function classifyAppSurfaces(paths, options = {}) {
     matchesPrefix(filePath, ELECTRON_PREFIXES)
     || filePath.startsWith('scripts/electron')
     || filePath === 'scripts/refresh-local-electron-app.mjs'
+    || filePath === 'scripts/build-latest-dmg.mjs'
+    || filePath === 'scripts/latest-dmg-helpers.mjs'
     || filePath === 'scripts/prepare-electron-package.mjs'
     || filePath === 'scripts/verify-electron-package.mjs'
   ));

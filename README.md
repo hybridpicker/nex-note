@@ -53,7 +53,7 @@ It does not try to replace MuseScore, Dorico, Sibelius, or Guitar Pro. It focuse
 - A validator checks the result and can trigger a repair pass when AI output introduces notation errors.
 
 **Import and export**
-- Opens `.musicxml`, `.xml`, `.mxl`, `.mscz`, Guitar Pro, MIDI, and `.nxn` project files.
+- Opens `.musicxml`, `.xml`, `.mxl`, `.mscz`/`.mscx`, Guitar Pro, MIDI, Capella, Power Tab, MEI, and `.nxn` project files; PDFs and photos of sheet music are read with Audiveris.
 - Exports `.mxl`, MusicXML, MIDI, `.abc`, and practice-pack JSON.
 - Checks MuseScore round-trips through the MuseScore CLI.
 - Imports PDFs and images with Audiveris. This path always needs review and correction.

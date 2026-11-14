@@ -83,7 +83,8 @@ npm run harness:metrics -- .nex/harness-real-cli-events-YYYY-MM-DD.jsonl
 The full surface matrix and handoff rules are documented in
 [docs/multi-app-development-flow.md](./docs/multi-app-development-flow.md).
 Run `npm run hooks:install` to include the app-surface plan in the repository's
-pre-commit checks.
+pre-commit checks. The post-commit hook then builds a DMG of each new commit in
+the background (`npm run dmg:latest`, output `dist/dmg/Nex Note-latest.dmg`).
 
 ## Code Map
 

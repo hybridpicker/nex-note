@@ -61,6 +61,20 @@ test('monophonic guitar detection follows C-F-E-C fundamentals instead of their 
   assert.deepEqual(detectedMidis, playedMidis);
 });
 
+test('monophonic detection reads the newest half of an analyser buffer, not the stale one', () => {
+  // getFloatTimeDomainData returns the most recent fftSize samples, oldest
+  // first. A new note in the second half must win over the old one.
+  const older = syntheticGuitarTone(48);
+  const newer = syntheticGuitarTone(55);
+  const buffer = new Float32Array(8192);
+  buffer.set(older.subarray(0, 4096), 0);
+  buffer.set(newer.subarray(0, 4096), 4096);
+  assert.equal(
+    detectPitchFromTimeDomain(buffer, { sampleRate: SAMPLE_RATE, minMidi: 40, maxMidi: 88 })?.midi,
+    55,
+  );
+});
+
 test('monophonic detection rejects an input signal that is too quiet', () => {
   assert.equal(
     detectPitchFromTimeDomain(

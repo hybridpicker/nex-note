@@ -175,7 +175,11 @@ again and press Run once in Xcode. This does not affect a standalone build.
   and must be removed before any public distribution.
 - Browser-based import through the iPad Files picker is available. Native
   document export/share behavior and microphone pitch entry should be verified
-  on the physical iPad before treating them as complete.
+  on the physical iPad before treating them as complete. The same holds for the
+  `Guitar amp · USB` input profile: iPadOS accepts a class-compliant USB audio
+  interface such as a Spark amp as an audio input, but detection through it, the
+  automatic amp choice and the AudioWorklet sample tap in WKWebView have not been
+  run on the device yet.
 - Do not add an automatic reload-on-resume that discards unsaved score state.
   Fast Refresh updates code while preserving component state when possible.
 
@@ -230,6 +234,15 @@ free personal team. Set the paid team in `ios/signing.local.xcconfig` and run
 `npm run ipad:install`. If the iPad reports that the application identifier does
 not match, the installed copy belongs to another team and has to be deleted first,
 which also deletes that copy's local data.
+
+### The install stops with "Another next build process is already running"
+
+`ipad:sync` runs the production build in the repository. Next.js allows one build
+there at a time, so the install fails while another build is running, for example
+an `electron:refresh`, a second coding session, or an older post-commit hook that
+still builds in place. Wait until that build has finished and run
+`npm run ipad:install` again. The current post-commit hook (`npm run hooks:install`)
+builds its DMG outside the repository and no longer causes this.
 
 ### The app is not trusted or Developer Mode is unavailable
 

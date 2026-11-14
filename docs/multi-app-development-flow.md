@@ -81,6 +81,11 @@ npm run electron:verify
 
 For release-oriented DMG and ZIP output, use `npm run electron:build`.
 
+For a DMG of the latest commit that ignores uncommitted work, use
+`npm run dmg:latest` (output: `dist/dmg/Nex Note-latest.dmg`). The tracked
+post-commit hook runs it in the background after every commit; see
+`development.md` under “Always-current DMG”.
+
 ### iPad native change
 
 Run:

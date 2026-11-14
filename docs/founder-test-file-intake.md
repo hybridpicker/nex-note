@@ -28,9 +28,10 @@ Do not submit copyrighted files without permission. Do not submit material that 
 - MusicXML and XML: primary supported exchange format.
 - MXL: compressed MusicXML import/export path.
 - MSCZ: experimental MuseScore CLI-dependent import/export path.
-- GuitarPro: experimental importer tooling for `.gp`, `.gp4`, `.gp5`, `.gp6`, and `.gpx`.
+- GuitarPro: experimental importer tooling for `.gp`, `.gp3`, `.gp4`, `.gp5`, `.gp6`, `.gpx`, and `.gtp`.
+- Other notation programs through the MuseScore CLI, untested with real files so far: uncompressed MuseScore (`.mscx`), Capella (`.cap`, `.capx`), Power Tab (`.ptb`), MEI, Overture (`.ove`). Sibelius, Finale and Dorico files must be exported as MusicXML first.
 - MIDI: experimental import reconstruction; MIDI export/playback paths are further along.
-- PDF and photos: review-required assisted workflow. Do not expect perfect conversion, and always validate the result manually.
+- PDF and photos: review-required assisted workflow. Do not expect perfect conversion, and always validate the result manually. Multi-page PDFs are read completely; when that fails, only page 1 is imported and the app says so. Pages without staves (a title page, a page of text) are skipped and named in the notice instead of failing the whole import.
 - NXN projects: local nex-note working project format for app testing.
 
 ## Private Fixture Convention

@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-Stand: 2026-07-10. Diese Liste dokumentiert die im Code tatsächlich verdrahteten Shortcuts. `Cmd` auf macOS entspricht `Ctrl` auf Windows/Linux, sofern nicht anders angegeben.
+Stand: 2026-11-11. Diese Liste dokumentiert die im Code tatsächlich verdrahteten Shortcuts. `Cmd` auf macOS entspricht `Ctrl` auf Windows/Linux, sofern nicht anders angegeben.
 
 ## Workspace
 
@@ -67,7 +67,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 
 | Shortcut | Aktion | Kontext |
 | --- | --- | --- |
-| `ArrowLeft` / `ArrowRight` | vorherige/nächste Note auswählen | Noteneditor |
+| `ArrowLeft` / `ArrowRight` | vorherige/nächste Note auswählen; in der Noteneingabe von Akkord zu Akkord, nicht durch die Töne eines Akkords | Noteneditor |
 | `Shift+ArrowLeft` / `Shift+ArrowRight` | Auswahl nach links/rechts erweitern | Noteneditor |
 | `Cmd/Ctrl+Shift+ArrowLeft` / `Cmd/Ctrl+Shift+ArrowRight` | Auswahl taktweise erweitern bzw. zurücknehmen: bis zur ersten Note des nächsten Takts (wie MuseScore) | Noteneditor |
 | `Cmd/Ctrl+ArrowLeft` / `Cmd/Ctrl+ArrowRight` | zur vorherigen/nächsten Taktgrenze springen | Noteneditor |
@@ -84,7 +84,7 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Cmd/Ctrl+X` | Auswahl ausschneiden | Noteneditor |
 | `Cmd/Ctrl+C` | Auswahl kopieren | Noteneditor |
 | `Cmd/Ctrl+V` | Clipboard an aktiver Auswahl einfügen; überschreibt die folgende Musik wie in MuseScore, unabhängig vom Insert/Overwrite-Modus | Noteneditor |
-| `Delete` / `Backspace` | Auswahl löschen; bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten. In der Noteneingabe nimmt `Backspace` die gerade eingegebene Note zurück: sie wird wieder zur Pause und der Cursor steht an ihrer Stelle (wie MuseScore), jeder weitere Druck geht eine Note weiter zurück | Noteneditor oder Noteneingabe |
+| `Delete` / `Backspace` | Auswahl löschen; mit der Maus ausgewählte Takte werden geleert (Pausen bleiben stehen); bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten. In der Noteneingabe nimmt `Backspace` die gerade eingegebene Note zurück: sie wird wieder zur Pause und der Cursor steht an ihrer Stelle (wie MuseScore), jeder weitere Druck geht eine Note weiter zurück | Noteneditor oder Noteneingabe |
 | `Shift+Delete` / `Shift+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
 | `Cmd/Ctrl+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
 | `Insert` | einen leeren Takt vor dem Takt der Auswahl einfügen; die Auswahl steht danach im neuen Takt (wie MuseScore `Ins`). Vor Takt 1 übernimmt der neue Takt Schlüssel, Tonart und Taktart; vor einem Auftakt wird nichts eingefügt | Noteneditor oder Noteneingabe |
@@ -221,6 +221,48 @@ MuseScore hat für Tonart, Taktart, Schlüssel, Wiederholungen und Linien keinen
 
 Bis November 2026 hing die Platzierung davon ab, ob der Zeiger links, auf oder rechts vom Notenkopf stand (links fügte ein und schob den Takt), und `Shift+Click` fügte ein. Seit M4 des Note-Entry-Mastery-Programms gilt MuseScores Regel (`NoteInput::putNote`).
 
+## Tastatur-Presets für Umsteiger (November 2026)
+
+Im Kopfbereich neben der Sprachauswahl steht die Auswahl `Tastaturbelegung`. Sie wird pro Gerät gespeichert (`nex-note.keyboardPreset`). Ein Preset ändert nur die unten genannten Tasten der Noteneingabe; alle übrigen Tasten dieser Datei gelten weiter. Die Tooltips der Werkzeugleisten zeigen weiterhin die Nex-Note-Tasten.
+
+Technisch übersetzt ein Preset die gedrückte Taste in die Nex-Note-Taste derselben Aktion, bevor die bestehenden Handler sie sehen (`src/score-input/keyboard-preset.ts`, Test: `test/keyboard-preset.test.ts`). In Eingabefeldern und Menüs greift es nicht.
+
+### Sibelius (Keypad)
+
+| Taste | Aktion |
+| --- | --- |
+| Ziffernblock `1` … `6` | 32tel, 16tel, Achtel, Viertel, Halbe, Ganze |
+| Ziffernblock `7` / `8` / `9` | Auflösungszeichen / Kreuz / B |
+| Ziffernblock `0` | Pause |
+| Ziffernblock `.` | Punktierung |
+| Ziffernblock `Enter` | Haltebogen |
+| Ziffernblock `/` `*` `-` | Akzent, Staccato, Tenuto |
+| `1` … `9` (Ziffernreihe) | Intervall darüber hinzufügen |
+| `Alt/Option+1` … `4` | Stimme 1 … 4 |
+| `H` / `Shift+H` | Crescendo- / Decrescendo-Gabel |
+
+`N`, `A`–`G`, `R` (wiederholen), `S` (Bindebogen) und `X` (Hals umdrehen) sind in Nex Note ohnehin wie in Sibelius belegt.
+
+### Sibelius (Laptop)
+
+Wie oben, aber die Ziffernreihe ist das Keypad: `1` … `6` Notenwerte, `7`/`8`/`9` Vorzeichen, `0` Pause. Intervalle bleiben auf `Alt/Option+5` … `9`; ein angeschlossener Ziffernblock funktioniert wie im Keypad-Preset.
+
+### Finale (Simple Entry)
+
+| Taste | Aktion |
+| --- | --- |
+| Ziffernblock `1` … `8`, `Cmd/Ctrl+Option+1` … `8` | 64tel … Doppelganze (wie die Nex-Note-Ziffern) |
+| `1` … `8` (Ziffernreihe) | Intervall darüber hinzufügen |
+| `9` | Triole |
+| `=` oder `+` / `-` / `N` | Kreuz / B / Auflösungszeichen |
+| `Shift+N` | Noteneingabe ein/aus (statt `N`) |
+| `L` | Hals umdrehen |
+| `\` | enharmonisch verwechseln |
+| `Option/Alt+G` | Vorschlagsnote |
+| `Shift+Option/Alt+1` … `4` | Ebene (Stimme) 1 … 4 |
+
+Nicht abgebildet: Sibelius' weitere Keypad-Layouts (F7–F12), Intervalle nach unten (`Shift+Ziffer`), Finales Speedy Entry und die Meta-Tools. Im Finale-Preset entfällt `Shift+N` für Tenuto (`Shift+-` bleibt).
+
 ## Aktuelle Lücken im Vergleich zu MuseScore und Finale
 
 Referenzpunkte: MuseScore Studio 4 nutzt unter anderem `N` für Note Input, `1` bis `9` für Dauern, `Ctrl/Cmd+Alt/Option+1` bis `4` für Stimmen, `Q/W` für Dauer halbieren/verdoppeln, `T` für Tie, `Shift+Left/Right` für Auswahl und `Ctrl/Cmd+2` bis `9` für Tuplets. Finale Simple Entry ist stark auf Tastatur- und Numpad-Workflows ausgelegt, inklusive Tool-Auswahl per Shortcut, Caret-basierter Eingabe und Shortcuts für Artikulationen, Expressions, Schlüssel-, Tonart- und Taktartwechsel.
@@ -233,7 +275,6 @@ Priorisierte Vorschläge:
 | Mittel | reale MuseScore-Paritaet weiter ueber Harness statt Shortcut-Versprechen pruefen | `npm run smoke:musescore-roundtrip` prueft MusicXML, app-style MXL und MSCZ mit Diagnose-Artefakten; lokale MuseScore-4.7.3-Abstuerze bleiben als Tool-Limit von echten nex-note Exportfehlern zu trennen |
 | Mittel | weitere Text-Shortcuts prüfen: System Text, separates Expression-Popup und Dynamics-Eingabe | Phase D liefert explizite Placement-Controls fuer Staff Text, Expression Text und Dynamics im Inspector; zusaetzliche globale Shortcuts bleiben vorerst bewusst ausgesetzt |
 | Mittel | Akkordsymbol näher an Standards prüfen, z. B. alternative Chord-Symbol Shortcuts fuer Command-Center-Power-User | aktuell oeffnet `Cmd/Ctrl+K` bei Notenauswahl die Inline-Harmony-Eingabe und ohne Auswahl das Command Center; MuseScore verwendet fuer Chords haeufig eigene Text-Shortcuts, hier sollte Konfliktarmut getestet werden |
-| Mittel | Finale-orientierte Simple-Entry-Laptop/Numpad Map als optionales Preset | Finale-Nutzer erwarten teils Numpad-zentrierte Toolwahl; als Preset besser als harte Default-Änderung |
 | Niedrig | Hardware-MIDI oder externes Piano-Keyboard als Erweiterung zum QWERTY-Step-Keyboard | Phase C liefert bewusst nur die bounded QWERTY-/Toolbar-Surface ueber den bestehenden semantischen Command-Pfad |
 | Niedrig | Dynamik-Shortcuts wie `Ctrl/Cmd+Shift+P/M/F` mit Eingabe-Popup | MuseScore bietet dynamische Texte per Shortcut; sinnvoll, sobald Dynamics-Editing UX stabil ist |
 | Niedrig | Layout-/Ansichts-Shortcuts für Navigator, Print View, Continuous/Page View | gut für Power User, aber weniger kritisch als Eingabe- und Bearbeitungsfluss |

@@ -157,6 +157,9 @@ function inferWorkflowKind(message: string): AiWorkflowKind {
   ) return 'general';
 
   if (/\b(arrang(?:e|ement|ing|ed|iere|ieren|iert)|reharmoni[sz]e|reharmon(?:is(?:e|ing)|isieren)|accompan(?:iment|y)|begleit(?:e|en|et|ung)?|voic(?:e|ing)|satz|harmonis(?:e|ing|iere|ieren|iert))\b/.test(normalized)) return 'arrangement-assist';
+  // Arranger vocabulary that names the result instead of the verb: a second voice, a counter-melody,
+  // a four-part or piano setting. German umlauts sit outside `\b`, hence the lookarounds.
+  if (/(?<![a-zäöüß])(second voice|zweite stimme|2\. stimme|gegenstimme|gegenmelodie|counter[- ]?melody|descant|four[- ]part|vierstimmig(?:e[nrs]?)?|dreistimmig(?:e[nrs]?)?|satb|chorsatz|klaviersatz|bläsersatz|blaesersatz|streichersatz|horn section|lead sheet voicing|voicings?)(?![a-zäöüß])/.test(normalized)) return 'arrangement-assist';
   if (/\b(lyric|lyrics|verse|silbe|text underlay|syllabic)\b/.test(normalized)) return 'lyrics';
   if (/\b(orchestrat(?:e|ion|ing)|reduction|reduce|mahler|strauss|hybrid orchestra|timbral blend|spatial audio|spatial production)\b/.test(normalized)) return 'arrangement-assist';
   if (/\b(schenker|roman numeral|forte|set[- ]class|chord[- ]scale|neo[- ]riemannian|plr|sync point|hit point|timecode|dialogue|tempo map|analy[sz]e|analyse|umfang|range|tessitura|playable|spielbar|singable|singbar)\b/.test(normalized)) return 'analysis';

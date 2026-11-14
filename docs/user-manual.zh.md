@@ -19,7 +19,7 @@ nex-note 是面向 MuseScore 类工作流的 MusicXML 编辑器。你可以导�
 | 最近文件 | 重新打开最近导入的文件。 |
 | 乐谱库 | 打开本地保存的乐谱。 |
 
-支持格式包括 `.musicxml`、`.xml`、`.mxl`、`.pdf`、`.mscz`、GuitarPro 文件（`.gp`、`.gp4`、`.gp5`、`.gp6`、`.gpx`）和 `.nxn` 项目文件。PDF 导入需要 Audiveris；MSCZ、GuitarPro、MIDI 以及最佳 ABC 导出依赖 MuseScore CLI。
+支持格式包括 `.musicxml`、`.xml`、`.mxl`、`.pdf`、`.mscz` 和 `.mscx`、GuitarPro 文件（`.gp`、`.gp3`、`.gp4`、`.gp5`、`.gp6`、`.gpx`、`.gtp`）、Capella（`.cap`、`.capx`）、Power Tab（`.ptb`）、MEI、Overture（`.ove`）和 `.nxn` 项目文件。PDF 导入需要 Audiveris；多页 PDF 会完整读取，失败时只导入第一页并给出提示。没有五线谱的页面（例如标题页）会被跳过，并在提示中列出。Sibelius、Finale 和 Dorico 文件需要先在原软件中导出为 MusicXML。MSCZ、GuitarPro、MIDI 以及最佳 ABC 导出依赖 MuseScore CLI。
 
 ## 创建新乐谱
 
@@ -45,6 +45,8 @@ nex-note 是面向 MuseScore 类工作流的 MusicXML 编辑器。你可以导�
 ## 语言和帮助
 
 顶部栏提供紧凑的语言选择器。nex-note 支持 Deutsch、English、Français、Español 和 中文。所选语言会保存在本地，下次启动时自动恢复，并且无需重新加载即可更新界面。**Manual** 链接会打开当前语言对应的手册。
+
+旁边是 **键盘快捷键** 选择器，方便从其他软件转来的用户：`Nex Note / MuseScore`（默认）、`Sibelius (keypad)`、`Sibelius (laptop)` 和 `Finale (Simple Entry)`。预设只改变音符输入的核心按键（时值、变音记号、休止符、延音线、音程、声部）。选择按设备保存；工具提示仍显示 Nex Note 的按键。具体按键见 [keyboard-shortcuts.md](./keyboard-shortcuts.md)。
 
 ## 选择和导航
 
@@ -72,6 +74,10 @@ Find/Go to 可从底部按钮或 `Cmd/Ctrl+F` 打开，支持小节号和 `p2` �
 | 八度 | `Shift+上下方向键` 或 `Cmd/Ctrl+上下方向键`。 |
 
 鼠标输入时，幽灵音符会显示下一个音符的位置。`Shift` 偏向插入，`Alt/Option` 偏向加入和弦。
+
+通过 USB 连接吉他音箱：`MIC REC` 可以从任何音频输入识别音高。通过 USB 连接的音箱（例如 Positive Grid Spark MINI 或 REACTOR 50）会显示为普通音频输入。`MIC REC` 运行时，在其旁边把输入配置设为 `吉他音箱 · USB`。该配置会为线路信号关闭自动增益，选择 `Guitar · written +8va`，并可识别低至 B1 的音，以支持降调定弦和七弦吉他。如果恰好有一个输入名称中包含 "Spark"，它会被自动选中，工具栏显示 `已找到音箱`；否则请在输入列表中选择一次音箱。这个选择和配置都会被记住。在此配置下，每次拨弦都会写入一个音符：再次拨响同一个音会在没有停顿的情况下再写一次；击弦（hammer-on）、勾弦（pull-off）或滑音到另一个音也会被写入；持续的音只写一次。与正在发声的音相差八度、十二度或五度的音在下一次拨弦之前都被视为其泛音，因此恰好五度或八度的连奏音程需要拨弦。没有让电平至少翻倍的轻柔重拨（在强压缩或失真音色中最常见），以及没有起音、逐渐淡入的音（volume swell）都不会被写入。电平提示依据最近 1.5 秒内最响的音：`Input too low` 表示音符低于 −60 dBFS，`Input too high` 表示 USB 信号达到满刻度。`Concert pitch` 仍可选择，`Guitar · written +8va` 也可以与麦克风配置一起使用。
+
+通过音箱输入和弦：使用 `Guitar amp · USB` 配置时，识别模式除 `Single notes` 和 `Build chord` 外还提供 `Strummed chord`；`Alt/Option+C` 依次切换三种模式。在此模式下，一次扫弦的和弦（最多六个音）会一次写入，然后光标前进；单音仍然逐个写入。识别会在扫弦后等待约四分之一秒。低音以及不是更低琴弦泛音的音可以可靠识别；八度或十二度的重复音可能缺失，在完整和弦中泛音也可能作为高八度的额外和弦音出现。干净的音色比失真音色更容易识别。目前只用合成信号验证过，尚未在真实音箱上验证。
 
 ## 音高、变音记号和时值
 
@@ -132,6 +138,8 @@ AI 标签页会打开聊天面板，用自然语言处理乐谱工作。你可�
 
 编曲请求现在会使用编曲助手。由提供方生成的计划会先经过 critic 检查；如果乐谱上下文允许，会被实现为写出的声部和和弦符号。结果会以预览形式显示，列出准备执行的操作，例如清空目标声部范围、插入实现后的音符、添加和弦；如果有配对的吉他 TAB 谱表，并且音符可演奏，也会同步镜像。
 
+打开乐谱后，输入框上方会出现编曲快捷操作：四部和声、爵士 voicing、数字低音、重配和声、钢琴伴奏、和弦符号和音域检查（标签为英文）。点击即发送请求；`Alt/Option`+点击会把文字放入输入框以便修改。限制：助手只写入已有的声部和谱表，暂时不能新建。
+
 编曲、布局修改和其他风险较高的批量操作都会停留在预览确认状态。预览出现时，乐谱还没有被修改。点击 **Apply** 或输入 `apply` 会把操作写入乐谱；点击 **Cancel** 或输入 `cancel` 会放弃。预览会列出受影响小节、风险、验证信息以及准备好的命令摘要。
 
 提供方在 **AI model settings** 中配置。Claude 和 Gemini 需要在这里填写 API key；Ollama 使用你的本地 Ollama 服务器，可以选择发现到的模型，也可以添加自定义 `model:tag`。当前提供方和模型会显示在顶部栏，并出现在助手回复中。
@@ -173,4 +181,4 @@ Debug 模式下，`Report bug` 会导出包含乐谱、运行状态、最近操�
 
 ## 已知限制
 
-AI 质量取决于提供方和模型。PDF 导入依赖 Audiveris。MSCZ、GuitarPro、MIDI 和最佳 ABC 输出依赖 MuseScore CLI。部分记谱符号对播放可能只是视觉效果。部分 MuseScore/Finale 风格快捷键仍缺失；见 [keyboard-shortcuts.md](./keyboard-shortcuts.md)。
+AI 质量取决于提供方和模型。PDF 导入依赖 Audiveris。MSCZ、GuitarPro、MIDI 和最佳 ABC 输出依赖 MuseScore CLI。部分记谱符号对播放可能只是视觉效果。Sibelius 和 Finale 预设只覆盖音符输入的核心按键，并非这些软件的全部按键；见 [keyboard-shortcuts.md](./keyboard-shortcuts.md)。

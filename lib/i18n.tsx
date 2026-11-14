@@ -44,6 +44,7 @@ export function getManualHref(locale: Locale) {
 
 const en = {
   'app.language': 'Language',
+  'app.keyboardPreset': 'Keyboard shortcuts',
   'app.settings': 'Settings',
   'app.manual': 'Manual',
   'app.commands': 'Commands',
@@ -368,6 +369,13 @@ const en = {
   'toolbar.lead': 'Lead',
   'toolbar.leadOn': 'Leadsheet mode on',
   'toolbar.leadOff': 'Leadsheet mode off',
+  'instrumentRecord.profile.label': 'Input profile',
+  'instrumentRecord.profile.title': 'Guitar amp · USB: line signal without auto gain, guitar notation (written +8va), heard down to B1. A Spark is chosen automatically; any other amp is chosen once in the input list and remembered.',
+  'instrumentRecord.profile.microphone': 'Microphone',
+  'instrumentRecord.profile.guitarAmp': 'Guitar amp · USB',
+  'instrumentRecord.amp.autoSelected': 'Amp found: {name}',
+  'instrumentRecord.amp.chooseInput': 'Amp not recognized: choose its input',
+  'instrumentRecord.amp.severalSparks': 'Several Spark inputs: choose one',
   'toolbar.layout': 'Layout',
   'toolbar.layoutTitle': 'Tidy up score layout with AI',
   'toolbar.layoutStale': 'The score changed while layout cleanup was being prepared. Your current score was kept. Run layout cleanup again for this version.',
@@ -598,6 +606,7 @@ const de: Partial<Dictionary> = {
   'noteInputBar.tuplet': 'Cursor in N-Tole',
   'noteInputBar.noTuplet': 'Cursor in keiner N-Tole',
   'app.language': 'Sprache',
+  'app.keyboardPreset': 'Tastaturbelegung',
   'app.settings': 'Einstellungen',
   'app.manual': 'Handbuch',
   'app.commands': 'Befehle',
@@ -863,6 +872,13 @@ const de: Partial<Dictionary> = {
   'library.remove': 'Entfernen',
   'library.toggleFavorite': 'Favorit umschalten',
   'manual.languageName': 'Deutsch',
+  'instrumentRecord.profile.label': 'Eingangsprofil',
+  'instrumentRecord.profile.title': 'Gitarrenverstärker · USB: Line-Signal ohne automatische Pegelregelung, Gitarrennotation (notiert +8va), hört bis hinunter zu B1. Ein Spark wird automatisch gewählt; jeder andere Verstärker wird einmal in der Eingangsliste gewählt und gemerkt.',
+  'instrumentRecord.profile.microphone': 'Mikrofon',
+  'instrumentRecord.profile.guitarAmp': 'Gitarrenverstärker · USB',
+  'instrumentRecord.amp.autoSelected': 'Verstärker gefunden: {name}',
+  'instrumentRecord.amp.chooseInput': 'Verstärker nicht erkannt: Eingang wählen',
+  'instrumentRecord.amp.severalSparks': 'Mehrere Spark-Eingänge: einen wählen',
 };
 
 const fr: Partial<Dictionary> = {
@@ -876,6 +892,7 @@ const fr: Partial<Dictionary> = {
   'noteInputBar.tuplet': 'Curseur dans un n-olet',
   'noteInputBar.noTuplet': 'Curseur hors n-olet',
   'app.language': 'Langue',
+  'app.keyboardPreset': 'Raccourcis clavier',
   'app.settings': 'Réglages',
   'app.manual': 'Manuel',
   'app.commands': 'Commandes',
@@ -1102,6 +1119,13 @@ const fr: Partial<Dictionary> = {
   'library.remove': 'Supprimer',
   'library.toggleFavorite': 'Basculer le favori',
   'manual.languageName': 'français',
+  'instrumentRecord.profile.label': 'Profil d\'entrée',
+  'instrumentRecord.profile.title': 'Ampli guitare · USB : signal ligne sans contrôle automatique du gain, notation guitare (écrite +8va), entendu jusqu\'au si1 (B1). Un Spark est choisi automatiquement ; tout autre ampli se choisit une fois dans la liste des entrées et reste mémorisé.',
+  'instrumentRecord.profile.microphone': 'Microphone',
+  'instrumentRecord.profile.guitarAmp': 'Ampli guitare · USB',
+  'instrumentRecord.amp.autoSelected': 'Ampli trouvé : {name}',
+  'instrumentRecord.amp.chooseInput': 'Ampli non reconnu : choisir son entrée',
+  'instrumentRecord.amp.severalSparks': 'Plusieurs entrées Spark : en choisir une',
 };
 
 const es: Partial<Dictionary> = {
@@ -1115,6 +1139,7 @@ const es: Partial<Dictionary> = {
   'noteInputBar.tuplet': 'Cursor en un grupo irregular',
   'noteInputBar.noTuplet': 'Cursor fuera de grupo irregular',
   'app.language': 'Idioma',
+  'app.keyboardPreset': 'Atajos de teclado',
   'app.settings': 'Ajustes',
   'app.manual': 'Manual',
   'app.commands': 'Comandos',
@@ -1341,10 +1366,18 @@ const es: Partial<Dictionary> = {
   'library.remove': 'Eliminar',
   'library.toggleFavorite': 'Alternar favorito',
   'manual.languageName': 'español',
+  'instrumentRecord.profile.label': 'Perfil de entrada',
+  'instrumentRecord.profile.title': 'Amplificador de guitarra · USB: señal de línea sin control automático de ganancia, notación de guitarra (escrita +8va), detecta hasta si1 (B1). Un Spark se elige automáticamente; cualquier otro amplificador se elige una vez en la lista de entradas y se recuerda.',
+  'instrumentRecord.profile.microphone': 'Micrófono',
+  'instrumentRecord.profile.guitarAmp': 'Amplificador de guitarra · USB',
+  'instrumentRecord.amp.autoSelected': 'Amplificador encontrado: {name}',
+  'instrumentRecord.amp.chooseInput': 'Amplificador no reconocido: elige su entrada',
+  'instrumentRecord.amp.severalSparks': 'Varias entradas Spark: elige una',
 };
 
 const zh: Partial<Dictionary> = {
   'app.language': '语言',
+  'app.keyboardPreset': '键盘快捷键',
   'app.settings': '设置',
   'app.manual': '手册',
   'app.commands': '命令',
@@ -1571,6 +1604,13 @@ const zh: Partial<Dictionary> = {
   'library.remove': '移除',
   'library.toggleFavorite': '切换收藏',
   'manual.languageName': '中文',
+  'instrumentRecord.profile.label': '输入配置',
+  'instrumentRecord.profile.title': '吉他音箱 · USB：线路信号，不使用自动增益，按吉他记谱（记谱高八度），可识别低至 B1。Spark 会被自动选中；其他音箱只需在输入列表中选择一次，之后会被记住。',
+  'instrumentRecord.profile.microphone': '麦克风',
+  'instrumentRecord.profile.guitarAmp': '吉他音箱 · USB',
+  'instrumentRecord.amp.autoSelected': '已找到音箱：{name}',
+  'instrumentRecord.amp.chooseInput': '未识别到音箱：请选择其输入',
+  'instrumentRecord.amp.severalSparks': '有多个 Spark 输入：请选择一个',
 };
 
 function completeDictionary(overrides: Partial<Dictionary>): Dictionary {

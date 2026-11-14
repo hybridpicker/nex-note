@@ -47,7 +47,8 @@ Before handoff:
 2. For shared runtime changes, run `npm test` and `npm run build`.
 3. For Electron/macOS behavior or packaging changes, run the relevant Electron
    tests and `npm run electron:refresh`; use `npm run electron:build` for
-   release artifacts.
+   release artifacts. `npm run dmg:latest` builds a DMG of the latest commit
+   outside the working tree and is safe while another session is working.
 4. For shared user-visible, native-access, dependency, or iPad changes, run
    `npm run ipad:sync` and `npm run ipad:doctor`. When a paired iPad is
    available, launch it and smoke-test the affected flow on the physical device.

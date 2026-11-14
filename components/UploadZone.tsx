@@ -2,13 +2,14 @@
 
 import { useRef, useState } from 'react';
 
+import { IMPORT_FILE_ACCEPT } from '@/lib/score-import-formats';
+
 interface Props {
   onFileSelected: (file: File) => Promise<void> | void;
   onFilesSelected?: (files: File[]) => Promise<void> | void;
   loadingMessage?: string;
 }
 
-const IMPORT_FILE_ACCEPT = '.nxn,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif,.mxl,.xml,.musicxml,.mscz,.mid,.midi,.gp,.gp4,.gp5,.gp6,.gpx';
 
 export default function UploadZone({ onFileSelected, onFilesSelected, loadingMessage }: Props) {
   const [loading, setLoading] = useState(false);

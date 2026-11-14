@@ -4788,7 +4788,25 @@ export function useNoteEditor(
 
   const navigateNote = useCallback((direction: 'prev' | 'next') => {
     if (!selectedNote) return;
-    const next = findAdjacentSelection(coreDocument, selectedNote, direction);
+    let next = findAdjacentSelection(coreDocument, selectedNote, direction);
+    if (noteInputModeRef.current) {
+      // In note input the selection is the rhythmic cursor, so the arrows move
+      // from chord to chord, not through the tones of the chord under the cursor.
+      // A grace note shares the onset of its main note and is a stop of its own.
+      const graceIds = new Set((coreDocument?.graceNotes ?? []).map((grace) => grace.eventId));
+      const isGrace = (entry: SelectedNote) => Boolean(entry.coreEntityId && graceIds.has(entry.coreEntityId));
+      const sameOnset = (entry: SelectedNote) => (
+        !isGrace(selectedNote)
+        && !isGrace(entry)
+        && entry.measureNumber === selectedNote.measureNumber
+        && entry.staffIndex === selectedNote.staffIndex
+        && entry.voiceId === selectedNote.voiceId
+        && entry.timestampNum * selectedNote.timestampDen === selectedNote.timestampNum * entry.timestampDen
+      );
+      for (let step = 0; next && sameOnset(next) && step < 16; step += 1) {
+        next = findAdjacentSelection(coreDocument, next, direction);
+      }
+    }
     if (!next) return;
     dbg.editor(`navigateNote ${direction} → m.${next.measureNumber} ts=${next.timestampNum}/${next.timestampDen}`);
     announceSemanticSelectionNavigation();

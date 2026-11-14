@@ -803,6 +803,59 @@ test('Instrument Record builds chord tones at one onset until Right Arrow advanc
   hook.unmount();
 });
 
+test('in note input the arrows move from chord to chord, whatever tone of a chord the cursor is on', () => {
+  const hook = renderHook(FULL_REST_XML);
+  const onset = () => (
+    `${hook.current.selectedNote?.measureNumber}:`
+    + `${(hook.current.selectedNote?.timestampNum ?? -1) / (hook.current.selectedNote?.timestampDen ?? 1)}`
+  );
+  const play = (pitches: Array<{ midi: number; step: string; octave: number; alter: number }>) => {
+    for (const pitch of pitches) {
+      act(() => {
+        hook.current.insertMidiChord([pitch], {
+          addToMatchingChord: true,
+          insertAtCursor: true,
+          advanceCursor: false,
+        });
+      });
+      hook.rerender();
+    }
+  };
+
+  act(() => {
+    hook.current.handleKeyDown(makeKeyboardEvent('N'));
+    hook.current.handleKeyDown(makeKeyboardEvent('5'));
+  });
+  // G, E, C: the tone played last is the first by letter name, so its
+  // neighbours in the selection order are tones of the same chord.
+  play([
+    { midi: 67, step: 'G', octave: 4, alter: 0 },
+    { midi: 64, step: 'E', octave: 4, alter: 0 },
+    { midi: 60, step: 'C', octave: 4, alter: 0 },
+  ]);
+  assert.equal(onset(), '1:0');
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowRight')); });
+  hook.rerender();
+  assert.equal(onset(), '1:0.25');
+
+  play([
+    { midi: 62, step: 'D', octave: 4, alter: 0 },
+    { midi: 69, step: 'A', octave: 4, alter: 0 },
+    { midi: 65, step: 'F', octave: 4, alter: 0 },
+  ]);
+  assert.equal(onset(), '1:0.25');
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowLeft')); });
+  hook.rerender();
+  assert.equal(onset(), '1:0');
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowRight')); });
+  hook.rerender();
+  assert.equal(onset(), '1:0.25');
+  act(() => { hook.current.handleKeyDown(makeKeyboardEvent('ArrowRight')); });
+  hook.rerender();
+  assert.equal(onset(), '1:0.5');
+  hook.unmount();
+});
+
 test('P toggles the QWERTY step keyboard and routes QWERTY piano keys through semantic note entry', () => {
   const hook = renderHook(SAMPLE_XML);
   const notes = makeSelectedNotes(SAMPLE_XML).filter((note) => !note.isRest);

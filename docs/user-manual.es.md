@@ -19,7 +19,7 @@ nex-note es un editor MusicXML para flujos de trabajo cercanos a MuseScore. Pued
 | Archivos recientes | Reabre archivos importados recientemente. |
 | Biblioteca | Abre partituras guardadas localmente. |
 
-Formatos admitidos: `.musicxml`, `.xml`, `.mxl`, `.pdf`, `.mscz`, GuitarPro (`.gp`, `.gp4`, `.gp5`, `.gp6`, `.gpx`) y proyectos `.nxn`. La importacion PDF necesita Audiveris. MSCZ, GuitarPro, MIDI y algunos exports usan MuseScore CLI.
+Formatos admitidos: `.musicxml`, `.xml`, `.mxl`, `.pdf`, `.mscz` y `.mscx`, GuitarPro (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gp6`, `.gpx`, `.gtp`), Capella (`.cap`, `.capx`), Power Tab (`.ptb`), MEI, Overture (`.ove`) y proyectos `.nxn`. La importacion PDF necesita Audiveris; un PDF de varias paginas se lee completo y, si eso falla, se importa la primera pagina con un aviso. Las paginas sin pentagramas, como una portada, se omiten y el aviso las nombra. Los archivos de Sibelius, Finale y Dorico deben exportarse antes como MusicXML. MSCZ, GuitarPro, MIDI y algunos exports usan MuseScore CLI.
 
 ## Crear una partitura
 
@@ -45,6 +45,8 @@ El orden de instrumentos seleccionado define el orden de pentagramas.
 ## Idioma y ayuda
 
 La cabecera incluye un selector de idioma compacto. nex-note admite Deutsch, English, Francais, Espanol y 中文. El idioma elegido se guarda localmente, se restaura al abrir la app de nuevo y actualiza la interfaz sin recargar. El enlace **Manual** abre el manual correspondiente al idioma seleccionado.
+
+Al lado esta el selector **Atajos de teclado** para quien viene de otro programa: `Nex Note / MuseScore` (por defecto), `Sibelius (keypad)`, `Sibelius (laptop)` y `Finale (Simple Entry)`. Un preset solo cambia las teclas principales de la entrada de notas (valores, alteraciones, silencio, ligadura, intervalos, voces). La eleccion se guarda por dispositivo; los tooltips siguen mostrando las teclas de Nex Note. Detalle: [keyboard-shortcuts.md](./keyboard-shortcuts.md).
 
 ## Seleccion y navegacion
 
@@ -72,6 +74,10 @@ Activa Note Input con `N` o el boton de la barra.
 | Octavas | `Shift+Flecha arriba/abajo` o `Cmd/Ctrl+Flecha arriba/abajo`. |
 
 La nota fantasma muestra donde caera la siguiente nota. `Shift` prefiere insertar; `Alt/Option` prefiere acorde.
+
+Amplificador de guitarra por USB: `MIC REC` detecta la altura desde cualquier entrada de audio. Un amplificador conectado por USB, como el Positive Grid Spark MINI o el REACTOR 50, aparece como una entrada de audio normal. Mientras `MIC REC` esta activo, elige a su lado el perfil de entrada `Amplificador de guitarra · USB`. El perfil desactiva el control automatico de ganancia para la senal de linea, elige `Guitar · written +8va` y detecta hasta si1 (B1) para afinaciones drop y guitarras de siete cuerdas. Si exactamente una entrada lleva "Spark" en su nombre, se elige automaticamente y la barra muestra `Amplificador encontrado`; si no, elige el amplificador una vez en la lista de entradas. Esa eleccion y el perfil se recuerdan. Con este perfil cada ataque escribe una nota: la misma nota pulsada otra vez se escribe de nuevo sin silencio, un hammer-on, pull-off o slide a otra nota tambien se escribe, y una nota sostenida se escribe una sola vez. Los sonidos a una octava, una duodecima o una quinta de la nota que suena cuentan como sus armonicos hasta el siguiente ataque, asi que un paso legato de exactamente una quinta u octava debe pulsarse. Un ataque suave que no al menos duplica el nivel, sobre todo con presets muy comprimidos o distorsionados, y las notas que entran sin ataque (volume swells) no se escriben. Los avisos de nivel juzgan la nota mas fuerte de los ultimos 1,5 segundos: `Input too low` indica que las notas quedan por debajo de −60 dBFS, `Input too high` que la senal USB llega a fondo de escala. `Concert pitch` sigue disponible y `Guitar · written +8va` tambien funciona con el perfil de microfono.
+
+Acordes por el amplificador: con el perfil `Guitar amp · USB` el selector de reconocimiento ofrece `Strummed chord` junto a `Single notes` y `Build chord`; `Alt/Option+C` recorre los tres. En este modo un acorde rasgueado de hasta seis notas se escribe de una vez y el cursor avanza; las notas sueltas se siguen escribiendo una a una. La deteccion espera cerca de un cuarto de segundo tras el rasgueo. El bajo y toda nota que no sea un armonico de una cuerda mas grave se leen con fiabilidad; una duplicacion a la octava o a la duodecima puede faltar, y en un acorde completo un armonico puede aparecer como nota adicional en una octava superior. Un sonido limpio se lee mejor que uno distorsionado. Solo se ha comprobado con senales sinteticas, no con un amplificador real.
 
 ## Altura, alteraciones y duracion
 
@@ -132,6 +138,8 @@ La pestana AI abre el chat para trabajar sobre la partitura en lenguaje natural.
 
 Las solicitudes de arreglo usan ahora el asistente de arreglos. Los planes de un proveedor se revisan con el critic y despues, si el contexto de la partitura lo permite, se materializan como voces escritas y simbolos de acorde. El resultado aparece como preview con operaciones preparadas, por ejemplo limpiar el rango de la voz destino, insertar las notas realizadas y agregar acordes; los pentagramas TAB de guitarra emparejados se reflejan cuando las notas son tocables.
 
+Con una partitura abierta aparecen acciones rapidas de arreglo sobre el campo de texto: escritura a cuatro voces, voicing de jazz, bajo cifrado, rearmonizar, acompanamiento de piano, simbolos de acorde y revision de registro (etiquetas en ingles). Un clic envia la solicitud; `Alt/Option`+clic coloca el texto en el campo para editarlo. Limite: el asistente escribe en partes y pentagramas existentes y todavia no crea nuevos.
+
 Los arreglos, cambios de layout y otros lotes con riesgo quedan protegidos por preview. La partitura no cambia cuando aparece la preview. Haz clic en **Apply** o escribe `apply` para escribir las operaciones en la partitura; haz clic en **Cancel** o escribe `cancel` para descartarlas. La preview lista compases afectados, riesgos, diagnosticos y el resumen de comandos preparados.
 
 La configuracion de proveedores esta en **AI model settings**. Claude y Gemini necesitan sus API keys alli; Ollama usa tu servidor local de Ollama y puede usar modelos detectados o un `model:tag` personalizado. El proveedor y modelo elegidos aparecen en la cabecera y en las respuestas del asistente.
@@ -173,4 +181,4 @@ En modo debug, `Report bug` exporta un paquete con partitura, estado runtime, ac
 
 ## Limites conocidos
 
-La calidad AI depende del proveedor y modelo. PDF depende de Audiveris. MSCZ, GuitarPro, MIDI y mejor ABC dependen de MuseScore CLI. Algunos signos son solo visuales para playback. Faltan algunos atajos estilo MuseScore/Finale; ver [keyboard-shortcuts.md](./keyboard-shortcuts.md).
+La calidad AI depende del proveedor y modelo. PDF depende de Audiveris. MSCZ, GuitarPro, MIDI y mejor ABC dependen de MuseScore CLI. Algunos signos son solo visuales para playback. Los presets de Sibelius y Finale cubren las teclas principales de la entrada de notas, no todas las teclas de esos programas; ver [keyboard-shortcuts.md](./keyboard-shortcuts.md).

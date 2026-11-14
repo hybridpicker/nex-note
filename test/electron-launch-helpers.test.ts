@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   buildChildProcessEnv,
+  createSingleFlight,
   decideLocalBuildFreshness,
   isAllowedRendererPermission,
   resolveExecutable,
@@ -40,11 +41,59 @@ test('a legacy packaged build without a source fingerprint is refreshed', () => 
 test('the packaged app checks local devel before opening the product window', () => {
   const mainSource = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
   const refreshCheck = mainSource.indexOf('if (await ensurePackagedBuildMatchesLocalDevel()) return;');
-  const openWindow = mainSource.indexOf('await createWindow();', refreshCheck);
+  const openWindow = mainSource.indexOf('await ensureMainWindow();', refreshCheck);
 
   assert.ok(refreshCheck >= 0);
   assert.ok(openWindow > refreshCheck);
   assert.doesNotMatch(mainSource, /fetch.*origin.*devel/);
+});
+
+test('overlapping window requests share one window creation', async () => {
+  let runs = 0;
+  let release: () => void = () => {};
+  const createOnce = createSingleFlight(async () => {
+    runs += 1;
+    await new Promise<void>((resolve) => { release = resolve; });
+  });
+
+  const first = createOnce();
+  const second = createOnce();
+  assert.equal(first, second);
+  await Promise.resolve();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(runs, 1);
+
+  const third = createOnce();
+  await Promise.resolve();
+  release();
+  await third;
+  assert.equal(runs, 2);
+});
+
+test('a failed window creation does not block the next attempt', async () => {
+  let runs = 0;
+  const createOnce = createSingleFlight(async () => {
+    runs += 1;
+    if (runs === 1) throw new Error('server did not start');
+  });
+
+  await assert.rejects(createOnce(), /server did not start/);
+  await createOnce();
+  assert.equal(runs, 2);
+});
+
+test('opening a file after the last window closed on macOS brings a window back', () => {
+  const mainSource = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
+  const openFileHandler = mainSource.slice(mainSource.indexOf("app.on('open-file'"));
+  const secondInstance = mainSource.slice(mainSource.indexOf("app.on('second-instance'"));
+  const nativeOpen = mainSource.slice(mainSource.indexOf('async function openFilesWithNativeDialog()'));
+
+  assert.match(openFileHandler.slice(0, 400), /if \(app\.isReady\(\)\) void ensureMainWindow\(\);/);
+  assert.match(secondInstance.slice(0, 300), /ensureMainWindow\(\)\.then\(flushPendingOpenFiles\)/);
+  assert.match(nativeOpen.slice(0, 200), /await ensureMainWindow\(\);/);
+  // The closed window must be forgotten, otherwise queued files wait for a renderer that is gone.
+  assert.match(mainSource, /browserWindow\.on\('closed', \(\) => \{[\s\S]{0,200}mainWindow = null;\s*rendererReady = false;/);
 });
 
 test('the Electron application menu exposes the platform quit accelerator', () => {

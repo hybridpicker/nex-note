@@ -96,6 +96,27 @@ npm run electron:refresh
 
 `npm run electron:latest` remains available when you explicitly want to fetch and fast-forward to the latest pushed `origin/devel` before running the local refresh. It requires a clean worktree. Use `npm run electron:build` only for release-oriented DMG and ZIP artifacts.
 
+### Always-current DMG
+
+```bash
+npm run dmg:latest
+```
+
+builds a DMG from the latest **commit** (`HEAD`), not from the working tree. The commit is checked out into a temporary detached git worktree under `~/Library/Caches/nex-note/dmg-build`, built there and removed again. Uncommitted work in progress is not included, and a running dev server, test run or second coding session in the repository is not disturbed. `node_modules` is cloned copy-on-write from the repository when `package-lock.json` is unchanged; otherwise the build runs `npm ci`. No `.env*` file is copied, so provider keys never enter the image. `public/soundfonts` is copied when present.
+
+Output in `dist/dmg/`:
+
+| File | Content |
+| --- | --- |
+| `Nex Note-latest.dmg` | always the newest build |
+| `Nex Note-<version>-<branch>-<commit>-<arch>.dmg` | one image per built commit; the newest three are kept (`--keep <n>`) |
+| `latest.json` | version, branch, commit, build time and SHA-256 of the newest image, plus the kept history |
+| `build.log` | output of background builds |
+
+The command does nothing when the newest image already contains the commit (`--force` rebuilds). `--ref <commit|branch>` builds something other than `HEAD`. `--background` detaches the build and writes to `build.log`. Only one build runs at a time; a build that finishes re-reads the ref and builds again when new commits arrived in the meantime.
+
+The tracked `post-commit` hook (`npm run hooks:install`) starts `npm run dmg:latest -- --background` after every commit on macOS, so `dist/dmg/Nex Note-latest.dmg` follows the branch without blocking the commit. Set `NEX_NOTE_SKIP_POST_COMMIT_BUILD=1` to skip it. The image is unsigned like every local build: on another Mac, open it with right-click → Open the first time.
+
 ### Packaged Launch Guardrails
 
 The Electron startup path is intentionally split between the thin entrypoint at `electron/main.cjs` and testable launch helpers in `electron/launch-helpers.cjs`.
@@ -218,6 +239,21 @@ git switch devel
 ```
 
 Pushing `main` updates the website/web alpha after the next deployment run. macOS app artifacts are still built and distributed separately.
+
+## Note Input Sources
+
+Instrument Record (`MIC REC`, `hooks/useMicrophonePitchInput.ts`) has two input profiles. Both end in the same notation step.
+
+- **Microphone** (default, unchanged behavior): `getUserMedia` with auto gain on, an `AnalyserNode` (fftSize 8192) polled every 46 ms on `requestAnimationFrame`, `detectPitchFromTimeDomain` (YIN over the newest 4096 samples; it used to read the oldest half, about 90 ms stale) and `MicrophoneNoteGate`. Range E2 to E6.
+- **Guitar amp · USB** (`src/score-input/instrument-input-profile.ts`): for an amp such as the Spark MINI or REACTOR 50 that appears as a USB audio input. Auto gain, echo cancellation and noise suppression off; guitar notation; range B1 to E6; the input is chosen automatically when exactly one real input (not Chromium's `default`/`communications` aliases) has "Spark" in its label, otherwise by hand, and the choice is remembered in `localStorage` with the profile. Samples reach the tracker gap-free through an AudioWorklet loaded from a Blob URL (`lib/audio-sample-tap.ts`, 512-sample blocks, ScriptProcessor fallback), so detection does not depend on `requestAnimationFrame`. The same code serves Electron and the iPad WKWebView; no native code is involved. The Electron permission handler already allows audio-only media requests and needed no change.
+- **`GuitarNoteTracker`** (`src/score-input/guitar-note-tracker.ts`, pure, tested with synthetic signals in `test/guitar-note-tracker.test.ts`): takes the ideas of AmpBench's tuner tracker without its tuning parts (no smoothing, no 1.5 s hold, no phase measurement). Every 5 ms it measures the 20 ms RMS; the gate opens above −60 dBFS and closes below −66 dBFS. An attack is a rise of at least 2× over the level 25 to 80 ms earlier; only an attack writes a note, so hum that is present from the start or a slowly rising level writes nothing. After an attack 20 ms are left out. The period comes from the McLeod NSDF (autocorrelation by FFT) over two periods of 55 Hz: 1750 samples at 48 kHz and 1608 at 44.1 kHz (36 ms), against a B1 period of 778 and 714 samples. An estimate only counts once the window has searched the octave below it. Three estimates within 30 cents lock a note and write it; while it sounds, estimates an octave, twelfth or fifth away are taken for overtones until the next attack, and four agreeing estimates of another pitch are a legato note (hammer-on, pull-off, slide).
+- **Strummed chords** (`src/score-input/guitar-chord-analyzer.ts`, pure, tested in `test/guitar-chord-analyzer.test.ts`): the recognition mode `Strummed chord` (`strum`, amp profile only) calls `GuitarNoteTracker.setChordDetection(true)`. An attack then starts a block instead of writing the period estimate: the block begins 80 ms after the first attack (`strumSettleMs`; the later strings of a strum raise the level too little to be seen as attacks, and a string that starts inside the block smears its partials), further attacks within 120 ms belong to the same strum, and after 180 ms (`chordWindowMs`) the block is Hann-windowed, zero-padded and read as a spectrum. Peaks are read from the lowest upwards. A peak on no overtone of a lower accepted peak is a string. A peak on an overtone (octave, twelfth, …) is a string only when it stands above what the lower strings alone would show there: with one or two unmistakable strings that is measured from the lower string's neighbouring overtones at the candidate's second and third partial; in a fuller chord, where those neighbours are shared, the candidate's first three partials are compared with overtones falling as 1/m in amplitude (median of three, threshold 1.5 in power). At most six notes are kept, and they leave the tracker as note-ons with the same time, which `simultaneousNoteOns` groups into one write. Fewer than two notes in the block leave the answer to the period estimate, so single notes are written as before, only about 260 ms after the attack instead of about 70 ms. A block cut short by the next attack or by the end of the sound is read when at least 120 ms long.
+- **Limits of chord detection:** two strings on one frequency add or cancel depending on their phase, so a doubling at the octave or twelfth is a judgement, not a measurement. Over thirteen chord shapes, four strum speeds, two sample rates and a slight detuning, the synthetic tests require the bass note, only pitch classes of the chord, every string that is no doubling and at most two missing doublings; they do not require exact doublings. The synthetic strings follow the same 1/m overtone fall the full-chord rule assumes, which a real string follows only roughly, so more overtone notes are to be expected on a real guitar. Low strings less than a minor third apart are not resolved in a 180 ms block. Not verified: any real guitar or amp, distorted presets (combination tones), and the microphone profile, which does not offer the mode.
+- **Source-neutral events** (`src/score-input/sounding-note.ts`): detected notes leave the audio layer as `SoundingNoteEvent`s, a sounding MIDI number and a time, with no trace of the device or profile. `notationMidisForInstrument` turns sounding into written pitch as a separate step, so guitar notation is not tied to the amp profile; the microphone profile offers it too.
+- **Verification status:** the tracker is covered by synthetic signals only (second harmonic stronger than the fundamental, the same note twice without silence, a legato change, a distorted signal, B1 at 44.1 and 48 kHz, 50 and 60 Hz hum, a noise burst). In headless Chromium the Blob-URL worklet delivered every sample and a plucked oscillator tone was written about 70 ms after its attack. Not verified: the real amp, the automatic Spark choice (the amp's USB device name has not been seen), Electron and the iPad with a USB amp, and detection while the window is hidden.
+- **Known limit of the attack rule:** on synthetic plucks an equal-force re-pick 180 to 250 ms later rises 1.8× to 2.3×, right at the threshold, and under heavy synthetic distortion only about 1.1×. Same-note repeats on compressed or distorted presets are therefore the first thing to check with a real take before tuning `attackRatio`.
+
+Not chosen now: AmpBench publishing its detected notes as a virtual MIDI source, which the existing MIDI input would pick up unchanged. It would work on macOS only (a CoreMIDI virtual source has no counterpart for the iPad app or the Linux app), it needs two apps running at the same time, and AmpBench's tracker serves a tuner: it smooths, holds a value for 1.5 s and measures phase for tenths of a cent, which costs latency and hides the repeated attacks note entry needs. Nothing here stands in its way: such notes would arrive as ordinary MIDI note-ons, and because an amp sends sounding pitch, the MIDI path would only need the same `notationMidisForInstrument` step to write guitar notation.
 
 ## Testing
 

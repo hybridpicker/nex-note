@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { addRecentFile, getRecentFiles, clearRecentFiles, type RecentFile } from '@/lib/recent-files';
 import { getLibraryScores, type LibraryScore } from '@/lib/score-library';
+import { IMPORT_FILE_ACCEPT } from '@/lib/score-import-formats';
 
 interface Props {
   onFileSelected: (file: File) => Promise<void> | void;
@@ -12,7 +13,6 @@ interface Props {
   className?: string;
 }
 
-const IMPORT_FILE_ACCEPT = '.nxn,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif,.mxl,.xml,.musicxml,.mscz,.mid,.midi,.gp,.gp4,.gp5,.gp6,.gpx';
 
 function formatRelTime(ts: number): string {
   const diff = Date.now() - ts;

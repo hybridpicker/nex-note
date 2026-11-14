@@ -5,6 +5,9 @@ import { writeFile, readFile, unlink, mkdir, rm, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, delimiter, dirname, extname, join } from 'path';
 import { extractXmlFromMxl } from '@/lib/mxl-utils';
+import { classifyScoreImport, describeUnsupportedScoreImport } from '@/lib/score-import-formats';
+import { describeOmrFailure, inspectPdfForImport } from '@/lib/pdf-import-preflight';
+import { describeSkippedPdfPages, parseInvalidAudiverisSheets } from '@/lib/omr-partial-export';
 import {
   buildScoreImageBatchBaseName,
   isPdfEmbeddableScoreImageFilename,
@@ -71,21 +74,16 @@ export async function POST(req: NextRequest) {
   if (!singleFile) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
   const lower = singleFile.name.toLowerCase();
   const origExt = lower.split('.').pop() ?? 'tmp';
-  const fmt = lower.endsWith('.mxl') ? 'mxl'
-    : /\.(xml|musicxml)$/.test(lower) ? 'xml'
-    : lower.endsWith('.mscz') ? 'mscz'
-    : /\.(mid|midi)$/.test(lower) ? 'midi'
-    : /\.(gp[456x]?)$/.test(lower) ? 'gp'
-    : lower.endsWith('.pdf') ? 'pdf'
-    : /\.(png|jpe?g|tiff?|webp|bmp|heic|heif)$/.test(lower) ? 'image'
-    : 'unsupported';
+  const kind = classifyScoreImport(lower);
+  // A .nxn project is read in the app itself and never reaches the converters.
+  const fmt = kind === 'nxn' ? 'unsupported' : kind;
 
   if (fmt === 'unsupported') {
-    return NextResponse.json({ error: `Unsupported import format for ${singleFile.name}` }, { status: 415 });
+    return NextResponse.json({ error: describeUnsupportedScoreImport(singleFile.name) }, { status: 415 });
   }
   const tmpDir = join(tmpdir(), `nex-note-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
-  const inputExt = fmt === 'gp' || fmt === 'midi' || fmt === 'image' ? origExt : fmt;
+  const inputExt = fmt === 'gp' || fmt === 'midi' || fmt === 'image' || fmt === 'musescore-cli' ? origExt : fmt;
   const inputPath = join(tmpDir, `input.${inputExt}`);
   const outputMxl = join(tmpDir, 'output.mxl');
 
@@ -109,6 +107,12 @@ export async function POST(req: NextRequest) {
       await assertMsczSupportedByServerMuseScore(archive);
       const xml = await runMscoreToMxl(inputPath, outputMxl, { archive });
       return NextResponse.json({ xml, filename: singleFile.name.replace(/\.mscz$/i, '.mxl') });
+    }
+
+    if (fmt === 'musescore-cli') {
+      // Formats MuseScore reads itself: uncompressed MuseScore, Capella, Power Tab, MEI, Overture …
+      const xml = await runMscoreToMxl(inputPath, outputMxl);
+      return NextResponse.json({ xml, filename: singleFile.name.replace(/\.[^.]+$/, '.mxl') });
     }
 
     if (fmt === 'gp') {
@@ -159,11 +163,21 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // PDF/image OMR: run the configured Audiveris conversion script.
+    if (fmt === 'pdf') {
+      const { xml, pageCount, warnings } = await convertPdf(buffer, inputPath, tmpDir, outputMxl);
+      return NextResponse.json({
+        xml,
+        filename: singleFile.name.replace(/\.[^.]+$/i, '.mxl'),
+        pageCount,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      });
+    }
+
+    // Image OMR: run the configured Audiveris conversion script.
     const xml = await runOmrConversion(inputPath, tmpDir, outputMxl);
     return NextResponse.json({ xml, filename: singleFile.name.replace(/\.[^.]+$/i, '.mxl') });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = fmt === 'image' ? describeOmrFailure(err) : err instanceof Error ? err.message : String(err);
     console.warn('Score import conversion failed', {
       filename: singleFile.name,
       format: fmt,
@@ -209,8 +223,13 @@ async function convertImagePageBatch(files: File[], requestedBatchName: string) 
   await mkdir(tmpDir, { recursive: true });
   try {
     await writeImagePagesPdf(sortedFiles, inputPath);
-    const xml = await runOmrConversion(inputPath, tmpDir, outputMxl, { allSheets: true });
-    return NextResponse.json({ xml, filename: `${batchBaseName}.mxl` });
+    const { xml, skippedSheets } = await runOmrAllSheets(inputPath, tmpDir, outputMxl);
+    const skipped = describeSkippedPdfPages(skippedSheets, sortedFiles.length);
+    return NextResponse.json({
+      xml,
+      filename: `${batchBaseName}.mxl`,
+      ...(skipped ? { warnings: [skipped] } : {}),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn('Multi-image score import conversion failed', {
@@ -303,6 +322,36 @@ function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserv
   });
 }
 
+/**
+ * A PDF is read page by page. Encrypted or empty files are refused with a reason up front. Every
+ * page goes through Audiveris; when that direct run is not possible on this machine, the configured
+ * script still converts the first page and the answer says so.
+ */
+async function convertPdf(buffer: Buffer, inputPath: string, outDir: string, outputMxl: string) {
+  const preflight = await inspectPdfForImport(buffer);
+  if (!preflight.ok) throw new Error(preflight.message);
+  const warnings: string[] = [];
+
+  if (preflight.pageCount > 1) {
+    try {
+      const { xml, skippedSheets } = await runOmrAllSheets(inputPath, outDir, outputMxl);
+      const skipped = describeSkippedPdfPages(skippedSheets, preflight.pageCount);
+      if (skipped) warnings.push(skipped);
+      return { xml, pageCount: preflight.pageCount, warnings };
+    } catch (error) {
+      console.warn('Audiveris could not read every page; falling back to the first page.', error);
+      warnings.push(`Only page 1 of ${preflight.pageCount} was imported: ${describeOmrFailure(error)}`);
+    }
+  }
+
+  try {
+    const xml = await runOmrConversion(inputPath, outDir, outputMxl);
+    return { xml, pageCount: preflight.pageCount, warnings };
+  } catch (error) {
+    throw new Error(describeOmrFailure(error));
+  }
+}
+
 async function runOmrConversion(
   inputPath: string,
   outDir: string,
@@ -310,10 +359,7 @@ async function runOmrConversion(
   options: { allSheets?: boolean } = {},
 ): Promise<string> {
   if (options.allSheets) {
-    await runAudiverisAllSheets(inputPath, outDir);
-    const mxlBuffer = await readOmrOutputMxl(outDir, inputPath, outputMxl);
-    const { xml } = await extractXmlFromMxl(mxlBuffer);
-    return xml;
+    return (await runOmrAllSheets(inputPath, outDir, outputMxl)).xml;
   }
 
   return new Promise((resolve, reject) => {
@@ -342,17 +388,71 @@ async function runOmrConversion(
   });
 }
 
-async function runAudiverisAllSheets(inputPath: string, outDir: string) {
-  const timeoutMs = 300000;
+/**
+ * Reads every page. Audiveris rejects the whole book when one page has no staves (a title page);
+ * the pages it did read are kept in its book file, so those are exported and the rest is reported.
+ */
+async function runOmrAllSheets(
+  inputPath: string,
+  outDir: string,
+  outputMxl: string,
+): Promise<{ xml: string; skippedSheets: number[] }> {
+  let output: string;
+  try {
+    output = await runAudiverisAllSheets(inputPath, outDir);
+  } catch (error) {
+    const skippedSheets = parseInvalidAudiverisSheets(processOutputOf(error));
+    if (skippedSheets.length === 0) throw error;
+    try {
+      await exportAudiverisBook(inputPath, outDir);
+      const { xml } = await extractXmlFromMxl(await readOmrOutputMxl(outDir, inputPath, outputMxl));
+      return { xml, skippedSheets };
+    } catch (exportError) {
+      console.warn('Audiveris could not export the readable pages.', exportError);
+      throw error;
+    }
+  }
+  const { xml } = await extractXmlFromMxl(await readOmrOutputMxl(outDir, inputPath, outputMxl));
+  return { xml, skippedSheets: parseInvalidAudiverisSheets(output) };
+}
+
+async function resolveAudiverisJavaArgs() {
   const [classpath, tesseractPrefix] = await Promise.all([
     resolveAudiverisClasspath(),
     resolveTesseractPrefix(),
   ]);
+  return { classpath, tesseractPrefix };
+}
+
+async function exportAudiverisBook(inputPath: string, outDir: string) {
+  const bookPath = join(outDir, `${basename(inputPath, extname(inputPath))}.omr`);
+  const { classpath, tesseractPrefix } = await resolveAudiverisJavaArgs();
+  await runProcess(AUDIVERIS_JAVA, [
+    '-cp',
+    classpath,
+    `-Djna.library.path=${join(tesseractPrefix, 'lib')}`,
+    'Audiveris',
+    '-batch',
+    '-export',
+    '-output',
+    outDir,
+    '--',
+    bookPath,
+  ], {
+    cwd: outDir,
+    timeoutMs: 120000,
+    errorPrefix: 'Audiveris export of the readable pages failed',
+  });
+}
+
+async function runAudiverisAllSheets(inputPath: string, outDir: string) {
+  const timeoutMs = 300000;
+  const { classpath, tesseractPrefix } = await resolveAudiverisJavaArgs();
   const tesseractData = process.env.AUDIVERIS_TESSDATA_PREFIX
     || process.env.TESSDATA_PREFIX
     || join(tesseractPrefix, 'share', 'tessdata');
 
-  await runProcess(AUDIVERIS_JAVA, [
+  return runProcess(AUDIVERIS_JAVA, [
     '-cp',
     classpath,
     `-Djna.library.path=${join(tesseractPrefix, 'lib')}`,
@@ -420,12 +520,21 @@ function readCommandStdout(command: string, args: string[]) {
   });
 }
 
+/** Full console output a failed `runProcess` call carried, or the error text. */
+function processOutputOf(error: unknown) {
+  if (error && typeof error === 'object' && typeof (error as { processOutput?: unknown }).processOutput === 'string') {
+    return (error as { processOutput: string }).processOutput;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Runs a command and resolves with its full stdout and stderr. */
 function runProcess(
   command: string,
   args: string[],
   options: { cwd: string; timeoutMs: number; errorPrefix: string },
 ) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const proc = spawn(command, args, {
       timeout: options.timeoutMs,
       cwd: options.cwd,
@@ -438,10 +547,11 @@ function runProcess(
     proc.on('error', reject);
     proc.on('close', (code, signal) => {
       if (code !== 0) {
-        reject(new Error(`${options.errorPrefix} (exit ${code}, signal ${signal ?? 'none'}): ${formatProcessOutput(stdout, stderr)}`));
+        const error = new Error(`${options.errorPrefix} (exit ${code}, signal ${signal ?? 'none'}): ${formatProcessOutput(stdout, stderr)}`);
+        reject(Object.assign(error, { processOutput: `${stdout}\n${stderr}` }));
         return;
       }
-      resolve();
+      resolve(`${stdout}\n${stderr}`);
     });
   });
 }

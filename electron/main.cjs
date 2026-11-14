@@ -8,6 +8,7 @@ const {
   buildChildProcessEnv,
   decideLocalBuildFreshness,
   acceleratorMatchesInput,
+  createSingleFlight,
   isAllowedRendererPermission,
   parseAccelerator,
   pathExists,
@@ -67,13 +68,24 @@ const SUPPORTED_OPEN_EXTENSIONS = new Set([
   '.xml',
   '.musicxml',
   '.mscz',
+  '.mscx',
   '.mid',
   '.midi',
+  '.kar',
   '.gp',
+  '.gp3',
   '.gp4',
   '.gp5',
   '.gp6',
   '.gpx',
+  '.gtp',
+  '.ptb',
+  '.cap',
+  '.capx',
+  '.mei',
+  '.ove',
+  '.scw',
+  '.bww',
 ]);
 
 const MIME_BY_EXTENSION = new Map([
@@ -94,6 +106,9 @@ const MIME_BY_EXTENSION = new Map([
   ['.mscz', 'application/vnd.musescore'],
   ['.mid', 'audio/midi'],
   ['.midi', 'audio/midi'],
+  ['.kar', 'audio/midi'],
+  ['.mscx', 'application/xml'],
+  ['.mei', 'application/xml'],
   ['.gp', 'application/octet-stream'],
   ['.gp4', 'application/octet-stream'],
   ['.gp5', 'application/octet-stream'],
@@ -293,8 +308,26 @@ function performNativeEditCommand(command) {
   }
 }
 
+function hasLiveMainWindow() {
+  return Boolean(mainWindow && !mainWindow.isDestroyed());
+}
+
+// On macOS the app keeps running after its last window closes. Opening a file, activating the
+// app, a second launch or File > Open must then bring a window back instead of doing nothing.
+const createMainWindowOnce = createSingleFlight(() => createWindow());
+
+async function ensureMainWindow() {
+  if (hasLiveMainWindow()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    return;
+  }
+  await createMainWindowOnce();
+}
+
 async function openFilesWithNativeDialog() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await ensureMainWindow();
+  if (!hasLiveMainWindow()) return;
 
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Open Score',
@@ -304,7 +337,7 @@ async function openFilesWithNativeDialog() {
       { name: 'Nex Note projects', extensions: ['nxn'] },
       { name: 'MusicXML', extensions: ['mxl', 'xml', 'musicxml'] },
       { name: 'Images and PDFs', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'webp', 'bmp', 'heic', 'heif'] },
-      { name: 'MIDI and notation imports', extensions: ['mscz', 'mid', 'midi', 'gp', 'gp4', 'gp5', 'gp6', 'gpx'] },
+      { name: 'MIDI and notation imports', extensions: ['mscz', 'mscx', 'mid', 'midi', 'kar', 'gp', 'gp3', 'gp4', 'gp5', 'gp6', 'gpx', 'gtp', 'ptb', 'cap', 'capx', 'mei', 'ove', 'scw', 'bww'] },
       { name: 'All files', extensions: ['*'] },
     ],
   });
@@ -879,7 +912,7 @@ async function createWindow() {
   const icon = getAssetPath(process.platform === 'darwin' ? 'Icon-nexnote.icns' : 'app-icon.png');
   rendererReady = false;
 
-  mainWindow = new BrowserWindow({
+  const browserWindow = new BrowserWindow({
     width: 1440,
     height: 980,
     // Tiled windows get arbitrary sizes; keep the minimum small on Linux.
@@ -897,8 +930,15 @@ async function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = browserWindow;
+  browserWindow.on('closed', () => {
+    // Only forget the window that closed; a newer window may already have replaced it.
+    if (mainWindow !== browserWindow) return;
+    mainWindow = null;
+    rendererReady = false;
+  });
 
-  const rendererSession = mainWindow.webContents.session;
+  const rendererSession = browserWindow.webContents.session;
   rendererSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => (
     isAllowedRendererPermission(permission, details?.requestingUrl || requestingOrigin, url, details)
   ));
@@ -906,11 +946,11 @@ async function createWindow() {
     callback(isAllowedRendererPermission(permission, details?.requestingUrl || webContents.getURL(), url, details));
   });
 
-  if (IS_LINUX) mainWindow.setMenuBarVisibility(false);
+  if (IS_LINUX) browserWindow.setMenuBarVisibility(false);
 
   if (IS_LINUX) {
     const quitShortcut = parseAccelerator('CommandOrControl+Q');
-    mainWindow.webContents.on('before-input-event', (event, input) => {
+    browserWindow.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       if (acceleratorMatchesInput(quitShortcut, input)) {
         event.preventDefault();
@@ -924,22 +964,22 @@ async function createWindow() {
     });
   }
 
-  mainWindow.on('page-title-updated', (event) => {
+  browserWindow.on('page-title-updated', (event) => {
     event.preventDefault();
-    mainWindow.setTitle(APP_NAME);
+    browserWindow.setTitle(APP_NAME);
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.setTitle(APP_NAME);
-    mainWindow.show();
+  browserWindow.once('ready-to-show', () => {
+    browserWindow.setTitle(APP_NAME);
+    browserWindow.show();
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+  browserWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
     shell.openExternal(targetUrl);
     return { action: 'deny' };
   });
 
-  await mainWindow.loadURL(url);
+  await browserWindow.loadURL(url);
   // Files are flushed once the renderer reports that its open-file listener exists
   // (`nex-note:open-file-ready`); sending right after loadURL can beat React's hydration.
 }
@@ -1003,19 +1043,14 @@ if (!singleInstanceLock) {
 } else {
   app.on('second-instance', (_event, commandLine) => {
     queueCommandLineFiles(commandLine);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-      void flushPendingOpenFiles();
-    }
+    void ensureMainWindow().then(flushPendingOpenFiles);
   });
 
   app.on('open-file', (event, filePath) => {
     event.preventDefault();
     queueOpenFile(filePath);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.focus();
-    }
+    // Before launch finishes, the first window picks the file up from the queue.
+    if (app.isReady()) void ensureMainWindow();
   });
 
   app.whenReady().then(async () => {
@@ -1033,11 +1068,11 @@ if (!singleInstanceLock) {
     if (await ensurePackagedBuildMatchesLocalDevel()) return;
     createApplicationMenu();
     queueCommandLineFiles(process.argv.slice(1));
-    await createWindow();
+    await ensureMainWindow();
 
-    app.on('activate', async () => {
+    app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        await createWindow();
+        void ensureMainWindow();
       }
     });
   });

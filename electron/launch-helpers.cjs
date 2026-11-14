@@ -154,8 +154,28 @@ function acceleratorMatchesInput(parsed, input) {
   return key === parsed.key;
 }
 
+/**
+ * Wraps an async task so overlapping callers share one run. Opening a file, activating the app and
+ * a second instance can all ask for a window at once; this keeps them from creating two windows.
+ * After the run settles, the next call starts a new one.
+ */
+function createSingleFlight(task) {
+  let running = null;
+  return function runOnce() {
+    if (!running) {
+      running = Promise.resolve()
+        .then(task)
+        .finally(() => {
+          running = null;
+        });
+    }
+    return running;
+  };
+}
+
 module.exports = {
   acceleratorMatchesInput,
+  createSingleFlight,
   parseAccelerator,
   buildChildProcessEnv,
   buildExecutablePath,

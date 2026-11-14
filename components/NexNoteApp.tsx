@@ -24,6 +24,9 @@ import FileMenu, { type FileMenuItem } from '@/components/FileMenu';
 import NexNoteBrand from '@/components/NexNoteBrand';
 import type { AiConnectionState } from '@/components/WelcomeScreen';
 import LanguageSettings from '@/components/LanguageSettings';
+import { IMPORT_FILE_ACCEPT } from '@/lib/score-import-formats';
+import KeyboardPresetSettings from '@/components/KeyboardPresetSettings';
+import { applyKeyboardPreset } from '@/src/score-input/keyboard-preset';
 import type { ProviderName } from '@/lib/ai-provider-config';
 import { BENCHMARK_SUITE, OLLAMA_MODEL_SUITE } from '@/lib/benchmark-suite';
 import { OLLAMA_MODELS } from '@/lib/ai-provider-config';
@@ -62,7 +65,9 @@ import { AdvancedNoteInput } from '@/components/AdvancedNoteInput';
 import NoteInputBar from '@/components/NoteInputBar';
 import { useMidiRecording } from '@/hooks/useMidiRecording';
 import { useMidiInput } from '@/hooks/useMidiInput';
+import { leavesNoteInputWithRecord } from '@/src/score-input/instrument-input-profile';
 import {
+  nextMicrophoneDetectionMode,
   useMicrophonePitchInput,
   type MicrophoneDetectionMode,
 } from '@/hooks/useMicrophonePitchInput';
@@ -116,7 +121,6 @@ const BugReportDialog = dynamic(() => import('@/components/BugReportDialog'), { 
 const CommandCenter = dynamic(() => import('@/components/CommandCenter'), { ssr: false });
 const WelcomeScreen = dynamic(() => import('@/components/WelcomeScreen'), { ssr: false });
 
-const IMPORT_FILE_ACCEPT = '.nxn,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.bmp,.heic,.heif,.mxl,.xml,.musicxml,.mscz,.mid,.midi,.gp,.gp4,.gp5,.gp6,.gpx';
 const DEFERRED_IMPORT_XML_BYTES = 96 * 1024;
 
 type ImportLifecyclePhase = 'idle' | 'received' | 'parsedXml' | 'coreBuilt' | 'osmdRendered' | 'debugGridReady' | 'midiReady';
@@ -1195,14 +1199,35 @@ export default function Home({ searchParams }: HomeProps) {
     selectedDeviceId: microphoneSelectedDeviceId,
     detectionMode: microphoneDetectionMode,
     instrumentMode: microphoneInstrumentMode,
+    inputProfile: microphoneInputProfile,
+    ampInputChoice: microphoneAmpInputChoice,
     toggle: toggleMicrophoneInput,
     selectDevice: selectMicrophoneInput,
     selectDetectionMode: selectMicrophoneDetectionMode,
     selectInstrumentMode: selectMicrophoneInstrumentMode,
+    selectInputProfile: selectMicrophoneInputProfile,
   } = useMicrophonePitchInput({
     onChord: handleMicrophonePitches,
     preferFlats: preferFlatsForMidiInput,
   });
+
+  // Note input that Instrument Record switched on ends with it: left on, it
+  // keeps digits arming the next value and blocks measure selection after
+  // recording, with nothing on screen that says why.
+  const noteInputStartedByRecordRef = useRef(false);
+  useEffect(() => {
+    if (!noteInputMode) noteInputStartedByRecordRef.current = false;
+  }, [noteInputMode]);
+  const finishInstrumentRecordMode = useCallback((otherRecordSourceEnabled: boolean) => {
+    const leave = leavesNoteInputWithRecord({
+      noteInputStartedByRecord: noteInputStartedByRecordRef.current,
+      noteInputMode,
+      otherRecordSourceEnabled,
+    });
+    if (!leave) return;
+    noteInputStartedByRecordRef.current = false;
+    toggleNoteInput();
+  }, [noteInputMode, toggleNoteInput]);
 
   const prepareInstrumentRecordMode = useCallback(() => {
     // Instrument Record has one deliberately narrow keyboard contract:
@@ -1211,7 +1236,10 @@ export default function Home({ searchParams }: HomeProps) {
     if (inputByDurationMode) toggleInputByDurationMode();
     if (stepInputKeyboardMode) toggleStepInputKeyboardMode();
     if (guitarInputMode) toggleGuitarInputMode();
-    if (!noteInputMode) toggleNoteInput();
+    if (!noteInputMode) {
+      noteInputStartedByRecordRef.current = true;
+      toggleNoteInput();
+    }
   }, [
     guitarInputMode,
     inputByDurationMode,
@@ -1225,13 +1253,15 @@ export default function Home({ searchParams }: HomeProps) {
 
   const handleToggleMidiInput = useCallback(() => {
     if (!midiInputEnabled) prepareInstrumentRecordMode();
+    else finishInstrumentRecordMode(microphoneInputEnabled);
     void toggleMidiInput();
-  }, [midiInputEnabled, prepareInstrumentRecordMode, toggleMidiInput]);
+  }, [finishInstrumentRecordMode, microphoneInputEnabled, midiInputEnabled, prepareInstrumentRecordMode, toggleMidiInput]);
 
   const handleToggleMicrophoneInput = useCallback(() => {
     if (!microphoneInputEnabled) prepareInstrumentRecordMode();
+    else finishInstrumentRecordMode(midiInputEnabled);
     void toggleMicrophoneInput();
-  }, [microphoneInputEnabled, prepareInstrumentRecordMode, toggleMicrophoneInput]);
+  }, [finishInstrumentRecordMode, microphoneInputEnabled, midiInputEnabled, prepareInstrumentRecordMode, toggleMicrophoneInput]);
 
   useLayoutEffect(() => {
     playbackSelectedNoteRef.current = activePlaybackNote;
@@ -1402,7 +1432,9 @@ export default function Home({ searchParams }: HomeProps) {
 
   // Global keyboard handler for note editing
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
+    const onKeyDown = (nativeEvent: KeyboardEvent) => {
+      // A Sibelius or Finale preset turns the pressed key into Nex Note's key for the same action.
+      const e = applyKeyboardPreset(nativeEvent);
       const metaKey = e.metaKey || e.ctrlKey;
       // Letters follow the printed key (QWERTZ Z/Y); see src/score-input/keyboard-layout.ts.
       const letter = shortcutLetter(e);
@@ -1425,9 +1457,10 @@ export default function Home({ searchParams }: HomeProps) {
       ) {
         e.preventDefault();
         e.stopPropagation();
-        selectMicrophoneDetectionMode(
-          microphoneDetectionMode === 'single' ? 'chord' : 'single',
-        );
+        selectMicrophoneDetectionMode(nextMicrophoneDetectionMode(
+          microphoneDetectionMode,
+          microphoneInputProfile,
+        ));
         return;
       }
       const workspaceShortcut = resolveWorkspaceShortcut({
@@ -1544,11 +1577,32 @@ export default function Home({ searchParams }: HomeProps) {
         }
         return;
       }
+      // Measures selected with the mouse hold no note selection, which is all
+      // the note editor's Delete knows about; clear them here.
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace')
+        && !isTextEntry
+        && !printView
+        && !metaKey
+        && !e.ctrlKey
+        && !e.altKey
+        && !selectedNote
+        && selectedNotes.length === 0
+        && selectedMeasureNumbers.length > 0
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearSelectedMeasures();
+        return;
+      }
       handleKeyDown(e);
     };
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [
+    clearSelectedMeasures,
+    selectedMeasureNumbers,
+    selectedNotes,
     ensureMidiLoaded,
     focusInspectorTarget,
     handleKeyDown,
@@ -1556,6 +1610,7 @@ export default function Home({ searchParams }: HomeProps) {
     toggleInspectorPanel,
     markMidiReady,
     microphoneDetectionMode,
+    microphoneInputProfile,
     microphoneInputEnabled,
     pause,
     play,
@@ -2122,6 +2177,11 @@ export default function Home({ searchParams }: HomeProps) {
       if (projectDirectory) {
         setScoreOpenStatus(`Saving ${buildNxnFilename(importedFilename)} in ${projectDirectoryLabel}…`);
       }
+      // The score opened, but not completely (for example only the first page of a PDF).
+      const importWarnings = Array.isArray(data.warnings)
+        ? data.warnings.filter((warning: unknown): warning is string => typeof warning === 'string')
+        : [];
+      if (importWarnings.length > 0) setImportError(importWarnings.join(' '));
       addRecentFile(originalFilename, originalSize, {
         libraryScoreId: saved.id,
         importedName: importedFilename,
@@ -5053,6 +5113,7 @@ export default function Home({ searchParams }: HomeProps) {
           liveOllamaModels={ollamaModels}
           openSignal={aiSettingsOpenSignal}
         />
+        <KeyboardPresetSettings />
         <LanguageSettings />
 
         {debugMode && (
@@ -5288,6 +5349,8 @@ export default function Home({ searchParams }: HomeProps) {
                     microphoneSelectedDeviceId={microphoneSelectedDeviceId}
                     microphoneDetectionMode={microphoneDetectionMode}
                     microphoneInstrumentMode={microphoneInstrumentMode}
+                    microphoneInputProfile={microphoneInputProfile}
+                    microphoneAmpInputChoice={microphoneAmpInputChoice}
                     leadsheetMode={leadsheetMode}
                     guitarInputMode={guitarInputMode}
                     selectedGuitarString={selectedGuitarString}
@@ -5314,6 +5377,7 @@ export default function Home({ searchParams }: HomeProps) {
                     onSelectMicrophoneInput={(deviceId) => { void selectMicrophoneInput(deviceId); }}
                     onSelectMicrophoneDetectionMode={selectMicrophoneDetectionMode}
                     onSelectMicrophoneInstrumentMode={selectMicrophoneInstrumentMode}
+                    onSelectMicrophoneInputProfile={(profile) => { void selectMicrophoneInputProfile(profile); }}
                     onToggleLeadsheetMode={toggleLeadsheetMode}
                     onToggleGuitarInputMode={toggleGuitarInputMode}
                     onInsertGuitarFret={insertGuitarFret}

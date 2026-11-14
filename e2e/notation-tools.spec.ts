@@ -2058,3 +2058,49 @@ test('keyboard passage 1 (mixed values, accidentals, tie, triplet, chord, grace,
   await expect.poll(async () => summarize(await readCurrentXml(page)), { timeout: 15_000 }).toEqual(PASSAGE_1_EXPECTED);
   await expectNoDoctorIssues(page, 'keyboard passage 1');
 });
+
+async function clickEmptySpaceOfMeasure(
+  page: Page,
+  measureNumber: number,
+  edge: 'top' | 'bottom',
+  modifiers: Array<'Shift' | 'Meta'> = [],
+) {
+  const box = await page.locator(`[data-measure-number="${measureNumber}"]`).first().boundingBox();
+  if (!box) throw new Error(`Measure ${measureNumber} is not rendered.`);
+  // Just inside the left barline, at the staff edge away from the notes: far
+  // enough from every notehead that the click means the measure.
+  for (const modifier of modifiers) await page.keyboard.down(modifier);
+  await page.mouse.click(box.x + 4, edge === 'top' ? box.y + 2 : box.y + box.height - 2);
+  for (const modifier of modifiers) await page.keyboard.up(modifier);
+}
+
+async function readMeasureContents(page: Page) {
+  const core = await readCurrentCore(page);
+  return core.score.parts[0].staves[0].measures.map((measure) => (
+    measure.voices.flatMap((voice) => voice.events).every((event) => event.kind === 'rest') ? 'rests' : 'notes'
+  ));
+}
+
+test('measures selected with the mouse are cleared by Backspace, also a Shift-click range', async ({ page }) => {
+  await bootWithScore(page, buildFourMeasurePlaybackFixtureXml(), { strictDoctor: false });
+
+  await clickEmptySpaceOfMeasure(page, 2, 'top');
+  await expect(page.locator('[data-selected-measure="true"]')).toHaveCount(1);
+  await clickEmptySpaceOfMeasure(page, 3, 'bottom', ['Shift']);
+  await expect(page.locator('[data-selected-measure="true"]')).toHaveCount(2);
+  expect((await readE2EState(page))?.selectedNote ?? null).toBeNull();
+
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => readMeasureContents(page)).toEqual(['notes', 'rests', 'rests', 'notes']);
+  await expect(page.locator('[data-selected-measure="true"]')).toHaveCount(0);
+
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => readMeasureContents(page)).toEqual(['notes', 'notes', 'notes', 'notes']);
+
+  // Undo redraws the score and restores the selection it had; a click during that redraw is lost.
+  await page.waitForTimeout(600);
+  await clickEmptySpaceOfMeasure(page, 4, 'bottom');
+  await expect(page.locator('[data-selected-measure="true"]')).toHaveCount(1);
+  await page.keyboard.press('Delete');
+  await expect.poll(() => readMeasureContents(page)).toEqual(['notes', 'notes', 'notes', 'rests']);
+});

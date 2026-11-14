@@ -20,6 +20,8 @@ import type {
   MicrophoneInputDevice,
   MicrophoneInputStatus,
   MicrophoneSignalQuality,
+  InstrumentInputProfile,
+  AmpInputChoiceReason,
 } from '@/hooks/useMicrophonePitchInput';
 import type { DiatonicIntervalNumber } from '@/src/score-input/staff-pitch';
 
@@ -64,6 +66,8 @@ interface Props {
   microphoneSelectedDeviceId: string;
   microphoneDetectionMode: MicrophoneDetectionMode;
   microphoneInstrumentMode: MicrophoneInstrumentMode;
+  microphoneInputProfile?: InstrumentInputProfile;
+  microphoneAmpInputChoice?: AmpInputChoiceReason | null;
   leadsheetMode: boolean;
   guitarInputMode: boolean;
   selectedGuitarString: 1 | 2 | 3 | 4 | 5 | 6;
@@ -90,6 +94,7 @@ interface Props {
   onSelectMicrophoneInput: (deviceId: string) => void;
   onSelectMicrophoneDetectionMode: (mode: MicrophoneDetectionMode) => void;
   onSelectMicrophoneInstrumentMode: (mode: MicrophoneInstrumentMode) => void;
+  onSelectMicrophoneInputProfile?: (profile: InstrumentInputProfile) => void;
   onToggleLeadsheetMode: () => void;
   onToggleGuitarInputMode: () => void;
   onInsertGuitarFret: (string: 1 | 2 | 3 | 4 | 5 | 6, fret: number, tuningId?: GuitarTuningId) => void;
@@ -308,9 +313,9 @@ export function describeSelectionStatus(coreDocument: ScoreDocumentModel | null,
 export default function NotationToolbar({
   playbackState, currentMeasure, totalBeats, currentBeat, playbackTransport = null, midiLoading,
   playbackError, tempoOverride, metronomeEnabled, onPlay, onPause, onStop, onTempoChange, onSeek, onToggleMetronome, onMixerChange,
-  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
+  noteInputMode, chordInputMode, stepInputKeyboardMode, inputByDurationMode, preparedDurationPitchLabel, midiInputEnabled, midiInputStatus, midiInputDevices, inputAuditionEnabled, microphoneInputEnabled, microphoneInputStatus, microphoneDetectedPitchLabel, microphoneDetectedSoundingPitchLabel, microphoneSignalLevelDb, microphoneSignalQuality, microphoneInputDevices, microphoneSelectedDeviceId, microphoneDetectionMode, microphoneInstrumentMode, microphoneInputProfile = 'microphone', microphoneAmpInputChoice = null, leadsheetMode, selectedDuration, selectedAccidental, isDotted, selectedVoice,
   guitarInputMode, selectedGuitarString, selectedGuitarFret, selectedGuitarTuning, guitarFretBuffer,
-  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleInputAudition, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onSelectMicrophoneInstrumentMode, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
+  entryMode, selectedNote, selectedBarlineMeasureNumber = null, onChangeActivePitch, onChangeActiveOctave, onToggleNoteInput, onToggleEntryMode, onToggleChordInputMode, onToggleStepInputKeyboardMode, onToggleInputByDurationMode, onToggleMidiInput, onToggleInputAudition, onToggleMicrophoneInput, onSelectMicrophoneInput, onSelectMicrophoneDetectionMode, onSelectMicrophoneInstrumentMode, onSelectMicrophoneInputProfile, onToggleLeadsheetMode, onToggleGuitarInputMode, onInsertGuitarFret, onGuitarTuningChange, onToggleGuitarTechnique, onDurationChange, onAccidentalChange,
   onToggleDotted, onVoiceChange, onInsertRest, onInsertSlash, onFillSlashMeasure, onInsertStepInputPitch, onSetChordSymbol, onDeleteNote,
   onCopySelection, onCutSelection, onPasteClipboard, clipboardCount,
   canUndo, canRedo, onUndo, onRedo,
@@ -376,6 +381,17 @@ export default function NotationToolbar({
       : microphoneSignalQuality === 'too-high'
         ? 'INPUT HIGH'
         : `REC ${Math.round(microphoneSignalLevelDb)} dB`;
+  const microphoneSelectedDeviceLabel = microphoneInputDevices
+    .find((device) => device.deviceId === microphoneSelectedDeviceId)?.label ?? '';
+  const microphoneAmpInputHint = microphoneInputProfile !== 'guitar-amp'
+    ? ''
+    : microphoneAmpInputChoice === 'spark'
+      ? t('instrumentRecord.amp.autoSelected', { name: microphoneSelectedDeviceLabel || 'Spark' })
+      : microphoneAmpInputChoice === 'several-sparks'
+        ? t('instrumentRecord.amp.severalSparks')
+        : microphoneAmpInputChoice === 'not-found'
+          ? t('instrumentRecord.amp.chooseInput')
+          : '';
 
   return (
     <div className="nex-brand-toolbar relative shrink-0 select-none border-b px-3 py-2" data-testid="notation-toolbar">
@@ -497,7 +513,9 @@ export default function NotationToolbar({
             microphoneInputEnabled ? 'Stop microphone Instrument Record' : 'Start microphone Instrument Record',
             microphoneDetectionMode === 'single'
               ? 'Choose a note value with 1–9; every played pitch advances automatically'
-              : 'Play chord tones one by one at the same position; press Right Arrow to advance',
+              : microphoneDetectionMode === 'strum'
+                ? 'Choose a note value with 1–9; every strummed chord is written at once and advances automatically'
+                : 'Play chord tones one by one at the same position; press Right Arrow to advance',
             microphoneInputStatus === 'requesting' ? 'Requesting microphone access…' : null,
             microphoneInputStatus === 'listening' ? 'Listening to the microphone' : null,
             microphoneInputStatus === 'denied' ? 'Microphone access was denied; click to retry' : null,
@@ -544,15 +562,44 @@ export default function NotationToolbar({
             >
               {microphoneSignalLabel} · {Math.round(microphoneSignalLevelDb)} dB
             </span>
+            {onSelectMicrophoneInputProfile ? (
+              <select
+                aria-label={t('instrumentRecord.profile.label')}
+                data-testid="instrument-record-profile"
+                title={t('instrumentRecord.profile.title')}
+                value={microphoneInputProfile}
+                onChange={(event) => onSelectMicrophoneInputProfile(event.target.value as InstrumentInputProfile)}
+                className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+              >
+                <option value="microphone">{t('instrumentRecord.profile.microphone')}</option>
+                <option value="guitar-amp">{t('instrumentRecord.profile.guitarAmp')}</option>
+              </select>
+            ) : null}
+            {microphoneAmpInputHint ? (
+              <span
+                data-testid="instrument-record-amp-hint"
+                className={`max-w-48 truncate whitespace-nowrap text-[11px] font-medium ${
+                  microphoneAmpInputChoice === 'spark' ? 'text-emerald-700' : 'text-amber-700'
+                }`}
+                title={microphoneAmpInputHint}
+              >
+                {microphoneAmpInputHint}
+              </span>
+            ) : null}
             <select
               aria-label="Pitch recognition mode"
-              title={formatShortcutHint("Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Alt/Option+C switches modes")}
+              title={formatShortcutHint(microphoneInputProfile === 'guitar-amp'
+                ? "Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Strummed chord writes up to six strings played together and advances; Alt/Option+C switches modes"
+                : "Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Alt/Option+C switches modes")}
               value={microphoneDetectionMode}
               onChange={(event) => onSelectMicrophoneDetectionMode(event.target.value as MicrophoneDetectionMode)}
               className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
             >
               <option value="single">Single notes · auto → · ⌥C</option>
               <option value="chord">Build chord · manual → · ⌥C</option>
+              {microphoneInputProfile === 'guitar-amp' ? (
+                <option value="strum">Strummed chord · auto → · ⌥C</option>
+              ) : null}
             </select>
             <select
               aria-label="Instrument transposition"

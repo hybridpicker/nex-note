@@ -28,6 +28,7 @@ import { DEFAULT_AI_MODEL_SETTINGS } from '../lib/ai-model-settings.ts';
 import { formatShortcutHint } from '../lib/shortcut-hints.ts';
 import { LEFT_NOTATION_SIDEBAR_STORAGE_KEY, parseLeftNotationSidebarCollapsed, readLeftNotationSidebarCollapsed, writeLeftNotationSidebarCollapsed } from '../lib/left-notation-sidebar.ts';
 import { useScoreDocument } from '../hooks/useScoreDocument.ts';
+import { nextMicrophoneDetectionMode } from '../hooks/useMicrophonePitchInput.ts';
 import type { SelectedNote } from '../hooks/useNoteEditor.ts';
 import { importMusicXmlToCore } from '../src/musicxml-adapter/import/import-musicxml.ts';
 
@@ -656,6 +657,58 @@ test('NotationToolbar surfaces playback, history, tempo, metronome, and error UI
   });
 });
 
+test('NotationToolbar offers the Instrument Record input profile and reports an automatically found amp', () => {
+  const chosen: string[] = [];
+  let renderer: ReturnType<typeof create> | null = null;
+  act(() => {
+    renderer = create(React.createElement(NotationToolbar, toolbarProps({
+      microphoneInputEnabled: true,
+      microphoneInputStatus: 'listening',
+      microphoneInputDevices: [
+        { deviceId: 'built-in', label: 'MacBook Pro Microphone' },
+        { deviceId: 'spark-1', label: 'Spark MINI' },
+      ],
+      microphoneSelectedDeviceId: 'spark-1',
+      microphoneInputProfile: 'guitar-amp',
+      microphoneAmpInputChoice: 'spark',
+      microphoneInstrumentMode: 'guitar',
+      microphoneSignalQuality: 'good',
+      onSelectMicrophoneInputProfile(profile) { chosen.push(profile); },
+    })));
+  });
+  const root = renderer!.root;
+  const profileSelect = root.findByProps({ 'data-testid': 'instrument-record-profile' });
+  assert.equal(profileSelect.props.value, 'guitar-amp');
+  assert.deepEqual(
+    profileSelect.findAllByType('option').map((option: ReactTestInstance) => option.props.value),
+    ['microphone', 'guitar-amp'],
+  );
+  act(() => { profileSelect.props.onChange({ target: { value: 'microphone' } }); });
+  assert.deepEqual(chosen, ['microphone']);
+  assert.equal(
+    root.findByProps({ 'data-testid': 'instrument-record-amp-hint' }).props.title,
+    'Amp found: Spark MINI',
+  );
+  // The guitar notation choice stays available beside the profile.
+  const transposition = root.findByProps({ 'aria-label': 'Instrument transposition' });
+  assert.equal(transposition.props.value, 'guitar');
+
+  act(() => {
+    renderer?.update(React.createElement(NotationToolbar, toolbarProps({
+      microphoneInputEnabled: true,
+      microphoneInputStatus: 'listening',
+      microphoneInputProfile: 'guitar-amp',
+      microphoneAmpInputChoice: 'not-found',
+      onSelectMicrophoneInputProfile() {},
+    })));
+  });
+  assert.equal(
+    renderer!.root.findByProps({ 'data-testid': 'instrument-record-amp-hint' }).props.title,
+    'Amp not recognized: choose its input',
+  );
+  act(() => { renderer?.unmount(); });
+});
+
 test('NotationToolbar exposes active-note controls when a note is selected', () => {
   const [selectedNote] = makeSelectedNotes(SAMPLE_XML);
   let chosenStep: string | null = null;
@@ -861,6 +914,45 @@ test('NotationToolbar writes a clear warning when the microphone input is too lo
   );
 
   act(() => renderer?.unmount());
+});
+
+test('NotationToolbar offers strummed chords with the guitar amp profile only', () => {
+  const optionsFor = (profile: 'microphone' | 'guitar-amp') => {
+    let renderer: ReturnType<typeof create> | null = null;
+    act(() => {
+      renderer = create(React.createElement(NotationToolbar, toolbarProps({
+        microphoneInputEnabled: true,
+        microphoneInputStatus: 'listening',
+        microphoneInputProfile: profile,
+        microphoneDetectionMode: profile === 'guitar-amp' ? 'strum' : 'single',
+      })));
+    });
+    const picker = renderer!.root.findAllByProps({ 'aria-label': 'Pitch recognition mode' })[0]!;
+    const result = {
+      values: picker.findAllByType('option').map((option) => option.props.value as string),
+      title: picker.props.title as string,
+      recordTitle: renderer!.root.findAllByProps({ 'data-testid': 'instrument-record-toggle' })[0]!.props.title as string,
+    };
+    act(() => renderer?.unmount());
+    return result;
+  };
+
+  const amp = optionsFor('guitar-amp');
+  assert.deepEqual(amp.values, ['single', 'chord', 'strum']);
+  assert.match(amp.title, /Strummed chord writes up to six strings/);
+  assert.match(amp.recordTitle, /every strummed chord is written at once/);
+  const microphone = optionsFor('microphone');
+  assert.deepEqual(microphone.values, ['single', 'chord']);
+  assert.doesNotMatch(microphone.title, /Strummed chord/);
+});
+
+test('Alt/Option+C steps through the recognition modes, with strummed chords on the amp profile only', () => {
+  assert.equal(nextMicrophoneDetectionMode('single', 'guitar-amp'), 'chord');
+  assert.equal(nextMicrophoneDetectionMode('chord', 'guitar-amp'), 'strum');
+  assert.equal(nextMicrophoneDetectionMode('strum', 'guitar-amp'), 'single');
+  assert.equal(nextMicrophoneDetectionMode('single', 'microphone'), 'chord');
+  assert.equal(nextMicrophoneDetectionMode('chord', 'microphone'), 'single');
+  assert.equal(nextMicrophoneDetectionMode('strum', 'microphone'), 'single');
 });
 
 test('NotationToolbar starts note input when a duration button is clicked', () => {

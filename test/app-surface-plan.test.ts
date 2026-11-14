@@ -38,6 +38,14 @@ test('documentation-only changes do not require application rebuilds', () => {
   assert.doesNotMatch(plan, /npm run build/);
 });
 
+test('the latest-DMG builder counts as Electron packaging', () => {
+  const result = classifyAppSurfaces(['scripts/build-latest-dmg.mjs']);
+
+  assert.equal(result.electron, true);
+  assert.equal(result.shared, false);
+  assert.equal(result.ipad, false);
+});
+
 test('active Xcode macOS workflow replaces the planned-state reminder', () => {
   const result = classifyAppSurfaces(['lib/ai-providers.ts'], {
     macosXcodeAvailable: true,

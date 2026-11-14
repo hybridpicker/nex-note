@@ -57,17 +57,21 @@ export function detectPitchFromTimeDomain(
     || sampleRate <= 0
   ) return null;
 
+  // An AnalyserNode returns its buffer oldest sample first. Analyse the
+  // newest samples: reading the first 4096 of an 8192-sample buffer would
+  // describe the signal about 90 ms ago.
   const sampleCount = Math.min(samples.length, 4096);
+  const firstSample = samples.length - sampleCount;
   let mean = 0;
   for (let index = 0; index < sampleCount; index += 1) {
-    mean += Number(samples[index]) || 0;
+    mean += Number(samples[firstSample + index]) || 0;
   }
   mean /= sampleCount;
 
   let squareSum = 0;
   const centered = new Float32Array(sampleCount);
   for (let index = 0; index < sampleCount; index += 1) {
-    const sample = (Number(samples[index]) || 0) - mean;
+    const sample = (Number(samples[firstSample + index]) || 0) - mean;
     centered[index] = sample;
     squareSum += sample * sample;
   }
