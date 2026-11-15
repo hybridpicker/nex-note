@@ -30,6 +30,18 @@ import type { SelectedNote } from '@/hooks/useNoteEditor';
 import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
 import { buildPlaybackMeasureOrder } from '@/lib/playback-measure-order';
 import type { ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
+import { partTransposition } from '@/src/score-core/query/clipboard';
+import { MASTER_GAIN, bufferPeak, velocityToGain } from '@/lib/playback-dynamics';
+import {
+  applyMixerToPartBuses,
+  getPartBus,
+  getPlaybackBus,
+  resolveAutoPanTable,
+  type PlaybackBus,
+} from '@/lib/playback-bus';
+import { isSustainingSoundfont, prepareSoundfontBuffers, shouldLoopNote, type SampleLoopPoints } from '@/lib/sample-loop';
+import { SUSTAIN_PEDAL_CONTROLLER, applySustainPedal } from '@/lib/playback-midi-controllers';
+import { METRONOME_CLICK, drumVoicePeak, playDrumHit, renderMetronomeClick, type DrumHitHandle } from '@/lib/drum-synth';
 
 const LOCAL_SOUNDFONT_OPTIONS = {
   soundfont: 'FluidR3_GM' as const,
@@ -100,6 +112,8 @@ type PlaybackPlayerStart = (
     adsr: [number, number, number, number];
     duration: number;
     loop: boolean;
+    loopStart: number;
+    loopEnd: number;
   }>,
 ) => unknown;
 
@@ -111,6 +125,8 @@ interface MidiNote {
   multiplicity?: number; // simultaneous identical note count
   soundfont?: SoundfontInstrumentName;
   partId?: string;
+  /** General MIDI percussion (channel 10): `midi` is a drum key, played by lib/drum-synth.ts. */
+  percussion?: boolean;
 }
 
 interface TempoEntry {
@@ -148,6 +164,9 @@ const MIN_SCHEDULE_LEAD_S = 0.008;
 // Playback starts this long after Play: enough for the first notes to be handed to the audio
 // thread before they are due.
 const START_LEAD_S = 0.015;
+// The master level is committed this far behind the look-ahead edge, so a note entering the
+// window can still lower the level a few milliseconds before it starts.
+const LEVEL_COMMIT_MARGIN_S = 0.02;
 const SOUND_FONT_LOAD_TIMEOUT_MS = 5000;
 const PLAYHEAD_END_EPSILON_S = 0.02;
 const PLAYHEAD_RENDER_LEAD_S = 0;
@@ -163,9 +182,17 @@ export async function activatePlaybackAudioContext(
   if (audioContext.state === 'closed') {
     throw new Error('The audio output is closed. Tap Play again.');
   }
-  if (audioContext.state === 'suspended') {
+  if (shouldResumePlaybackAudioContext(audioContext.state)) {
     await audioContext.resume();
   }
+}
+
+/**
+ * Whether a context in this state needs `resume()`: suspended, or WebKit's `interrupted` (iOS
+ * after a phone call, Siri or another app taking the audio session).
+ */
+export function shouldResumePlaybackAudioContext(state: string) {
+  return state === 'suspended' || state === 'interrupted';
 }
 
 type PlaybackMidiResponse = Pick<Response, 'arrayBuffer' | 'json' | 'ok'>;
@@ -223,7 +250,8 @@ export function resolvePlaybackSoundfontInstrument(
   const part = (partId
     ? parts.find((candidate) => candidate.id === partId || candidate.sourcePartId === partId)
     : null) ?? parts[0];
-  return resolveMidiInstrumentSound(resolvePartInstrumentId(part)).soundfont;
+  // The other parts decide a bare "Bass" (choir voice or bass instrument), as in playback.
+  return resolveMidiInstrumentSound(resolvePartInstrumentId(part, { siblings: parts })).soundfont;
 }
 
 type MidiTrackInstrument = {
@@ -246,7 +274,7 @@ export function resolvePlaybackTrackSound(
   trackCount = 1,
 ): MidiInstrumentSound & { usedFallback: boolean } {
   const part = resolvePlaybackTrackPart(track, coreDocument, trackIndex, trackCount);
-  const fallbackInstrumentId = resolvePartInstrumentId(part);
+  const fallbackInstrumentId = resolvePartInstrumentId(part, { siblings: coreDocument?.score.parts ?? [] });
 
   return resolveMidiSoundFromToneProgram(track.instrument.number, {
     percussion: track.instrument.percussion || track.channel === 9,
@@ -261,26 +289,42 @@ export function resolvePlaybackTrackPart(
   trackCount = 1,
 ) {
   const parts = coreDocument?.score.parts ?? [];
-  const playableTrackParts = parts.flatMap((part) => (
-    part.staves
-      .filter((staff) => staff.measures.some((measure) => (
-        measure.voices.some((voice) => voice.events.some((event) => event.kind === 'note' && !event.hidden))
-      )))
-      .map(() => part)
-  ));
-  const playablePositionalPart = trackCount === playableTrackParts.length
-    ? playableTrackParts[trackIndex]
-    : null;
+  const staffHas = (staff: (typeof parts)[number]['staves'][number], test: (event: TimedEvent) => boolean) => (
+    staff.measures.some((measure) => measure.voices.some((voice) => voice.events.some((event) => !event.hidden && test(event))))
+  );
+  const isPitched = (event: TimedEvent) => event.kind === 'note';
+  const isUnpitched = (event: TimedEvent) => event.kind === 'rest' && Boolean(event.unpitched);
+  // Both renderers write one track per staff with notes; the fallback renderer (and MuseScore for
+  // a drum staff) writes unpitched notes on a percussion track of their own, after the pitched one.
+  const lanes = parts.flatMap((part) => part.staves.flatMap((staff) => [
+    ...(staffHas(staff, isPitched) ? [part] : []),
+    ...(staffHas(staff, isUnpitched) ? [part] : []),
+  ]));
+  if (trackCount === lanes.length && lanes[trackIndex]) return lanes[trackIndex]!;
+  const pitchedLanes = parts.flatMap((part) => part.staves.filter((staff) => staffHas(staff, isPitched)).map(() => part));
+  if (trackCount === pitchedLanes.length && pitchedLanes[trackIndex]) return pitchedLanes[trackIndex]!;
+
+  // By name: an exact name ("Violin II", "Piano staff 2") first, else the longest name the track
+  // name contains, so "Violin II" is not taken for "Violin I".
   const trackName = normalizeTrackName(track.name);
-  const namedPart = trackName
-    ? parts.find((part) => [part.instrumentName, part.name].some((name) => {
-        const normalizedName = normalizeTrackName(name);
-        return normalizedName && (trackName.includes(normalizedName) || normalizedName.includes(trackName));
-      }))
-    : null;
+  if (trackName) {
+    const candidates = parts.flatMap((part) => [part.name, part.instrumentName]
+      .map((name) => normalizeTrackName(name))
+      .filter(Boolean)
+      .map((name) => ({ part, name })));
+    const exact = candidates.find(({ name }) => trackName === name || trackName.replace(/ staff \d+$/, '') === name);
+    if (exact) return exact.part;
+    const contained = candidates
+      .filter(({ name }) => trackName.includes(name) || name.includes(trackName))
+      .sort((left, right) => right.name.length - left.name.length)[0];
+    if (contained) return contained.part;
+  }
+  const percussionTrack = track.instrument.percussion || track.channel === 9;
+  const drumParts = parts.filter((part) => part.staves.some((staff) => staffHas(staff, isUnpitched)));
+  if (percussionTrack && drumParts.length === 1) return drumParts[0]!;
   const positionalPart = trackCount === parts.length ? parts[trackIndex] : null;
   const onlyPart = parts.length === 1 ? parts[0] : null;
-  return playablePositionalPart ?? namedPart ?? positionalPart ?? onlyPart ?? null;
+  return positionalPart ?? onlyPart ?? null;
 }
 
 function firstTempoBpm(parsed: Pick<ParsedMidi, 'tempos'>) {
@@ -340,7 +384,140 @@ function isStoppablePlaybackHandle(handle: unknown): handle is PlaybackNoteHandl
     && typeof (handle as PlaybackNoteHandle).stop === 'function';
 }
 
-function createOscillatorFallbackPlayer(ac: AudioContext): PlaybackPlayer {
+// The triangle fallback is far louder than a soundfont sample at the same gain; this brings its
+// peak to that of a typical sample (about -16 dBFS at gain 1).
+const OSCILLATOR_FALLBACK_LEVEL = 0.15;
+// Peak assumed for a sample whose buffer could not be measured (an injected test loader).
+const NOMINAL_SAMPLE_PEAK = 0.12;
+// sample-player's default release; a stopped note sounds this much longer.
+const PLAYER_RELEASE_S = 0.3;
+const AUDITION_GAIN = velocityToGain(90 / 127);
+const AUDITION_DECAYING_SECONDS = 1.0;
+const AUDITION_SUSTAINED_MAX_SECONDS = 0.8;
+const AUDITION_SUSTAINED_MIN_SECONDS = 0.2;
+
+const bufferPeakCache = new WeakMap<object, number>();
+function cachedBufferPeak(buffer: AudioBuffer | null | undefined) {
+  if (!buffer || typeof buffer.getChannelData !== 'function') return NOMINAL_SAMPLE_PEAK;
+  const cached = bufferPeakCache.get(buffer);
+  if (cached != null) return cached;
+  // Samples peak in their attack; scanning the first second keeps this cheap for long samples.
+  const peak = bufferPeak(buffer, Math.round((buffer.sampleRate || 44100) * 1.0)) || NOMINAL_SAMPLE_PEAK;
+  bufferPeakCache.set(buffer, peak);
+  return peak;
+}
+
+function clampNoteGain(gain: number) {
+  return Math.max(0.001, Math.min(1.5, gain));
+}
+
+/** Sends a started note to `destination` instead of its player's output (per-part bus). */
+function routeHandleTo(handle: unknown, destination: AudioNode) {
+  const node = handle as { connect?: (target: AudioNode) => unknown; disconnect?: () => unknown } | null;
+  if (!node || typeof node.connect !== 'function' || typeof node.disconnect !== 'function') return false;
+  try {
+    node.disconnect();
+    node.connect(destination);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Written pitch to sounding MIDI number: a B flat clarinet's written D5 sounds C5. */
+export function resolveAuditionMidi(
+  note: Pick<SelectedNote, 'step' | 'octave' | 'alter' | 'corePartId'>,
+  coreDocument: ScoreDocumentModel | null | undefined,
+) {
+  const parts = coreDocument?.score.parts ?? [];
+  const part = note.corePartId
+    ? parts.find((candidate) => candidate.id === note.corePartId || candidate.sourcePartId === note.corePartId)
+    : (parts.length === 1 ? parts[0] : undefined);
+  return noteToMidiNumber(note) + (part ? partTransposition(part).chromatic : 0);
+}
+
+const DURATION_TYPE_QUARTERS: Record<string, number> = {
+  maxima: 32, long: 16, breve: 8, whole: 4, half: 2, quarter: 1, eighth: 0.5,
+  '16th': 0.25, '32nd': 0.125, '64th': 0.0625, '128th': 0.03125, '256th': 0.015625,
+};
+
+/**
+ * How long an audition sounds: decaying instruments ring about a second; sustained ones last the
+ * note's length at the tempo, at most 0.8 s (and at least 0.2 s, so short notes are heard).
+ */
+export function resolveAuditionDurationSeconds(params: {
+  soundfont: string;
+  durationType?: string | null;
+  isDotted?: boolean;
+  quarterSeconds?: number | null;
+}) {
+  if (!isSustainingSoundfont(params.soundfont)) return AUDITION_DECAYING_SECONDS;
+  const quarters = (DURATION_TYPE_QUARTERS[params.durationType ?? ''] ?? 1) * (params.isDotted ? 1.5 : 1);
+  const quarterSeconds = params.quarterSeconds != null && Number.isFinite(params.quarterSeconds) && params.quarterSeconds > 0
+    ? params.quarterSeconds
+    : 0.5;
+  return Math.max(AUDITION_SUSTAINED_MIN_SECONDS, Math.min(AUDITION_SUSTAINED_MAX_SECONDS, quarters * quarterSeconds));
+}
+
+/** Gain of each note of an auditioned chord: quieter per note, so the chord is about as loud. */
+function auditionChordGain(noteCount: number) {
+  return Math.max(AUDITION_GAIN * 0.45, Math.min(AUDITION_GAIN, AUDITION_GAIN / Math.sqrt(Math.max(1, noteCount))));
+}
+
+/** Parts that carry notes, with their instrument, for the automatic seating. */
+const documentPanCache = new WeakMap<ScoreDocumentModel, Map<string, number>>();
+export function resolveDocumentPartPans(coreDocument: ScoreDocumentModel | null | undefined): Map<string, number> {
+  if (!coreDocument) return new Map();
+  const cached = documentPanCache.get(coreDocument);
+  if (cached) return cached;
+  const playableParts = coreDocument.score.parts.filter((part) => part.staves.some((staff) => (
+    staff.measures.some((measure) => measure.voices.some((voice) => voice.events.some((event) => event.kind === 'note' && !event.hidden)))
+  )));
+  const byId = resolveAutoPanTable(playableParts.map((part) => ({ id: part.id, instrumentId: resolvePartInstrumentId(part, { siblings: coreDocument.score.parts }) })));
+  const pans = new Map<string, number>();
+  playableParts.forEach((part) => {
+    const pan = byId.get(part.id) ?? 0;
+    pans.set(part.id, pan);
+    if (part.sourcePartId) pans.set(part.sourcePartId, pan);
+  });
+  documentPanCache.set(coreDocument, pans);
+  return pans;
+}
+
+const clickBufferCache = new WeakMap<object, { accent: AudioBuffer; beat: AudioBuffer } | null>();
+function metronomeClickBuffers(ac: AudioContext) {
+  if (clickBufferCache.has(ac)) return clickBufferCache.get(ac) ?? null;
+  let buffers: { accent: AudioBuffer; beat: AudioBuffer } | null = null;
+  try {
+    if (typeof ac.createBuffer === 'function' && typeof ac.createBufferSource === 'function') {
+      const sampleRate = ac.sampleRate || 44100;
+      const make = (accent: boolean) => {
+        const data = renderMetronomeClick(sampleRate, accent);
+        const buffer = ac.createBuffer(1, data.length, sampleRate);
+        buffer.getChannelData(0).set(data);
+        return buffer;
+      };
+      buffers = { accent: make(true), beat: make(false) };
+    }
+  } catch {
+    buffers = null;
+  }
+  clickBufferCache.set(ac, buffers);
+  return buffers;
+}
+
+function canSynthesizeDrums(ac: AudioContext) {
+  return typeof ac.createBiquadFilter === 'function'
+    && typeof ac.createBufferSource === 'function'
+    && typeof ac.createBuffer === 'function'
+    && typeof ac.createOscillator === 'function';
+}
+
+function hasE2eInstrumentLoader() {
+  return typeof (globalThis as { __NEX_NOTE_E2E_INSTRUMENT_LOADER__?: unknown }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__ === 'function';
+}
+
+function createOscillatorFallbackPlayer(ac: AudioContext, destination: AudioNode = ac.destination): PlaybackPlayer {
   const activeNodes = new Set<{
     oscillator: OscillatorNode;
     gain: GainNode;
@@ -363,7 +540,7 @@ function createOscillatorFallbackPlayer(ac: AudioContext): PlaybackPlayer {
     const startAt = Math.max(ac.currentTime, when);
     const duration = Math.max(0.05, options?.duration ?? 0.4);
     const release = Math.max(0.02, options?.release ?? 0.08);
-    const gainValue = Math.max(0.02, Math.min(1, options?.gain ?? 0.5));
+    const gainValue = Math.max(0.001, Math.min(1.5, options?.gain ?? 0.5)) * OSCILLATOR_FALLBACK_LEVEL;
     const attack = Math.max(0.001, Math.min(0.02, options?.attack ?? 0.005));
 
     const oscillator = ac.createOscillator();
@@ -374,13 +551,16 @@ function createOscillatorFallbackPlayer(ac: AudioContext): PlaybackPlayer {
     gainNode.gain.exponentialRampToValueAtTime(gainValue, startAt + attack);
     gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + duration + release);
     oscillator.connect(gainNode);
-    gainNode.connect(ac.destination);
+    gainNode.connect(destination);
     oscillator.start(startAt);
     oscillator.stop(startAt + duration + release);
 
     const handle = {
       oscillator,
       gain: gainNode,
+      // Lets the scheduler move the note to its part's bus.
+      connect(target: AudioNode) { gainNode.connect(target); },
+      disconnect() { gainNode.disconnect(); },
       stop(stopWhen = ac.currentTime) {
         const safeStopAt = Math.max(ac.currentTime, stopWhen);
         try {
@@ -422,14 +602,15 @@ function startAudioSample(
   buffer: AudioBuffer,
   when: number,
   gainValue: number,
+  destination: AudioNode = ac.destination,
 ): PlaybackNoteHandle {
   const startAt = Math.max(ac.currentTime, when);
   const source = ac.createBufferSource();
   const gain = ac.createGain();
   source.buffer = buffer;
-  gain.gain.setValueAtTime(Math.max(0.01, Math.min(1.5, gainValue)), startAt);
+  gain.gain.setValueAtTime(clampNoteGain(gainValue), startAt);
   source.connect(gain);
-  gain.connect(ac.destination);
+  gain.connect(destination);
 
   let stopped = false;
   const disconnect = () => {
@@ -580,7 +761,7 @@ function formatDebugJson(label: string, value: unknown) {
   return `${label}\n${JSON.stringify(value, null, 2)}`;
 }
 
-function noteToMidiNumber(note: SelectedNote) {
+function noteToMidiNumber(note: Pick<SelectedNote, 'step' | 'octave' | 'alter'>) {
   const STEP_TO_SEMITONE: Record<string, number> = {
     C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
   };
@@ -977,6 +1158,69 @@ function buildPlaybackCompare(
   };
 }
 
+/**
+ * The playback notes, tempo map and time signature of a rendered MIDI file: each track mapped to
+ * its score part and instrument, percussion tracks flagged, the sustain pedal applied, swing
+ * applied. Pure, so the mapping can be tested without audio.
+ */
+export function parsePlaybackMidi(
+  midi: Pick<import('@tonejs/midi').Midi, 'tracks' | 'header'>,
+  coreDocument: ScoreDocumentModel | null | undefined,
+  swingRatio?: number,
+  swingUnit: ScoreDocumentModel['swingUnit'] = 'eighth',
+): { parsed: ParsedMidi; duplicateSummary: ReturnType<typeof summarizeSimultaneousDuplicates> } {
+  const straightRawNotes: MidiNote[] = midi.tracks
+    .flatMap((track, trackIndex) => {
+      const sound = resolvePlaybackTrackSound(track, coreDocument, trackIndex, midi.tracks.length);
+      const part = resolvePlaybackTrackPart(track, coreDocument, trackIndex, midi.tracks.length);
+      const percussion = Boolean(track.instrument.percussion) || track.channel === 9;
+      const trackNotes: MidiNote[] = track.notes.map((note) => ({
+        time: note.time,
+        duration: note.duration,
+        midi: note.midi,
+        velocity: note.velocity,
+        soundfont: sound.soundfont,
+        partId: part?.id ?? part?.sourcePartId,
+        ...(percussion ? { percussion: true } : {}),
+      }));
+      // The sustain pedal (CC64) holds released notes until it lifts; drums ignore it.
+      const pedal = percussion ? [] : (track.controlChanges?.[SUSTAIN_PEDAL_CONTROLLER] ?? []);
+      return pedal.length > 0
+        ? applySustainPedal(trackNotes, pedal.map((event) => ({ time: event.time, value: event.value })))
+        : trackNotes;
+    })
+    .sort((a, b) => a.time - b.time);
+
+  const tempos: TempoEntry[] = midi.header.tempos.length > 0
+    ? midi.header.tempos.map(t => ({ bpm: t.bpm, time: t.time ?? 0 }))
+    : [{ bpm: 120, time: 0 }];
+
+  const rawNotes = applySwingToMidiNotes(straightRawNotes, { tempos }, swingRatio, swingUnit);
+  const duplicateSummary = summarizeSimultaneousDuplicates(rawNotes);
+  const notes = normalizeMidiNotes(rawNotes);
+
+  const timeSig = midi.header.timeSignatures[0];
+  const timeSignatureNumerator = timeSig?.timeSignature[0] ?? 4;
+  const timeSignatureDenominator = timeSig?.timeSignature[1] ?? 4;
+  const last = notes[notes.length - 1];
+  const audibleDurationSeconds = last ? last.time + last.duration + 0.5 : 0;
+  const preliminaryParsed: ParsedMidi = {
+    rawNotes,
+    notes,
+    tempos,
+    durationSeconds: audibleDurationSeconds,
+    timeSignatureNumerator,
+    timeSignatureDenominator,
+  };
+  const durationSeconds = resolveFullPlaybackDurationSeconds(coreDocument, preliminaryParsed, audibleDurationSeconds);
+
+  const swing = Number.isFinite(swingRatio) && swingRatio != null && Math.abs(swingRatio - 0.5) >= 0.001
+    ? { ratio: swingRatio, unit: swingUnit === '16th' ? '16th' as const : 'eighth' as const }
+    : null;
+  const parsed: ParsedMidi = { rawNotes, notes, tempos, durationSeconds, timeSignatureNumerator, timeSignatureDenominator, swing };
+  return { parsed, duplicateSummary };
+}
+
 export function usePlayback(options?: {
   coreDocument?: ScoreDocumentModel | null;
   selectedNote?: SelectedNote | null;
@@ -986,7 +1230,13 @@ export function usePlayback(options?: {
 }) {
   const [playbackState, setPlaybackState] = useState<PlaybackState>('stopped');
   const mixerRef = useRef<MixerState>({});
-  const setMixer = useCallback((state: MixerState) => { mixerRef.current = state; }, []);
+  const setMixer = useCallback((state: MixerState) => {
+    mixerRef.current = state;
+    // Part buses follow at once (20 ms ramp), so a mute also silences notes already ringing.
+    const ac = audioCtxRef.current;
+    const bus = ac && ac.state !== 'closed' ? getPlaybackBus(ac) : null;
+    if (bus) applyMixerToPartBuses(bus, (partId) => channelGainFactor(state, partId));
+  }, []);
   const [totalBeats, setTotalBeats]           = useState(0);
   const [playbackPosition, setPlaybackPosition] = useState<{
     currentMeasure: number;
@@ -1050,6 +1300,10 @@ export function usePlayback(options?: {
   const playRequestIdRef = useRef(0);
   const scheduledPlaybackHandlesRef = useRef<Set<PlaybackNoteHandle>>(new Set());
   const previewSampleHandlesRef = useRef<Set<PlaybackNoteHandle>>(new Set());
+  // Players from the e2e loader keep their own routing; players whose samples carry a loop.
+  const e2ePlayersRef = useRef<WeakSet<object>>(new WeakSet());
+  const loopedSamplesRef = useRef<WeakMap<object, Map<number, SampleLoopPoints>>>(new WeakMap());
+  const openHiHatRef = useRef<DrumHitHandle | null>(null);
   const isPlayingRef        = useRef(false);
   const tempoOverrideRef    = useRef<number | null>(null);
   const metronomeEnabledRef = useRef(false);
@@ -1156,10 +1410,80 @@ export function usePlayback(options?: {
 
   function getAc(): AudioContext {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-      audioCtxRef.current = new AudioContext();
-      probeRegisterAudioContext(audioCtxRef.current);
+      const ac = new AudioContext();
+      audioCtxRef.current = ac;
+      probeRegisterAudioContext(ac);
+      // iOS interrupts the context (call, Siri, another app); resume it when playback is active.
+      if (typeof ac.addEventListener === 'function') {
+        ac.addEventListener('statechange', () => {
+          if (audioCtxRef.current !== ac || !isPlayingRef.current) return;
+          if (shouldResumePlaybackAudioContext(ac.state)) void ac.resume().catch(() => undefined);
+        });
+      }
     }
     return audioCtxRef.current;
+  }
+
+  function musicDestination(ac: AudioContext): AudioNode {
+    return getPlaybackBus(ac)?.input ?? ac.destination;
+  }
+
+  function dryDestination(ac: AudioContext): AudioNode {
+    return getPlaybackBus(ac)?.dryInput ?? ac.destination;
+  }
+
+  function partBusFor(bus: PlaybackBus, partId: string | undefined) {
+    const id = partId ?? '';
+    const pan = resolveDocumentPartPans(coreDocumentRef.current).get(id) ?? 0;
+    return getPartBus(bus, id, pan, channelGainFactor(mixerRef.current, partId));
+  }
+
+  /**
+   * Drops the planned level automation (stop, seek, tempo change). A continuing run holds the
+   * current level and plans on from it; otherwise the level returns to unity over 0.25 s.
+   */
+  function resetMasterLevel(continuing: boolean) {
+    const ac = audioCtxRef.current;
+    if (!ac || ac.state === 'closed') return;
+    const bus = getPlaybackBus(ac);
+    if (!bus) return;
+    const now = ac.currentTime;
+    const param = bus.level.gain;
+    const current = Number.isFinite(param.value) ? param.value : 1;
+    try {
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(current, now);
+      if (continuing) {
+        bus.planner.reset(now, current);
+      } else {
+        param.linearRampToValueAtTime(1, now + 0.25);
+        bus.planner.reset(now + 0.25, 1);
+      }
+    } catch {
+      bus.planner.reset(now, 1);
+    }
+  }
+
+  /** Hands the level automation for the scheduled window to the audio graph. */
+  function commitMasterLevel(ac: AudioContext, nowAc: number, untilAc: number) {
+    const bus = getPlaybackBus(ac);
+    if (!bus) return;
+    const points = bus.planner.planAutomation(untilAc - LEVEL_COMMIT_MARGIN_S, nowAc + 0.001);
+    points.forEach((point) => {
+      try { bus.level.gain.linearRampToValueAtTime(point.gain, point.time); } catch { /* closed context */ }
+    });
+  }
+
+  /** Post-processes a freshly loaded soundfont: loops for sustaining instruments, end fades. */
+  function prepareLoadedPlayer(player: PlaybackPlayer, soundfont: SoundfontInstrumentName) {
+    const buffers = (player as { buffers?: unknown }).buffers;
+    if (!buffers) return;
+    try {
+      loopedSamplesRef.current.set(player, prepareSoundfontBuffers(buffers, soundfont));
+      Object.values(buffers as Record<string, AudioBuffer>).forEach((buffer) => { cachedBufferPeak(buffer); });
+    } catch (err) {
+      dbg.warn('playback', `could not prepare the ${soundfont} samples:`, err);
+    }
   }
 
   function getAudibleClock(ac: AudioContext) {
@@ -1197,6 +1521,8 @@ export function usePlayback(options?: {
         // Some instrument implementations throw when there is nothing active.
       }
     });
+    openHiHatRef.current = null;
+    if (!options?.resetAudioContext) resetMasterLevel(false);
     if (options?.resetAudioContext) {
       playerCacheGenerationRef.current += 1;
       if (ac && ac.state !== 'closed') void ac.close().catch(() => undefined);
@@ -1209,9 +1535,12 @@ export function usePlayback(options?: {
     }
   }
 
+  /** Stops the scheduled notes; a run continues right after (play, tempo change). */
   function stopScheduledPlaybackHandles() {
     stopHandleSet(scheduledPlaybackHandlesRef.current);
     scheduledHandleEndsRef.current.clear();
+    openHiHatRef.current = null;
+    resetMasterLevel(true);
   }
 
   /**
@@ -1231,7 +1560,7 @@ export function usePlayback(options?: {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const player = await Promise.race([
-          instrument(ac, soundfont as import('soundfont-player').InstrumentName, LOCAL_SOUNDFONT_OPTIONS),
+          instrument(ac, soundfont as import('soundfont-player').InstrumentName, { ...LOCAL_SOUNDFONT_OPTIONS, destination: musicDestination(ac) }),
           new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('soundfont preload timed out')), SOUND_FONT_LOAD_TIMEOUT_MS);
           }),
@@ -1240,6 +1569,7 @@ export function usePlayback(options?: {
           try { player.stop(); } catch { /* stale preload */ }
           return;
         }
+        prepareLoadedPlayer(player, soundfont);
         playersRef.current.set(soundfont, player);
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
@@ -1263,9 +1593,22 @@ export function usePlayback(options?: {
       });
       return;
     }
-    new Set(parsed.notes.map((note) => (
-      note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current)
-    ))).forEach((soundfont) => preloadPlayer(soundfont));
+    soundfontsToLoad(parsed).forEach((soundfont) => preloadPlayer(soundfont));
+  }
+
+  /** Percussion plays on the synthesized kit, except under the e2e loader (which records it). */
+  function playsOnDrumSynth(note: MidiNote, ac: AudioContext | null) {
+    if (!note.percussion || hasE2eInstrumentLoader()) return false;
+    // Before a context exists (idle preload), ask the engine's prototype instead of creating one.
+    const target = ac ?? (globalThis as { AudioContext?: { prototype: AudioContext } }).AudioContext?.prototype;
+    return Boolean(target) && canSynthesizeDrums(target as AudioContext);
+  }
+
+  function soundfontsToLoad(parsed: ParsedMidi) {
+    const ac = audioCtxRef.current;
+    return new Set(parsed.notes
+      .filter((note) => !playsOnDrumSynth(note, ac))
+      .map((note) => note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current)));
   }
 
   async function ensurePlayer(soundfont: SoundfontInstrumentName): Promise<PlaybackPlayer> {
@@ -1290,8 +1633,10 @@ export function usePlayback(options?: {
     }).__NEX_NOTE_E2E_INSTRUMENT_LOADER__;
     const load = (async () => {
       let player: PlaybackPlayer;
+      let fromE2eLoader = false;
       if (typeof e2eLoader === 'function') {
         player = await e2eLoader(ac, soundfont);
+        fromE2eLoader = true;
       } else {
         const soundfontModule = await import('soundfont-player');
         const instrument = soundfontModule.instrument ?? soundfontModule.default?.instrument;
@@ -1306,17 +1651,18 @@ export function usePlayback(options?: {
         try {
           // Offline-first: samples fetched by `npm run soundfonts:fetch` are served from /soundfonts;
           // only when they are missing does soundfont-player fall back to its remote default host.
+          const destination = musicDestination(ac);
           const loadInstrument = async () => {
             try {
-              return await instrument(ac, soundfont as import('soundfont-player').InstrumentName, LOCAL_SOUNDFONT_OPTIONS);
+              return await instrument(ac, soundfont as import('soundfont-player').InstrumentName, { ...LOCAL_SOUNDFONT_OPTIONS, destination });
             } catch {
-              return instrument(ac, soundfont as import('soundfont-player').InstrumentName);
+              return instrument(ac, soundfont as import('soundfont-player').InstrumentName, { destination });
             }
           };
           player = await Promise.race([loadInstrument(), soundfontTimeout]);
         } catch (err) {
           dbg.warn('playback', `soundfont ${soundfont} unavailable, falling back to oscillator playback:`, err);
-          player = createOscillatorFallbackPlayer(ac);
+          player = createOscillatorFallbackPlayer(ac, musicDestination(ac));
         } finally {
           if (timeoutId) clearTimeout(timeoutId);
         }
@@ -1326,6 +1672,8 @@ export function usePlayback(options?: {
         try { player.stop(); } catch { /* Ignore cleanup failures for stale loads. */ }
         throw new Error(`Discarded stale ${soundfont} soundfont load`);
       }
+      if (fromE2eLoader) e2ePlayersRef.current.add(player);
+      else prepareLoadedPlayer(player, soundfont);
       playersRef.current.set(soundfont, player);
       return player;
     })().finally(() => {
@@ -1378,10 +1726,7 @@ export function usePlayback(options?: {
       await Promise.all([...sampleFilenames].map((filename) => ensureSampleBuffer(filename)));
       return;
     }
-    const soundfonts = new Set(parsed.notes.map((note) => (
-      note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current)
-    )));
-    await Promise.all([...soundfonts].map((soundfont) => ensurePlayer(soundfont)));
+    await Promise.all([...soundfontsToLoad(parsed)].map((soundfont) => ensurePlayer(soundfont)));
   }
 
   // ── Timeline and transport ──────────────────────────────────────────────────
@@ -1445,13 +1790,19 @@ export function usePlayback(options?: {
   // AudioContext on long pieces, so only the window is scheduled.
   function startNoteAt(note: MidiNote, startAt: number, scale: number, ac: AudioContext) {
     const multiplicity = Math.max(1, note.multiplicity ?? 1);
-    const gainBoost = Math.sqrt(multiplicity);
     const mixFactor = channelGainFactor(mixerRef.current, note.partId);
     if (mixFactor <= 0) return;
-    const gain = Math.max(0.05, Math.min(1.5, note.velocity * 0.9 * gainBoost * mixFactor));
+    const velocityGain = velocityToGain(note.velocity) * Math.sqrt(multiplicity);
     const sampleBank = sampleBankRef.current;
+    const bus = getPlaybackBus(ac);
+    const noteSeconds = note.duration / scale;
     let handle: unknown;
-    let handleDuration = note.duration / scale;
+    let handleDuration = noteSeconds;
+    // Estimated peak of the note at gain 1, and whether it fades by itself (level planner).
+    let samplePeak = NOMINAL_SAMPLE_PEAK;
+    let decaying = true;
+    // Mixer volume is applied by the part's bus when the note is routed there, else per note.
+    let partBus: ReturnType<typeof partBusFor> | null = null;
     if (sampleBank) {
       const filename = resolvePlaybackSampleFilename(sampleBank, coreDocumentRef.current, note.partId, note.midi);
       if (!filename) return;
@@ -1461,8 +1812,19 @@ export function usePlayback(options?: {
         probeAudio({ midi: note.midi, partId: note.partId ?? null, scoreSeconds: note.time, idealAc: startAt, startAc: startAt, nowAc: ac.currentTime, skipped: true });
         return;
       }
-      handle = startAudioSample(ac, buffer, startAt, gain);
+      partBus = bus ? partBusFor(bus, note.partId) : null;
+      handle = startAudioSample(ac, buffer, startAt, clampNoteGain(velocityGain * (partBus ? 1 : mixFactor)), partBus?.input ?? ac.destination);
       handleDuration = buffer.duration;
+      samplePeak = cachedBufferPeak(buffer);
+    } else if (playsOnDrumSynth(note, ac)) {
+      partBus = bus ? partBusFor(bus, note.partId) : null;
+      const hit = playDrumHit(ac, note.midi, startAt, clampNoteGain(velocityGain * (partBus ? 1 : mixFactor)), partBus?.input ?? ac.destination);
+      // A closed or pedal hi-hat chokes the ringing open hi-hat.
+      if (hit.voice.chokes === 'hihat') openHiHatRef.current?.stop(startAt);
+      if (hit.voice.chokeGroup === 'hihat') openHiHatRef.current = hit;
+      handle = hit;
+      handleDuration = hit.endTime - startAt;
+      samplePeak = drumVoicePeak(hit.voice);
     } else {
       const soundfont = note.soundfont ?? resolvePlaybackSoundfontInstrument(coreDocumentRef.current);
       const player = playersRef.current.get(soundfont);
@@ -1471,9 +1833,27 @@ export function usePlayback(options?: {
         probeAudio({ midi: note.midi, partId: note.partId ?? null, scoreSeconds: note.time, idealAc: startAt, startAc: startAt, nowAc: ac.currentTime, skipped: true });
         return;
       }
+      partBus = bus && !e2ePlayersRef.current.has(player) ? partBusFor(bus, note.partId) : null;
+      // Long notes of sustaining instruments loop inside the baked crossfade instead of running out.
+      const loop = shouldLoopNote(noteSeconds) ? loopedSamplesRef.current.get(player)?.get(note.midi) : undefined;
       handle = startPlaybackNote(player, note.midi, startAt, {
-        duration: note.duration / scale,
-        gain,
+        duration: noteSeconds,
+        gain: clampNoteGain(velocityGain * (partBus ? 1 : mixFactor)),
+        ...(loop ? { loop: true, loopStart: loop.loopStart, loopEnd: loop.loopEnd } : {}),
+      });
+      if (partBus && !routeHandleTo(handle, partBus.input)) partBus = null;
+      const buffers = (player as { buffers?: Record<number, AudioBuffer> }).buffers;
+      samplePeak = buffers?.[note.midi] ? cachedBufferPeak(buffers[note.midi]) : NOMINAL_SAMPLE_PEAK;
+      decaying = !isSustainingSoundfont(soundfont);
+    }
+    if (bus && handle) {
+      const panFactor = 1 + (0.5 * Math.sin((Math.abs(partBus?.pan ?? 0) * Math.PI) / 2));
+      bus.planner.addVoice({
+        start: startAt,
+        // Soundfont notes stop after their length and release; samples and drum hits ring out.
+        end: startAt + (sampleBank || handleDuration !== noteSeconds ? handleDuration : noteSeconds + PLAYER_RELEASE_S),
+        amplitude: clampNoteGain(velocityGain * mixFactor) * samplePeak * panFactor * MASTER_GAIN,
+        decaying,
       });
     }
     probeAudio({
@@ -1548,19 +1928,59 @@ export function usePlayback(options?: {
       c++;
     }
     nextClickIdxRef.current = c;
+    commitMasterLevel(ac, nowAc, scheduleUntilAc);
     pruneFinishedHandles(nowAc);
   }
 
-  // ── Metronome click via Web Audio oscillator ───────────────────────────────
+  // ── Metronome click ─────────────────────────────────────────────────────────
+  // A rendered woodblock-like click (lib/drum-synth.ts) with its own gain node into the dry
+  // master input; beat 1 is higher and louder. Engines without buffer sources get a quiet sine.
   function scheduleClick(ac: AudioContext, time: number, isDownbeat: boolean) {
+    const clickBuffers = metronomeClickBuffers(ac);
+    if (clickBuffers) {
+      const source = ac.createBufferSource();
+      const gain = ac.createGain();
+      const level = isDownbeat ? METRONOME_CLICK.accentGain : METRONOME_CLICK.beatGain;
+      const end = time + METRONOME_CLICK.durationSeconds;
+      source.buffer = isDownbeat ? clickBuffers.accent : clickBuffers.beat;
+      gain.gain.setValueAtTime(level, time);
+      gain.gain.setValueAtTime(level, end - METRONOME_CLICK.releaseSeconds);
+      gain.gain.linearRampToValueAtTime(0, end);
+      source.connect(gain);
+      gain.connect(dryDestination(ac));
+      source.onended = () => {
+        try { source.disconnect(); } catch { /* already disconnected */ }
+        try { gain.disconnect(); } catch { /* already disconnected */ }
+      };
+      source.start(time);
+      source.stop(end + 0.005);
+      let stopped = false;
+      const clickHandle: PlaybackNoteHandle = {
+        stop(when?: number) {
+          if (stopped) return;
+          stopped = true;
+          const at = Math.max(ac.currentTime, when ?? ac.currentTime);
+          try {
+            gain.gain.cancelScheduledValues(at);
+            gain.gain.setValueAtTime(gain.gain.value, at);
+            gain.gain.linearRampToValueAtTime(0, at + METRONOME_CLICK.releaseSeconds);
+            source.stop(at + METRONOME_CLICK.releaseSeconds + 0.001);
+          } catch { /* already stopped */ }
+        },
+      };
+      scheduledPlaybackHandlesRef.current.add(clickHandle);
+      scheduledHandleEndsRef.current.set(clickHandle, time + 0.1);
+      return;
+    }
     const osc  = ac.createOscillator();
     const gain = ac.createGain();
     osc.connect(gain);
-    gain.connect(ac.destination);
+    gain.connect(dryDestination(ac));
     osc.frequency.value = isDownbeat ? 1200 : 900;
     gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(0.6, time + 0.003);   // 3ms attack
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04); // 40ms decay
+    gain.gain.linearRampToValueAtTime(isDownbeat ? 0.15 : 0.1, time + 0.003);   // 3ms attack
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.035); // decay
+    gain.gain.linearRampToValueAtTime(0, time + 0.04); // 5 ms release
     osc.start(time);
     osc.stop(time + 0.04);
     const handle: PlaybackNoteHandle = {
@@ -1594,6 +2014,7 @@ export function usePlayback(options?: {
     nextNoteIdxRef.current     = 0;
     scheduledPlaybackHandlesRef.current.clear();
     scheduledHandleEndsRef.current.clear();
+    resetMasterLevel(false);
     notifyTransport();
     syncPlaybackPositionState(parsed.durationSeconds, parsed);
   }
@@ -1635,7 +2056,7 @@ export function usePlayback(options?: {
         sampleBank,
         coreDocumentRef.current,
         selectedNote.corePartId,
-        noteToMidiNumber(selectedNote),
+        resolveAuditionMidi(selectedNote, coreDocumentRef.current),
       );
       if (!filename || sampleBuffersRef.current.has(filename)) return;
       try {
@@ -1700,53 +2121,14 @@ export function usePlayback(options?: {
         const { Midi } = await import('@tonejs/midi');
         const midi = new Midi(buf);
 
-        const straightRawNotes: MidiNote[] = midi.tracks
-          .flatMap((track, trackIndex) => {
-            const sound = resolvePlaybackTrackSound(track, options?.coreDocument, trackIndex, midi.tracks.length);
-            const part = resolvePlaybackTrackPart(track, options?.coreDocument, trackIndex, midi.tracks.length);
-            return track.notes.map((note) => ({
-              time: note.time,
-              duration: note.duration,
-              midi: note.midi,
-              velocity: note.velocity,
-              soundfont: sound.soundfont,
-              partId: part?.id ?? part?.sourcePartId,
-            }));
-          })
-          .sort((a, b) => a.time - b.time);
-
-        const tempos: TempoEntry[] = midi.header.tempos.length > 0
-          ? midi.header.tempos.map(t => ({ bpm: t.bpm, time: t.time ?? 0 }))
-          : [{ bpm: 120, time: 0 }];
-
-        const rawNotes = applySwingToMidiNotes(straightRawNotes, { tempos }, swingRatio, swingUnit);
-        const duplicateSummary = summarizeSimultaneousDuplicates(rawNotes);
-        const notes = normalizeMidiNotes(rawNotes);
-
-        const timeSig = midi.header.timeSignatures[0];
-        const timeSignatureNumerator = timeSig?.timeSignature[0] ?? 4;
-        const timeSignatureDenominator = timeSig?.timeSignature[1] ?? 4;
-        const avgBpm = tempos[0]?.bpm ?? 120;
-        const last = notes[notes.length - 1];
-        const audibleDurationSeconds = last ? last.time + last.duration + 0.5 : 0;
-        const preliminaryParsed: ParsedMidi = {
-          rawNotes,
-          notes,
-          tempos,
-          durationSeconds: audibleDurationSeconds,
-          timeSignatureNumerator,
-          timeSignatureDenominator,
-        };
-        const durationSeconds = resolveFullPlaybackDurationSeconds(options?.coreDocument ?? null, preliminaryParsed, audibleDurationSeconds);
+        const { parsed, duplicateSummary } = parsePlaybackMidi(midi, options?.coreDocument ?? null, swingRatio, swingUnit);
+        const { rawNotes, notes, durationSeconds, timeSignatureNumerator, timeSignatureDenominator } = parsed;
+        const avgBpm = parsed.tempos[0]?.bpm ?? 120;
 
         if (requestId !== latestMidiRequestIdRef.current) {
           return false;
         }
 
-        const swing = Number.isFinite(swingRatio) && swingRatio != null && Math.abs(swingRatio - 0.5) >= 0.001
-          ? { ratio: swingRatio, unit: swingUnit === '16th' ? '16th' as const : 'eighth' as const }
-          : null;
-        const parsed: ParsedMidi = { rawNotes, notes, tempos, durationSeconds, timeSignatureNumerator, timeSignatureDenominator, swing };
         playbackGeometryCacheRef.current = {
           parsed,
           coreDocument: coreDocumentRef.current,
@@ -2049,13 +2431,24 @@ export function usePlayback(options?: {
     await play(resumeScoreTimeRef.current);
   }, [getPlaybackMeasureBeatRanges, options?.coreDocument, play]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function auditionDuration(soundfont: SoundfontInstrumentName, note: SelectedNote) {
+    const parsed = parsedMidiRef.current;
+    return resolveAuditionDurationSeconds({
+      soundfont,
+      durationType: note.durationType,
+      isDotted: note.isDotted,
+      quarterSeconds: parsed ? resolvePlaybackQuarterBeatSeconds(parsed, tempoOverrideRef.current) : null,
+    });
+  }
+
   const previewNote = useCallback(async (note: SelectedNote | null) => {
     if (!note || note.isRest) return;
     const metric = captureInputMetric();
 
     const previewGeneration = ++previewGenerationRef.current;
     stopHandleSet(previewSampleHandlesRef.current);
-    const midi = noteToMidiNumber(note);
+    // Sounding pitch: transposing parts (B flat clarinet, guitar an octave down) sound as written.
+    const midi = resolveAuditionMidi(note, coreDocumentRef.current);
     const sampleBank = sampleBankRef.current;
     try {
       const ac = getAc();
@@ -2065,7 +2458,7 @@ export function usePlayback(options?: {
         if (!filename) return;
         const buffer = await ensureSampleBuffer(filename);
         if (previewGeneration !== previewGenerationRef.current) return;
-        const handle = startAudioSample(ac, buffer, ac.currentTime + 0.01, 0.75);
+        const handle = startAudioSample(ac, buffer, ac.currentTime + 0.01, AUDITION_GAIN, musicDestination(ac));
         previewSampleHandlesRef.current.add(handle);
         markInputFeedback('input-to-audio-scheduled', metric);
         window.setTimeout(() => previewSampleHandlesRef.current.delete(handle), (buffer.duration + 0.25) * 1000);
@@ -2077,8 +2470,8 @@ export function usePlayback(options?: {
       const when = ac.currentTime + 0.01;
       player.stop();
       startPlaybackNote(player, midi, when, {
-        duration: 0.45,
-        gain: 0.75,
+        duration: auditionDuration(soundfont, note),
+        gain: AUDITION_GAIN,
       });
       markInputFeedback('input-to-audio-scheduled', metric);
     } catch (err) {
@@ -2104,7 +2497,7 @@ export function usePlayback(options?: {
             sampleBank,
             coreDocumentRef.current,
             note.corePartId,
-            noteToMidiNumber(note),
+            resolveAuditionMidi(note, coreDocumentRef.current),
           ),
         })).filter((entry): entry is { note: SelectedNote; filename: string } => Boolean(entry.filename));
         if (sampleNotes.length === 0) return;
@@ -2114,9 +2507,9 @@ export function usePlayback(options?: {
         })));
         if (previewGeneration !== previewGenerationRef.current) return;
         const when = ac.currentTime + 0.01;
-        const gain = Math.max(0.35, Math.min(0.75, 0.75 / Math.sqrt(sampleNotes.length)));
+        const gain = auditionChordGain(sampleNotes.length);
         buffers.forEach(({ buffer }) => {
-          const handle = startAudioSample(ac, buffer, when, gain);
+          const handle = startAudioSample(ac, buffer, when, gain, musicDestination(ac));
           previewSampleHandlesRef.current.add(handle);
           window.setTimeout(() => previewSampleHandlesRef.current.delete(handle), (buffer.duration + 0.25) * 1000);
         });
@@ -2139,9 +2532,9 @@ export function usePlayback(options?: {
       loadedPlayers.forEach(({ soundfont, player }) => {
         player.stop();
         (notesBySoundfont.get(soundfont) ?? []).forEach((note) => {
-          startPlaybackNote(player, noteToMidiNumber(note), when, {
-            duration: 0.45,
-            gain: Math.max(0.35, Math.min(0.75, 0.75 / Math.sqrt(playableNotes.length))),
+          startPlaybackNote(player, resolveAuditionMidi(note, coreDocumentRef.current), when, {
+            duration: auditionDuration(soundfont, note),
+            gain: auditionChordGain(playableNotes.length),
           });
         });
       });

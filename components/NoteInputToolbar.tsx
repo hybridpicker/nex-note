@@ -388,7 +388,7 @@ function SidebarSection({
           )}
         </span>
         <svg
-          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}
+          className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-90' : ''}`}
           viewBox="0 0 16 16"
           fill="none"
           aria-hidden
@@ -599,7 +599,7 @@ export default function NoteInputToolbar({
       aria-label={`Notation input state: ${primaryInputState.join(', ')}`}
       aria-live="off"
       title="Current notation input state"
-      className="flex min-h-8 shrink-0 items-center rounded-md border border-slate-300 bg-slate-50 px-2.5 text-[10px] font-semibold tracking-wide text-slate-700"
+      className="flex min-h-8 shrink-0 items-center rounded-md border border-slate-300 bg-slate-50 px-2.5 text-[11px] font-semibold tracking-wide text-slate-700"
     >
       {primaryInputState.join(' · ')}
     </div>
@@ -650,7 +650,7 @@ export default function NoteInputToolbar({
           title={formatShortcutHint(`Add ${label.toLowerCase()} above (Alt/Option+${interval})`)}
           disabledReason={pitchedSelectionDisabledReason}
         >
-          <span className="text-[10px] font-semibold tabular-nums">+{interval}</span>
+          <span className="text-[11px] font-semibold tabular-nums">+{interval}</span>
         </TBtn>
       ))}
     </Group>
@@ -701,7 +701,7 @@ export default function NoteInputToolbar({
           disabledReason={!selectedNote ? noteRequiredReason : undefined}
           wide
         >
-          <span className="text-[10px] font-semibold tracking-wider">{tuplet.actual}:{tuplet.normal}</span>
+          <span className="text-[11px] font-semibold tracking-wider">{tuplet.actual}:{tuplet.normal}</span>
         </TBtn>
       ))}
     </Group>
@@ -758,7 +758,7 @@ export default function NoteInputToolbar({
         active={entryMode === 'overwrite'}
         wide
       >
-        <span className="text-[10px] font-semibold">{entryMode === 'overwrite' ? t('noteInputBar.modeReplace') : t('noteInputBar.modeStandard')}</span>
+        <span className="text-[11px] font-semibold">{entryMode === 'overwrite' ? t('noteInputBar.modeReplace') : t('noteInputBar.modeStandard')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleChordInputMode}
@@ -766,7 +766,7 @@ export default function NoteInputToolbar({
         active={chordInputMode}
         wide
       >
-        <span className="text-[10px] font-semibold">{t('note.chordShort')}</span>
+        <span className="text-[11px] font-semibold">{t('note.chordShort')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleInputAudition}
@@ -782,7 +782,7 @@ export default function NoteInputToolbar({
         active={stepInputKeyboardMode}
         wide
       >
-        <span className="text-[10px] font-semibold">{t('note.keysShort')}</span>
+        <span className="text-[11px] font-semibold">{t('note.keysShort')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleInputByDurationMode}
@@ -790,7 +790,7 @@ export default function NoteInputToolbar({
         active={inputByDurationMode}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">
+        <span className="text-[11px] font-semibold tracking-wider">
           {inputByDurationMode && preparedDurationPitchLabel ? `${t('note.pitchFirstShort')} ${preparedDurationPitchLabel}` : t('note.pitchFirstShort')}
         </span>
       </TBtn>
@@ -812,7 +812,7 @@ export default function NoteInputToolbar({
         disabledReason={midiInputStatus === 'unsupported' ? 'Web MIDI is unavailable' : undefined}
         wide
       >
-        <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wider">
+        <span className="flex items-center gap-1 text-[11px] font-semibold tracking-wider">
           <span
             aria-hidden
             className={`h-1.5 w-1.5 rounded-full ${
@@ -828,7 +828,7 @@ export default function NoteInputToolbar({
         active={leadsheetMode}
         wide
       >
-        <span className="text-[10px] font-semibold">{t('toolbar.leadShort')}</span>
+        <span className="text-[11px] font-semibold">{t('toolbar.leadShort')}</span>
       </TBtn>
       <TBtn
         onClick={onToggleGuitarInputMode}
@@ -836,7 +836,7 @@ export default function NoteInputToolbar({
         active={guitarInputMode}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">TAB</span>
+        <span className="text-[11px] font-semibold tracking-wider">TAB</span>
       </TBtn>
       <TBtn
         onClick={onInsertSlash}
@@ -853,7 +853,7 @@ export default function NoteInputToolbar({
         disabledReason={!selectedNote ? noteRequiredReason : undefined}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">////</span>
+        <span className="text-[11px] font-semibold tracking-wider">////</span>
       </TBtn>
       <TBtn
         onClick={onInsertRest}
@@ -871,7 +871,7 @@ export default function NoteInputToolbar({
       className="flex shrink-0 items-center gap-2 rounded-md border border-nex-border bg-nex-surface px-2 py-1"
       data-testid="step-input-panel"
     >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">QWERTY</span>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">QWERTY</span>
       <div className="flex flex-col gap-1">
         {[upperStepKeys, lowerStepKeys].map((row, rowIndex) => (
           <div key={rowIndex === 0 ? 'upper' : 'lower'} className="flex items-center gap-0.5">
@@ -884,14 +884,14 @@ export default function NoteInputToolbar({
                   type="button"
                   onClick={() => onInsertStepInputPitch(entry.step, entry.octave, entry.alter)}
                   title={`Insert ${noteLabel} (${entry.key})`}
-                  className={`h-7 min-w-8 rounded-md border px-1 text-[10px] font-semibold transition-colors ${
+                  className={`h-7 min-w-8 rounded-md border px-1 text-[11px] font-semibold transition-colors ${
                     isSharp
                       ? 'border-slate-700 bg-slate-800 text-white hover:bg-slate-700'
                       : 'border-nex-border bg-white text-slate-700 hover:bg-slate-50 hover:text-nex-ink'
                   }`}
                 >
                   <span className="block leading-none">{entry.key}</span>
-                  <span className={`block pt-0.5 text-[9px] leading-none ${isSharp ? 'text-slate-200' : 'text-slate-400'}`}>
+                  <span className={`block pt-0.5 text-[11px] leading-none ${isSharp ? 'text-slate-200' : 'text-slate-500'}`}>
                     {noteLabel}
                   </span>
                 </button>
@@ -935,7 +935,7 @@ export default function NoteInputToolbar({
         disabledReason={!selectedNote ? noteRequiredReason : undefined}
         wide
       >
-        <span className="text-[10px] font-semibold tracking-wider">ADD</span>
+        <span className="text-[11px] font-semibold tracking-wider">ADD</span>
       </TBtn>
     </form>
   );
@@ -949,7 +949,7 @@ export default function NoteInputToolbar({
         value={selectedGuitarTuning}
         onChange={(event) => onGuitarTuningChange(event.target.value as GuitarTuningId)}
         title="Guitar tuning"
-        className="h-7 rounded border border-nex-border bg-white px-1.5 text-[10px] font-semibold text-slate-600 outline-none"
+        className="h-7 rounded border border-nex-border bg-white px-1.5 text-[11px] font-semibold text-slate-600 outline-none"
       >
         {GUITAR_TUNINGS.map((tuning) => (
           <option key={tuning.id} value={tuning.id}>{tuning.label}</option>
@@ -963,7 +963,7 @@ export default function NoteInputToolbar({
             onClick={() => onInsertGuitarFret(string.string, selectedGuitarFret, selectedGuitarTuning)}
             disabled={!selectedNote}
             title={selectionRequiredTitle(`String ${string.string} ${string.label} (Alt+${string.string})`)}
-            className={`h-7 min-w-7 rounded px-1 text-[10px] font-semibold tabular-nums transition-colors ${
+            className={`h-7 min-w-7 rounded px-1 text-[11px] font-semibold tabular-nums transition-colors ${
               selectedGuitarString === string.string
                 ? 'nex-brand-active'
                 : 'text-slate-600 hover:bg-white hover:text-nex-ink disabled:text-slate-300'
@@ -984,7 +984,7 @@ export default function NoteInputToolbar({
               onClick={() => onInsertGuitarFret(selectedGuitarString, fret, selectedGuitarTuning)}
               disabled={!selectedNote}
               title={selectionRequiredTitle(`Fret ${fret}: ${pitch.label}`)}
-              className={`h-7 min-w-7 rounded px-1 text-[10px] font-semibold tabular-nums transition-colors ${
+              className={`h-7 min-w-7 rounded px-1 text-[11px] font-semibold tabular-nums transition-colors ${
                 selectedGuitarFret === fret
                   ? 'nex-brand-active'
                   : 'text-slate-600 hover:bg-white hover:text-nex-ink disabled:text-slate-300'
@@ -999,7 +999,7 @@ export default function NoteInputToolbar({
         {selectedGuitarString}/{guitarFretBuffer || selectedGuitarFret} {activeGuitarPitch.label}
       </span>
       <div className="h-5 w-px bg-nex-border" aria-hidden />
-      <div className="grid w-28 grid-cols-[16px_repeat(4,1fr)] gap-x-1 gap-y-0.5 text-[9px] tabular-nums text-slate-500" data-testid="guitar-tab-mini-grid">
+      <div className="grid w-28 grid-cols-[16px_repeat(4,1fr)] gap-x-1 gap-y-0.5 text-[11px] tabular-nums text-slate-500" data-testid="guitar-tab-mini-grid">
         {activeTuning.strings.map((string) => (
           <div key={`tab-string:${string.string}`} className="contents">
             <span className="text-right font-semibold">{string.string}</span>
@@ -1029,7 +1029,7 @@ export default function NoteInputToolbar({
               : !selectedNote
                 ? selectionRequiredTitle(technique.title)
                 : technique.title}
-            className={`h-7 min-w-7 rounded px-1 text-[9px] font-semibold transition-colors ${
+            className={`h-7 min-w-7 rounded px-1 text-[11px] font-semibold transition-colors ${
               selectedTechniqueSet.has(technique.kind)
                 ? 'nex-brand-active'
                 : 'text-slate-600 hover:bg-white hover:text-nex-ink disabled:text-slate-300'
@@ -1096,12 +1096,12 @@ export default function NoteInputToolbar({
   const activeTools = (
     <div className="nex-note-active-summary ml-auto flex items-center gap-3 shrink-0 pl-2">
       <div className="flex items-baseline gap-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t('note.active')}</span>
-        <span className={`text-xs font-semibold tabular-nums ${selectedNote ? 'text-nex-ink' : 'text-slate-400'}`}>
+        <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t('note.active')}</span>
+        <span className={`text-xs font-semibold tabular-nums ${selectedNote ? 'text-nex-ink' : 'text-slate-500'}`}>
           {selectedNoteLabel}
         </span>
         {selectedNoteContext && (
-          <span className="text-[11px] text-slate-400 tabular-nums">{selectedNoteContext}</span>
+          <span className="text-[11px] text-slate-500 tabular-nums">{selectedNoteContext}</span>
         )}
       </div>
       {selectedNote && !isRest && (
@@ -1110,7 +1110,7 @@ export default function NoteInputToolbar({
             type="button"
             onClick={() => onChangeActiveOctave(-1)}
             title={formatShortcutHint(`${t('note.lowerOctave')} (Shift+ArrowDown / Cmd/Ctrl+ArrowDown)`)}
-            className="h-7 min-w-8 rounded-md px-2 text-[10px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-white hover:text-nex-ink"
+            className="h-7 min-w-8 rounded-md px-2 text-[11px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-white hover:text-nex-ink"
           >
             8va-
           </button>
@@ -1133,7 +1133,7 @@ export default function NoteInputToolbar({
             type="button"
             onClick={() => onChangeActiveOctave(1)}
             title={formatShortcutHint(`${t('note.raiseOctave')} (Shift+ArrowUp / Cmd/Ctrl+ArrowUp)`)}
-            className="h-7 min-w-8 rounded-md px-2 text-[10px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-white hover:text-nex-ink"
+            className="h-7 min-w-8 rounded-md px-2 text-[11px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-white hover:text-nex-ink"
           >
             8va+
           </button>

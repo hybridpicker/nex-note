@@ -334,6 +334,81 @@ Command path alone (`npx tsx scripts/benchmark-note-entry.ts <out> --prepared`, 
 | Measures cloned without their content | 10 | 76 | 883 |
 | Plus measure index and reused parsed document | 2 | 29 | 199 |
 
+### Session 5: edit → redraw path of the editor (2026-11-15)
+
+What changed in `components/ScoreEditor.tsx` (and `src/score-core/GeometryProxy.ts`):
+
+- A mouse or pen entry no longer draws the whole score a second time. The geometry refresh two
+  frames after the commit used to bump the viewport revision, a dependency of the render effect, so
+  OSMD loaded and drew the score again after the drawing of the entry. The drawing of the new
+  revision already builds every map when it lands; the refresh now only syncs the maps of the
+  drawing on screen, and does nothing when they are current or the new drawing is on its way (the
+  reason it was added, stale snap geometry after a mouse entry, is covered by that check).
+- The map sync is subscribed once (one `ResizeObserver`, one window `resize` listener, inputs read
+  through refs) and returns at once when the drawing, its layout key and the container size are the
+  ones the maps were built for. The duration-independent maps of a drawing (rendered notes, staff
+  geometry, merged measure overlays) are kept; a change of the note value rebuilds only the snap
+  grid, edit map, ghost index and the grid of the geometry proxy from them. A real size change still
+  rebuilds everything. Each rebuild also builds the snap grid once instead of twice (the first grid
+  was thrown away before anything read it).
+- The snap-grid debug report (`window.__NEX_NOTE_SEMANTIC_GRID__`) is withdrawn from the mouse
+  commit, and while a new revision is on its way, until the new drawing publishes its own.
+  `e2e/snap-ghost-debug.spec.ts` "hover and click use the same snap…" reads the report right after
+  the app state has the note; the editor gets the document one deferred render later, and the
+  second full drawing had hidden that window.
+- `postProcessTabClefs` returns before measuring the SVG unless the drawn XML has a TAB clef, and
+  measures each path once in TAB scores (it measured every path again for each TAB staff).
+- `GeometryProxy.update` takes the staff geometry the caller has just built (optional input). The
+  measure rects are still read by the proxy itself: passing them changed a snap result in a first
+  run; that run was later found to be disturbed by the report race above, so the cause is open.
+- The source-XML fallbacks of the OSMD render attempts are built only after the projected XML
+  failed (one DOM parse and serialization of the score less per drawing).
+- Not kept: memoizing the bar hitbox and navigator elements. With it the pickup fixture of
+  `e2e/entry-mouse-corpus.spec.ts` lost its preview at the start of bar 2 in 2 of 4 runs, with and
+  without the second drawing restored, and in 0 of 4 runs once the memo was taken out; reverted,
+  cause not established.
+- Not done: reusing the OSMD instance for zoom and width changes.
+
+Measured on the dev server (`next dev`, headless Chrome, `NEX_QUALITY_SAMPLES=16`), with about nine
+other sessions editing the same tree; load average 4.5 to 6.3 during the after run. Median / p95 in
+ms, baseline (`perf/baseline2` of the audit) → after:
+
+| Stage | 32 notes | 512 notes | 2,048 notes | 4,096 notes |
+| --- | --- | --- | --- | --- |
+| Pending note on screen (`input-to-pending-frame`) | 30 / 106 → 31 / 111 | 120 / 142 → 125 / 175 | 190 / 205 → 195 / 210 | 197 / 223 → 194 / 244 |
+| Score drawn again (`input-to-note-frame`) | 63 / 197 → 64 / 171 | 365 / 392 → 352 / 408 | 1,160 / 1,336 → 1,085 / 1,368 | 2,433 / 2,633 → 2,349 / 2,923 |
+| Pointer preview (`input-to-preview-frame`) | 33 / 39 → 33 / 34 | 40 / 47 → 33 / 45 | 54 / 69 → 53 / 65 | 81 / 102 → 83 / 140 |
+| OSMD render | 9 / 10 → 9 / 12 | 99 / 111 → 104 / 127 | 499 / 634 → 498 / 729 | 1,220 / 1,332 → 1,308 / 1,789 |
+
+The keyboard stages move within the noise of this machine (the unchanged OSMD stage reads up to
+7 % slower in the after run). The changes show in the per-workflow harness of the audit (main-thread
+long tasks per action, 4,096 notes, baseline → after): mouse commit 2 OSMD renders → 1, long tasks
+4,938 → 2,254 ms, busy until 5,455 → 2,679 ms; note value keys `5` and `4` 614 → 352 ms and
+598 → 272 ms. At 512 notes the mouse commit is 452 → 249 ms (busy until 618 → 324 ms).
+
+Follow-up on the same day (full `smoke` + `regression` run on the combined tree: 277 passed,
+24 failed, then 295 passed, 6 failed after the fixes below):
+
+- Removing the second drawing exposed a window in which the editor still showed the drawing of the
+  score before a mouse entry or an Undo, with live pointer maps: `NexNoteApp` hands the editor
+  `useDeferredValue(coreDocument)`. A hover previewed, and a click was placed with, geometry of a
+  score that no longer existed (`e2e/entry-mouse-corpus.spec.ts` "committed nothing", ghost X jump
+  256.67 → 253.03 in `e2e/app.spec.ts`). Fix: `ScoreEditor` gets `latestDocumentRevision`; while the
+  drawing on screen is not of the newest document there is no preview and a pointer-down in note
+  input is ignored (`note-input-commit-miss`, reason `drawing-pending`). `data-document-revision` is
+  the app's newest revision, `data-rendered-revision` is written after React committed the overlays
+  of the drawing, and the canvas is `aria-busy` while a drawing is on its way. One OSMD drawing per
+  mouse entry is kept. Open: on very large scores a fast second click inside that window is dropped.
+- The iframe embed stayed on its loading bar: the boot effect was torn down while the score fetch
+  was in flight and its one-shot guard blocked the retry. The effect calls the loader through a ref
+  and resets the guard when no boot completed.
+- Stale tests, not regressions: `e2e/real-score-stress.spec.ts` kept its own dot state (a value key
+  clears the dot since `08c14c4`), `e2e/transform-score-stress.spec.ts` expected the right panel open
+  and a first-note octave from before the nearest-pitch rule.
+- Playback probe: see `docs/playback-sync.md`. The highlight is read half a frame ahead; three
+  probe scenarios remain over budget (structure highlight drift, busy highlight p95, playhead drift
+  of short runs).
+
 ## Reference sources read
 
 - MuseScore Studio handbook, fetched 2026-11-10: entering-notes-and-rests, editing-notes-and-rests,

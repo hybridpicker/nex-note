@@ -314,8 +314,9 @@ test('changeNoteDuration clamps an expanded note to the remaining measure space'
 
   const voice = result.coreDocument?.score.parts[0].staves[0].measures[0].voices[0];
   const tail = voice?.events.find((event) => event.timestampNum === 3);
-  assert.equal(tail?.durationType, 'half');
-  assert.equal(tail?.isDotted, true);
+  // The note is cut to the one quarter left in the bar, and its written value says so.
+  assert.equal(tail?.durationType, 'quarter');
+  assert.equal(tail?.isDotted, false);
   assert.equal(tail?.durationDivisions, 1);
 });
 

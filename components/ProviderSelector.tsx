@@ -97,10 +97,10 @@ export default function ProviderSelector({
   // ── Compact mode: badge + dropdown ─────────────────────────────────────────
   if (compact) {
     return (
-      <div className="relative flex items-center gap-1.5" ref={dropdownRef}>
+      <div className="relative flex shrink-0 items-center gap-1.5" ref={dropdownRef}>
         <button
           onClick={() => setDropdownOpen(prev => !prev)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${PROVIDER_COLORS[provider] ?? 'text-nex-ink bg-nex-surface'}`}
+          className={`nex-chip nex-chip--button whitespace-nowrap text-xs font-semibold transition-colors ${PROVIDER_COLORS[provider] ?? 'text-nex-ink bg-nex-surface'}`}
         >
           {LABELS[provider]}
           <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -109,13 +109,13 @@ export default function ProviderSelector({
         </button>
 
         {provider === 'ollama' && (
-          <span className="text-[11px] text-slate-500 bg-nex-surface rounded px-1.5 py-0.5 max-w-[100px] truncate" title={ollamaModel}>
+          <span className="nex-chip nex-chip--tag max-w-[120px] truncate text-xs text-slate-600" title={ollamaModel}>
             {ollamaModel}
           </span>
         )}
 
         {dropdownOpen && (
-          <div className="absolute top-full mt-1 right-0 z-50 bg-white border border-nex-border rounded-xl shadow-xl p-1 min-w-[140px]">
+          <div className="absolute top-full mt-1 right-0 z-50 bg-white border border-nex-border rounded-xl shadow-xl p-1 min-w-[140px] whitespace-normal">
             {visibleProviders.map(p => (
               <button
                 key={p}
@@ -135,7 +135,7 @@ export default function ProviderSelector({
                 <select
                   value={ollamaModel}
                   onChange={(e) => onModelChange(e.target.value)}
-                  className="w-full text-sm border border-nex-border rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-nex-accent transition-colors"
+                  className="nex-select w-full text-sm text-slate-700"
                 >
                   {models.map(m => (
                     <option key={m.id} value={m.id}>{m.label}</option>
@@ -153,11 +153,11 @@ export default function ProviderSelector({
                       className="flex-1 text-sm border border-nex-border rounded px-2 py-1 focus:outline-none focus:border-nex-accent"
                     />
                     <button onClick={addCustomModel} className="text-xs text-slate-600 border border-nex-border px-2 py-1 rounded hover:bg-nex-surface hover:text-nex-ink">{t('provider.add')}</button>
-                    <button onClick={() => setAdding(false)} className="text-xs text-slate-400 hover:text-slate-600 px-1">✕</button>
+                    <button onClick={() => setAdding(false)} className="text-xs text-slate-500 hover:text-slate-700 px-1">✕</button>
                   </div>
                 ) : (
                   <button onClick={() => setAdding(true)} title={t('provider.addCustomTitle')}
-                    className="mt-1 w-full text-xs text-slate-400 hover:text-slate-600 border border-nex-border rounded-lg px-2 py-1 hover:bg-nex-surface transition-colors">
+                    className="mt-1 w-full text-xs text-slate-500 hover:text-slate-700 border border-nex-border rounded-lg px-2 py-1 hover:bg-nex-surface transition-colors">
                     + {t('provider.addCustom')}
                   </button>
                 )}
@@ -215,7 +215,7 @@ export default function ProviderSelector({
                 {t('provider.add')}
               </button>
               <button onClick={() => setAdding(false)}
-                className="text-xs text-slate-400 hover:text-slate-600 px-1">
+                className="text-xs text-slate-500 hover:text-slate-700 px-1">
                 ✕
               </button>
             </div>
@@ -223,7 +223,7 @@ export default function ProviderSelector({
             <button
               onClick={() => setAdding(true)}
               title={t('provider.addCustomTitle')}
-              className="text-slate-400 hover:text-slate-600 border border-nex-border rounded-lg px-2 py-1.5 text-sm leading-none hover:bg-nex-surface transition-colors"
+              className="text-slate-500 hover:text-slate-700 border border-nex-border rounded-lg px-2 py-1.5 text-sm leading-none hover:bg-nex-surface transition-colors"
             >
               +
             </button>

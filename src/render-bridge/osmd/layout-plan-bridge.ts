@@ -151,10 +151,18 @@ export function buildRenderedMeasureLayoutOverlays(
 ): RenderedMeasureLayoutOverlay[] {
   if (!layoutBridge) return [];
 
+  // Group once by core measure id (was one filter over all rendered notes per measure). Each
+  // group keeps the rendered-note order, so the union below sees the same rects as before.
+  const rectsByMeasureId = new Map<unknown, RectLike[]>();
+  for (const note of renderedNotes) {
+    const key = note.note.coreMeasureId;
+    const rects = rectsByMeasureId.get(key);
+    if (rects) rects.push(note.domRect);
+    else rectsByMeasureId.set(key, [note.domRect]);
+  }
+
   return layoutBridge.measures.flatMap((measure) => {
-    const rects = renderedNotes
-      .filter((note) => note.note.coreMeasureId === measure.measureId)
-      .map((note) => note.domRect);
+    const rects = rectsByMeasureId.get(measure.measureId) ?? [];
     const domRect = unionRects(rects);
     if (!domRect) return [];
 

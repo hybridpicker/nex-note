@@ -194,6 +194,12 @@ interface Props {
     visualPartId?: string | null;
   }) => void;
   onPlaceNoteAt: (target: ResolvedEditTarget, options?: { audition?: boolean }) => void;
+  /**
+   * Revision of the newest document of the app. `coreDocument` reaches the editor one deferred
+   * render later; until the drawing of this revision is on screen, the pointer maps describe a
+   * score that no longer exists, and the mouse gets no preview and commits nothing.
+   */
+  latestDocumentRevision?: number;
   onSetChordSymbol?: (value: string, targetNote?: SelectedNote | null) => void;
   /** Commit the commands of the inline-entry popover as one Undo step. */
   onApplyInlineEntry?: (commands: ScoreCommand[]) => { ok: boolean; message?: string };
@@ -503,7 +509,14 @@ function getSvgBBox(element: SVGGraphicsElement): DOMRect | null {
   }
 }
 
-function postProcessTabClefs(container: HTMLElement) {
+const TAB_CLEF_SIGN_PATTERN = /<sign(?:\s[^>]*)?>\s*TAB\s*<\/sign>/i;
+
+/** Whether a MusicXML text has a TAB clef, the only case in which `postProcessTabClefs` has work. */
+export function musicXmlHasTabClef(xml: string) {
+  return TAB_CLEF_SIGN_PATTERN.test(xml);
+}
+
+function postProcessTabClefs(container: HTMLElement, hasTabClef = true) {
   const svg = container.querySelector('svg');
   if (!(svg instanceof SVGSVGElement)) return;
 
@@ -512,10 +525,20 @@ function postProcessTabClefs(container: HTMLElement) {
     element.style.removeProperty('opacity');
     element.removeAttribute('data-nex-tab-clef-original');
   });
+  // Without a TAB staff there is no clef to replace; measuring every path of the score was the
+  // whole cost of this function on every drawing.
+  if (!hasTabClef) return;
+
+  // Each path and line is measured once (it used to be once per TAB staff again for the clef).
+  const boxes = new Map<SVGGraphicsElement, DOMRect | null>();
+  const boxOf = (element: SVGGraphicsElement) => {
+    if (!boxes.has(element)) boxes.set(element, getSvgBBox(element));
+    return boxes.get(element) ?? null;
+  };
 
   const staffLineSegments = Array.from(svg.querySelectorAll<SVGGraphicsElement>('path, line'))
     .map((element) => {
-      const box = getSvgBBox(element);
+      const box = boxOf(element);
       if (!box || box.width < 80 || box.height > 2.5) return null;
       return {
         element,
@@ -572,14 +595,15 @@ function postProcessTabClefs(container: HTMLElement) {
     });
   }
 
-  const paths = Array.from(svg.querySelectorAll<SVGGraphicsElement>('path'));
+  if (tabStaffs.length === 0) return;
+  const pathBoxes = Array.from(svg.querySelectorAll<SVGGraphicsElement>('path'))
+    .map((element) => ({ element, box: boxOf(element) }))
+    .filter((entry): entry is { element: SVGGraphicsElement; box: DOMRect } => Boolean(entry.box));
   tabStaffs.forEach((staff) => {
     const staffHeight = staff.bottom - staff.top;
     const staffCenterY = staff.top + (staffHeight / 2);
     const expectedClefX = staff.left + staff.lineGap;
-    const clef = paths
-      .map((element) => ({ element, box: getSvgBBox(element) }))
-      .filter((entry): entry is { element: SVGGraphicsElement; box: DOMRect } => Boolean(entry.box))
+    const clef = pathBoxes
       .filter(({ element, box }) => {
         if (element.hasAttribute('data-nex-tab-clef-original')) return false;
         const centerY = box.y + (box.height / 2);
@@ -11741,30 +11765,80 @@ export function sanitizeXmlForOsmdRender(xml: string) {
   }
 }
 
-function buildOsmdRenderAttempts(projectedXml: string, sourceXml: string) {
+/**
+ * The duration-independent pointer maps of one drawing, and what they were built for. A resize
+ * notification of the same drawing at the same size, or a change of the note value, does not have
+ * to collect the rendered notes and measure the SVG again.
+ */
+interface RenderedMapBase {
+  revision: number;
+  layoutKey: string;
+  width: number;
+  height: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  osmd: any;
+  coreDocument: ScoreDocumentModel | null;
+  renderedNotes: RenderedNote[];
+  staffDetailsByMeasure: Map<number, StaffDetail[]>;
+  /** The measure overlays merged with the augmented measures of the geometry proxy. */
+  measureOverlays: RenderedMeasureLayoutOverlay[];
+  /** The note value the duration-dependent maps were last built for. */
+  durationKey: string;
+}
+
+/** Takes back the published snap-grid debug report: the drawing it describes is going away. */
+function withdrawSemanticGridDebugReport() {
+  if (typeof window === 'undefined') return;
+  const debugWindow = window as typeof window & { __NEX_NOTE_SEMANTIC_GRID__?: unknown };
+  if (debugWindow.__NEX_NOTE_SEMANTIC_GRID__ !== undefined) debugWindow.__NEX_NOTE_SEMANTIC_GRID__ = undefined;
+}
+
+/**
+ * Whether pointer maps built from the drawing of `renderedRevision` may serve the pointer while the
+ * newest document of the app is `latestRevision` (unknown: the editor's own document is newest).
+ * During a drawing `renderedRevision` is -1.
+ */
+export function pointerMapsDescribeDocument(renderedRevision: number, latestRevision: number | null | undefined) {
+  return latestRevision == null || renderedRevision === latestRevision;
+}
+
+/**
+ * How far past the frame time the played-note highlight reads the transport. A frame begun at
+ * `t` is on screen at `t + interval`; the highlight can change only per frame, so reading half a
+ * frame later than that puts the switch on the frame shown nearest to the onset (error within
+ * about half a frame either way, instead of 0 to +1 frame late).
+ */
+export function playbackHighlightLeadMs(frameIntervalMs: number) {
+  return frameIntervalMs * 1.5;
+}
+
+function renderedMapDurationKey(selectedDuration: NoteDuration | null | undefined, isDotted: boolean) {
+  return `${String(selectedDuration ?? '')}:${isDotted ? 'dotted' : 'plain'}`;
+}
+
+/**
+ * The XML texts OSMD is asked to draw, in order, until one draws. A generator: the source-XML
+ * fallbacks (another DOM parse and serialization of the whole score) are built only after the
+ * projected XML failed, not on every drawing.
+ */
+function* buildOsmdRenderAttempts(projectedXml: string, sourceXml: string) {
   const sanitizedProjectedXml = sanitizeXmlForOsmdRender(projectedXml);
-  const sanitizedSourceXml = sanitizeXmlForOsmdRender(sourceXml);
   const projectedNeedsSanitization = sanitizedProjectedXml !== projectedXml;
+  yield projectedNeedsSanitization
+    ? { xml: sanitizedProjectedXml, label: 'sanitized projected render xml' }
+    : { xml: projectedXml, label: 'projected render xml' };
+  yield projectedNeedsSanitization
+    ? { xml: projectedXml, label: 'projected render xml' }
+    : { xml: sanitizedProjectedXml, label: 'sanitized projected render xml' };
+
+  const sanitizedSourceXml = sanitizeXmlForOsmdRender(sourceXml);
   const sourceNeedsSanitization = sanitizedSourceXml !== sourceXml;
-
-  const attempts = [
-    projectedNeedsSanitization
-      ? { xml: sanitizedProjectedXml, label: 'sanitized projected render xml' }
-      : { xml: projectedXml, label: 'projected render xml' },
-    projectedNeedsSanitization
-      ? { xml: projectedXml, label: 'projected render xml' }
-      : { xml: sanitizedProjectedXml, label: 'sanitized projected render xml' },
-    sourceNeedsSanitization
-      ? { xml: sanitizedSourceXml, label: 'sanitized source xml' }
-      : { xml: sourceXml, label: 'source xml' },
-    sourceNeedsSanitization
-      ? { xml: sourceXml, label: 'source xml' }
-      : { xml: sanitizedSourceXml, label: 'sanitized source xml' },
-  ];
-
-  return attempts.filter((entry, index, items) => (
-    items.findIndex((candidate) => candidate.xml === entry.xml && candidate.label === entry.label) === index
-  ));
+  yield sourceNeedsSanitization
+    ? { xml: sanitizedSourceXml, label: 'sanitized source xml' }
+    : { xml: sourceXml, label: 'source xml' };
+  yield sourceNeedsSanitization
+    ? { xml: sourceXml, label: 'source xml' }
+    : { xml: sanitizedSourceXml, label: 'sanitized source xml' };
 }
 
 export default function ScoreEditor({
@@ -11794,6 +11868,7 @@ export default function ScoreEditor({
   followPlayback = true,
   onNoteClick,
   onPlaceNoteAt,
+  latestDocumentRevision,
   onSetChordSymbol,
   onApplyInlineEntry,
   onSetGuitarFret,
@@ -11892,12 +11967,27 @@ export default function ScoreEditor({
   const measureLayoutOverlaysRef = useRef<RenderedMeasureLayoutOverlay[]>([]);
   const systemLayoutOverlaysRef = useRef<RenderedSystemLayoutOverlay[]>([]);
   const staffDetailsByMeasureRef = useRef<Map<number, StaffDetail[]>>(new Map());
+  // Rebuilds the pointer maps from the drawing on screen (no OSMD render). Set by the map sync effect.
+  const syncRenderedMapRef = useRef<(() => void) | null>(null);
+  const renderedMapBaseRef = useRef<RenderedMapBase | null>(null);
+  // The layout key of the drawing that was started last (view mode, zoom, viewport revision).
+  const renderLayoutKeyRef = useRef('');
+  // A mouse or pen entry was committed and its drawing has not landed yet (debug report only).
+  const mouseCommitAwaitingDrawingRef = useRef(false);
+  // What the map sync reads when a resize notification arrives (it is subscribed once).
+  const mapSyncInputsRef = useRef<{
+    coreDocument: ScoreDocumentModel | null;
+    selectedNote: SelectedNote | null | undefined;
+    selectionConfidence: SelectionConfidenceReport | null;
+  }>({ coreDocument, selectedNote, selectionConfidence: null });
   // Pending notes (gate 3): what was entered since the score was last drawn, and the geometry of that
   // last drawing. While the score is drawn again the live maps are empty; the caret and the pending
   // notes are placed with the last complete ones. Nothing else reads them: the pointer has no
   // geometry until the new drawing is there.
   const allPendingEntries = useSyncExternalStore(subscribePendingEntries, getPendingEntries, getServerPendingEntries);
   const [renderedRevision, setRenderedRevision] = useState(-1);
+  // Counts the drawings that landed (also a new drawing of the same revision, after a resize).
+  const [drawingSerial, setDrawingSerial] = useState(0);
   const renderedRevisionRef = useRef(-1);
   const lastRenderGeometryRef = useRef<{
     grid: RenderedGhostGrid;
@@ -11920,6 +12010,17 @@ export default function ScoreEditor({
   const selectedDurationRef = useRef<Props['selectedDuration']>(selectedDuration);
   const isDottedRef = useRef(isDotted);
   const onPlaceNoteAtRef = useRef(onPlaceNoteAt);
+  const latestDocumentRevisionRef = useRef(latestDocumentRevision);
+  latestDocumentRevisionRef.current = latestDocumentRevision;
+  const hasScoreXmlRef = useRef(Boolean(xml));
+  hasScoreXmlRef.current = Boolean(xml);
+  // Whether the drawing on screen, and with it every pointer map, is of the newest document.
+  // After a mouse entry the editor keeps the drawing of the score before the entry until the new
+  // document arrives (one deferred render) and is drawn; a preview or click resolved on it would
+  // be placed in a score that no longer exists.
+  const pointerMapsAreCurrent = useCallback(() => (
+    pointerMapsDescribeDocument(renderedRevisionRef.current, latestDocumentRevisionRef.current)
+  ), []);
   const handlePointerDownRef = useRef<((event: PointerEvent) => void) | null>(null);
   const handleDoubleClickRef = useRef<((event: MouseEvent) => void) | null>(null);
   const lastEmittedMeasureSelectionRef = useRef<{ measureIds: string[]; measureNumbers: number[] }>({
@@ -11985,6 +12086,7 @@ export default function ScoreEditor({
 
   selectedDurationRef.current = selectedDuration;
   isDottedRef.current = isDotted;
+  mapSyncInputsRef.current = { coreDocument, selectedNote, selectionConfidence };
   onPlaceNoteAtRef.current = onPlaceNoteAt;
   activeVisualTargetsRef.current = activeVisualTargets;
   selectedMeasureIdsRef.current = selectedMeasureIds;
@@ -12185,29 +12287,124 @@ export default function ScoreEditor({
     setZoomPercent(clamp(value, MIN_ZOOM, MAX_ZOOM));
   }, []);
 
-  const refreshGeometryProxy = useCallback((
+  // The maps that depend on the note value (snap grid, edit map, ghost index, the grid of the
+  // geometry proxy), rebuilt from the duration-independent maps of the drawing on screen.
+  const rebuildDurationDependentMaps = useCallback((base: RenderedMapBase, container: HTMLElement) => {
+    const durationKey = renderedMapDurationKey(selectedDurationRef.current, isDottedRef.current);
+    const renderedGhostGrid = buildRenderedGhostGrid(base.renderedNotes, {
+      coreDocument: base.coreDocument,
+      measureOverlays: base.measureOverlays,
+      selectedDuration: selectedDurationRef.current,
+      isDotted: isDottedRef.current,
+      exposeRestMeasureSlots: true,
+    });
+    renderedGhostGridRef.current = renderedGhostGrid;
+    interactiveEditMapRef.current = buildInteractiveEditMap({
+      renderedGhostGrid,
+      measureOverlays: base.measureOverlays,
+      renderedNotes: base.renderedNotes,
+    });
+    container.dataset.editMapMeasureCount = String(interactiveEditMapRef.current.measureOrder.length);
+    container.dataset.editMapDiagnostics = String(interactiveEditMapRef.current.diagnostics.length);
+    ghostNoteIndexRef.current = buildGhostNoteSpatialIndex(
+      base.renderedNotes,
+      base.coreDocument,
+      base.measureOverlays,
+      renderedGhostGrid,
+    );
+    geometryProxyRef.current.update({
+      osmd: base.osmd,
+      container,
+      coreDocument: base.coreDocument,
+      measureOverlays: base.measureOverlays,
+      renderedGhostGrid,
+      staffDetailsByMeasure: base.staffDetailsByMeasure,
+    });
+    base.durationKey = durationKey;
+  }, []);
+
+  // Every pointer map of the drawing on screen. The duration-independent part is kept in
+  // `renderedMapBaseRef`, so that a change of the note value rebuilds only what depends on it.
+  // Returns the measure overlays for the overlay state.
+  const rebuildRenderedMaps = useCallback((
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     osmd: any,
     container: HTMLElement,
-    measureOverlays: RenderedMeasureLayoutOverlay[],
-    renderedGhostGrid: RenderedGhostGrid,
+    documentForMaps: ScoreDocumentModel | null,
+    renderedNotes: RenderedNote[],
+    layoutKey: string,
   ) => {
+    const graphicalMeasureRects = buildDomMeasureRectsByVisualOrder(container, documentForMaps);
+    const osmdGraphicalMeasureRects = buildGraphicalMeasureRectsById(osmd, container, documentForMaps);
+    for (const [measureId, rect] of osmdGraphicalMeasureRects.entries()) {
+      graphicalMeasureRects.set(measureId, rect);
+    }
+    const staffDetailsByMeasure = buildStaffDetailsByMeasure(osmd, container);
+    staffDetailsByMeasureRef.current = staffDetailsByMeasure;
+    const measureOverlays = buildMeasureLayoutOverlaysForContainer(
+      renderedNotes,
+      layoutBridgeRef.current,
+      graphicalMeasureRects,
+      staffDetailsByMeasure,
+      documentForMaps,
+    );
+    const refinedMeasureOverlays = refineMeasureOverlaysForNoteInput(
+      measureOverlays,
+      renderedNotes,
+      documentForMaps,
+      selectedDurationRef.current,
+      isDottedRef.current,
+    );
+    // The augmented measures do not depend on the snap grid: the grid of this first pass is
+    // replaced below before anything reads it.
     geometryProxyRef.current.update({
       osmd,
       container,
-      coreDocument,
-      measureOverlays,
-      renderedGhostGrid,
+      coreDocument: documentForMaps,
+      measureOverlays: refinedMeasureOverlays,
+      renderedGhostGrid: createEmptyRenderedGhostGrid(),
+      // The staff geometry of this drawing is passed on. The measure rects are not: the proxy's
+      // own reading of them gave different snap targets (e2e/snap-ghost-debug.spec.ts "hover and
+      // click use the same snap without cross-measure retargeting" failed with the shared map).
+      staffDetailsByMeasure,
     });
-  }, [coreDocument]);
+    const mergedMeasureOverlays = mergeAugmentedMeasureOverlays(
+      refinedMeasureOverlays,
+      geometryProxyRef.current.getAugmentedMeasures(),
+    );
+    const base: RenderedMapBase = {
+      revision: documentForMaps?.revision ?? 0,
+      layoutKey,
+      width: 0,
+      height: 0,
+      osmd,
+      coreDocument: documentForMaps,
+      renderedNotes,
+      staffDetailsByMeasure,
+      measureOverlays: mergedMeasureOverlays,
+      durationKey: '',
+    };
+    rebuildDurationDependentMaps(base, container);
+    base.width = container.offsetWidth;
+    base.height = container.offsetHeight;
+    renderedMapBaseRef.current = base;
+    return mergedMeasureOverlays;
+  }, [rebuildDurationDependentMaps]);
 
   const scheduleRenderedGeometryRefresh = useCallback(() => {
+    // The score changes after this entry (the editor receives the new document one deferred
+    // render later than the app state). The snap-grid debug report of the drawing on screen is
+    // withdrawn until the next drawing lands or the pointer moves again.
+    mouseCommitAwaitingDrawingRef.current = true;
+    withdrawSemanticGridDebugReport();
     // Mouse note input changes the score before OSMD has finished rebuilding;
-    // rebuild snap geometry after that render settles.
+    // make sure the snap geometry matches the drawing once that render settles.
+    // The drawing of the new revision builds every map when it lands, so this
+    // only syncs the maps of the drawing on screen (and does nothing while the
+    // new drawing is on its way). It used to draw the whole score a second time.
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
-        geometryProxyRef.current.invalidate();
-        setRenderViewportRevision((value) => value + 1);
+        syncRenderedMapRef.current?.();
       });
     });
   }, []);
@@ -12314,12 +12511,16 @@ export default function ScoreEditor({
     const glyphCacheInstalled = installOsmdGlyphBoundsCache(osmd);
     if (containerRef.current) containerRef.current.dataset.glyphBoundsCache = String(glyphCacheInstalled);
     recordInputMetric('osmd-render', performance.now() - renderStarted);
-    if (containerRef.current) postProcessTabClefs(containerRef.current);
+    if (containerRef.current) postProcessTabClefs(containerRef.current, musicXmlHasTabClef(candidateXml));
     return osmd;
   }, [initializeOsmd, coreDocument, zoomPercent]);
 
   const processPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (pencilOnlyInput && e.pointerType === 'touch') return;
+    // An entry that changed nothing has no drawing to wait for: the next move publishes again.
+    if (mouseCommitAwaitingDrawingRef.current && pointerMapsAreCurrent() && renderedRevisionRef.current === (coreDocument?.revision ?? 0)) {
+      mouseCommitAwaitingDrawingRef.current = false;
+    }
     lastPointerClientRef.current = { x: e.clientX, y: e.clientY };
     const dragSession = dragSessionRef.current;
     if (dragSession) {
@@ -12465,6 +12666,12 @@ export default function ScoreEditor({
       return;
     }
     if (!noteInputMode || inputByDurationMode) {
+      if (ghostNoteTarget) setGhostNoteTarget(null);
+      return;
+    }
+    // The score of the last edit is not drawn yet: no preview from the drawing before it. The
+    // preview comes back with the drawing (the overlay effect places it at the last pointer).
+    if (!pointerMapsAreCurrent()) {
       if (ghostNoteTarget) setGhostNoteTarget(null);
       return;
     }
@@ -12765,7 +12972,7 @@ export default function ScoreEditor({
       if (ghostTargetsEqual(current, nextGhost)) return current;
       return nextGhost;
     });
-  }, [pencilOnlyInput, chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onDragPitchPreview, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
+  }, [pencilOnlyInput, chordInputMode, coreDocument, dragTransposeMode, entryMode, ghostNoteTarget, graceEventIds, inputByDurationMode, isDotted, noteInputAnchor, noteInputMode, onDirectEntryPitchPreview, onDragPitchPreview, pointerMapsAreCurrent, selectedAccidental, selectedDuration, selectedNote, selectedVoice, zoomPercent]);
 
   const discardPendingTabletPointerMove = useCallback(() => {
     if (tabletPointerMoveFrameRef.current != null) {
@@ -12860,6 +13067,13 @@ export default function ScoreEditor({
         `pointerdown ignored — note input requires an unmodified primary button `
         + `(button=${e.button} ctrl=${String(e.ctrlKey)})`,
       );
+      return;
+    }
+    if (noteInputMode && !pointerMapsAreCurrent()) {
+      // Same rule as the preview: a click is never placed with the geometry of the drawing of an
+      // older document. It shows no preview either, so preview and commit stay equal.
+      dbg.score('pointerdown ignored — the drawing of the newest document is not on screen yet');
+      recordBugReportEvent('input-doctor', 'note-input-commit-miss', { reason: 'drawing-pending' });
       return;
     }
     viewportRef.current?.focus({ preventScroll: true });
@@ -14135,9 +14349,13 @@ export default function ScoreEditor({
     let cancelled = false;
     const abortController = new AbortController();
     const layoutKey = `${viewMode}:${zoomPercent}:${renderViewportRevision}`;
+    renderLayoutKeyRef.current = layoutKey;
+    renderedMapBaseRef.current = null;
     const pendingForThisRender = pendingEntriesFor(getPendingEntries(), coreDocument?.revision ?? 0, renderedRevisionRef.current);
     // From here until this drawing has landed, nothing on screen is a drawing of this document.
     renderedRevisionRef.current = -1;
+    // The score is being drawn (cleared when this drawing is committed, see `drawingSerial`).
+    containerRef.current?.setAttribute('aria-busy', 'true');
     // Another zoom, view or width: the geometry of the last drawing says nothing about this one.
     if (lastRenderGeometryRef.current?.layoutKey !== layoutKey) lastRenderGeometryRef.current = null;
     if (pendingForThisRender.length === 0 && getPendingEntries().length > 0
@@ -14224,67 +14442,23 @@ export default function ScoreEditor({
             containerRef.current.dataset.layoutPages = String(layoutBridgeRef.current.plan.pages.length);
             containerRef.current.dataset.layoutRevision = String(layoutBridgeRef.current.revision);
           }
-          setOverlayLayerOffset(resolveOverlayLayerOffset(containerRef.current));
-          renderedNotesRef.current = bridgeCollectRenderedNotes(activeOsmd, containerRef.current, coreDocument);
-          if (containerRef.current) drawNestedTupletBrackets(containerRef.current, coreDocument, renderedNotesRef.current);
+          const renderedContainer = containerRef.current;
+          if (!renderedContainer) return;
+          setOverlayLayerOffset(resolveOverlayLayerOffset(renderedContainer));
+          renderedNotesRef.current = bridgeCollectRenderedNotes(activeOsmd, renderedContainer, coreDocument);
+          drawNestedTupletBrackets(renderedContainer, coreDocument, renderedNotesRef.current);
           setRenderedNoteDebugMarkers(buildRenderedNoteDebugMarkers(renderedNotesRef.current, selectedNote, selectionConfidence));
-          const graphicalMeasureRects = buildDomMeasureRectsByVisualOrder(containerRef.current, coreDocument);
-          const osmdGraphicalMeasureRects = buildGraphicalMeasureRectsById(activeOsmd, containerRef.current, coreDocument);
-          for (const [measureId, rect] of osmdGraphicalMeasureRects.entries()) {
-            graphicalMeasureRects.set(measureId, rect);
-          }
-          const staffDetailsByMeasure = buildStaffDetailsByMeasure(activeOsmd, containerRef.current);
-          staffDetailsByMeasureRef.current = staffDetailsByMeasure;
-          const measureOverlays = buildMeasureLayoutOverlaysForContainer(
+          // Every map is built here from the new drawing; the map sync after the resize
+          // notification of this drawing finds them current and does nothing.
+          const refinedMeasureOverlays = rebuildRenderedMaps(
+            activeOsmd,
+            renderedContainer,
+            coreDocument,
             renderedNotesRef.current,
-            layoutBridgeRef.current,
-            graphicalMeasureRects,
-            staffDetailsByMeasure,
-            coreDocument,
+            layoutKey,
           );
-          let refinedMeasureOverlays = refineMeasureOverlaysForNoteInput(
-            measureOverlays,
-            renderedNotesRef.current,
-            coreDocument,
-            selectedDurationRef.current,
-            isDottedRef.current,
-          );
-          renderedGhostGridRef.current = buildRenderedGhostGrid(renderedNotesRef.current, {
-            coreDocument,
-            measureOverlays: refinedMeasureOverlays,
-            selectedDuration: selectedDurationRef.current,
-            isDotted: isDottedRef.current,
-            exposeRestMeasureSlots: true,
-          });
-          refreshGeometryProxy(activeOsmd, containerRef.current, refinedMeasureOverlays, renderedGhostGridRef.current);
-          refinedMeasureOverlays = mergeAugmentedMeasureOverlays(
-            refinedMeasureOverlays,
-            geometryProxyRef.current.getAugmentedMeasures(),
-          );
-          renderedGhostGridRef.current = buildRenderedGhostGrid(renderedNotesRef.current, {
-            coreDocument,
-            measureOverlays: refinedMeasureOverlays,
-            selectedDuration: selectedDurationRef.current,
-            isDotted: isDottedRef.current,
-            exposeRestMeasureSlots: true,
-          });
-          interactiveEditMapRef.current = buildInteractiveEditMap({
-            renderedGhostGrid: renderedGhostGridRef.current,
-            measureOverlays: refinedMeasureOverlays,
-            renderedNotes: renderedNotesRef.current,
-          });
-          if (containerRef.current) {
-            containerRef.current.dataset.editMapMeasureCount = String(interactiveEditMapRef.current.measureOrder.length);
-            containerRef.current.dataset.editMapDiagnostics = String(interactiveEditMapRef.current.diagnostics.length);
-          }
-          ghostNoteIndexRef.current = buildGhostNoteSpatialIndex(
-            renderedNotesRef.current,
-            coreDocument,
-            refinedMeasureOverlays,
-            renderedGhostGridRef.current,
-          );
-          refreshGeometryProxy(activeOsmd, containerRef.current, refinedMeasureOverlays, renderedGhostGridRef.current);
           renderedZoomRef.current = zoomPercent;
+          mouseCommitAwaitingDrawingRef.current = false;
           const pendingZoomAnchor = pendingZoomAnchorRef.current;
           pendingZoomAnchorRef.current = null;
           if (pendingZoomAnchor && viewportRef.current) {
@@ -14302,7 +14476,9 @@ export default function ScoreEditor({
           }
 
           setLoading(false);
-          if (containerRef.current) containerRef.current.dataset.renderedRevision = String(coreDocument?.revision ?? 0);
+          // `data-rendered-revision` is written once React has committed the overlays of this
+          // drawing (layout effect on `renderedRevision`), not here: until then the bar overlays
+          // on the page are still those of the old drawing.
           lastRenderGeometryRef.current = {
             grid: renderedGhostGridRef.current,
             staffDetails: staffDetailsByMeasureRef.current,
@@ -14311,12 +14487,14 @@ export default function ScoreEditor({
           };
           renderedRevisionRef.current = coreDocument?.revision ?? 0;
           setRenderedRevision(renderedRevisionRef.current);
+          setDrawingSerial((value) => value + 1);
           settlePendingEntries(renderedRevisionRef.current);
           onOsmdReady(activeOsmd);
           markInputFeedback('input-to-note-frame');
         }
       } catch (err) {
         dbg.error('score', 'OSMD render error:', err);
+        if (!cancelled) containerRef.current?.removeAttribute('aria-busy');
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err);
           setError(`Preview error: ${message}`);
@@ -14332,7 +14510,7 @@ export default function ScoreEditor({
       abortController.abort();
       geometryProxyRef.current.invalidate();
     };
-  }, [clearActiveScoreTints, coreDocument, loadAndRenderOsmd, onOsmdReady, onRenderError, onRenderStart, refreshGeometryProxy, renderViewportRevision, viewMode, xml, zoomPercent]);
+  }, [clearActiveScoreTints, coreDocument, loadAndRenderOsmd, onOsmdReady, onRenderError, onRenderStart, rebuildRenderedMaps, renderViewportRevision, viewMode, xml, zoomPercent]);
 
   useEffect(() => {
     if (ghostNoteTarget) markInputFeedback('input-to-preview-frame');
@@ -14377,95 +14555,90 @@ export default function ScoreEditor({
     }
   }, [playbackActive]);
 
+  // Brings the pointer maps up to the drawing on screen without drawing again: after a resize of
+  // the score container, a change of the note value, or a mouse entry. It reads everything through
+  // refs, so one subscription serves every drawing.
+  const syncRenderedMap = useCallback(() => {
+    const container = containerRef.current;
+    // Resize/layout observers must use the current OSMD render. Capturing it
+    // outside this callback can restore stale snap points after note input.
+    const osmd = osmdRef.current;
+    if (!container || !osmd?.GraphicSheet) return;
+    const { coreDocument: documentForMaps, selectedNote: noteForMarkers, selectionConfidence: confidenceForMarkers } = mapSyncInputsRef.current;
+    // The drawing on screen is of another revision of the document than this one: the drawing
+    // that is on its way builds the maps. Building them here from the old drawing took as long
+    // as the score is large, before the frame after an edit could be shown, for nothing.
+    if (renderedRevisionRef.current !== (documentForMaps?.revision ?? 0)) return;
+    const base = renderedMapBaseRef.current;
+    if (
+      base
+      && base.osmd === osmd
+      && base.coreDocument === documentForMaps
+      && base.revision === renderedRevisionRef.current
+      && base.layoutKey === renderLayoutKeyRef.current
+      && base.width === container.offsetWidth
+      && base.height === container.offsetHeight
+    ) {
+      // The same drawing at the same size: the maps are current, unless the note value changed.
+      if (base.durationKey === renderedMapDurationKey(selectedDurationRef.current, isDottedRef.current)) return;
+      rebuildDurationDependentMaps(base, container);
+      // A new array, so that what is placed from the snap grid is placed again.
+      setMeasureLayoutOverlays(base.measureOverlays.slice());
+      setSystemLayoutOverlays(buildRenderedSystemLayoutOverlays(base.measureOverlays, layoutBridgeRef.current));
+      return;
+    }
+    setOverlayLayerOffset(resolveOverlayLayerOffset(container));
+    renderedNotesRef.current = bridgeCollectRenderedNotes(osmd, container, documentForMaps);
+    setRenderedNoteDebugMarkers(buildRenderedNoteDebugMarkers(renderedNotesRef.current, noteForMarkers ?? null, confidenceForMarkers));
+    const refinedMeasureOverlays = rebuildRenderedMaps(
+      osmd,
+      container,
+      documentForMaps,
+      renderedNotesRef.current,
+      renderLayoutKeyRef.current,
+    );
+    setMeasureLayoutOverlays(refinedMeasureOverlays);
+    setSystemLayoutOverlays(buildRenderedSystemLayoutOverlays(refinedMeasureOverlays, layoutBridgeRef.current));
+  }, [rebuildDurationDependentMaps, rebuildRenderedMaps]);
+  syncRenderedMapRef.current = syncRenderedMap;
+
+  // One subscription for the life of the score container. Its first notification after a drawing
+  // finds the maps that drawing built and returns at once.
+  const hasScoreXml = Boolean(xml);
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
-    const syncRenderedMap = () => {
-      // Resize/layout observers must use the current OSMD render. Capturing it
-      // outside this callback can restore stale snap points after note input.
-      const osmd = osmdRef.current;
-      if (!osmd?.GraphicSheet) return;
-      // The drawing on screen is of another revision of the document than this one: the drawing
-      // that is on its way builds the maps. Building them here from the old drawing took as long
-      // as the score is large, before the frame after an edit could be shown, for nothing.
-      if (renderedRevisionRef.current !== (coreDocument?.revision ?? 0)) return;
-      setOverlayLayerOffset(resolveOverlayLayerOffset(container));
-      renderedNotesRef.current = bridgeCollectRenderedNotes(osmd, container, coreDocument);
-      setRenderedNoteDebugMarkers(buildRenderedNoteDebugMarkers(renderedNotesRef.current, selectedNote, selectionConfidence));
-      const graphicalMeasureRects = buildDomMeasureRectsByVisualOrder(container, coreDocument);
-      const osmdGraphicalMeasureRects = buildGraphicalMeasureRectsById(osmd, container, coreDocument);
-      for (const [measureId, rect] of osmdGraphicalMeasureRects.entries()) {
-        graphicalMeasureRects.set(measureId, rect);
-      }
-      const staffDetailsByMeasure = buildStaffDetailsByMeasure(osmd, container);
-      staffDetailsByMeasureRef.current = staffDetailsByMeasure;
-      const measureOverlays = buildMeasureLayoutOverlaysForContainer(
-        renderedNotesRef.current,
-        layoutBridgeRef.current,
-        graphicalMeasureRects,
-        staffDetailsByMeasure,
-        coreDocument,
-      );
-      let refinedMeasureOverlays = refineMeasureOverlaysForNoteInput(
-        measureOverlays,
-        renderedNotesRef.current,
-        coreDocument,
-        selectedDurationRef.current,
-        isDottedRef.current,
-      );
-      renderedGhostGridRef.current = buildRenderedGhostGrid(renderedNotesRef.current, {
-        coreDocument,
-        measureOverlays: refinedMeasureOverlays,
-        selectedDuration: selectedDurationRef.current,
-        isDotted: isDottedRef.current,
-        exposeRestMeasureSlots: true,
-      });
-      refreshGeometryProxy(osmd, container, refinedMeasureOverlays, renderedGhostGridRef.current);
-      refinedMeasureOverlays = mergeAugmentedMeasureOverlays(
-        refinedMeasureOverlays,
-        geometryProxyRef.current.getAugmentedMeasures(),
-      );
-      renderedGhostGridRef.current = buildRenderedGhostGrid(renderedNotesRef.current, {
-        coreDocument,
-        measureOverlays: refinedMeasureOverlays,
-        selectedDuration: selectedDurationRef.current,
-        isDotted: isDottedRef.current,
-        exposeRestMeasureSlots: true,
-      });
-      interactiveEditMapRef.current = buildInteractiveEditMap({
-        renderedGhostGrid: renderedGhostGridRef.current,
-        measureOverlays: refinedMeasureOverlays,
-        renderedNotes: renderedNotesRef.current,
-      });
-      container.dataset.editMapMeasureCount = String(interactiveEditMapRef.current.measureOrder.length);
-      container.dataset.editMapDiagnostics = String(interactiveEditMapRef.current.diagnostics.length);
-      ghostNoteIndexRef.current = buildGhostNoteSpatialIndex(
-        renderedNotesRef.current,
-        coreDocument,
-        refinedMeasureOverlays,
-        renderedGhostGridRef.current,
-      );
-      refreshGeometryProxy(osmd, container, refinedMeasureOverlays, renderedGhostGridRef.current);
-      setMeasureLayoutOverlays(refinedMeasureOverlays);
-      setSystemLayoutOverlays(buildRenderedSystemLayoutOverlays(refinedMeasureOverlays, layoutBridgeRef.current));
-    };
-
-    syncRenderedMap();
-    const observer = new ResizeObserver(syncRenderedMap);
+    const onResize = () => syncRenderedMapRef.current?.();
+    const observer = new ResizeObserver(onResize);
     observer.observe(container);
-    window.addEventListener('resize', syncRenderedMap);
+    window.addEventListener('resize', onResize);
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', syncRenderedMap);
+      window.removeEventListener('resize', onResize);
     };
-  }, [coreDocument, isDotted, refreshGeometryProxy, selectedDuration]);
+  }, [hasScoreXml]);
+
+  // A change of the note value rebuilds the maps that depend on it (and a change of the document
+  // finds the drawing of it on its way, see above).
+  useEffect(() => {
+    syncRenderedMap();
+  }, [coreDocument, isDotted, selectedDuration, syncRenderedMap]);
+
+  // An edit was committed and its drawing is not on screen yet: the preview of the drawing before
+  // goes at once (the click that made the edit may have left it standing).
+  useEffect(() => {
+    if (!pointerMapsAreCurrent()) setGhostNoteTarget(null);
+  }, [latestDocumentRevision, pointerMapsAreCurrent]);
 
   useEffect(() => {
     if (!noteInputMode) return;
     const container = containerRef.current;
     const lastPointer = lastPointerClientRef.current;
     if (!container || !lastPointer) return;
+    if (!pointerMapsAreCurrent()) {
+      setGhostNoteTarget(null);
+      return;
+    }
 
     const rect = container.getBoundingClientRect();
     if (!isPointInsideRect(lastPointer.x, lastPointer.y, rect)) {
@@ -14620,6 +14793,11 @@ export default function ScoreEditor({
       lastObservedViewportWidthRef.current = nextWidth;
       cancelAnimationFrame(frame);
       geometryProxyRef.current.invalidate();
+      // The drawing on screen was laid out for another width and is drawn again a frame later:
+      // the canvas is busy from now on, not only once that drawing has started (render effect), so
+      // a reader that waits for the canvas to be idle never takes a bar from the outgoing layout.
+      // The drawing that follows clears it when it lands (layout effect on `renderedRevision`).
+      if (hasScoreXmlRef.current) containerRef.current?.setAttribute('aria-busy', 'true');
       frame = window.requestAnimationFrame(() => {
         setRenderViewportRevision((value) => value + 1);
       });
@@ -15024,8 +15202,14 @@ export default function ScoreEditor({
         }
       }
 
-      const onset = activeGeometry.onsetAt(location.measureNumber, location.positionWholes);
-      const onsetKey = onset ? `${location.spanIndex}:${onset.key}` : null;
+      // The highlight changes on whole frames only (see `playbackHighlightLeadMs`); the playhead
+      // moves continuously and keeps the plain one-frame lead.
+      const onsetPosition = playbackTransport.read(frameTime + playbackHighlightLeadMs(frameIntervalMs));
+      const onsetLocation = onsetPosition?.playing && onsetPosition.generation === position.generation
+        ? onsetPosition.location
+        : location;
+      const onset = activeGeometry.onsetAt(onsetLocation.measureNumber, onsetLocation.positionWholes);
+      const onsetKey = onset ? `${onsetLocation.spanIndex}:${onset.key}` : null;
       if (onsetKey !== activeOnsetKey) {
         activeOnsetKey = onsetKey;
         untint();
@@ -15727,7 +15911,9 @@ export default function ScoreEditor({
   // Pending notes: entered, in the document, and not drawn by the score yet. Each stands where the
   // caret stood when it was typed, in the ink of the score, until the drawing of its revision lands.
   const pendingNotes = useMemo(() => {
-    const open = pendingEntriesFor(allPendingEntries, coreDocument?.revision ?? 0, renderedRevision);
+    // Against the newest document of the app: the editor's own copy arrives one deferred render
+    // later, and the note is to be on screen from the frame its entry is committed in.
+    const open = pendingEntriesFor(allPendingEntries, latestDocumentRevision ?? coreDocument?.revision ?? 0, renderedRevision);
     return open.flatMap((entry) => {
       const { note } = entry;
       const place = resolveInputPlace({ ...note, coreMeasureId: note.coreMeasureId ?? undefined, isRest: false } as InputPosition);
@@ -15753,7 +15939,16 @@ export default function ScoreEditor({
       }];
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPendingEntries, coreDocument, measureLayoutOverlays, overlayLayerOffset, renderedRevision]);
+  }, [allPendingEntries, coreDocument, latestDocumentRevision, measureLayoutOverlays, overlayLayerOffset, renderedRevision]);
+  // "This revision is on screen": written after React has committed the bar overlays and the
+  // other state of the drawing that set `renderedRevision`, so a reader that waits for it never
+  // sees the overlays of the drawing before (they stay up while a drawing is on its way).
+  useLayoutEffect(() => {
+    if (renderedRevision < 0 || !containerRef.current) return;
+    containerRef.current.dataset.renderedRevision = String(renderedRevision);
+    // A drawing on its way since then has set it again (render effect).
+    if (renderedRevisionRef.current === renderedRevision) containerRef.current.removeAttribute('aria-busy');
+  }, [drawingSerial, renderedRevision]);
   const newestPendingKey = pendingNotes.at(-1)?.key ?? null;
   useLayoutEffect(() => {
     if (!newestPendingKey) return;
@@ -15871,9 +16066,25 @@ export default function ScoreEditor({
     ? leadingTimeSignatureGuardRightX(scoreInputLeadingGuardOverlay)
     : null;
 
+  // A new revision of the document is on its way to the screen: the snap-grid debug report of the
+  // old drawing is withdrawn in the same commit, before the page can read it again (see below).
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (renderedRevisionRef.current === (coreDocument?.revision ?? 0)) return;
+    withdrawSemanticGridDebugReport();
+  }, [coreDocument]);
+
   useEffect(() => {
     const debugEnabled = dbg.enabled();
     if ((!semanticGridDebugEnabled && !(debugEnabled && semanticGridReady)) || typeof window === 'undefined') return;
+    // While the score is drawn again the snap grid of the old drawing is gone: the report of the
+    // old drawing is withdrawn, and the render after the new drawing publishes its report. (A
+    // second full drawing after every mouse entry used to withdraw it on the way; readers wait for
+    // a report with snaps.)
+    if (renderedRevisionRef.current !== (coreDocument?.revision ?? 0) || mouseCommitAwaitingDrawingRef.current) {
+      withdrawSemanticGridDebugReport();
+      return;
+    }
     const report = buildSemanticGridDebugReport(
       semanticAnchorDebugBoxes,
       coreDocument,
@@ -16867,7 +17078,7 @@ export default function ScoreEditor({
         {navigatorVisible && (
           <div className="absolute right-4 top-4 z-20 w-52 rounded-2xl border border-nex-border bg-white/95 p-3 shadow-lg">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Navigator</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Navigator</p>
               <button
                 type="button"
                 className="text-xs font-semibold text-slate-500 hover:text-nex-ink"
@@ -16978,7 +17189,9 @@ export default function ScoreEditor({
                 ref={containerRef}
                 className={`bg-white ${viewMode === 'page' ? 'max-w-[1120px] rounded-[28px] border border-stone-300 px-6 py-8 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.35)]' : 'w-full'} ${viewMode === 'continuous-horizontal' ? 'inline-block min-w-max' : ''}`}
           data-testid="score-canvas"
-          data-document-revision={coreDocument?.revision ?? 0}
+          // The newest document of the app, not the deferred copy the editor holds: a reader that
+          // waits for it to equal `data-rendered-revision` waits for the drawing of the last edit.
+          data-document-revision={latestDocumentRevision ?? coreDocument?.revision ?? 0}
               />
               <div
                 className="pointer-events-none absolute inset-0 z-20"
@@ -17465,12 +17678,12 @@ export default function ScoreEditor({
         </div>
       </div>
 
-      <div className="border-t border-nex-border bg-white px-3 py-2">
-        <div className="flex items-center justify-between gap-3 text-xs text-slate-600">
-          <div className="flex items-center gap-2">
+      <div className="nex-bottom-bar border-t border-nex-border bg-white px-3 py-2">
+        <div className="flex min-w-0 items-center justify-between gap-3 whitespace-nowrap text-xs text-slate-600">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className={`rounded-md px-2 py-1 font-semibold transition-colors ${navigatorVisible ? 'nex-brand-active' : 'bg-nex-surface hover:bg-nex-border hover:text-nex-ink'}`}
+              className={`nex-bar-button ${navigatorVisible ? 'nex-brand-active' : ''}`}
               onClick={() => setNavigatorVisible((current) => !current)}
               aria-pressed={navigatorVisible}
               title="Navigator"
@@ -17479,7 +17692,7 @@ export default function ScoreEditor({
             </button>
             <button
               type="button"
-              className={`rounded-md px-2 py-1 font-semibold transition-colors ${findVisible ? 'nex-brand-active' : 'bg-nex-surface hover:bg-nex-border hover:text-nex-ink'}`}
+              className={`nex-bar-button ${findVisible ? 'nex-brand-active' : ''}`}
               onClick={() => setFindVisible((current) => !current)}
               aria-pressed={findVisible}
               title={`Find/Go to (${formatShortcutHint('Cmd/Ctrl+F')})`}
@@ -17488,22 +17701,26 @@ export default function ScoreEditor({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button type="button" className="rounded-md bg-nex-surface px-2 py-1 font-semibold hover:bg-nex-border hover:text-nex-ink" onClick={() => adjustZoom(-ZOOM_STEP)}>-</button>
-            <button type="button" className="rounded-md bg-nex-surface px-2 py-1 font-semibold hover:bg-nex-border hover:text-nex-ink" onClick={() => setZoom(100)}>100%</button>
-            <input
-              type="number"
-              min={MIN_ZOOM}
-              max={MAX_ZOOM}
-              value={zoomPercent}
-              onChange={(event) => setZoom(Number.parseInt(event.target.value || '100', 10))}
-              className="w-16 rounded-md border border-nex-border px-2 py-1 text-right focus:outline-none focus:border-nex-accent"
-              aria-label="Zoom percent"
-            />
-            <button type="button" className="rounded-md bg-nex-surface px-2 py-1 font-semibold hover:bg-nex-border hover:text-nex-ink" onClick={() => adjustZoom(ZOOM_STEP)}>+</button>
+          <div className="nex-zoom-group shrink-0" role="group" aria-label="Zoom">
+            <button type="button" className="nex-zoom-segment" aria-label="Zoom out" title="Zoom out" onClick={() => adjustZoom(-ZOOM_STEP)}>{'\u2212'}</button>
+            <button type="button" className="nex-zoom-segment nex-zoom-reset" aria-label="Reset zoom to 100%" title="Reset zoom to 100%" onClick={() => setZoom(100)}>{'\u21BA'}</button>
+            <span className="nex-zoom-value">
+              <input
+                type="number"
+                min={MIN_ZOOM}
+                max={MAX_ZOOM}
+                value={zoomPercent}
+                onChange={(event) => setZoom(Number.parseInt(event.target.value || '100', 10))}
+                className="nex-zoom-input"
+                aria-label="Zoom percent"
+              />
+              <span aria-hidden className="nex-zoom-unit">%</span>
+            </span>
+            <button type="button" className="nex-zoom-segment" aria-label="Zoom in" title="Zoom in" onClick={() => adjustZoom(ZOOM_STEP)}>+</button>
             <select
               aria-label="Zoom preset"
-              className="rounded-md border border-nex-border px-2 py-1 focus:outline-none focus:border-nex-accent"
+              title="Zoom preset"
+              className="nex-select nex-zoom-preset"
               value={String(zoomPercent)}
               onChange={(event) => setZoom(Number.parseInt(event.target.value, 10))}
             >
@@ -17513,11 +17730,11 @@ export default function ScoreEditor({
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">View</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="nex-view-label font-medium text-slate-600">View</span>
             <select
               aria-label="Score view mode"
-              className="rounded-md border border-nex-border px-2 py-1 focus:outline-none focus:border-nex-accent"
+              className="nex-select nex-view-select min-w-0"
               value={viewMode}
               onChange={(event) => setViewMode(event.target.value as ScoreViewMode)}
             >

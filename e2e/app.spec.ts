@@ -1517,7 +1517,7 @@ test('playback controls and responsive panel behavior work in the browser with s
 
   const tempo = page.locator('input[type="range"]').first();
   await tempo.fill('150');
-  await expect(page.locator('span.w-7').filter({ hasText: /^150$/ })).toBeVisible();
+  await expect(page.getByTestId('tempo-value').filter({ hasText: /^150$/ })).toBeVisible();
 
   const progressBars = page.locator('div.cursor-pointer.overflow-hidden.rounded-full');
   if (await progressBars.count() > 0) {
@@ -1662,18 +1662,33 @@ test('tempo changes during playback keep the playhead position', async ({ page }
   await page.getByTitle('Metronome off').click();
   await expect(page.getByTitle('Metronome on')).toBeVisible();
   await page.evaluate(() => {
-    const win = window as typeof window & { __NEX_NOTE_E2E_OSCILLATOR_STARTS__?: number };
-    win.__NEX_NOTE_E2E_OSCILLATOR_STARTS__ = 0;
+    // Metronome clicks: the rendered 40 ms woodblock buffer (lib/drum-synth.ts), or the sine
+    // fallback on engines without buffer sources. Instrument notes go to the e2e loader.
+    const win = window as typeof window & { __NEX_NOTE_E2E_METRONOME_CLICK_STARTS__?: number };
+    win.__NEX_NOTE_E2E_METRONOME_CLICK_STARTS__ = 0;
+    const countClick = () => {
+      win.__NEX_NOTE_E2E_METRONOME_CLICK_STARTS__ = (win.__NEX_NOTE_E2E_METRONOME_CLICK_STARTS__ ?? 0) + 1;
+    };
     const proto = AudioContext.prototype;
     const nativeCreateOscillator = proto.createOscillator;
     proto.createOscillator = function patchedCreateOscillator(...args) {
       const oscillator = nativeCreateOscillator.apply(this, args);
       const nativeStart = oscillator.start.bind(oscillator);
       oscillator.start = (when?: number) => {
-        win.__NEX_NOTE_E2E_OSCILLATOR_STARTS__ = (win.__NEX_NOTE_E2E_OSCILLATOR_STARTS__ ?? 0) + 1;
+        countClick();
         nativeStart(when);
       };
       return oscillator;
+    };
+    const nativeCreateBufferSource = proto.createBufferSource;
+    proto.createBufferSource = function patchedCreateBufferSource(...args) {
+      const source = nativeCreateBufferSource.apply(this, args);
+      const nativeStart = source.start.bind(source);
+      source.start = (when?: number, offset?: number, duration?: number) => {
+        if (source.buffer && source.buffer.duration <= 0.05) countClick();
+        nativeStart(when, offset, duration);
+      };
+      return source;
     };
   });
 
@@ -1686,8 +1701,8 @@ test('tempo changes during playback keep the playhead position', async ({ page }
     }).__NEX_NOTE_E2E_PREVIEW_STARTS__?.length ?? 0
   ))).toBeGreaterThan(0);
   await expect.poll(async () => page.evaluate(() => (
-    (window as typeof window & { __NEX_NOTE_E2E_OSCILLATOR_STARTS__?: number })
-      .__NEX_NOTE_E2E_OSCILLATOR_STARTS__ ?? 0
+    (window as typeof window & { __NEX_NOTE_E2E_METRONOME_CLICK_STARTS__?: number })
+      .__NEX_NOTE_E2E_METRONOME_CLICK_STARTS__ ?? 0
   ))).toBeGreaterThan(0);
   // The playhead is moved per frame by a compositor transform, without a CSS transition that
   // would trail the sound.
@@ -1700,7 +1715,7 @@ test('tempo changes during playback keep the playhead position', async ({ page }
   const beforeTempoChangeMs = await readPlayheadMs();
 
   await page.locator('input[type="range"]').first().fill('170');
-  await expect(page.locator('span.w-7').filter({ hasText: /^170$/ })).toBeVisible();
+  await expect(page.getByTitle('Tempo: 170 BPM')).toBeVisible();
 
   const afterTempoChangeMs = await readPlayheadMs();
   expect(afterTempoChangeMs).toBeGreaterThan(beforeTempoChangeMs - 75);
@@ -2986,12 +3001,21 @@ test('Little Walk Guitar + TAB accepts every visible chord size from one through
     }
     await expect.poll(async () => Boolean((await readE2EState(page))?.chordInputMode)).toBe(chordModeShouldBeOn);
 
-    const onsetX = await page.locator(
-      '[data-semantic-snap-measure="1"][data-semantic-snap-staff="1"][data-semantic-snap-timestamp="8/32"]',
-    ).first().evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return rect.x + (rect.width / 2);
-    });
+    // The snap points are drawn again when the drawing of the last entry lands and when CHD
+    // changes; a handle resolved before that re-render measures a detached node (x 0, no lanes).
+    // Read the drawing of the current revision, querying and measuring in one step.
+    await waitForRenderedRevision(page);
+    let onsetX = 0;
+    await expect.poll(async () => {
+      onsetX = await page.evaluate(() => {
+        const element = document.querySelector(
+          '[data-semantic-snap-measure="1"][data-semantic-snap-staff="1"][data-semantic-snap-timestamp="8/32"]',
+        );
+        const rect = element?.getBoundingClientRect();
+        return rect && rect.width > 0 ? rect.x + (rect.width / 2) : 0;
+      });
+      return onsetX;
+    }, { message: 'snap point of beat 2 is drawn' }).toBeGreaterThan(0);
     const lanes = await page.locator(
       '[data-semantic-pitch-band-measure="1"][data-semantic-pitch-band-staff="1"]',
     ).evaluateAll((elements, exactX) => elements
@@ -3085,7 +3109,18 @@ test('mouse note input visible ghost coverage includes Alt-click committing sele
   await waitForRenderedScore(page);
   await ensureNotationToolsOpen(page);
   await waitForRenderedScore(page);
-  const altTargetNote = await noteheadCenter(page, 0);
+  // Opening the notation tools narrows the score, which is drawn again a frame later: measure the
+  // notehead once that drawing is on screen and the notehead stands still.
+  let altTargetNote = { x: 0, y: 0 };
+  await expect.poll(async () => {
+    if ((await page.getByTestId('score-canvas').getAttribute('aria-busy')) === 'true') return false;
+    const before = await noteheadCenter(page, 0).catch(() => null);
+    await page.waitForTimeout(150);
+    const after = await noteheadCenter(page, 0).catch(() => null);
+    if (!before || !after || Math.abs(before.x - after.x) > 0.5 || Math.abs(before.y - after.y) > 0.5) return false;
+    altTargetNote = after;
+    return true;
+  }, { message: 'the first notehead is drawn and stands still' }).toBe(true);
 
   await page.keyboard.press('Escape');
   await page.keyboard.press('N');

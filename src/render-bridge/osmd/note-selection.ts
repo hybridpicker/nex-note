@@ -1,5 +1,6 @@
 import type { SelectedNote } from '@/hooks/useNoteEditor';
 import type { ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
+import { findStaffMeasureById, findStaffMeasureByNumber } from '@/src/score-core/document-index';
 import { noteTimestampValue } from '@/src/score-core/rhythm-utils';
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import { dbg } from '@/lib/debug';
@@ -118,7 +119,7 @@ function findRestSpanEventMatches(note: SelectedNote, coreDocument?: ScoreDocume
     for (const staff of part.staves) {
       const currentVisualOrder = visualOrder++;
       if (staff.staffIndex !== note.staffIndex) continue;
-      const measure = staff.measures.find((entry) => entry.measureNumber === note.measureNumber);
+      const measure = findStaffMeasureByNumber(coreDocument, staff, note.measureNumber);
       if (!measure) continue;
       const voice = measure.voices.find((entry) => entry.voiceId === note.voiceId);
       if (!voice) continue;
@@ -159,7 +160,7 @@ function findCoreIdentity(note: SelectedNote, coreDocument?: ScoreDocumentModel 
     if (!selectedPartMatches(part, note.corePartId)) continue;
     for (const staff of part.staves) {
       if (staff.staffIndex !== note.staffIndex) continue;
-      const measure = staff.measures.find((entry) => entry.measureNumber === note.measureNumber);
+      const measure = findStaffMeasureByNumber(coreDocument, staff, note.measureNumber);
       if (!measure) continue;
       const voice = measure.voices.find((entry) => entry.voiceId === note.voiceId);
       if (!voice) continue;
@@ -220,7 +221,7 @@ function findExactTimedEventMatch(note: SelectedNote, coreDocument?: ScoreDocume
     for (const staff of part.staves) {
       const currentVisualOrder = visualOrder++;
       if (staff.staffIndex !== note.staffIndex) continue;
-      const measure = staff.measures.find((entry) => entry.measureNumber === note.measureNumber);
+      const measure = findStaffMeasureByNumber(coreDocument, staff, note.measureNumber);
       if (!measure) continue;
       const voice = measure.voices.find((entry) => entry.voiceId === note.voiceId);
       if (!voice) continue;
@@ -244,7 +245,7 @@ function findTimedEventLocation(coreDocument: ScoreDocumentModel, event: TimedEv
   for (const part of coreDocument.score.parts) {
     for (const staff of part.staves) {
       const currentVisualOrder = visualOrder++;
-      const measure = staff.measures.find((entry) => entry.measureNumber === event.measureNumber);
+      const measure = findStaffMeasureByNumber(coreDocument, staff, event.measureNumber);
       if (!measure) continue;
       const voice = measure.voices.find((entry) => entry.voiceId === event.voiceId);
       if (!voice) continue;
@@ -394,7 +395,7 @@ export function normalizeSelectedNote(graphicalNote: any, coreDocument?: ScoreDo
 
   for (const part of coreDocument.score.parts) {
     for (const staff of part.staves) {
-      const measure = staff.measures.find((entry) => entry.id === normalized.coreMeasureId);
+      const measure = findStaffMeasureById(coreDocument, staff, normalized.coreMeasureId);
       if (!measure) continue;
       const voice = measure.voices.find((entry) => entry.id === normalized.coreVoiceId);
       const event = voice?.events.find((entry) => entry.id === normalized.coreEntityId);
@@ -788,7 +789,7 @@ function repairRenderedNoteVisualOrder(notes: RenderedNote[], coreDocument: Scor
       if (seed.corePartId && part.id !== seed.corePartId && part.sourcePartId !== seed.corePartId) continue;
       for (const staff of part.staves) {
         if (staff.staffIndex !== seed.staffIndex) continue;
-        const measure = staff.measures.find((entry) => entry.measureNumber === seed.measureNumber);
+        const measure = findStaffMeasureByNumber(coreDocument, staff, seed.measureNumber);
         if (!measure) continue;
         const voice = measure.voices.find((entry) => entry.voiceId === seed.voiceId);
         if (!voice) continue;
@@ -880,7 +881,7 @@ export function repairRenderedDuplicatePartIdentity(notes: RenderedNote[], coreD
       for (const staff of part.staves) {
         const currentVisualOrder = visualOrder++;
         if (staff.staffIndex !== seed.staffIndex) continue;
-        const measure = staff.measures.find((entry) => entry.measureNumber === seed.measureNumber);
+        const measure = findStaffMeasureByNumber(coreDocument, staff, seed.measureNumber);
         if (!measure) continue;
         const voice = measure.voices.find((entry) => entry.voiceId === seed.voiceId);
         if (!voice) continue;
@@ -929,7 +930,7 @@ function findNotationTwinForGuitarNote(note: SelectedNote, coreDocument: ScoreDo
     for (const staff of part.staves) {
       const currentVisualOrder = visualOrder++;
       if (staff.staffIndex !== note.staffIndex) continue;
-      const measure = staff.measures.find((entry) => entry.measureNumber === note.measureNumber);
+      const measure = findStaffMeasureByNumber(coreDocument, staff, note.measureNumber);
       if (!measure) continue;
       const voice = measure.voices.find((entry) => entry.voiceId === note.voiceId);
       if (!voice) continue;
@@ -1102,7 +1103,7 @@ export function collectRenderedNotes(osmd: any, container: HTMLElement, coreDocu
       for (const part of coreDocument.score.parts) {
         for (const staff of part.staves) {
           if (staff.staffIndex !== seed.staffIndex) continue;
-          const measure = staff.measures.find((entry) => entry.measureNumber === seed.measureNumber);
+          const measure = findStaffMeasureByNumber(coreDocument, staff, seed.measureNumber);
           if (!measure) continue;
           const voice = measure.voices.find((entry) => entry.voiceId === seed.voiceId);
           if (!voice) continue;
@@ -1166,7 +1167,7 @@ export function collectRenderedNotes(osmd: any, container: HTMLElement, coreDocu
       for (const part of coreDocument.score.parts) {
         for (const staff of part.staves) {
           if (staff.staffIndex !== seed.staffIndex) continue;
-          const measure = staff.measures.find((entry) => entry.measureNumber === seed.measureNumber);
+          const measure = findStaffMeasureByNumber(coreDocument, staff, seed.measureNumber);
           if (!measure) continue;
           const voice = measure.voices.find((entry) => entry.voiceId === seed.voiceId);
           if (!voice) continue;

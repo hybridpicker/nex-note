@@ -183,6 +183,24 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery, s
     };
   }, [open]);
 
+  // Escape closes the palette even when focus has not reached the search field yet (the field is
+  // focused from a timer, which a busy main thread can delay) or is on a button: the global note
+  // editor shortcut handler consumes Escape in that case and the field's own handler never runs.
+  useEffect(() => {
+    if (!open || typeof window.addEventListener !== 'function') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.target === inputRef.current) return;
+      event.preventDefault();
+      const returnTarget = returnFocusRef.current;
+      onClose();
+      window.setTimeout(() => {
+        if (returnTarget && document.contains(returnTarget)) returnTarget.focus();
+      }, 0);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
   useEffect(() => {
     if (!open) return;
     setActiveIndex((index) => {
@@ -235,7 +253,7 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery, s
       <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_90px_-24px_rgba(15,23,42,0.45)]">
         <div className="border-b border-slate-200 p-3">
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3">
-            <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+            <svg className="h-4 w-4 shrink-0 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" />
             </svg>
             <input
@@ -279,9 +297,9 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery, s
               }}
               placeholder={shortcutsOnly ? t('command.shortcuts.placeholder') : t('command.placeholder')}
               aria-label={shortcutsOnly ? t('command.shortcuts.title') : undefined}
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500"
             />
-            <kbd className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Esc</kbd>
+            <kbd className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">Esc</kbd>
           </div>
         </div>
 
@@ -293,7 +311,7 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery, s
             actionOffset += group.actions.length;
             return (
               <section key={group.group} className="py-1">
-                <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{group.group}</p>
+                <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{group.group}</p>
                 <div className="space-y-1">
                   {group.actions.map((action, index) => {
                     const absoluteIndex = start + index;
@@ -337,13 +355,13 @@ export default function CommandCenter({ open, actions, onClose, onSubmitQuery, s
                           )}
                         </span>
                         {action.disabled && action.disabledReason && (
-                          <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+                          <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
                             {t('command.disabledPill')}
                           </span>
                         )}
                         {action.shortcut && (
-                          <kbd className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                            active && !action.disabled ? 'bg-white/20 text-white' : 'border border-slate-200 bg-white text-slate-400'
+                          <kbd className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${
+                            active && !action.disabled ? 'bg-white/20 text-white' : 'border border-slate-200 bg-white text-slate-500'
                           }`}>
                             {formatShortcutHint(action.shortcut)}
                           </kbd>

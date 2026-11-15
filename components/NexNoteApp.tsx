@@ -3,7 +3,6 @@
 import { refreshActiveKeyboardLayout, shortcutLetter } from '@/src/score-input/keyboard-layout';
 import { INLINE_ENTRY_SHORTCUT_LABELS, resolveInlineEntryShortcut } from '@/src/score-input/inline-entry';
 import { resolveKeyboardHistoryShortcut } from '@/src/score-input/keyboard-resolver';
-import { buildPartsArchive } from '@/lib/parts-archive';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 import { resolveWorkspaceShortcut } from '@/lib/workspace-shortcuts';
 import { use, useState, useCallback, useEffect, useLayoutEffect, useRef, startTransition, useMemo, useDeferredValue, type ReactNode } from 'react';
@@ -20,7 +19,7 @@ import NoteInputToolbar from '@/components/NoteInputToolbar';
 import NotationToolbar from '@/components/NotationToolbar';
 import ScoreInspector from '@/components/ScoreInspector';
 import type { CommandCenterAction } from '@/components/CommandCenter';
-import FileMenu, { type FileMenuItem } from '@/components/FileMenu';
+import FileMenu, { HeaderOverflowMenu, type FileMenuItem } from '@/components/FileMenu';
 import NexNoteBrand from '@/components/NexNoteBrand';
 import type { AiConnectionState } from '@/components/WelcomeScreen';
 import LanguageSettings from '@/components/LanguageSettings';
@@ -55,7 +54,8 @@ import {
   supportsNxnProjectDirectoryStorage,
   writeNxnProjectFile,
 } from '@/lib/nxn-project-directory';
-import { buildBugReportBundle, exportBugReportBundle, type BugReportChatMessage } from '@/lib/bug-report-export';
+// JSZip-backed exports (parts archive, bug bundle) load on demand, outside the first bundle.
+import type { BugReportChatMessage } from '@/lib/bug-report-export';
 import { isDebugEnabled } from '@/lib/debug';
 import { serializeEditorSelection } from '@/lib/chat-selection';
 import { recordBugReportEvent, setBugReportContext } from '@/lib/bug-report-recorder';
@@ -71,7 +71,7 @@ import {
   useMicrophonePitchInput,
   type MicrophoneDetectionMode,
 } from '@/hooks/useMicrophonePitchInput';
-import { useNoteEditor, type ArticulationKind, type BarlineKind, type DynamicKind, type SelectedNote } from '@/hooks/useNoteEditor';
+import { isTextEntryTarget, isTypingTarget, useNoteEditor, type ArticulationKind, type BarlineKind, type DynamicKind, type SelectedNote } from '@/hooks/useNoteEditor';
 import { useScoreDocument, type ScoreDocumentSelectionAnchor } from '@/hooks/useScoreDocument';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { buildExtractedPartFilename, extractPartMusicXml } from '@/lib/part-extraction';
@@ -1444,9 +1444,9 @@ export default function Home({ searchParams }: HomeProps) {
       const isKeyM = letter === 'M';
       const isKeyC = letter === 'C';
       const target = e.target as HTMLElement | null;
-      const isTextEntry = target instanceof HTMLInputElement
-        || target instanceof HTMLTextAreaElement
-        || Boolean(target?.isContentEditable);
+      // Typing in the chat or an inspector field; a focused <select> or listbox also owns its keys.
+      const isTypingField = isTypingTarget(target);
+      const isTextEntry = isTextEntryTarget(target);
       if (
         microphoneInputEnabled
         && e.altKey
@@ -1516,7 +1516,9 @@ export default function Home({ searchParams }: HomeProps) {
         }
         return;
       }
-      if (xml && metaKey && !e.shiftKey && !e.altKey && isKeyT) {
+      // Cmd/Ctrl+T and +M jump to an inspector field, but not out of a field the user types in
+      // (macOS text fields use Ctrl+T to swap letters).
+      if (xml && metaKey && !e.shiftKey && !e.altKey && isKeyT && !isTypingField) {
         e.preventDefault();
         e.stopPropagation();
         focusInspectorTarget('staff-text');
@@ -1526,7 +1528,7 @@ export default function Home({ searchParams }: HomeProps) {
         });
         return;
       }
-      if (xml && metaKey && !e.shiftKey && !e.altKey && isKeyM) {
+      if (xml && metaKey && !e.shiftKey && !e.altKey && isKeyM && !isTypingField) {
         e.preventDefault();
         e.stopPropagation();
         focusInspectorTarget('rehearsal-mark');
@@ -1536,14 +1538,14 @@ export default function Home({ searchParams }: HomeProps) {
         });
         return;
       }
-      if (!getNexNoteElectronApi() && !isTextEntry && historyShortcut === 'undo') {
+      if (!getNexNoteElectronApi() && !isTypingField && historyShortcut === 'undo') {
         e.preventDefault();
         e.stopPropagation();
         recordBugReportEvent('commands', 'undo');
         undo();
         return;
       }
-      if (!getNexNoteElectronApi() && !isTextEntry && historyShortcut === 'redo') {
+      if (!getNexNoteElectronApi() && !isTypingField && historyShortcut === 'redo') {
         e.preventDefault();
         e.stopPropagation();
         recordBugReportEvent('commands', 'redo');
@@ -1714,6 +1716,10 @@ export default function Home({ searchParams }: HomeProps) {
       format: 'xml',
     });
   }, [embedConfig.entryId, hydrateCurrentXml, loadXml, stop]);
+  // The embed boot effect must not be cancelled when this callback changes identity
+  // mid-fetch (its one-shot guard would then never retry), so it reads the latest via a ref.
+  const handleEmbeddedXmlLoadedRef = useRef(handleEmbeddedXmlLoaded);
+  handleEmbeddedXmlLoadedRef.current = handleEmbeddedXmlLoaded;
 
   useEffect(() => {
     const target = window as typeof window & {
@@ -1752,7 +1758,7 @@ export default function Home({ searchParams }: HomeProps) {
             ? `${data.title.trim()}.musicxml`
             : `${embedConfig.entryId || 'embedded-score'}.musicxml`;
         setEmbedStartup({ phase: 'loading', message: 'Loading MusicXML into the editor...' });
-        handleEmbeddedXmlLoaded(data.xml, embeddedFilename);
+        handleEmbeddedXmlLoadedRef.current(data.xml, embeddedFilename);
         setEmbedStartup({ phase: 'rendering', message: 'Rendering embedded score...' });
       } catch (error) {
         if (!cancelled) {
@@ -1767,8 +1773,11 @@ export default function Home({ searchParams }: HomeProps) {
     void bootEmbed();
     return () => {
       cancelled = true;
+      // React may tear the effect down mid-fetch (Strict Mode, a Suspense boundary hiding and
+      // re-showing the tree). The in-flight result is then discarded, so allow the re-run to fetch.
+      if (!e2eBootRef.current) embedBootAttemptedRef.current = false;
     };
-  }, [embedConfig.dataUrl, embedConfig.enabled, embedConfig.entryId, handleEmbeddedXmlLoaded, xml]);
+  }, [embedConfig.dataUrl, embedConfig.enabled, embedConfig.entryId, xml]);
 
   const handleNxnFileLoaded = useCallback((fileData: Awaited<ReturnType<typeof readNxnFile>>, name: string, options: { cacheNativeProject?: boolean } = {}) => {
     setScoreOpenStatus(`${t('library.rendering')} score…`);
@@ -2508,6 +2517,9 @@ export default function Home({ searchParams }: HomeProps) {
       if (!metaKey) return;
 
       const normalizedKey = event.key.toLowerCase();
+      // Closing the score or opening a new one never comes from a field the user types in (the
+      // chat, an inspector field; macOS text fields move the caret with Ctrl+N).
+      if ((normalizedKey === 'w' || normalizedKey === 'n') && isTypingTarget(event.target)) return;
       if (normalizedKey === 's') {
         event.preventDefault();
         event.stopPropagation();
@@ -3185,6 +3197,7 @@ export default function Home({ searchParams }: HomeProps) {
   async function handleDownloadParts() {
     if (!xml) return;
     try {
+      const { buildPartsArchive } = await import('@/lib/parts-archive');
       const { bytes, entries } = await buildPartsArchive(xml, filename);
       const downloadName = `${filename.replace(/\.[^.]+$/, '') || 'score'}-parts.zip`;
       downloadBlob(new Blob([bytes as BlobPart], { type: 'application/zip' }), downloadName);
@@ -3426,21 +3439,24 @@ export default function Home({ searchParams }: HomeProps) {
 
     void (async () => {
       const notesToPreview = simultaneousNotes.length > 0 ? simultaneousNotes : [note];
+      // Sound first: the audition must not wait for the MIDI export. The seek runs alongside it;
+      // a later audition or Stop still cancels this one by generation.
+      const audition = previewNotes(notesToPreview);
       if (playbackSampleBank) {
-        await previewNotes(notesToPreview);
+        await audition;
         return;
       }
       if (xml && await ensureMidiLoaded(xml)) {
-        if (currentDocumentRef.current !== coreDocument) return;
-        markMidiReady(xml);
-        await seekToCursorTarget({
-          measureNumber: note.measureNumber,
-          timestampNum: note.timestampNum,
-          timestampDen: note.timestampDen,
-        });
+        if (currentDocumentRef.current === coreDocument) {
+          markMidiReady(xml);
+          await seekToCursorTarget({
+            measureNumber: note.measureNumber,
+            timestampNum: note.timestampNum,
+            timestampDen: note.timestampDen,
+          });
+        }
       }
-      if (currentDocumentRef.current !== coreDocument) return;
-      await previewNotes(notesToPreview);
+      await audition;
     })();
   }, [coreDocument, ensureMidiLoaded, handleNoteClick, markMidiReady, playbackSampleBank, playbackState, previewNotes, seekToCursorTarget, startFromNote, xml]);
 
@@ -3659,6 +3675,7 @@ export default function Home({ searchParams }: HomeProps) {
     includeChatTranscript: boolean;
     includeStorageSnapshot: boolean;
   }) => {
+    const { buildBugReportBundle, exportBugReportBundle } = await import('@/lib/bug-report-export');
     const report = buildBugReportBundle({
       form,
       filename,
@@ -4959,6 +4976,7 @@ export default function Home({ searchParams }: HomeProps) {
       onNoteClick={viewOnly ? () => undefined : handleScoreNoteClick}
       pencilOnlyInput={(pencilInputDevice || pencilFocus) && noteInputMode && !printView}
       onPlaceNoteAt={viewOnly ? () => undefined : placeNoteAt}
+      latestDocumentRevision={scoreRevision}
       onSetChordSymbol={viewOnly ? undefined : setHarmonyAtSelection}
       onApplyInlineEntry={viewOnly ? undefined : applyInlineEntryCommands}
       onSetGuitarFret={viewOnly ? undefined : setGuitarFretAtNote}
@@ -5076,7 +5094,7 @@ export default function Home({ searchParams }: HomeProps) {
         }}
       />
       {/* Header */}
-      <header className="nex-brand-toolbar border-b px-5 h-14 flex items-center gap-3 shrink-0" data-testid="app-header">
+      <header className="nex-brand-toolbar relative border-b px-5 h-14 flex items-center gap-2 whitespace-nowrap shrink-0" data-testid="app-header">
         {/* Logo + name */}
         <NexNoteBrand compact className="shrink-0" />
 
@@ -5084,14 +5102,15 @@ export default function Home({ searchParams }: HomeProps) {
         {xml && filename && (
           <>
             <div className="w-px h-5 bg-nex-border shrink-0" />
-            <span className="text-xs font-medium text-slate-500 max-w-[240px] truncate shrink-0" title={filename}>
+            <span className="text-[13px] font-semibold text-nex-ink min-w-0 max-w-[240px] truncate" title={filename}>
               {filename}
             </span>
           </>
         )}
 
-        <div className="flex-1" />
+        <div className="min-w-0 flex-1" />
 
+        <HeaderOverflowMenu label={t('app.settings')}>
         {/* Provider selector */}
         <div data-testid="provider-selector">
           <ProviderSelector
@@ -5115,6 +5134,7 @@ export default function Home({ searchParams }: HomeProps) {
         />
         <KeyboardPresetSettings />
         <LanguageSettings />
+        </HeaderOverflowMenu>
 
         {debugMode && (
           <>
@@ -5127,7 +5147,7 @@ export default function Home({ searchParams }: HomeProps) {
                 });
               }}
               title={t('app.reportBug')}
-              className="h-8 rounded-md bg-rose-50 px-3 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100 hover:text-rose-900"
+              className="h-8 rounded-md bg-rose-50 px-3 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100 hover:text-rose-900 whitespace-nowrap"
             >
               {t('app.reportBug')}
             </button>
@@ -5137,7 +5157,7 @@ export default function Home({ searchParams }: HomeProps) {
         <div className="w-px h-5 bg-nex-border shrink-0" />
 
         {/* File actions */}
-        <div role="menubar" aria-label="Score menus" className="nex-electron-hidden flex items-center gap-2">
+        <div role="menubar" aria-label="Score menus" className="nex-electron-hidden flex shrink-0 items-center gap-1.5">
           <FileMenu menuId="file" label={t('command.group.file')} items={fileMenuItems} />
           <FileMenu menuId="edit" label={t('app.editMenu')} items={editMenuItems} />
           <FileMenu menuId="view" label={t('app.viewMenu')} items={viewMenuItems} />
@@ -5150,18 +5170,18 @@ export default function Home({ searchParams }: HomeProps) {
             });
           }}
           title={formatShortcutHint(`${t('app.searchCommands')} (Cmd/Ctrl+K)`)}
-          className="nex-header-command-center hidden h-8 items-center gap-2 rounded-md border border-nex-border bg-nex-surface px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-nex-ink sm:flex"
+          className="nex-header-command-center nex-chip-button hidden h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-nex-border bg-nex-surface px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-nex-ink sm:flex"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" />
           </svg>
-          {t('app.searchCommands')}
-          <kbd className="rounded border border-nex-border bg-white px-1 py-0.5 text-[10px] text-slate-400">{formatShortcutHint('Cmd+K')}</kbd>
+          <span className="nex-header-action-label">{t('app.searchCommands')}</span>
+          <kbd className="rounded border border-nex-border bg-white px-1 py-0.5 text-[11px] leading-none text-slate-500">{formatShortcutHint('Cmd+K')}</kbd>
         </button>
         <button
           onClick={handleOpenFilePicker}
           title={t('app.openFile')}
-          className="nex-electron-hidden nex-brand-button h-8 rounded-md px-2.5 text-xs font-semibold transition-colors"
+          className="nex-electron-hidden nex-brand-button h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs font-semibold transition-colors"
         >
           <span className="inline-flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
@@ -5173,7 +5193,7 @@ export default function Home({ searchParams }: HomeProps) {
         <button
           onClick={() => { setWorkspaceTab('library'); setSidebarCollapsed(false); setPencilFocus(false); }}
           title={t('app.library')}
-          className={`h-8 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+          className={`h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs font-semibold transition-colors ${
             workspaceTab === 'library'
               ? 'nex-brand-active'
               : 'nex-brand-button'
@@ -5191,7 +5211,7 @@ export default function Home({ searchParams }: HomeProps) {
             <button
               onClick={handlePrintViewToggle}
               title={printView ? t('app.editView') : t('app.printView')}
-              className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+              className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors ${
                 printView
                   ? 'nex-brand-active'
                   : 'nex-brand-button'
@@ -5201,44 +5221,44 @@ export default function Home({ searchParams }: HomeProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7 8V5a2 2 0 012-2h6a2 2 0 012 2v3M7 16H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 12h10v9H7v-9z" />
               </svg>
             </button>
-            <button onClick={handlePrintScore} title={t('app.printScore')} className="nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+            <button onClick={handlePrintScore} title={t('app.printScore')} className="nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V4h12v5M6 18h12v2H6z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 14H5a2 2 0 01-2-2v-1a3 3 0 013-3h12a3 3 0 013 3v1a2 2 0 01-2 2h-1" />
               </svg>
             </button>
-            <button onClick={handleSaveAs} title={t('app.saveAs')} className="nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+            <button onClick={handleSaveAs} title={t('app.saveAs')} className="nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
               </svg>
             </button>
-            <button onClick={handleSaveProject} title={t('app.saveProject')} className="nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+            <button onClick={handleSaveProject} title={t('app.saveProject')} className="nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 4h11l3 3v13a1 1 0 01-1 1H6a1 1 0 01-1-1V4z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 4v6h8" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 14h8M8 18h5" />
               </svg>
             </button>
-            <button onClick={handleDownloadAbc} title={t('app.exportAbc')} className="nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+            <button onClick={handleDownloadAbc} title={t('app.exportAbc')} className="nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </button>
-            <button onClick={handleDownloadPracticePack} title={t('app.exportPracticePack')} className="nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+            <button onClick={handleDownloadPracticePack} title={t('app.exportPracticePack')} className="nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 19h14" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7 5h10" />
               </svg>
             </button>
-            <button onClick={handleDownload} title={t('app.downloadMxl')} className="nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+            <button onClick={handleDownload} title={t('app.downloadMxl')} className="nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             </button>
           </span>
         )}
-        <button onClick={() => handleOpenNewScoreDialog()} title={t('app.newFile')} className="nex-electron-hidden nex-brand-button w-8 h-8 flex items-center justify-center rounded-md transition-colors">
+        <button onClick={() => handleOpenNewScoreDialog()} title={t('app.newFile')} className="nex-electron-hidden nex-brand-button w-8 h-8 shrink-0 flex items-center justify-center rounded-md transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>

@@ -18,32 +18,67 @@ function timestampToDivisionsOffset(
   return Math.max(0, Math.round((timestampNum / Math.max(timestampDen, 1)) * divisions * 4));
 }
 
-function buildStaffTimeline(staff: StaffNode): StaffTimelineEntry[] {
-  let startOffset = 0;
+/** The largest grid a copy may use; the paste side refuses the same limit. */
+const MAX_CLIPBOARD_GRID = 1048576;
 
-  return staff.measures.map((measure) => {
-    const timing = getEffectiveMeasureTimingFromStaff(staff, {
-      measureNumber: measure.measureNumber,
-    });
-    const entry = {
-      measure,
-      startOffset,
-      durationDivisions: timing?.durationDivisions ?? Math.max(1, (measure.attributes[0]?.divisions ?? 1) * 4),
-      divisions: timing?.divisions ?? measure.attributes[0]?.divisions ?? 1,
-    };
-    startOffset += entry.durationDivisions;
-    return entry;
+function greatestCommonDivisor(left: number, right: number): number {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b) [a, b] = [b, a % b];
+  return a;
+}
+
+function leastCommonMultiple(left: number, right: number) {
+  return (left / greatestCommonDivisor(left, right)) * right;
+}
+
+function measureTiming(staff: StaffNode, measure: StaffNode['measures'][number]) {
+  const timing = getEffectiveMeasureTimingFromStaff(staff, {
+    measureId: measure.id,
+    measureNumber: measure.measureNumber,
   });
+  return {
+    durationDivisions: timing?.durationDivisions ?? Math.max(1, (measure.attributes[0]?.divisions ?? 1) * 4),
+    divisions: timing?.divisions ?? measure.attributes[0]?.divisions ?? 1,
+  };
 }
 
-function getTimelineEntryForMeasure(
-  timeline: StaffTimelineEntry[],
-  measureNumber: number,
+/**
+ * The staff's bars on one common `grid` (divisions per quarter), counted from the bar at
+ * `originIndex`. A staff whose bars use different `<divisions>` would otherwise mix grids on one
+ * timeline. Bars inside the copied span get whole numbers because `grid` is a multiple of their
+ * divisions; offsets outside it only need to stay outside the copied span.
+ */
+function buildStaffTimeline(staff: StaffNode, grid: number, originIndex: number): StaffTimelineEntry[] {
+  const entries = staff.measures.map((measure) => {
+    const timing = measureTiming(staff, measure);
+    return {
+      measure,
+      startOffset: 0,
+      durationDivisions: (timing.durationDivisions * grid) / timing.divisions,
+      divisions: timing.divisions,
+    };
+  });
+  let offset = 0;
+  for (let index = originIndex; index < entries.length; index += 1) {
+    entries[index]!.startOffset = offset;
+    offset += entries[index]!.durationDivisions;
+  }
+  offset = 0;
+  for (let index = Math.min(originIndex, entries.length) - 1; index >= 0; index -= 1) {
+    offset -= entries[index]!.durationDivisions;
+    entries[index]!.startOffset = offset;
+  }
+  return entries;
+}
+
+function buildDirectionEntries(
+  document: ScoreDocumentModel,
+  staffIndices: Set<number>,
+  partId: string,
+  grid: number,
+  originIndex: number,
 ) {
-  return timeline.find((entry) => entry.measure.measureNumber === measureNumber) ?? null;
-}
-
-function buildDirectionEntries(document: ScoreDocumentModel, staffIndices: Set<number>, partId: string) {
   const timedDirectionKinds = new Set(['wedge', 'octave-shift', 'pedal', 'dynamics']);
   const directionEntries: Array<{
     sourceStaffIndex: number;
@@ -54,14 +89,18 @@ function buildDirectionEntries(document: ScoreDocumentModel, staffIndices: Set<n
   document.score.parts.filter(part => part.id === partId).forEach((part) => {
     part.staves.forEach((staff) => {
       if (!staffIndices.has(staff.staffIndex)) return;
-      const timeline = buildStaffTimeline(staff);
+      const timeline = buildStaffTimeline(staff, grid, originIndex);
       timeline.forEach((entry) => {
         entry.measure.directions.forEach((direction) => {
           if (!timedDirectionKinds.has(direction.kind)) return;
           if (direction.staffIndex != null && direction.staffIndex !== staff.staffIndex) return;
           directionEntries.push({
             sourceStaffIndex: staff.staffIndex,
-            absStart: entry.startOffset + (direction.timestampNum ?? 0),
+            absStart: entry.startOffset + timestampToDivisionsOffset(
+              grid,
+              direction.timestampNum ?? 0,
+              direction.timestampDen ?? Math.max(entry.divisions * 4, 1),
+            ),
             direction: structuredClone(direction),
           });
         });
@@ -132,9 +171,20 @@ export function buildClipboardPayloadFromSelection(
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   if (selectedRefs.length === 0) return null;
   if (new Set(selectedRefs.map(ref => ref.part.id)).size !== 1) return null;
-  const grids = new Set(selectedRefs.flatMap(ref => ref.staff.measures.map(measure => getEffectiveMeasureTimingFromStaff(ref.staff, { measureNumber: measure.measureNumber })?.divisions ?? 1)));
-  if (grids.size !== 1) return null;
-  const sourceDivisions = [...grids][0]!;
+  // One grid for the copy: the least common multiple of the divisions of the bars the selection
+  // spans, in every staff it touches. Other bars of the staff do not matter: one triplet entered in
+  // a later bar used to make every copy in the staff fail. The paste rescales from this grid.
+  const measureIndices = selectedRefs.map(ref => ref.staff.measures.indexOf(ref.measure));
+  if (measureIndices.some(index => index < 0)) return null;
+  const firstMeasureIndex = Math.min(...measureIndices);
+  const lastMeasureIndex = Math.max(...measureIndices);
+  let sourceDivisions = 1;
+  for (const staff of new Set(selectedRefs.map(ref => ref.staff))) {
+    for (const measure of staff.measures.slice(firstMeasureIndex, lastMeasureIndex + 1)) {
+      sourceDivisions = leastCommonMultiple(sourceDivisions, measureTiming(staff, measure).divisions);
+    }
+  }
+  if (!Number.isSafeInteger(sourceDivisions) || sourceDivisions > MAX_CLIPBOARD_GRID) return null;
   const graceIds = new Set(document.graceNotes.map(g => g.eventId));
   for (const ref of [...selectedRefs]) {
     if (ref.event.durationDivisions <= 0) continue;
@@ -144,20 +194,28 @@ export function buildClipboardPayloadFromSelection(
   }
 
 
+  const timelines = new Map<StaffNode, StaffTimelineEntry[]>();
   const copiedEvents = selectedRefs.map((ref) => {
-    const timeline = buildStaffTimeline(ref.staff);
-    const measureEntry = getTimelineEntryForMeasure(timeline, ref.measure.measureNumber);
+    let timeline = timelines.get(ref.staff);
+    if (!timeline) {
+      timeline = buildStaffTimeline(ref.staff, sourceDivisions, firstMeasureIndex);
+      timelines.set(ref.staff, timeline);
+    }
+    const measureEntry = timeline.find((entry) => entry.measure === ref.measure);
     if (!measureEntry) return null;
 
+    const event = structuredClone(ref.event);
+    // The event's duration is in its own bar's divisions; the payload holds the copy's grid.
+    event.durationDivisions = (event.durationDivisions * sourceDivisions) / measureEntry.divisions;
     return {
       sourceStaffIndex: ref.staff.staffIndex,
       sourceVoiceId: ref.voice.voiceId,
       absStart: measureEntry.startOffset + timestampToDivisionsOffset(
-        measureEntry.divisions,
+        sourceDivisions,
         ref.event.timestampNum,
         ref.event.timestampDen,
       ),
-      event: structuredClone(ref.event),
+      event,
     };
   }).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   if (copiedEvents.length === 0) return null;
@@ -195,7 +253,7 @@ export function buildClipboardPayloadFromSelection(
     ))
     .map((slur) => structuredClone(slur));
 
-  const timedDirections = buildDirectionEntries(document, selectedStaffIndices, selectedRefs[0]!.part.id)
+  const timedDirections = buildDirectionEntries(document, selectedStaffIndices, selectedRefs[0]!.part.id, sourceDivisions, firstMeasureIndex)
     .filter((entry) => entry.absStart >= clipStart && entry.absStart <= clipEnd)
     .map((entry) => ({
       sourceStaffIndex: entry.sourceStaffIndex,

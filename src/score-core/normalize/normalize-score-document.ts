@@ -1,5 +1,6 @@
 import { decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { MeasureAttributes, PartNode, ScoreDocumentModel, TimedEvent } from '@/src/score-core/model/types';
+import { decomposeRestSpanDivisions, isRestSpelledForMeter, resolveRestSpellingGrid } from '@/src/score-core/rest-spelling';
 
 function cloneDocument<T>(value: T): T {
   return structuredClone(value);
@@ -15,19 +16,46 @@ function normalizeAttributes(attributes: MeasureAttributes[]): MeasureAttributes
   }));
 }
 
-function normalizeRestEventDuration(event: TimedEvent, divisions: number, tupletEventIds: ReadonlySet<string>): TimedEvent[] {
+type NormalizedTimeSignature = { beats: number; beatType: number; beatGroups?: number[] } | null;
+
+function restChunksForMeter(event: TimedEvent, offset: number, divisions: number, time: NormalizedTimeSignature) {
+  if (resolveRestSpellingGrid(divisions, time).compound) {
+    // Compound meters (6/8, 9/8, 12/8) beat in dotted quarters: the same rule the command
+    // executor writes rests with, so its output is a fixed point here.
+    return isRepresentableDuration(event.durationDivisions, divisions)
+      && isRestSpelledForMeter(event.durationDivisions, divisions, offset, time)
+      ? [event.durationDivisions]
+      : decomposeRestSpanDivisions(event.durationDivisions, divisions, 0, offset, time);
+  }
+  const beatDivisions = Math.max(divisions, 1);
+  const crossesBeatBoundary = offset % beatDivisions !== 0
+    && event.durationDivisions > beatDivisions - (offset % beatDivisions);
+  return isRepresentableDuration(event.durationDivisions, divisions) && !crossesBeatBoundary
+    ? [event.durationDivisions]
+    : decomposeDurationDivisions(event.durationDivisions, divisions, 0, offset);
+}
+
+function normalizeRestEventDuration(
+  event: TimedEvent,
+  divisions: number,
+  tupletEventIds: ReadonlySet<string>,
+  time: NormalizedTimeSignature = null,
+): TimedEvent[] {
   if (event.kind !== 'rest' || event.isChord) return [event];
   // Tuplet rests intentionally use sounding durations that are not standalone
   // binary/dotted values. Their written duration is interpreted with the
   // TupletSpan ratio and must remain one identity-bearing rhythmic unit.
   if (tupletEventIds.has(event.id)) return [event];
-  const beatDivisions = Math.max(divisions, 1);
-  const crossesBeatBoundary = event.timestampNum % beatDivisions !== 0
-    && event.durationDivisions > beatDivisions - (event.timestampNum % beatDivisions);
-  const chunks = isRepresentableDuration(event.durationDivisions, divisions) && !crossesBeatBoundary
-    ? [event.durationDivisions]
-    : decomposeDurationDivisions(event.durationDivisions, divisions, 0, event.timestampNum);
-  let offset = event.timestampNum;
+  // The bar offset in divisions; an event stored on another timestamp grid (a denominator other
+  // than 4 x divisions) is converted, so the beat test and the fragments use the same position.
+  const exactOffset = (event.timestampNum / Math.max(event.timestampDen, 1)) * Math.max(divisions, 1) * 4;
+  if (!Number.isFinite(exactOffset) || Math.abs(exactOffset - Math.round(exactOffset)) > 1e-9) return [event];
+  const chunks = restChunksForMeter(event, Math.round(exactOffset), divisions, time);
+  if (chunks.length === 1 && event.timestampDen === Math.max(divisions * 4, 1)) {
+    const duration = describeDuration(chunks[0]!, divisions);
+    return [{ ...event, durationType: duration.type, isDotted: duration.dotted }];
+  }
+  let offset = Math.round(exactOffset);
   return chunks.map((durationDivisions, index) => {
     const duration = describeDuration(durationDivisions, divisions);
     const fragment: TimedEvent = {
@@ -97,7 +125,19 @@ function findPartEffectiveTiming(part: PartNode, measureNumber: number) {
 }
 
 export function normalizeScoreDocument(document: ScoreDocumentModel): ScoreDocumentModel {
-  const next = cloneDocument(document);
+  return normalizeScoreDocumentInPlace(cloneDocument(document));
+}
+
+/**
+ * Normalizes `document` in place and returns it. Only for a document the caller exclusively owns
+ * and has not published yet, such as the fresh clone the command executor returns; every other
+ * caller must use `normalizeScoreDocument`, which normalizes a copy.
+ *
+ * Mutated in place: the document root, every part (names), every measure (`attributes`) and every
+ * voice (`events`). Events, beams, slurs and other link objects are not mutated.
+ */
+export function normalizeScoreDocumentInPlace(document: ScoreDocumentModel): ScoreDocumentModel {
+  const next = document;
   const tupletEventIds = new Set((next.tuplets ?? []).flatMap((tuplet) => tuplet.eventIds));
 
   next.metadata = {
@@ -120,7 +160,7 @@ export function normalizeScoreDocument(document: ScoreDocumentModel): ScoreDocum
         effectiveDivisions = measure.attributes[0]?.divisions ?? partTiming.divisions ?? effectiveDivisions;
         measure.voices.forEach((voice) => {
           voice.events = voice.events
-            .flatMap((event) => normalizeRestEventDuration(event, effectiveDivisions, tupletEventIds))
+            .flatMap((event) => normalizeRestEventDuration(event, effectiveDivisions, tupletEventIds, partTiming.time))
             .sort((a, b) => (
               a.timestampNum - b.timestampNum
               || Number(b.durationDivisions === 0) - Number(a.durationDivisions === 0)

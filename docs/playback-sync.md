@@ -39,6 +39,80 @@ how this is measured, and the budgets the measurement enforces.
   local soundfonts, the first Play downloads the instruments from GitHub (about 1.5 s for a
   four-part score). `npm run ipad:doctor` and `npm run electron:verify` report missing samples.
 
+## Sound
+
+The signal chain is built once per AudioContext (`lib/playback-bus.ts`). Every node in it is
+latency free, and nothing sits between a scheduled note and its AudioContext start time.
+
+```
+part bus: gain (mixer volume, mute) ─► StereoPanner ─► master input (×5) ─► level ─► ¼ ─► soft clipper ─► destination
+          └─► reverb send 0.18 (shared) ─► Convolver ─► return ─► master input
+metronome, audition ─► dry input (×5) ─────────────────────────────────────► ¼ ─► soft clipper
+```
+
+- **Loudness.** The FluidR3 samples peak at −13 to −21 dBFS, so the master gain is ×5
+  (+14 dB). Velocity uses a square law (`velocityToGain`, `lib/playback-dynamics.ts`): pp (33)
+  −23 dB, mf (80) −8 dB, ff (112) −2 dB. A score without dynamics plays mf (velocity 80) on
+  both renderers (MuseScore, and the fallback in `lib/midi-export.ts` since it follows MuseScore),
+  so an undynamic'd single line peaks at −15 to −11 dBFS before the level control.
+- **Dynamics without a DynamicsCompressorNode.** Chromium's and WebKit's compressor delays its
+  output by a fixed 6 ms look-ahead that no latency API reports, which would put the sound behind
+  the playhead. Playback therefore uses a feed-forward compressor driven by the scheduler: each
+  note's peak (its sample's measured peak × gain × pan) is known when it is scheduled, the power
+  sum of the sounding notes is put through a static curve (threshold −14 dB, knee 10 dB, ratio 3,
+  ceiling −2 dBFS), and the `level` gain is automated on a 5 ms grid, lowered before each note
+  starts and released with a 0.25 s time constant. The plan is committed 20 ms behind the
+  look-ahead edge so a note entering the window can still lower the level. A WaveShaper soft
+  clipper (linear to −3 dBFS, never above −0.3 dBFS, no oversampling) catches what the estimate
+  misses. Stop, seek and tempo changes drop the plan.
+- **Computed levels** (offline mixdown of the decoded samples with these constants). A single
+  mf (velocity 80) note, median over C2–C6 of each shipped set: piano −15.1 dBFS, contrabass
+  −14.4, flute −14.0, electric guitar −13.9, harp −13.5, bassoon and cello −13.3, clarinet −13.1,
+  violin −12.9, viola −12.8, trumpet and organ −12.7, choir and guitars −12.6, alto sax and oboe
+  −12.5, trombone −12.4, tuba and electric bass −12.3, horn −11.1 (drum sample −10.4). A rendered
+  mf solo line (attack envelope included): piano −15.3, flute −14.4, violin −13.9. Four parts ×
+  six-note chord at mf +0.6 dBFS
+  before the level control and −5.7 after; at ff +6.4 / −3.7; with accents and mixer volume 1.5
+  +12.1 / −1.9 dBFS (the old chain: −3.9 dBFS straight into the output).
+- **Long notes** (`lib/sample-loop.ts`). Every sample is about 3.1 s long without loop points.
+  After an instrument loads, sustaining instruments (strings, winds, brass, organ, choir) get a
+  baked constant-power crossfade loop (loopEnd 3.0 s, crossfade 0.3 s, loopStart near 1.0 s,
+  moved up to 12 ms to meet the waveform in phase; the fade is equal-power for uncorrelated and
+  equal-gain for in-phase material). Notes longer than 2.8 s play with `loop: true` and those
+  loop points. Every sample also gets a 50 ms cosine fade at its end. This takes about 25 ms of
+  main-thread time per instrument (88 samples, MacBook).
+- **Sustain pedal.** CC64 is read while parsing the MIDI (`lib/playback-midi-controllers.ts`):
+  a note released while the pedal is down sounds until the pedal lifts; a pitch struck again
+  ends the held note at the new onset.
+- **Space.** Each part has its own bus. Mixer volume and mute ramp over 20 ms, so muting during
+  playback also silences ringing notes. With several parts the score is seated by instrument
+  (violin −0.35, viola +0.1, cello +0.3, bass +0.4, flute −0.1, oboe +0.1, clarinet −0.15,
+  bassoon +0.15, horn −0.25, trumpet +0.2, trombone +0.3, tuba +0.35, harp −0.4; parts of the
+  same instrument spread by 0.15); a single part stays centred. The reverb impulse response is
+  generated at run time (`lib/reverb-ir.ts`: decorrelated stereo noise, RT60 1.6 s, 12 ms
+  pre-delay, high frequencies decaying faster, unit energy). Without StereoPannerNode or
+  ConvolverNode the parts stay dry and centred.
+- **Metronome.** A rendered 40 ms woodblock-like click (`lib/drum-synth.ts`), 2.2 kHz and gain
+  0.2 on beat 1, 1.6 kHz and gain 0.13 otherwise, with a 5 ms release: −12 / −16 dBFS peak.
+- **Drums.** Percussion tracks (MIDI channel 10) play a synthesized General MIDI kit
+  (`lib/drum-synth.ts`, every key 35–81, at most 16 nodes per hit) instead of the pitched
+  `synth_drum` sample. Under the e2e instrument loader they still go to the loader.
+- **Audition** plays the sounding pitch (the part's chromatic transposition plus 12 × octave
+  change), dry and centred: decaying instruments ring 1.0 s, sustained ones the note length at
+  the tempo, at most 0.8 s. A note click starts the audition before the MIDI is loaded.
+- **iOS.** A context in WebKit's `interrupted` state is resumed like a suspended one, and on
+  `statechange` while playback runs.
+
+- **Fermatas and tempo events.** Both renderers hold a fermata by halving the tempo for the
+  note's span. The timeline is built from the MIDI's own tempo map, so the playhead, the highlight
+  and the metronome slow down with the sound (`test/playback-fermata-playhead.test.ts`).
+- **Tracks to parts.** Both renderers write one track per staff with notes, and the fallback a
+  separate channel-10 track for a staff's unpitched notes. `resolvePlaybackTrackPart` maps tracks
+  by that order; otherwise by exact name, then the longest contained name ("Violin II" is not
+  "Violin I"), and an unnamed percussion track to the only drum part.
+
+None of this has been verified by listening yet.
+
 ## Measuring: the sync probe
 
 The probe is `lib/playback-sync-probe.ts`. It is dormant until you enable it with `?syncProbe=1`,
@@ -56,7 +130,11 @@ by setting the localStorage key `nex-note:sync-probe` to `1`, or with
 Conventions: a frame begun at rAF time `t` is on screen at `t + refresh interval`, and a note is
 heard when the output clock reaches its start time. Offsets are picture minus sound, in
 milliseconds. The resolution is one frame. Crossing times of the playhead are interpolated
-between frames, so `frameGaps` reports main-thread stalls separately.
+between frames, also across a barline on the same system (the line glides into the next
+measure's first note), so `frameGaps` reports main-thread stalls separately. Drift is the
+least-squares slope without the run's first onset: that note is on screen from the moment Play is
+pressed, and its timing is reported as `start`. An onset scheduled in the look-ahead but cut off
+by Stop is neither heard nor counted.
 
 ```
 NEX_E2E_NO_ARTIFACTS=1 npx playwright test e2e/playback-sync.spec.ts --project regression

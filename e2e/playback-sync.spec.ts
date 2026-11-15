@@ -213,7 +213,9 @@ test.describe('playback sync probe', () => {
     await page.waitForTimeout(5_000);
     await pressStop(page);
     const recording = (await readRecording(page))!;
-    const heard = analyzePlaybackSync(recording, null).audio.onsets;
+    // Onsets heard before Stop: an onset already scheduled in the look-ahead but cut off by Stop
+    // is in the recording, yet never heard or shown, and the analysis leaves it out.
+    const heard = analyzePlaybackSync(recording, null).perOnset.length;
     const expected = fixture.expected.slice(startIndex, startIndex + heard);
     const report = analyzePlaybackSync(recording, expected);
     const payload = { fixture: fixture.name, scenario: 'from-selection', cold: cold.start, ...summarize(report), perOnset: report.perOnset };

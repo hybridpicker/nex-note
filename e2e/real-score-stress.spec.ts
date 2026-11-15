@@ -626,6 +626,9 @@ async function setDuration(page: Page, duration: DurationKey, dotted = false) {
   const keyByDuration: Record<DurationKey, string> = { '2': '6', '4': '5', '8': '4' };
   await page.keyboard.press(keyByDuration[duration]);
   await expect.poll(async () => (await readE2EState(page))?.selectedDuration).toBe(duration);
+  // A note value key clears the augmentation dot in note input (MuseScore `NoteInput::setDuration`,
+  // commit 08c14c4); only a dot wanted on top of the new value needs the `.` key.
+  currentDotted = false;
   if (dotted !== currentDotted) {
     await page.keyboard.press('.');
     currentDotted = dotted;

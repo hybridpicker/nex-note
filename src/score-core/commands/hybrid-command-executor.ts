@@ -3,8 +3,41 @@ import { executeCoreCommands, supportsCoreExecution, type SelectionRemap } from 
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import { adoptExportedMeasureNumbers, exportCoreToMusicXml } from '@/src/musicxml-adapter/export/export-core-to-musicxml';
 import { importMusicXmlToCore } from '@/src/musicxml-adapter/import/import-musicxml';
-import { normalizeScoreDocument } from '@/src/score-core/normalize/normalize-score-document';
+import { normalizeScoreDocument, normalizeScoreDocumentInPlace } from '@/src/score-core/normalize/normalize-score-document';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
+
+/**
+ * True when `result` holds a part, staff, measure or voice object of `input` (or is `input`).
+ * In-place normalization mutates exactly those nodes (and `adoptExportedMeasureNumbers` the
+ * measures), so a shared node would leak the mutation into the caller's document. The executor
+ * returns a structured clone today; this O(nodes) identity check keeps the in-place path safe if
+ * that ever changes.
+ */
+function sharesNormalizedNodes(result: ScoreDocumentModel, input: ScoreDocumentModel) {
+  if (result === input || result.score === input.score) return true;
+  const owned = new Set<object>();
+  for (const part of input.score.parts) {
+    owned.add(part);
+    for (const staff of part.staves) {
+      owned.add(staff);
+      for (const measure of staff.measures) {
+        owned.add(measure);
+        for (const voice of measure.voices) owned.add(voice);
+      }
+    }
+  }
+  for (const part of result.score.parts) {
+    if (owned.has(part)) return true;
+    for (const staff of part.staves) {
+      if (owned.has(staff)) return true;
+      for (const measure of staff.measures) {
+        if (owned.has(measure)) return true;
+        for (const voice of measure.voices) if (owned.has(voice)) return true;
+      }
+    }
+  }
+  return false;
+}
 
 export interface HybridExecutionResult {
   xml: string;
@@ -105,7 +138,13 @@ export function executeHybridCommands(
       const unchanged = execution.coreDocument === nextCoreDocument;
       // Export what the document state will hold: the normalized model. Exporting the raw execution
       // result left rest spellings in the XML that the next edit anywhere rewrote (F12).
-      nextCoreDocument = unchanged ? execution.coreDocument : normalizeScoreDocument(execution.coreDocument);
+      // A changed result is the executor's own fresh clone, so it is normalized in place instead of
+      // being cloned a second time, unless it shares a node that normalization would mutate.
+      nextCoreDocument = unchanged
+        ? execution.coreDocument
+        : sharesNormalizedNodes(execution.coreDocument, nextCoreDocument)
+          ? normalizeScoreDocument(execution.coreDocument)
+          : normalizeScoreDocumentInPlace(execution.coreDocument);
       selectionRemap = { ...selectionRemap, ...execution.selectionRemap };
       coreDiagnostics.push(...execution.diagnostics);
       if (!unchanged) {

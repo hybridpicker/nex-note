@@ -42,6 +42,12 @@ test('custom nested tuplet UI renders both levels and restores one transaction a
   await page.getByRole('button', { name: 'Add unit chord tone', exact: true }).click();
   await expect.poll(async () => importMusicXmlToCore(await xml(page)).tuplets.map(t => t.eventIds.length)).toEqual([8,4]);
   fs.mkdirSync(artifactDirectory, { recursive: true });
+  // The document changes before the score is drawn again: measure the labels of the drawing of this
+  // edit, not those of the drawing before it, which the redraw detaches.
+  await expect.poll(() => page.getByTestId('score-canvas').evaluate((element) => (
+    element.getAttribute('aria-busy') !== 'true'
+    && (element as HTMLElement).dataset.documentRevision === (element as HTMLElement).dataset.renderedRevision
+  )), { message: 'the score shows the drawing of the last edit' }).toBe(true);
   await expect(page.locator('[data-nex-tuplet] text')).toHaveText(['5:2', '3:2']);
   for (const label of await page.locator('[data-nex-tuplet] text').all()) {
     const box = await label.boundingBox(); const canvas = await page.getByTestId('score-canvas').boundingBox();

@@ -120,11 +120,20 @@ test('Command+K opens inline chord entry even when command search is focused @sm
 });
 
 test('command search accepts MuseScore-style chord symbols directly @smoke', async ({ page }) => {
+  // The boot payload is handed over at document start through sessionStorage. Writing the
+  // localStorage boot key from the already loaded page races with that page's own (late) hydration,
+  // which would consume the key and leave the next load on the welcome screen.
+  await page.addInitScript(() => {
+    const next = sessionStorage.getItem('nex-note:e2e-next-boot');
+    if (!next) return;
+    sessionStorage.removeItem('nex-note:e2e-next-boot');
+    localStorage.setItem('nex-note:e2e-boot', next);
+  });
   await page.goto('/?debug=true&visual-debug=true');
 
   for (const chord of ['C', 'F#m7b5', 'Bb7#11']) {
     await page.evaluate(({ xml, name }) => {
-      localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: name }));
+      sessionStorage.setItem('nex-note:e2e-next-boot', JSON.stringify({ xml, filename: name }));
     }, { xml: GUITAR_TAB_XML, name: `command-search-${chord.replace(/[^A-Za-z0-9]+/g, '-')}.musicxml` });
     await page.goto('/?debug=true&visual-debug=true');
 
@@ -152,12 +161,14 @@ test('command search accepts MuseScore-style chord symbols directly @smoke', asy
 });
 
 test('command search writes chords in imported TAB scores with staff details @smoke', async ({ page }) => {
-  await page.goto('/?debug=true&visual-debug=true');
-  await page.evaluate(({ xml }) => {
+  // The boot payload is written at document start of the one load that reads it. Written from the
+  // already loaded page before a reload, it raced with that page's own (late) boot effect, which
+  // could take the payload and leave the reloaded page on the welcome screen.
+  await page.addInitScript(({ xml }) => {
     localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'command-search-staff-details.musicxml' }));
   }, { xml: GUITAR_TAB_WITH_STAFF_DETAILS_XML });
 
-  await page.reload();
+  await page.goto('/?debug=true&visual-debug=true');
   const scoreSvg = page.locator('[data-testid="score-canvas"] svg');
   await expect(scoreSvg).toBeVisible({ timeout: 15_000 });
   const visibleTabNotesBefore = await page.locator('[data-testid="score-canvas"] .vf-tabnote').count();
@@ -184,12 +195,12 @@ test('command search writes chords in imported TAB scores with staff details @sm
 });
 
 test('clicking an existing chord symbol reopens it for editing @smoke', async ({ page }) => {
-  await page.goto('/?debug=true&visual-debug=true');
-  await page.evaluate(({ xml }) => {
+  // Written at document start of the one load that reads it (see the test above).
+  await page.addInitScript(({ xml }) => {
     localStorage.setItem('nex-note:e2e-boot', JSON.stringify({ xml, filename: 'click-edit-chord-symbol.musicxml' }));
   }, { xml: GUITAR_TAB_WITH_STAFF_DETAILS_XML });
 
-  await page.reload();
+  await page.goto('/?debug=true&visual-debug=true');
   const scoreSvg = page.locator('[data-testid="score-canvas"] svg');
   await expect(scoreSvg).toBeVisible({ timeout: 15_000 });
 

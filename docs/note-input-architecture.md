@@ -282,6 +282,12 @@ grid, edit map, rendered notes and ghost index that the pointer works with are e
 redraw. `renderedRevisionRef` is -1 from the start of a redraw until it has landed; the resize
 handler (`syncRenderedMap`) does nothing in that time. It used to rebuild every map from the old
 drawing after each change of the document, before the next frame, for a result the redraw replaced.
+The canvas is `aria-busy` from the start of a redraw until React has committed its overlays, and
+also from the moment a change of the viewport width schedules a redraw (the drawing on screen was
+laid out for another width), not only once that redraw has started. A reader that waits for the
+canvas to be idle with `data-rendered-revision` equal to `data-document-revision` therefore never
+takes a bar or a note from an outgoing layout; during a sidebar width transition it also has to wait
+for the transition to end, since each step of it is drawn and idle in between.
 
 **Render window (built, not connected).** `src/render-bridge/osmd/render-window.ts` cuts the bars of
 whole systems out of the stored MusicXML as text (`buildRenderWindowXml`): the bars keep their numbers

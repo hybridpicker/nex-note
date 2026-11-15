@@ -137,7 +137,7 @@ export default function WelcomeScreen({
         </header>
 
         <main>
-          <section className="grid min-h-[510px] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1.02fr)_minmax(440px,0.98fr)] lg:py-14">
+          <section className="nex-welcome-hero grid min-h-[510px] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1.02fr)_minmax(440px,0.98fr)] lg:py-14">
             <div className="max-w-[720px]">
               <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-nex-accent">Your music starts here</p>
               <h1 className="mt-6 max-w-[680px] text-[clamp(3.15rem,6.2vw,6.8rem)] font-semibold leading-[0.91] tracking-[-0.065em] text-nex-ink">
@@ -174,7 +174,7 @@ export default function WelcomeScreen({
             <ScoreMotif />
           </section>
 
-          <section className="grid gap-4 border-t border-slate-900/10 pt-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.66fr)_minmax(330px,0.82fr)]">
+          <section className="nex-welcome-cards grid gap-4 border-t border-slate-900/10 pt-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.66fr)_minmax(330px,0.82fr)]">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
               <UploadZone onFileSelected={onFileSelected} onFilesSelected={onFilesSelected} loadingMessage={importStatus} />
               <div className="rounded-2xl border border-slate-900/10 bg-white/65 p-4 backdrop-blur-sm">
@@ -184,7 +184,7 @@ export default function WelcomeScreen({
                   className="mt-0"
                   emptyFallback={(
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">{t('welcome.recent')}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-500">{t('welcome.recent')}</p>
                       <div className="mt-3 flex items-center justify-between rounded-xl border border-dashed border-slate-300/80 px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-700">{t('welcome.noFiles')}</p>
@@ -198,24 +198,24 @@ export default function WelcomeScreen({
               </div>
             </div>
 
-            <section className="rounded-2xl border border-slate-900/10 bg-[#111522] p-5 text-white shadow-[0_24px_65px_-42px_rgba(11,15,20,0.9)]">
+            <section className="nex-welcome-ai rounded-2xl border border-slate-900/10 bg-[#111522] p-5 text-white shadow-[0_24px_65px_-42px_rgba(11,15,20,0.9)]">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-white/45">{t('welcome.aiTools')}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-white/70">{t('welcome.aiTools')}</p>
                 <span className={`h-2 w-2 rounded-full ${aiReady ? 'bg-emerald-400' : 'bg-amber-300'}`} />
               </div>
               <h2 className="mt-5 text-lg font-semibold tracking-tight">{aiStatusTitle}</h2>
-              <p className="mt-2 text-xs leading-5 text-white/55">{aiStatusDescription}</p>
+              <p className="mt-2 text-xs leading-5 text-white/75">{aiStatusDescription}</p>
               <div className="mt-5 space-y-2 border-t border-white/10 pt-4">
                 {AI_PROVIDER_ORDER.map((providerName) => (
                   <div key={providerName} className="flex items-center justify-between text-xs">
-                    <span className="text-white/55">{PROVIDER_LABELS[providerName]}</span>
-                    <span className={settings.providers[providerName].enabled ? 'text-white' : 'text-white/30'}>
+                    <span className="text-white/75">{PROVIDER_LABELS[providerName]}</span>
+                    <span className={settings.providers[providerName].enabled ? 'text-white' : 'text-white/60'}>
                       {providerReadyLabel(providerName, settings, ollamaConnectionState)}
                     </span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between border-t border-white/10 pt-2 text-xs">
-                  <span className="text-white/55">{t('welcome.aiLocalFallbacks')}</span>
+                  <span className="text-white/75">{t('welcome.aiLocalFallbacks')}</span>
                   <span className="text-nex-cyan">{t('welcome.aiAlwaysOn')}</span>
                 </div>
               </div>
@@ -224,7 +224,7 @@ export default function WelcomeScreen({
               </button>
             </section>
 
-            <aside className="min-h-[250px] rounded-2xl border border-slate-900/10 bg-white/65 p-1 backdrop-blur-sm">
+            <aside className="nex-welcome-library min-h-[250px] rounded-2xl border border-slate-900/10 bg-white/65 p-1 backdrop-blur-sm">
               <ScoreLibrary onOpenScore={onOpenLibraryScore} />
             </aside>
           </section>

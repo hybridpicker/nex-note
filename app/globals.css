@@ -616,3 +616,664 @@ html:not(.nex-git-branch-devel) #codex-browser-sidebar-comments-root {
     box-sizing: border-box !important;
   }
 }
+
+/* === ui-input: begin === */
+
+/* Note-input bar: entrance, caret glow */
+@keyframes nex-input-bar-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.nex-input-bar { animation: nex-input-bar-in 160ms ease-out both; }
+[data-testid="note-input-caret"] { box-shadow: 0 0 8px 1px rgb(79 70 255 / 0.35); }
+@media (prefers-reduced-motion: reduce) {
+  .nex-input-bar { animation: none; }
+  .nex-advanced-input-chevron { transition: none !important; }
+}
+
+/* Disclosure chip for "Rhythm, tuplets and MIDI" */
+.nex-advanced-input-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  padding: 0 0.625rem 0 0.5rem;
+  border: 1px solid #e6e9ef;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #3f4759;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.nex-advanced-input-summary::-webkit-details-marker { display: none; }
+.nex-advanced-input-summary::marker { content: ""; }
+.nex-advanced-input-summary:hover { background: #f7f8fa; border-color: #cfd5e0; color: #0b0f14; }
+.nex-advanced-input[open] > .nex-advanced-input-summary { background: #ecebff; border-color: rgb(79 70 255 / 0.3); color: #3f38e8; }
+.nex-advanced-input-chevron { transition: transform 160ms ease; }
+.nex-advanced-input[open] .nex-advanced-input-chevron { transform: rotate(90deg); }
+.nex-advanced-input legend { font-size: 0.75rem; font-weight: 700; color: #0b0f14; }
+.nex-advanced-input p { color: #596174; }
+
+/* Collapsed left rail: a discoverable control */
+.nex-left-tools-shell--collapsed { width: 2.25rem; flex-basis: 2.25rem; }
+.nex-left-tools-rail { width: 2.25rem; padding-top: 0.5rem; gap: 0.5rem; }
+.nex-left-tools-toggle { height: 1.75rem; width: 1.75rem; border-radius: 0.5rem; color: #596174; background: #f7f8fa; border: 1px solid #e6e9ef; }
+.nex-left-tools-toggle:hover, .nex-left-tools-toggle:focus-visible { background: #ecebff; border-color: rgb(79 70 255 / 0.3); color: #4f46ff; }
+.nex-left-tools-rail-label { margin-top: 0; color: #596174; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em; transition: color 120ms ease; }
+.nex-left-tools-rail:hover .nex-left-tools-rail-label { color: #0b0f14; }
+.nex-left-tools-rail { cursor: default; }
+@media (pointer: coarse) {
+  .nex-left-tools-shell--collapsed, .nex-left-tools-rail { width: 2.75rem; flex-basis: 2.75rem; }
+  .nex-left-tools-toggle { height: 2.75rem; width: 2.75rem; }
+  .nex-left-tools-rail-label { font-size: 0.75rem; }
+}
+@media (max-width: 900px) { .nex-left-tools-shell--collapsed { width: 2.25rem; } }
+@media (max-width: 900px) and (pointer: coarse) { .nex-left-tools-shell--collapsed { width: 2.75rem; } }
+
+/* Pencil / finger mode bar: compact segmented control */
+.nex-pencil-focus-bar { gap: 0.25rem; padding: 0.25rem calc(0.75rem + env(safe-area-inset-right, 0px)) 0.25rem calc(0.75rem + env(safe-area-inset-left, 0px)); }
+.nex-pencil-focus-bar > button[data-testid] { min-height: 2.75rem; border-radius: 0.625rem; padding: 0 1rem; font-size: 0.875rem; background: #f1f3f8; }
+.nex-pencil-focus-bar > button[data-testid].nex-brand-active { background: linear-gradient(135deg, #4f46ff 0%, #7c3aed 100%); }
+.nex-pencil-focus-bar > span { margin-left: 0.5rem; color: #596174; }
+
+/* Pencil palette column */
+.nex-pencil-tools { padding: 8px 8px 8px calc(8px + env(safe-area-inset-left, 0px)); }
+@media (orientation: portrait) {
+  [data-pencil-focus="true"] .nex-left-tools-shell--expanded { width: 304px; min-width: 304px; flex-basis: 304px; }
+}
+.nex-pencil-tools .nex-note-tool-group { gap: 8px; }
+.nex-pencil-tools > p { font-size: 12px; font-weight: 600; color: #3f4759; margin-top: 0.25rem; }
+
+/* Welcome */
+.nex-welcome-cards > * { min-height: 20rem; }
+.nex-welcome-cards .nex-welcome-ai { display: flex; flex-direction: column; }
+.nex-welcome-cards .nex-welcome-ai > button { margin-top: auto; align-self: flex-start; padding-top: 1.25rem; }
+@media (max-height: 800px) and (min-width: 1024px) {
+  .nex-welcome-hero { min-height: 0; padding-top: 1.5rem; padding-bottom: 2rem; }
+}
+
+/* === ui-input: end === */
+
+/* === ui-chrome: begin === */
+:root {
+  /* One radius scale: 6 controls, 10 cards, 16 dialogs. */
+  --nex-radius-control: 6px;
+  --nex-radius-card: 10px;
+  --nex-radius-dialog: 16px;
+  /* Helper text token: 6.2:1 on white. Use instead of slate-400/300 for real text. */
+  --nex-text-muted: #596174;
+  --nex-hover-bg: #eef0f6;
+  --nex-pressed-bg: #e2e6ef;
+  --nex-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23596174' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* --- Focus, hover, pressed, disabled ------------------------------------------------------- */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--color-nex-accent);
+  outline-offset: 2px;
+}
+
+/* On the gradient pill the accent ring would vanish: draw a white gap and an accent ring around it. */
+.nex-brand-active:focus-visible {
+  outline: 2px solid var(--color-nex-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #ffffff, 0 10px 24px -16px rgb(79 70 255 / 0.8);
+}
+
+.nex-brand-button:hover {
+  background: var(--nex-hover-bg);
+  color: var(--color-nex-ink);
+}
+
+.nex-brand-button:active,
+.nex-bar-button:active,
+.nex-zoom-segment:active {
+  background: var(--nex-pressed-bg);
+  transform: scale(0.97);
+}
+
+.nex-brand-active:active {
+  transform: scale(0.97);
+  filter: brightness(0.94);
+}
+
+button:disabled,
+select:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+[data-testid="notation-toolbar"] button:disabled {
+  color: #7b8499;
+}
+
+button,
+a,
+select,
+input,
+summary {
+  transition-duration: 120ms;
+  transition-timing-function: ease;
+}
+
+.nex-brand-button,
+.nex-brand-active,
+.nex-bar-button,
+.nex-zoom-segment,
+.nex-select,
+.nex-chip {
+  transition-property: background-color, border-color, color, box-shadow, transform, filter;
+  transition-duration: 120ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a,
+  select,
+  input,
+  summary,
+  .nex-brand-button,
+  .nex-brand-active,
+  .nex-bar-button,
+  .nex-zoom-segment,
+  .nex-select,
+  .nex-chip {
+    transition: none !important;
+  }
+
+  .nex-brand-button:active,
+  .nex-brand-active:active,
+  .nex-bar-button:active,
+  .nex-zoom-segment:active {
+    transform: none;
+  }
+}
+
+/* --- Shared primitives ---------------------------------------------------------------------- */
+.nex-select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 32px;
+  border: 1px solid var(--color-nex-border);
+  border-radius: var(--nex-radius-control);
+  background-color: #ffffff;
+  background-image: var(--nex-chevron);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding: 0 26px 0 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nex-select:hover {
+  border-color: #cdd3df;
+  background-color: #fbfcfe;
+}
+
+.nex-select:focus {
+  border-color: var(--color-nex-accent);
+}
+
+.nex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--nex-radius-control);
+  line-height: 1;
+}
+
+.nex-chip--tag {
+  background: var(--color-nex-surface);
+}
+
+.nex-chip--link {
+  border: 1px solid var(--color-nex-border);
+  background: var(--color-nex-surface);
+  color: #596174;
+}
+
+.nex-chip--link:hover {
+  background: #ffffff;
+  border-color: #cdd3df;
+  color: var(--color-nex-ink);
+}
+
+/* --- Header ---------------------------------------------------------------------------------- */
+.nex-brand-toolbar > * {
+  min-width: 0;
+}
+
+.nex-brand-toolbar > .shrink-0,
+.nex-brand-toolbar > button,
+.nex-brand-toolbar > [role="menubar"],
+.nex-brand-toolbar > span.contents > button {
+  flex-shrink: 0;
+}
+
+.nex-header-overflow {
+  display: contents;
+}
+
+.nex-header-overflow-trigger {
+  display: none;
+}
+
+.nex-header-overflow-panel {
+  display: contents;
+}
+
+/* Below ~1300 px the secondary labels become icon-only: still in the accessibility tree. */
+@media (max-width: 1299px) {
+  .nex-brand-toolbar .nex-header-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .nex-header-command-center kbd {
+    display: none;
+  }
+
+  .nex-header-command-center {
+    width: 2rem;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .nex-brand-toolbar a.nex-chip--link {
+    font-size: 12px;
+  }
+}
+
+/* 1200-1599 px: provider and language stay in the header; the Manual link (and, while the
+   action labels are still shown, the model tag) step aside so the right-hand actions are not clipped. */
+@media (min-width: 1200px) and (max-width: 1599px) {
+  .nex-brand-toolbar a.nex-chip--link {
+    display: none;
+  }
+}
+
+@media (min-width: 1300px) and (max-width: 1599px) {
+  .nex-brand-toolbar [data-testid="provider-selector"] span {
+    display: none;
+  }
+}
+
+/* Below ~1200 px provider, model, AI settings, keyboard preset, language and Manual move into
+   one overflow popover (the same elements, so tests and state are unchanged). */
+@media (max-width: 1199px) {
+  .nex-header-overflow-trigger {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .nex-header-overflow-panel {
+    display: none;
+  }
+
+  .nex-header-overflow[data-open="true"] .nex-header-overflow-panel {
+    display: flex;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 12px;
+    z-index: 60;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    width: max-content;
+    max-width: min(92vw, 440px);
+    padding: 12px;
+    border: 1px solid var(--color-nex-border);
+    border-radius: var(--nex-radius-card);
+    background: #ffffff;
+    box-shadow: 0 18px 60px -24px rgb(15 23 42 / 0.55);
+  }
+
+  .nex-header-overflow-panel [data-testid="provider-selector"] span {
+    display: inline-flex;
+  }
+
+  .nex-header-overflow-panel > div,
+  .nex-header-overflow-panel .nex-header-overflow-hide {
+    display: flex;
+  }
+
+  .nex-brand-toolbar a.nex-chip--link {
+    display: inline-flex;
+  }
+}
+
+/* Native shells use the same overflow popover: an iPad portrait header cannot hold every control. */
+
+/* --- Notation toolbar row -------------------------------------------------------------------- */
+.nex-toolbar-scroll {
+  position: relative;
+}
+
+.nex-toolbar-row {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.nex-toolbar-row::-webkit-scrollbar {
+  display: none;
+}
+
+.nex-toolbar-scroll::before,
+.nex-toolbar-scroll::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.nex-toolbar-scroll::before {
+  left: 0;
+  background: linear-gradient(to right, #ffffff 15%, rgb(255 255 255 / 0));
+}
+
+.nex-toolbar-scroll::after {
+  right: 0;
+  background: linear-gradient(to left, #ffffff 15%, rgb(255 255 255 / 0));
+}
+
+.nex-toolbar-scroll[data-fade-start="true"]::before,
+.nex-toolbar-scroll[data-fade-end="true"]::after {
+  opacity: 1;
+}
+
+.nex-toolbar-row > * {
+  flex-shrink: 0;
+}
+
+.nex-toolbar-row > .nex-toolbar-status {
+  flex-shrink: 1;
+}
+
+.nex-toolbar-row > .nex-toolbar-status + div,
+.nex-toolbar-row > .flex-1 {
+  flex-shrink: 1;
+}
+
+/* Text-only controls (Mixer summary, Layout, Note Input...) share the icon buttons' height. */
+.nex-toolbar-row summary {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--nex-radius-control);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: #596174;
+  list-style: none;
+}
+
+.nex-toolbar-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.nex-toolbar-row summary:hover {
+  background: var(--nex-hover-bg);
+  color: var(--color-nex-ink);
+}
+
+/* The mixer popover must escape the scrolling row. */
+.nex-toolbar-row details[data-testid="playback-mixer"] > div {
+  position: fixed;
+  top: auto;
+  left: auto;
+}
+
+/* --- Bottom bar ------------------------------------------------------------------------------ */
+.nex-bottom-bar {
+  box-shadow: 0 -1px 0 rgb(230 233 239 / 0.9);
+}
+
+.nex-bar-button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--nex-radius-control);
+  background: var(--color-nex-surface);
+  font-weight: 600;
+  white-space: nowrap;
+  color: #3a4256;
+}
+
+.nex-bar-button:not(.nex-brand-active):hover {
+  background: var(--nex-hover-bg);
+  color: var(--color-nex-ink);
+}
+
+.nex-zoom-group {
+  display: inline-flex;
+  align-items: stretch;
+  height: 32px;
+  overflow: hidden;
+  border: 1px solid var(--color-nex-border);
+  border-radius: var(--nex-radius-control);
+  background: #ffffff;
+}
+
+.nex-zoom-group > * + * {
+  border-left: 1px solid var(--color-nex-border);
+}
+
+.nex-zoom-segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 0 8px;
+  background: var(--color-nex-surface);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  color: #3a4256;
+}
+
+.nex-zoom-segment:hover {
+  background: var(--nex-hover-bg);
+  color: var(--color-nex-ink);
+}
+
+.nex-zoom-group :focus-visible {
+  outline-offset: -2px;
+}
+
+.nex-zoom-value {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+}
+
+.nex-zoom-input {
+  width: 3rem;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  outline-offset: -2px;
+}
+
+.nex-zoom-input::-webkit-outer-spin-button,
+.nex-zoom-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.nex-zoom-unit {
+  font-size: 12px;
+  color: #596174;
+}
+
+/* The preset select becomes the group's last segment: chevron only, value shown by the input. */
+.nex-select.nex-zoom-preset {
+  width: 28px;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background-position: center;
+  color: transparent;
+  cursor: pointer;
+}
+
+.nex-select.nex-zoom-preset option {
+  color: var(--color-nex-ink);
+}
+
+.nex-view-select {
+  max-width: 100%;
+}
+
+@media (max-width: 899px) {
+  .nex-view-select {
+    max-width: 9.5rem;
+  }
+}
+
+/* --- Touch targets: 44 px on every coarse pointer, desktop sizes unchanged -------------------- */
+@media (pointer: coarse) {
+  [data-testid="notation-toolbar"] button,
+  .nex-toolbar-row summary,
+  .nex-toolbar-row .nex-select,
+  [data-testid="app-header"] button,
+  [data-testid="app-header"] .nex-select,
+  [data-testid="app-header"] a.nex-chip,
+  .nex-bottom-bar .nex-bar-button,
+  .nex-bottom-bar .nex-select,
+  .nex-zoom-group {
+    min-height: 44px;
+  }
+
+  [data-testid="notation-toolbar"] button,
+  .nex-toolbar-row summary,
+  [data-testid="app-header"] button:not([data-menubar-trigger]),
+  .nex-zoom-segment {
+    min-width: 44px;
+  }
+
+  .nex-select.nex-zoom-preset {
+    min-width: 40px;
+  }
+
+  [data-testid="notation-toolbar"] button:active,
+  [data-testid="app-header"] button:active {
+    transform: scale(0.96);
+  }
+}
+@media (max-width: 900px) {
+  .nex-editor-workspace:has(.nex-left-tools-shell--collapsed) .nex-bottom-bar {
+    padding-left: 2.75rem;
+  }
+
+  .nex-brand-toolbar {
+    gap: 4px;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .nex-brand-toolbar [role="menubar"] {
+    gap: 4px;
+  }
+
+  .nex-brand-toolbar [data-menubar-trigger] {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+/* The bottom bar adapts to its own width (the score column can be narrow beside the side panel). */
+.nex-bottom-bar {
+  container-type: inline-size;
+}
+
+@container (max-width: 720px) {
+  .nex-view-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .nex-bottom-bar .nex-bar-button {
+    padding: 0 8px;
+  }
+
+  .nex-view-select {
+    max-width: 7rem;
+  }
+}
+
+@container (max-width: 480px) {
+  .nex-bottom-bar .nex-bar-button {
+    padding: 0 6px;
+  }
+
+  .nex-zoom-segment {
+    min-width: 28px;
+    padding: 0 4px;
+  }
+
+  .nex-zoom-input {
+    width: 2.2rem;
+  }
+
+  .nex-zoom-unit {
+    display: none;
+  }
+
+  .nex-select.nex-zoom-preset {
+    width: 24px;
+  }
+}
+
+@container (max-width: 560px) {
+  .nex-view-select {
+    max-width: 4rem;
+  }
+}
+
+@container (max-width: 600px) {
+  .nex-zoom-reset {
+    display: none;
+  }
+
+  .nex-view-select {
+    max-width: 5.5rem;
+  }
+}
+/* === ui-chrome: end === */

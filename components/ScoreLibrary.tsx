@@ -246,7 +246,7 @@ export default function ScoreLibrary({ currentScoreId, dense = false, onOpenScor
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('library.filter')}
-          className="flex-1 rounded-2xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-300 focus:border-gray-400"
+          className="flex-1 rounded-2xl border border-gray-200 px-3 py-2 text-sm outline-none transition-colors placeholder:text-slate-500 focus:border-gray-400"
         />
         <button
           onClick={() => setFavoritesOnly((value) => !value)}
@@ -291,19 +291,19 @@ export default function ScoreLibrary({ currentScoreId, dense = false, onOpenScor
                   <div className="flex items-center gap-2">
                     <p className={`truncate text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-900'}`}>{item.name}</p>
                     {isActive && (
-                      <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white">
+                      <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] uppercase tracking-wide text-white">
                         {t('library.selected')}
                       </span>
                     )}
                     {isCurrent && (
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${
                         isActive ? 'bg-white/20 text-white' : 'bg-nex-accent text-white'
                       }`}>
                         {t('library.active')}
                       </span>
                     )}
                     {openingItemId === item.id && (
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${
                         isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <span className={`h-2.5 w-2.5 animate-spin rounded-full border ${

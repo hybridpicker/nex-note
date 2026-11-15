@@ -331,6 +331,31 @@ export default function NotationToolbar({
   const displayTempo = tempoOverride ?? 120;
   const progress = totalBeats > 0 ? Math.min(1, currentBeat / totalBeats) : 0;
   const progressFillRef = useRef<HTMLDivElement | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  // Edge fade masks: mark which side of the scrollable control row still has hidden content.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const update = () => {
+      const max = row.scrollWidth - row.clientWidth;
+      const holder = row.parentElement ?? row;
+      holder.dataset.fadeStart = row.scrollLeft > 2 ? 'true' : 'false';
+      holder.dataset.fadeEnd = max > 2 && row.scrollLeft < max - 2 ? 'true' : 'false';
+    };
+    update();
+    row.addEventListener('scroll', update, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(row);
+    if (row.firstElementChild) observer?.observe(row.firstElementChild);
+    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(update);
+    mutations?.observe(row, { childList: true, subtree: true });
+    return () => {
+      row.removeEventListener('scroll', update);
+      observer?.disconnect();
+      mutations?.disconnect();
+    };
+  }, []);
   const followsTransport = isPlaying && Boolean(playbackTransport) && totalBeats > 0;
   useEffect(() => {
     // React publishes the position once per measure while playing; draw the bar per frame.
@@ -397,7 +422,8 @@ export default function NotationToolbar({
     <div className="nex-brand-toolbar relative shrink-0 select-none border-b px-3 py-2" data-testid="notation-toolbar">
 
       {/* Main row */}
-      <div className="flex items-center gap-1 overflow-x-auto">
+      <div className="nex-toolbar-scroll" data-fade-start="false" data-fade-end="false">
+      <div ref={rowRef} className="nex-toolbar-row flex items-center gap-1 overflow-x-auto">
 
         {/* History */}
         <Group>
@@ -450,7 +476,7 @@ export default function NotationToolbar({
 
         {/* Tempo */}
         <div className="hidden sm:flex items-center gap-2 h-8 px-2 shrink-0">
-          <span className="text-[11px] text-slate-500">♩=</span>
+          <span className="text-xs text-slate-600">♩=</span>
           <input
             type="range"
             min={40}
@@ -460,7 +486,7 @@ export default function NotationToolbar({
             className="h-1 w-20 cursor-pointer accent-nex-accent"
             title={`Tempo: ${displayTempo} BPM`}
           />
-          <span className="w-7 text-[11px] font-semibold tabular-nums text-slate-700">{displayTempo}</span>
+          <span data-testid="tempo-value" className="w-8 text-xs font-semibold tabular-nums text-slate-700">{displayTempo}</span>
         </div>
 
         {onMixerChange && coreDocument && (
@@ -471,7 +497,7 @@ export default function NotationToolbar({
 
         {/* Status */}
         <div
-          className="min-w-[96px] max-w-[380px] shrink truncate px-1 text-[11px] font-medium text-slate-500"
+          className="nex-toolbar-status min-w-[96px] max-w-[380px] shrink truncate px-1 text-xs font-medium text-slate-600"
           title={toolbarStatus}
           data-testid="selection-status"
           data-status-bar={selectionDescription?.bar ?? ''}
@@ -483,18 +509,18 @@ export default function NotationToolbar({
           {toolbarStatus}
         </div>
         {isStopped && selectionStatus && (
-          <div className="shrink-0 px-1 text-[11px] font-medium text-slate-400">
+          <div className="shrink-0 whitespace-nowrap px-1 text-xs font-medium text-slate-500">
             {t('toolbar.ready')}
           </div>
         )}
 
-        <div className="flex-1" />
+        <div className="min-w-0 flex-1" />
 
         {/* Note Input toggle */}
         <button
           onClick={onToggleNoteInput}
           title={t('toolbar.noteInputTitle')}
-          className={`h-8 flex items-center gap-1.5 px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
+          className={`h-8 flex items-center gap-1.5 whitespace-nowrap px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
             noteInputMode
               ? 'nex-brand-active'
               : 'nex-brand-button'
@@ -528,18 +554,18 @@ export default function NotationToolbar({
             microphoneInputEnabled ? `Input level: ${Math.round(microphoneSignalLevelDb)} dB` : null,
             microphoneInputEnabled ? microphoneSignalLabel : null,
           ].filter(Boolean).join('\n')}
-          className={`h-8 flex items-center gap-1.5 rounded-md border px-3 text-xs font-semibold tracking-wide transition-colors shrink-0 ${
+          className={`h-8 flex items-center gap-1.5 whitespace-nowrap rounded-md border px-3 text-xs font-semibold tracking-wide transition-colors shrink-0 ${
             microphoneInputEnabled
               ? 'border-red-500 bg-red-500 text-white shadow-[0_0_0_2px_rgba(239,68,68,0.12)]'
               : microphoneInputStatus === 'requesting' || microphoneInputStatus === 'unsupported'
                 ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                : 'border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100'
+                : 'nex-brand-button border-nex-border bg-white text-slate-600 hover:border-slate-300'
           }`}
         >
           <span
             aria-hidden
             className={`h-2 w-2 rounded-full ${
-              microphoneInputEnabled ? 'bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]' : 'bg-red-500'
+              microphoneInputEnabled ? 'bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]' : 'bg-slate-400'
             }`}
           />
           {microphoneInputEnabled && microphoneDetectedPitchLabel
@@ -552,7 +578,7 @@ export default function NotationToolbar({
           <>
             <span
               data-testid="microphone-signal-status"
-              className={`whitespace-nowrap text-[11px] font-medium ${
+              className={`shrink-0 whitespace-nowrap text-xs font-medium ${
                 microphoneSignalQuality === 'good'
                   ? 'text-emerald-700'
                   : microphoneSignalQuality === 'too-low' || microphoneSignalQuality === 'too-high'
@@ -569,7 +595,7 @@ export default function NotationToolbar({
                 title={t('instrumentRecord.profile.title')}
                 value={microphoneInputProfile}
                 onChange={(event) => onSelectMicrophoneInputProfile(event.target.value as InstrumentInputProfile)}
-                className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+                className="nex-select shrink-0 text-xs text-slate-700"
               >
                 <option value="microphone">{t('instrumentRecord.profile.microphone')}</option>
                 <option value="guitar-amp">{t('instrumentRecord.profile.guitarAmp')}</option>
@@ -578,7 +604,7 @@ export default function NotationToolbar({
             {microphoneAmpInputHint ? (
               <span
                 data-testid="instrument-record-amp-hint"
-                className={`max-w-48 truncate whitespace-nowrap text-[11px] font-medium ${
+                className={`max-w-48 shrink-0 truncate whitespace-nowrap text-xs font-medium ${
                   microphoneAmpInputChoice === 'spark' ? 'text-emerald-700' : 'text-amber-700'
                 }`}
                 title={microphoneAmpInputHint}
@@ -593,7 +619,7 @@ export default function NotationToolbar({
                 : "Single notes advance automatically; Build chord collects individually played tones until Right Arrow; Alt/Option+C switches modes")}
               value={microphoneDetectionMode}
               onChange={(event) => onSelectMicrophoneDetectionMode(event.target.value as MicrophoneDetectionMode)}
-              className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+              className="nex-select shrink-0 text-xs text-slate-700"
             >
               <option value="single">Single notes · auto → · ⌥C</option>
               <option value="chord">Build chord · manual → · ⌥C</option>
@@ -606,7 +632,7 @@ export default function NotationToolbar({
               title="Guitar mode writes every sounding pitch one octave higher"
               value={microphoneInstrumentMode}
               onChange={(event) => onSelectMicrophoneInstrumentMode(event.target.value as MicrophoneInstrumentMode)}
-              className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+              className="nex-select shrink-0 text-xs text-slate-700"
             >
               <option value="concert">Concert pitch</option>
               <option value="guitar">Guitar · written +8va</option>
@@ -619,7 +645,7 @@ export default function NotationToolbar({
             title="Choose the microphone used for Instrument Record"
             value={microphoneSelectedDeviceId}
             onChange={(event) => onSelectMicrophoneInput(event.target.value)}
-            className="h-8 max-w-40 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+            className="nex-select max-w-40 shrink-0 text-xs text-slate-700"
           >
             {microphoneInputDevices.map((device) => (
               <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
@@ -629,7 +655,7 @@ export default function NotationToolbar({
         <button
           onClick={onToggleLeadsheetMode}
           title={leadsheetMode ? t('toolbar.leadOn') : t('toolbar.leadOff')}
-          className={`h-8 flex items-center gap-1.5 px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
+          className={`h-8 flex items-center gap-1.5 whitespace-nowrap px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
             leadsheetMode
               ? 'nex-brand-active'
               : 'nex-brand-button'
@@ -647,7 +673,7 @@ export default function NotationToolbar({
           disabled={layoutCleanupLoading}
           title={layoutCleanupLoading ? `${t('toolbar.layoutTitle')} - ${layoutDisabledReason}` : t('toolbar.layoutTitle')}
           aria-label={layoutCleanupLoading ? `${t('toolbar.layoutTitle')} - ${layoutDisabledReason}` : t('toolbar.layoutTitle')}
-          className={`h-8 flex items-center gap-1.5 px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
+          className={`h-8 flex items-center gap-1.5 whitespace-nowrap px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
             layoutCleanupLoading
               ? 'cursor-wait text-slate-400'
               : 'nex-brand-button'
@@ -656,6 +682,7 @@ export default function NotationToolbar({
           {layoutCleanupLoading ? <IconSpinner /> : <IconSparkles />}
           {t('toolbar.layout')}
         </button>
+      </div>
       </div>
 
       {/* Playback progress bar. It lies over the toolbar's bottom edge and takes no room of its own:

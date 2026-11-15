@@ -18,6 +18,18 @@ Important scope notes:
   are third-party products or marks. nex-note is not affiliated with their
   owners unless explicitly stated.
 
+Third-party content shipped with the applications:
+
+- FluidR3_GM instrument samples (public/soundfonts/FluidR3_GM/*-mp3.js). They
+  are not committed to this repository: scripts/fetch-soundfonts.mjs downloads
+  them from https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM, Benjamin
+  Gleitzman's pre-rendered MIDI.js soundfonts
+  (https://github.com/gleitz/midi-js-soundfonts), and the app bundles include
+  them. Licence: this repository describes them as MIT-licensed
+  (scripts/fetch-soundfonts.mjs, docs/development.md); the upstream licence
+  text and copyright holder could not be verified from the repository or its
+  installed packages and are to be confirmed by the owner.
+
 The old public alpha repository was previously available under MIT. Copies of
 that already-published version remain under the license terms that accompanied
 those copies. This branch is licensed forward under AGPL-3.0-or-later.

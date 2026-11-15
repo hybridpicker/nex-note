@@ -7,8 +7,9 @@ import { dbg } from '@/lib/debug';
 import {
   buildFallbackMidiFromMusicXml,
   cleanMuseScoreStderr,
-  formatMuseScoreMidiExportError,
+  evaluateMuseScoreMidiOutput,
   sanitizeXmlForMidiExport,
+  type MuseScoreMidiExit,
 } from '@/lib/midi-export';
 import { museScoreSpawnEnv, resolveMuseScoreCli } from '@/lib/musescore-cli';
 
@@ -32,30 +33,32 @@ function runMuseScoreMidiExport(input: {
   outputMid: string;
   tmpDir: string;
 }) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<MuseScoreMidiExit>((resolve, reject) => {
     const exportStartedAt = Date.now();
     const proc = spawn(input.musescoreCli, [input.inputPath, '-o', input.outputMid, '-f'], {
-      timeout: MUSESCORE_EXPORT_TIMEOUT_MS,
       env: museScoreSpawnEnv(),
       cwd: input.tmpDir,
     });
     let stderr = '';
+    let timedOut = false;
+    // An own timer instead of spawn's `timeout`, so a timeout is told apart from a crash signal.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill('SIGTERM');
+    }, MUSESCORE_EXPORT_TIMEOUT_MS);
     proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-    proc.on('error', reject);
+    proc.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     proc.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
-      if (code !== 0) {
-        reject(new Error(formatMuseScoreMidiExportError({
-          code,
-          signal,
-          stderr,
-          timeoutMs: MUSESCORE_EXPORT_TIMEOUT_MS,
-        })));
-      } else {
+      clearTimeout(timer);
+      if (code === 0) {
         dbg.midi(`MuseScore export OK exit=${code} durationMs=${Date.now() - exportStartedAt}`);
         const cleanedStderr = cleanMuseScoreStderr(stderr);
         if (cleanedStderr) dbg.midi(`MuseScore export stderr: ${cleanedStderr}`);
-        resolve();
       }
+      resolve({ code, signal, stderr, timedOut, timeoutMs: MUSESCORE_EXPORT_TIMEOUT_MS });
     });
   });
 }
@@ -88,8 +91,15 @@ export async function POST(req: NextRequest) {
 
     try {
       const musescoreCli = resolveMuseScoreCli();
-      await runMuseScoreMidiExport({ musescoreCli, inputPath, outputMid, tmpDir });
-      const midiData = await readFile(outputMid);
+      const exit = await runMuseScoreMidiExport({ musescoreCli, inputPath, outputMid, tmpDir });
+      const written = await readFile(outputMid).catch(() => null);
+      const outcome = evaluateMuseScoreMidiOutput(exit, written);
+      if (!outcome.accepted) throw new Error(outcome.error);
+      if (outcome.abnormalExit) {
+        // Only the exit status: stderr can echo score content and is not logged here.
+        dbg.warn('midi', `MuseScore ${outcome.abnormalExit} after writing a complete MIDI file; using that file`);
+      }
+      const midiData = Buffer.from(outcome.data);
       dbg.midi(`response midiBytes=${midiData.length} renderer=musescore totalMs=${Date.now() - startedAt}`);
       return midiResponse(midiData, 'musescore');
     } catch (museScoreErr) {

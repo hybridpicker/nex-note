@@ -237,6 +237,9 @@ async function selectSemanticNote(page: Page, locator: {
 }
 
 async function openInspector(page: Page) {
+  // The right panel (Inspector, assistant) starts collapsed (commit 0379ed7).
+  const showPanel = page.getByTitle(/Show panel|Panel einblenden/);
+  if (await showPanel.isVisible()) await showPanel.click();
   const inspector = page.getByRole('button', { name: 'Inspector' });
   await inspector.click();
   await expect(page.getByText('Score Commands')).toBeVisible();
@@ -588,6 +591,9 @@ const transformSteps: TransformStep[] = [
       await page.keyboard.press('N');
       await page.keyboard.press('4');
       await page.keyboard.press('D');
+      // A letter resolves nearest to the previous note of the voice (B4 here, so D5), as in
+      // MuseScore (docs/keyboard-shortcuts.md); the target melody has D4 an octave lower.
+      await page.keyboard.press('Control+ArrowDown');
     },
     expected: [{ measure: 1, staff: 1, voice: 1, offset: '12/32', duration: '4', pitch: 'D4' }],
   },

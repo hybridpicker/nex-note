@@ -180,7 +180,8 @@ const SCENARIOS: Scenario[] = [
     name: 'eighths continue across the barline in 6/8',
     xml: SIX_EIGHT,
     script: 'N 4 c d e f g a b c',
-    expect: [{ where: {}, events: [...EIGHTH_SCALE.slice(0, 6), 'm2@0 B5 eighth', 'm2@0.5 C6 eighth', 'm2@1 r quarter', 'm2@2 r quarter'] }],
+    // 6/8 beats in dotted quarters: the rest of beat 1 is an eighth, beat 2 a dotted-quarter rest.
+    expect: [{ where: {}, events: [...EIGHTH_SCALE.slice(0, 6), 'm2@0 B5 eighth', 'm2@0.5 C6 eighth', 'm2@1 r eighth', 'm2@1.5 r quarter.'] }],
     batches: 8,
   },
   {

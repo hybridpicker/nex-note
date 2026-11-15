@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { formatShortcutHint } from '@/lib/shortcut-hints';
 
 export interface FileMenuItem {
@@ -204,7 +204,7 @@ export default function FileMenu({ menuId, label, items }: Props) {
             }
           }
         }}
-        className={`h-8 rounded-md border px-3 text-xs font-semibold transition-colors ${
+        className={`h-8 shrink-0 whitespace-nowrap rounded-md border px-3 text-xs font-semibold transition-colors ${
           open
             ? 'border-nex-accent bg-nex-accent text-white'
             : 'border-nex-border bg-nex-surface text-slate-600 hover:border-slate-300 hover:bg-white hover:text-nex-ink'
@@ -298,13 +298,13 @@ export default function FileMenu({ menuId, label, items }: Props) {
                   <span className="min-w-0">
                     <span className="block truncate">{item.label}</span>
                     {item.disabled && item.disabledReason && (
-                      <span className="block truncate text-[10px] font-medium text-slate-400">
+                      <span className="block truncate text-[11px] font-medium text-slate-500">
                         {item.disabledReason}
                       </span>
                     )}
                   </span>
                   {item.shortcut && (
-                    <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                    <kbd className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
                       {formatShortcutHint(item.shortcut)}
                     </kbd>
                   )}
@@ -314,6 +314,62 @@ export default function FileMenu({ menuId, label, items }: Props) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Overflow popover for the lower-priority header controls (provider, AI settings, keyboard preset,
+ * language, Manual). The children stay mounted in the same place at every width: above the
+ * breakpoint the wrapper uses `display: contents` and the trigger is hidden; below it (see the
+ * `ui-chrome` block in globals.css) the wrapper becomes a popover that this trigger toggles.
+ */
+export function HeaderOverflowMenu({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="nex-header-overflow" data-open={open ? 'true' : 'false'}>
+      <button
+        ref={triggerRef}
+        type="button"
+        data-testid="header-overflow-trigger"
+        className="nex-header-overflow-trigger nex-brand-button h-8 w-8 items-center justify-center rounded-md"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <circle cx="5" cy="12" r="1.7" />
+          <circle cx="12" cy="12" r="1.7" />
+          <circle cx="19" cy="12" r="1.7" />
+        </svg>
+      </button>
+      <div className="nex-header-overflow-panel" data-testid="header-overflow-panel">
+        {children}
+      </div>
     </div>
   );
 }

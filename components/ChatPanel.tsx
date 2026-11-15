@@ -553,7 +553,7 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
     <div className="flex flex-col h-full" data-chat-panel="true">
       {messages.length > 0 && (
         <div className="flex items-center justify-between gap-2 pb-2">
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[11px] text-slate-500">
             {t('chat.messages', { count: messages.length, plural: messages.length === 1 ? '' : 's' })}
           </p>
           <button
@@ -572,10 +572,10 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0 pr-1">
         {messages.length === 0 && (
           <div className="mt-10 text-center px-4">
-            <p className="text-slate-400 text-sm leading-relaxed">
+            <p className="text-slate-500 text-sm leading-relaxed">
               {t('chat.empty', { language: t('manual.languageName') })}
             </p>
-            <div className="mt-4 space-y-1.5 text-xs text-slate-300">
+            <div className="mt-4 space-y-1.5 text-xs text-slate-500">
               <p>&ldquo;{t('chat.example.remove')}&rdquo;</p>
               <p>&ldquo;{t('chat.example.key')}&rdquo;</p>
               <p>&ldquo;{t('chat.example.chords')}&rdquo;</p>
@@ -597,14 +597,14 @@ export default function ChatPanel({ xml, provider, ollamaModel, aiSettings, scor
               {m.text}
             </div>
             {m.model && (
-              <p className="text-[11px] text-slate-400 px-1">{m.model} · {m.latencyMs}ms</p>
+              <p className="text-[11px] text-slate-500 px-1">{m.model} · {m.latencyMs}ms</p>
             )}
           </div>
         ))}
 
         {loading && (
           <div className="flex items-start">
-            <div className="bg-nex-surface px-3 py-2 rounded-xl rounded-bl-sm text-sm text-slate-400 animate-pulse border-l-2 border-nex-accent/20">
+            <div className="bg-nex-surface px-3 py-2 rounded-xl rounded-bl-sm text-sm text-slate-500 animate-pulse border-l-2 border-nex-accent/20">
               {t('chat.thinking')}
             </div>
           </div>

@@ -114,9 +114,9 @@ function voicePreviewPalette(voiceId: number) {
     };
   }
   return {
-    notehead: 'rgba(37, 99, 235, 0.84)',
-    stem: 'rgba(37, 99, 235, 0.98)',
-    accidental: 'rgba(37, 99, 235, 0.98)',
+    notehead: 'rgba(79, 70, 255, 0.45)',
+    stem: 'rgba(79, 70, 255, 0.9)',
+    accidental: 'rgba(79, 70, 255, 0.95)',
   };
 }
 

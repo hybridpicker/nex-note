@@ -603,15 +603,24 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
                                   : target === 'lyrics'
                                     ? lyricTextRef.current
                   : null;
-        if (!input) return;
-        if ('disabled' in input && input.disabled) return;
+        if (!input) return false;
+        if ('disabled' in input && input.disabled) return true;
         input.focus();
         if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
           input.select();
         }
+        return true;
       };
       if (sectionId) {
-        window.setTimeout(applyFocus, 0);
+        // The section was only just opened: its field mounts after React commits the state, which
+        // can be later than a zero-delay timer when the main thread is busy rendering the score.
+        let attempts = 0;
+        const tryFocus = () => {
+          if (applyFocus() || attempts >= 20) return;
+          attempts += 1;
+          window.setTimeout(tryFocus, 25);
+        };
+        window.setTimeout(tryFocus, 0);
         return;
       }
       applyFocus();
@@ -893,9 +902,9 @@ export default function ScoreInspector({ xml, coreDocument, selection, selectedN
                 <option value="square">Square brackets</option>
               </select>
               {accidentalDisplayTargets.length === 0 ? (
-                <span className="text-[10px] text-amber-700">Select an explicitly written accidental.</span>
+                <span className="text-[11px] text-amber-700">Select an explicitly written accidental.</span>
               ) : (
-                <span className="text-[10px] text-amber-700">Applies atomically to {accidentalDisplayTargets.length} selected note(s).</span>
+                <span className="text-[11px] text-amber-700">Applies atomically to {accidentalDisplayTargets.length} selected note(s).</span>
               )}
             </div>
           </div>

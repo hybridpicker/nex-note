@@ -355,7 +355,7 @@ export default function EditPalette({
               <button
                 onClick={() => closeActiveSection(true)}
                 aria-label={`${t('palette.closePanel')}: ${activeSectionLabel}`}
-                className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded transition-colors"
+                className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-slate-700 rounded transition-colors"
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -368,9 +368,9 @@ export default function EditPalette({
               <div className="px-3 py-1.5 text-[11px] border-b border-nex-border text-slate-700 flex items-center gap-1.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-nex-accent" />
                 <span className="font-medium">{isRest ? t('note.rest') : `${selectedNote.step}${selectedNote.alter === 1 ? '♯' : selectedNote.alter === -1 ? '♭' : ''}${selectedNote.octave}`}</span>
-                <span className="text-slate-400">m.{selectedNote.measureNumber}</span>
+                <span className="text-slate-500">m.{selectedNote.measureNumber}</span>
                 {selectionCount > 1 && (
-                  <span className="ml-auto rounded bg-nex-surface px-1.5 py-0.5 text-[9px] font-semibold text-slate-600">
+                  <span className="ml-auto rounded bg-nex-surface px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
                     {selectionCount}
                   </span>
                 )}
@@ -424,7 +424,7 @@ export default function EditPalette({
           </svg>
         </button>
         <div className="w-6 h-px bg-nex-border my-1" />
-        <span className="text-[9px] text-slate-400 rotate-180 mt-1" style={{ writingMode: 'vertical-rl' }}>
+        <span className="text-[11px] text-slate-500 rotate-180 mt-1" style={{ writingMode: 'vertical-rl' }}>
           {t('palette.title')}
         </span>
       </div>
@@ -439,7 +439,7 @@ export default function EditPalette({
         <button
           onClick={() => setCollapsed(true)}
           title={t('palette.collapse')}
-          className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-nex-ink hover:bg-nex-surface transition-colors"
+          className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-nex-ink hover:bg-nex-surface transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -448,17 +448,17 @@ export default function EditPalette({
       </div>
 
       {!selectedNote && (
-        <div className="px-3 py-2 text-[10px] text-slate-400 border-b border-nex-border">
+        <div className="px-3 py-2 text-[11px] text-slate-500 border-b border-nex-border">
           {t('palette.clickNote')}
         </div>
       )}
       {selectedNote && (
-        <div className="px-3 py-1.5 text-[10px] border-b border-nex-border bg-nex-accent-muted text-nex-accent flex items-center gap-1.5 font-medium">
+        <div className="px-3 py-1.5 text-[11px] border-b border-nex-border bg-nex-accent-muted text-nex-accent flex items-center gap-1.5 font-medium">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-nex-accent" />
           {isRest ? 'Rest' : `${selectedNote.step}${selectedNote.alter === 1 ? '♯' : selectedNote.alter === -1 ? '♭' : ''}${selectedNote.octave}`}
           <span className="text-nex-accent/60">· m.{selectedNote.measureNumber}</span>
           {selectionCount > 1 && (
-            <span className="ml-auto rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-nex-accent">
+            <span className="ml-auto rounded-full bg-white/70 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-nex-accent">
                     {selectionCount} {t('palette.selected')}
             </span>
           )}
@@ -479,11 +479,11 @@ export default function EditPalette({
             title={disabled ? `${withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)} - ${noteRequiredReason}` : withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)}
             aria-label={disabled ? `${withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)} - ${noteRequiredReason}` : withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)}
             onClick={onClearSelection}
-            className="mt-1 w-full text-[10px] text-slate-400 hover:text-nex-ink disabled:text-slate-200 transition-colors text-left px-1"
+            className="mt-1 w-full text-[11px] text-slate-500 hover:text-nex-ink disabled:text-slate-200 transition-colors text-left px-1"
           >
             {t('palette.clearSelection')}
           </button>
-          <p className="mt-1 px-1 text-[10px] text-slate-400">{t('palette.clipboard')}: {clipboardCount}</p>
+          <p className="mt-1 px-1 text-[11px] text-slate-500">{t('palette.clipboard')}: {clipboardCount}</p>
         </PaletteSection>
 
         <PaletteSection id="transpose" title={t('palette.transpose')} open={openSections.transpose} onToggle={toggleSection}>
@@ -521,7 +521,7 @@ export default function EditPalette({
             title={disabled ? `${t('palette.clearArticulations')} - ${noteRequiredReason}` : t('palette.clearArticulations')}
             aria-label={disabled ? `${t('palette.clearArticulations')} - ${noteRequiredReason}` : t('palette.clearArticulations')}
             onClick={onClearArticulations}
-            className="mt-1 w-full text-[10px] text-slate-400 hover:text-rose-500 disabled:text-slate-200 transition-colors text-left px-1"
+            className="mt-1 w-full text-[11px] text-slate-500 hover:text-rose-500 disabled:text-slate-200 transition-colors text-left px-1"
           >
             {t('palette.clearArticulations')}
           </button>
@@ -546,7 +546,7 @@ export default function EditPalette({
               <span className="tracking-tight">︵ {t('palette.slur')}</span>
             </PaletteButton>
           </div>
-          <p className="mt-1 text-[10px] text-slate-400 leading-snug">
+          <p className="mt-1 text-[11px] text-slate-500 leading-snug">
             {t('palette.tieHelp')}
           </p>
         </PaletteSection>
@@ -559,7 +559,7 @@ export default function EditPalette({
               </PaletteButton>
             ))}
           </div>
-          <p className="mt-1 text-[10px] text-slate-400 leading-snug">{t('palette.barlinesHelp')}</p>
+          <p className="mt-1 text-[11px] text-slate-500 leading-snug">{t('palette.barlinesHelp')}</p>
         </PaletteSection>
       </div>
     </div>
@@ -632,7 +632,7 @@ function PanelSectionContent({
   if (section === 'selection') {
     return (
       <div>
-        {!disabled ? null : <p className="text-[10px] text-slate-400 mb-2">{t('palette.clickNote')}</p>}
+        {!disabled ? null : <p className="text-[11px] text-slate-500 mb-2">{t('palette.clickNote')}</p>}
         <div className="grid grid-cols-2 gap-1">
           <PaletteButton title={withShortcut(t('command.copy.title'), PALETTE_SHORTCUTS.copy)} disabled={disabled} disabledReason={disabled ? noteRequiredReason : undefined} onClick={onCopySelection}>{t('palette.copy')}</PaletteButton>
           <PaletteButton title={withShortcut(t('command.cut.title'), PALETTE_SHORTCUTS.cut)} disabled={disabled} disabledReason={disabled ? noteRequiredReason : undefined} onClick={onCutSelection}>{t('palette.cut')}</PaletteButton>
@@ -645,11 +645,11 @@ function PanelSectionContent({
           title={disabled ? `${withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)} - ${noteRequiredReason}` : withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)}
           aria-label={disabled ? `${withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)} - ${noteRequiredReason}` : withShortcut(t('palette.clearSelection'), PALETTE_SHORTCUTS.clearSelection)}
           onClick={onClearSelection}
-          className="mt-2 w-full text-[10px] text-slate-400 hover:text-slate-700 disabled:text-slate-200 transition-colors text-left px-1"
+          className="mt-2 w-full text-[11px] text-slate-500 hover:text-slate-700 disabled:text-slate-200 transition-colors text-left px-1"
         >
           {t('palette.clearSelection')}
         </button>
-        <p className="mt-1 px-1 text-[10px] text-slate-400">{t('palette.clipboard')}: {clipboardCount}</p>
+        <p className="mt-1 px-1 text-[11px] text-slate-500">{t('palette.clipboard')}: {clipboardCount}</p>
       </div>
     );
   }
@@ -697,7 +697,7 @@ function PanelSectionContent({
           title={disabled ? `${t('palette.clearArticulations')} - ${noteRequiredReason}` : t('palette.clearArticulations')}
           aria-label={disabled ? `${t('palette.clearArticulations')} - ${noteRequiredReason}` : t('palette.clearArticulations')}
           onClick={onClearArticulations}
-          className="mt-2 w-full text-[10px] text-slate-400 hover:text-red-500 disabled:text-slate-200 transition-colors text-left px-1"
+          className="mt-2 w-full text-[11px] text-slate-500 hover:text-red-500 disabled:text-slate-200 transition-colors text-left px-1"
         >
           {t('palette.clearArticulations')}
         </button>
@@ -728,7 +728,7 @@ function PanelSectionContent({
             <span className="tracking-tight">︵ {t('palette.slur')}</span>
           </PaletteButton>
         </div>
-        <p className="mt-2 text-[10px] text-slate-400 leading-snug">
+        <p className="mt-2 text-[11px] text-slate-500 leading-snug">
           {t('palette.tieHelp')}
         </p>
       </div>
@@ -745,7 +745,7 @@ function PanelSectionContent({
             </PaletteButton>
           ))}
         </div>
-        <p className="mt-2 text-[10px] text-slate-400 leading-snug">{t('palette.barlinesHelp')}</p>
+        <p className="mt-2 text-[11px] text-slate-500 leading-snug">{t('palette.barlinesHelp')}</p>
       </div>
     );
   }
@@ -816,7 +816,7 @@ function PaletteSection({
       <button
         onClick={() => onToggle(id)}
         aria-expanded={open}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 hover:text-nex-ink hover:bg-white transition-colors"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-nex-ink hover:bg-white transition-colors"
       >
         <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

@@ -333,16 +333,20 @@ function round(value: number | null, digits = 1) {
   return Math.round(value * factor) / factor;
 }
 
-export function summarizeOffsets(samples: Array<{ at: number; offset: number }>): OffsetStats {
+export function summarizeOffsets(samples: Array<{ at: number; offset: number; start?: boolean }>): OffsetStats {
   const offsets = samples.map((sample) => sample.offset);
   const abs = offsets.map((value) => Math.abs(value));
   let drift: number | null = null;
-  if (samples.length >= 3) {
-    const meanT = samples.reduce((sum, sample) => sum + sample.at, 0) / samples.length;
-    const meanO = offsets.reduce((sum, value) => sum + value, 0) / offsets.length;
+  // The first onset of a run is on screen from the moment Play is pressed, before its sound
+  // (that is measured by `start`); it says nothing about the clocks drifting apart over time,
+  // but as a lone point at t = 0 it would tilt the regression line.
+  const driftSamples = samples.filter((sample) => !sample.start);
+  if (driftSamples.length >= 3) {
+    const meanT = driftSamples.reduce((sum, sample) => sum + sample.at, 0) / driftSamples.length;
+    const meanO = driftSamples.reduce((sum, sample) => sum + sample.offset, 0) / driftSamples.length;
     let numerator = 0;
     let denominator = 0;
-    for (const sample of samples) {
+    for (const sample of driftSamples) {
       numerator += (sample.at - meanT) * (sample.offset - meanO);
       denominator += (sample.at - meanT) ** 2;
     }
@@ -464,9 +468,16 @@ function playheadReachedAt(
     const previous = frames[index - 1];
     const previousPlayhead = previous?.playhead;
     const presentedNow = frame.t + frameInterval;
-    if (previous && previousPlayhead
-      && previousPlayhead.measureNumber === measureNumber
-      && previousPlayhead.x < x - 0.5
+    // At a barline on the same system the line glides from the end of the previous measure into
+    // this measure's first note, so that crossing is continuous too (a frame still in the
+    // previous measure has not reached the note). Repeat and volta jumps (not into the adjacent
+    // measure) and system breaks (y changes) are not interpolated.
+    const previousNotReached = previousPlayhead != null && (
+      previousPlayhead.measureNumber === measureNumber
+        ? previousPlayhead.x < x - 0.5
+        : previousPlayhead.measureNumber === measureNumber - 1 && previousPlayhead.x < x
+    );
+    if (previous && previousPlayhead && previousNotReached
       && Math.abs(previousPlayhead.y - playhead.y) < 1
       && playhead.x > previousPlayhead.x) {
       // Between two frames the line moved continuously; credit the crossing proportionally.
@@ -513,8 +524,8 @@ export function analyzePlaybackSync(
     matchedGroups.push(match);
   }
 
-  const highlightSamples: Array<{ at: number; offset: number }> = [];
-  const playheadSamples: Array<{ at: number; offset: number }> = [];
+  const highlightSamples: Array<{ at: number; offset: number; start: boolean }> = [];
+  const playheadSamples: Array<{ at: number; offset: number; start: boolean }> = [];
   const perOnset: PlaybackSyncReport['perOnset'] = [];
   let highlightMissing = 0;
   let playheadMissing = 0;
@@ -559,10 +570,11 @@ export function analyzePlaybackSync(
         }
       }
     }
+    const start = group != null && group === firstAudible;
     if (highlightOffset == null) highlightMissing += expected ? 1 : 0;
-    else highlightSamples.push({ at: (audibleAt ?? 0) - timeOrigin, offset: highlightOffset });
+    else highlightSamples.push({ at: (audibleAt ?? 0) - timeOrigin, offset: highlightOffset, start });
     if (playheadOffset == null) playheadMissing += expected ? 1 : 0;
-    else playheadSamples.push({ at: (audibleAt ?? 0) - timeOrigin, offset: playheadOffset });
+    else playheadSamples.push({ at: (audibleAt ?? 0) - timeOrigin, offset: playheadOffset, start });
     perOnset.push({
       index,
       measureNumber: onset.measureNumber,

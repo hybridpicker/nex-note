@@ -31,6 +31,74 @@ export function describeDuration(durationDivisions: number, divisions: number): 
     ?? { value: 1, type: '64th', dotted: false };
 }
 
+export interface NotatableDuration extends DurationCandidate {
+  /** Number of augmentation dots (0, 1 or 2). `dotted` is true for one or more dots. */
+  dotCount: number;
+  /** Divisions of the undotted head value inside the tuplet context (e.g. an eighth for a dotted eighth). */
+  baseValue: number;
+}
+
+export interface NotatableDurationOptions {
+  /** Highest number of augmentation dots that counts as a single value. Defaults to 1. */
+  maxDots?: 0 | 1 | 2;
+  /** Tuplet ratio: `actualNotes` values in the time of `normalNotes`. */
+  tuplet?: { actualNotes: number; normalNotes: number };
+}
+
+const NOTATABLE_HEAD_VALUES: Array<{ type: string; quarters: number }> = [
+  { type: 'whole', quarters: 4 },
+  { type: 'half', quarters: 2 },
+  { type: 'quarter', quarters: 1 },
+  { type: 'eighth', quarters: 1 / 2 },
+  { type: '16th', quarters: 1 / 4 },
+  { type: '32nd', quarters: 1 / 8 },
+  { type: '64th', quarters: 1 / 16 },
+];
+
+/**
+ * Every single notatable value (head value plus at most `maxDots` dots, scaled
+ * by an optional tuplet ratio) whose length is an exact whole number of
+ * divisions, largest first. Unlike `buildDurationCandidates`, nothing is
+ * rounded, so a value the grid cannot express is simply absent.
+ */
+export function buildNotatableDurations(divisions: number, options: NotatableDurationOptions = {}): NotatableDuration[] {
+  const quarter = Math.max(divisions, 1);
+  const maxDots = options.maxDots ?? 1;
+  const actual = options.tuplet && options.tuplet.actualNotes > 0 ? options.tuplet.actualNotes : 1;
+  const normal = options.tuplet && options.tuplet.normalNotes > 0 ? options.tuplet.normalNotes : 1;
+  const ratio = normal / actual;
+  const result: NotatableDuration[] = [];
+  for (const head of NOTATABLE_HEAD_VALUES) {
+    const base = quarter * head.quarters * ratio;
+    for (let dots = 0; dots <= maxDots; dots += 1) {
+      const value = base * (2 - 1 / 2 ** dots);
+      if (value < 1 || Math.abs(value - Math.round(value)) > 1e-9) continue;
+      result.push({
+        value: Math.round(value),
+        type: head.type,
+        dotted: dots > 0,
+        dotCount: dots,
+        baseValue: base,
+      });
+    }
+  }
+  return result.sort((left, right) => right.value - left.value || left.dotCount - right.dotCount);
+}
+
+/**
+ * Strict counterpart of `describeDuration`: returns the single notatable value
+ * for an exact duration, or `null` when the duration needs tied values. It
+ * never falls back to the smallest value.
+ */
+export function describeDurationStrict(
+  durationDivisions: number,
+  divisions: number,
+  options: NotatableDurationOptions = {},
+): NotatableDuration | null {
+  if (!Number.isInteger(durationDivisions) || durationDivisions <= 0) return null;
+  return buildNotatableDurations(divisions, options).find((candidate) => candidate.value === durationDivisions) ?? null;
+}
+
 export function isRepresentableDuration(durationDivisions: number, divisions: number): boolean {
   return buildDurationCandidates(divisions).some((candidate) => candidate.value === durationDivisions);
 }

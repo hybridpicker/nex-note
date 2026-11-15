@@ -212,7 +212,22 @@ async function bootWithScore(page: Page, xml = buildNotationToolsFixtureXml(), o
   await expect(page.locator('[data-testid="score-canvas"] .vf-notehead').first()).toBeVisible({ timeout: 15_000 });
   // Tools now start closed; this suite explicitly opens the controls it tests.
   await openNotationTools(page);
+  await waitForSettledScore(page);
   await page.getByTestId('score-viewport').focus();
+}
+
+// Opening the notation tools narrows the score over the sidebar's width transition, and the score
+// is drawn again for each width it passes through (the bars move by the width of the sidebar). A
+// bar measured during that transition is somewhere else when it is clicked: wait until the sidebar
+// stands still and the canvas shows the drawing of the final width and of the newest document.
+async function waitForSettledScore(page: Page) {
+  await page.getByTestId('left-notation-sidebar').evaluate((element) => Promise.all(
+    element.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+  ));
+  await expect.poll(() => page.getByTestId('score-canvas').evaluate((element) => (
+    element.getAttribute('aria-busy') !== 'true'
+    && (element as HTMLElement).dataset.documentRevision === (element as HTMLElement).dataset.renderedRevision
+  )), { message: 'the score is drawn for the final layout' }).toBe(true);
 }
 
 async function clickRenderedNotehead(page: Page, index: number) {
@@ -1990,11 +2005,16 @@ test('closing the score cancels an audition waiting for MIDI', async ({ page }) 
   await bootWithScore(page);
   await clickRenderedNotehead(page, 0);
   await expect.poll(() => Boolean(held)).toBe(true);
+  // The click auditions the note at once, without waiting for the MIDI export
+  // (docs/playback-sync.md, "Audition"); only the seek to the note still waits for it.
+  await expect.poll(async () => (await playbackStarts(page)).map((start) => start.note)).toEqual([60]);
   await page.keyboard.press('Control+w');
   await expect.poll(async () => (await readE2EState(page))?.xml).toBe('');
   await held!.fulfill({ status: 200, contentType: 'audio/midi', body: buildMidiBody() });
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
-  expect(await playbackStarts(page)).toHaveLength(0);
+  // Once the score is closed, the late MIDI must not seek, play or audition again.
+  expect((await playbackStarts(page)).map((start) => start.note)).toEqual([60]);
+  expect((await readE2EState(page))?.playbackState ?? 'stopped').toBe('stopped');
 });
 
 test('eight-bar keyboard replacement preserves correction and MusicXML reopen', async ({ page }, testInfo) => {

@@ -147,7 +147,7 @@ The Electron app also runs as a native Linux app, tuned for tiling Wayland deskt
 nex-note score.mxl              # open a file in the running instance
 ```
 
-- **Window:** native Wayland (`--ozone-platform-hint=auto`), frameless and tiled; Wayland `app_id`/window class is `nex-note` for Hyprland rules (`hyprctl clients`). Set `NEX_NOTE_LINUX_FRAME=1` for a window frame. The minimum window size is 640x480 so tiles fit; the header wraps in narrow windows.
+- **Window:** native Wayland (`--ozone-platform-hint=auto`), frameless and tiled; Wayland `app_id`/window class is `nex-note` for Hyprland rules (`hyprctl clients`). Set `NEX_NOTE_LINUX_FRAME=1` for a window frame. The minimum window size is 640x480 so tiles fit; in narrow windows the header stays on one line and moves provider, language and keyboard-preset controls into an overflow menu.
 - **Menus and shortcuts:** the native menu bar is hidden, so the in-app File/Edit/View menus stay visible and the main process handles the file, zoom, find and command-center shortcuts itself (editing keys stay with the page). Shortcut labels show Ctrl/Alt.
 - **Files:** the installer registers MIME types for `.nxn`, `.mscz`, `.mxl` and Guitar Pro; files opened from the file manager or the command line are delivered once the renderer is ready.
 - **Playback samples:** `npm run soundfonts:fetch` (run by the installer) downloads the FluidR3_GM instruments (MIT, about 53 MB) into `public/soundfonts`; playback uses them first, then the remote host, then oscillator tones.

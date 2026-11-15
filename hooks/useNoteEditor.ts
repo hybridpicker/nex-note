@@ -281,6 +281,34 @@ function toSelectedNote(
   };
 }
 
+type KeyTargetLike = {
+  tagName?: string;
+  isContentEditable?: boolean;
+  getAttribute?: (name: string) => string | null;
+  closest?: (selector: string) => unknown;
+} | null | undefined;
+
+/** A field the user types text into: an input, a textarea or editable content. */
+export function isTypingTarget(target: EventTarget | null | undefined) {
+  const element = target as KeyTargetLike;
+  const tag = element?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || Boolean(element?.isContentEditable);
+}
+
+/**
+ * A control that owns the keys typed into it: a typing field, or a `<select>`, listbox or combobox,
+ * which pick options with the arrows, letters and Space. Such keys must not reach the score.
+ */
+export function isTextEntryTarget(target: EventTarget | null | undefined) {
+  if (isTypingTarget(target)) return true;
+  const element = target as KeyTargetLike;
+  if (!element) return false;
+  if (element.tagName === 'SELECT') return true;
+  const role = typeof element.getAttribute === 'function' ? element.getAttribute('role') : null;
+  if (role === 'listbox' || role === 'combobox') return true;
+  return typeof element.closest === 'function' && Boolean(element.closest('[role="listbox"], [role="combobox"]'));
+}
+
 function announceSemanticSelectionNavigation() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('nex-note:semantic-selection-navigation'));
@@ -886,6 +914,107 @@ function selectionRange(targets: SelectedNote[]) {
       timestampDen: last.timestampDen,
     },
   };
+}
+
+function sameSelectionOnset(a: SelectedNote, b: SelectedNote) {
+  return a.measureNumber === b.measureNumber
+    && timestampsEqual(a.timestampNum, a.timestampDen, b.timestampNum, b.timestampDen);
+}
+
+/**
+ * How a selection can be addressed by range commands. A range command (`deleteRange`,
+ * `transposeRangeChromatic`, ...) covers EVERY event of ONE lane (part, staff, voice) between its
+ * start and end, so it is right only for selected events that are neighbours in that lane. This
+ * splits the selection into such runs: a Cmd-click selection with gaps, a selection over two staves
+ * or two voices, or a part of a chord falls apart into several runs. A run of one event is meant for
+ * the per-event command (addressed by its `coreEntityId`).
+ *
+ * - `events`: the lane's events in order (rests included).
+ * - `pitched`: rests are left out of the lane, so a run may step over a rest (transposition).
+ * - `onsets`: the lane's onsets, for ripple delete, which removes everything at an onset.
+ *
+ * A run that starts or ends inside a chord whose other notes are not selected is given back as
+ * single events, because a range would take the unselected chord notes along.
+ */
+function splitSelectionIntoLaneRuns(
+  document: ScoreDocumentModel | null | undefined,
+  targets: SelectedNote[],
+  mode: 'events' | 'pitched' | 'onsets',
+): SelectedNote[][] {
+  const lanes: SelectedNote[][] = [];
+  for (const target of targets) {
+    const lane = lanes.find((entry) => matchesSelectionLane(target, entry[0]!));
+    if (lane) lane.push(target);
+    else lanes.push([target]);
+  }
+  const semanticOrder = getSemanticNoteOrder(document);
+  const runs: SelectedNote[][] = [];
+  for (const laneTargets of lanes) {
+    const reference = laneTargets[0]!;
+    let ordered = semanticOrder.filter((entry) => (
+      matchesSelectionLane(entry, reference) && (mode !== 'pitched' || !entry.isRest)
+    ));
+    if (mode === 'onsets') {
+      ordered = ordered.filter((entry, index) => index === 0 || !sameSelectionOnset(entry, ordered[index - 1]!));
+    }
+    const indices = new Set<number>();
+    for (const target of laneTargets) {
+      const index = mode === 'onsets'
+        ? ordered.findIndex((entry) => sameSelectionOnset(entry, target))
+        : findSelectionIndex(ordered, target);
+      if (index >= 0) indices.add(index);
+      else runs.push([target]);
+    }
+    const sorted = [...indices].sort((a, b) => a - b);
+    const pushRun = (from: number, to: number) => {
+      const run = ordered.slice(from, to + 1);
+      const partialStart = mode !== 'onsets' && from > 0 && sameSelectionOnset(ordered[from - 1]!, ordered[from]!);
+      const partialEnd = mode !== 'onsets' && to < ordered.length - 1 && sameSelectionOnset(ordered[to + 1]!, ordered[to]!);
+      if (run.length > 1 && (partialStart || partialEnd)) run.forEach((entry) => runs.push([entry]));
+      else runs.push(run);
+    };
+    let runStart = -1;
+    let previous = -1;
+    for (const index of sorted) {
+      if (runStart < 0) {
+        runStart = index;
+      } else if (index !== previous + 1) {
+        pushRun(runStart, previous);
+        runStart = index;
+      }
+      previous = index;
+    }
+    if (runStart >= 0) pushRun(runStart, previous);
+  }
+  return runs;
+}
+
+/** Chromatic transposition of the selected notes only: a range per run, the single note elsewhere. */
+function transposeCommandsForSelection(
+  document: ScoreDocumentModel | null | undefined,
+  targets: SelectedNote[],
+  semitones: number,
+): ScoreCommand[] {
+  return splitSelectionIntoLaneRuns(document, targets, 'pitched').flatMap((run): ScoreCommand[] => {
+    const range = selectionRange(run);
+    if (range) return [{ type: 'transposeRangeChromatic', semitones, range }];
+    return run.map((loc) => ({
+      type: 'transposeChromatic' as const,
+      semitones,
+      coreEntityId: loc.coreEntityId ?? undefined,
+      coreMeasureId: loc.coreMeasureId ?? undefined,
+      corePartId: loc.corePartId ?? undefined,
+      step: loc.step,
+      octave: loc.octave,
+      alter: loc.alter,
+      isRest: loc.isRest,
+      measureNumber: loc.measureNumber,
+      staffIndex: loc.staffIndex,
+      voiceId: loc.voiceId,
+      timestampNum: loc.timestampNum,
+      timestampDen: loc.timestampDen,
+    }));
+  });
 }
 
 function toSelectionAnchor(selectedNote: SelectedNote | null, selectedNotes: SelectedNote[]): ScoreDocumentSelectionAnchor | null {
@@ -1667,10 +1796,11 @@ export function useNoteEditor(
       .filter((note): note is SelectedNote => Boolean(note));
     if (!targets.length) return;
     dbg.editor(`deleteSelection count=${targets.length}`);
-    const range = selectionRange(targets);
-    const commands = range
-      ? [{ type: 'deleteRange' as const, range }]
-      : targets.map((note) => ({
+    // One range per contiguous run in one lane, the per-note command elsewhere: a range over a
+    // Cmd-click selection cleared the unselected notes between (and only the first staff/voice).
+    const commands: ScoreCommand[] = splitSelectionIntoLaneRuns(coreDocument, targets, 'events').flatMap((run): ScoreCommand[] => {
+      const range = selectionRange(run);
+      return range ? [{ type: 'deleteRange' as const, range }] : run.map((note) => ({
         type: 'deleteNote' as const,
         coreEntityId: note.coreEntityId ?? undefined,
         step: note.isRest ? undefined : note.step,
@@ -1685,6 +1815,7 @@ export function useNoteEditor(
         timestampNum: note.timestampNum,
         timestampDen: note.timestampDen,
       }));
+    });
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('deleteSelection', commands[0]!);
@@ -1708,7 +1839,7 @@ export function useNoteEditor(
     setSelectedNoteLive(focus);
     setSelectedVisualLive({ visualOnly: false, text: null, measureNumber: focus.measureNumber, staffIndex: focus.staffIndex });
     lastSelectedRef.current = focus;
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, findSelectedVisualDeleteCommand, setSelectedNoteLive, setSelectedVisualLive, warnNoOpEdit, xml]);
+  }, [coreDocument, selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, findSelectedVisualDeleteCommand, setSelectedNoteLive, setSelectedVisualLive, warnNoOpEdit, xml]);
 
   const rippleDelete = useCallback(() => {
     const targetNote = noteInputModeRef.current
@@ -1719,19 +1850,24 @@ export function useNoteEditor(
     const targets = noteInputModeRef.current ? [targetNote] : selectedTargets(targetNote, selectedNotes);
     if (!targets.length) return;
 
-    const range = selectionRange(targets);
-    const commands: ScoreCommand[] = range
-      ? [{ type: 'rippleDeleteRange', range }]
-      : [{
-        type: 'rippleDelete',
-        coreMeasureId: targetNote.coreMeasureId ?? null,
-        corePartId: targetNote.corePartId ?? null,
-        measureNumber: targetNote.measureNumber,
-        staffIndex: targetNote.staffIndex,
-        voiceId: targetNote.voiceId,
-        timestampNum: targetNote.timestampNum,
-        timestampDen: targetNote.timestampDen,
-      }];
+    // One ripple per contiguous run of onsets in one lane. The later runs go first, so pulling the
+    // music left never moves an onset a following command still names.
+    const commands: ScoreCommand[] = splitSelectionIntoLaneRuns(coreDocument, targets, 'onsets').reverse().map((run) => {
+      const range = selectionRange(run);
+      const note = run[0]!;
+      return range
+        ? { type: 'rippleDeleteRange' as const, range }
+        : {
+          type: 'rippleDelete' as const,
+          coreMeasureId: note.coreMeasureId ?? null,
+          corePartId: note.corePartId ?? null,
+          measureNumber: note.measureNumber,
+          staffIndex: note.staffIndex,
+          voiceId: note.voiceId,
+          timestampNum: note.timestampNum,
+          timestampDen: note.timestampDen,
+        };
+    });
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('rippleDelete', commands[0]!);
@@ -1769,7 +1905,7 @@ export function useNoteEditor(
     }
 
     clearSelection();
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, resolveSelectionByEntityId, selectSingleNote, warnNoOpEdit, xml]);
+  }, [coreDocument, selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, resolveSelectionByEntityId, selectSingleNote, warnNoOpEdit, xml]);
 
   const duplicateSelection = useCallback(() => {
     const currentSelectedNote = selectedNoteRef.current ?? lastSelectedRef.current ?? selectedNote;
@@ -1796,11 +1932,12 @@ export function useNoteEditor(
     clearSelection();
   }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, clearSelection, warnNoOpEdit, xml]);
 
-  const copySelectedRange = useCallback(() => {
+  /** Copies the selection to the clipboard. False when nothing was copied (Cut must then not delete). */
+  const copySelectedRange = useCallback((): boolean => {
     const currentSelectedNote = selectedNoteRef.current ?? lastSelectedRef.current ?? selectedNote;
     const currentSelectedNotes = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
     const targets = selectedTargets(currentSelectedNote, currentSelectedNotes);
-    if (!targets.length) return;
+    if (!targets.length) return false;
     const payload = buildClipboardPayloadFromSelection(
       coreDocument,
       targets.map((note) => ({
@@ -1814,9 +1951,10 @@ export function useNoteEditor(
         timestampDen: note.timestampDen,
       })),
     );
-    if (!payload) { setClipboard(null); setEditorError('Copy requires complete tuplets in one part with a consistent division grid.'); return; }
+    if (!payload) { setClipboard(null); setEditorError('Copy requires complete tuplets in one part with a consistent division grid.'); return false; }
     setClipboard(payload);
     dbg.editor(`copySelectedRange count=${payload.timeline.length}`);
+    return true;
   }, [coreDocument, selectedNote, selectedNotes]);
 
   const cutSelection = useCallback(() => {
@@ -1824,7 +1962,8 @@ export function useNoteEditor(
     const currentSelectedNotes = selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes;
     const targets = selectedTargets(currentSelectedNote, currentSelectedNotes);
     if (!targets.length) return;
-    copySelectedRange();
+    // A cut whose copy failed keeps the music: deleting it would lose it with an empty clipboard.
+    if (!copySelectedRange()) return;
     deleteSelectedNote({ collapseToFirst: true });
   }, [copySelectedRange, deleteSelectedNote, selectedNote, selectedNotes]);
 
@@ -1946,7 +2085,8 @@ export function useNoteEditor(
     pastePayloadAt(payload, after, 'overwrite', 'repeatSelection');
   }, [coreDocument, pastePayloadAt, selectedNote, selectedNotes]);
 
-  const copySelection = copySelectedRange;
+  // The public Copy keeps its void signature (menus and toolbars call it as an action).
+  const copySelection = useCallback(() => { copySelectedRange(); }, [copySelectedRange]);
   const pasteClipboard = pasteContent;
 
   const changePitch = useCallback((step: string, accidental: AccidentalChoice) => {
@@ -4402,17 +4542,19 @@ export function useNoteEditor(
     const targets = selectedTargets(selectedNote, selectedNotes);
     if (!targets.length) return;
     dbg.editor(`clearArticulations count=${targets.length}`);
-    const range = selectionRange(targets);
-    const commands = range
-      ? [{ type: 'clearRangeArticulations' as const, range }]
-      : targets.map((loc) => ({ type: 'clearArticulations' as const, coreMeasureId: loc.coreMeasureId ?? null, corePartId: loc.corePartId ?? null, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
+    const commands: ScoreCommand[] = splitSelectionIntoLaneRuns(coreDocument, targets, 'events').flatMap((run): ScoreCommand[] => {
+      const range = selectionRange(run);
+      return range
+        ? [{ type: 'clearRangeArticulations' as const, range }]
+        : run.map((loc) => ({ type: 'clearArticulations' as const, coreEntityId: loc.coreEntityId ?? undefined, coreMeasureId: loc.coreMeasureId ?? null, corePartId: loc.corePartId ?? null, measureNumber: loc.measureNumber, staffIndex: loc.staffIndex, voiceId: loc.voiceId, timestampNum: loc.timestampNum, timestampDen: loc.timestampDen }));
+    });
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('clearArticulations', commands[0]!);
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+  }, [coreDocument, selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
   /**
    * Alt/Option+. and Alt/Option+, (MuseScore increase-dynamic / decrease-dynamic): move the dynamic of
@@ -4541,32 +4683,14 @@ export function useNoteEditor(
     const targets = selectedTargets(selectedNote, selectedNotes).filter((entry) => !entry.isRest);
     if (!targets.length) return;
     dbg.editor(`transposeChromatic ${semitones} count=${targets.length}`);
-    const range = selectionRange(targets);
-    const commands = range
-      ? [{ type: 'transposeRangeChromatic' as const, semitones, range }]
-      : targets.map((loc) => ({
-        type: 'transposeChromatic' as const,
-        semitones,
-        coreEntityId: loc.coreEntityId ?? undefined,
-        coreMeasureId: loc.coreMeasureId ?? undefined,
-        corePartId: loc.corePartId ?? undefined,
-        step: loc.step,
-        octave: loc.octave,
-        alter: loc.alter,
-        isRest: loc.isRest,
-        measureNumber: loc.measureNumber,
-        staffIndex: loc.staffIndex,
-        voiceId: loc.voiceId,
-        timestampNum: loc.timestampNum,
-        timestampDen: loc.timestampDen,
-      }));
+    const commands: ScoreCommand[] = transposeCommandsForSelection(coreDocument, targets, semitones);
     const next = applyEditorCommands(commands);
     if (next.xml === xml) {
       warnNoOpEdit('transposeSemitones', commands[0]!);
       return;
     }
     onApplyCommands(commands, { selectionAnchor: toSelectionAnchor(selectedNote, selectedNotes) });
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
+  }, [coreDocument, selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, warnNoOpEdit, xml]);
 
   const respellEnharmonically = useCallback(() => {
     const editTargets = resolveEditTargets();
@@ -4887,25 +5011,7 @@ export function useNoteEditor(
       : (selectedNotesRef.current.length > 0 ? selectedNotesRef.current : selectedNotes);
     const targets = selectedTargets(targetNote, selectionTargets).filter((entry) => !entry.isRest);
     if (targets.length > 1) {
-      const range = selectionRange(targets);
-      const commands: ScoreCommand[] = range
-        ? [{ type: 'transposeRangeChromatic', semitones, range }]
-        : targets.map((loc) => ({
-          type: 'transposeChromatic',
-          semitones,
-          coreEntityId: loc.coreEntityId ?? undefined,
-          coreMeasureId: loc.coreMeasureId ?? undefined,
-          corePartId: loc.corePartId ?? undefined,
-          step: loc.step,
-          octave: loc.octave,
-          alter: loc.alter,
-          isRest: loc.isRest,
-          measureNumber: loc.measureNumber,
-          staffIndex: loc.staffIndex,
-          voiceId: loc.voiceId,
-          timestampNum: loc.timestampNum,
-          timestampDen: loc.timestampDen,
-        }));
+      const commands = transposeCommandsForSelection(coreDocument, targets, semitones);
       const next = applyEditorCommands(commands);
       if (next.xml === xml) {
         warnNoOpEdit('transposeSelectedRangeBySemitone', commands[0]!);
@@ -4968,7 +5074,7 @@ export function useNoteEditor(
     setSelectedNotes([updated]);
     lastSelectedRef.current = updated;
     options?.onActiveNotePreview?.(updated);
-  }, [selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, options, resolveRecentInputFromDocument, setSelectedNoteLive, warnNoOpEdit, xml]);
+  }, [coreDocument, selectedNote, selectedNotes, applyEditorCommands, onApplyCommands, options, resolveRecentInputFromDocument, setSelectedNoteLive, warnNoOpEdit, xml]);
 
   const moveSelectedNoteToAdjacentStaff = useCallback((direction: 'up' | 'down') => {
     const current = selectedNoteRef.current ?? selectedNote;
@@ -5309,9 +5415,10 @@ export function useNoteEditor(
   }, [applyEditorCommands, coreDocument, onApplyCommands, selectSingleNote, selectedNote, xml]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Don't intercept when user is typing in an input/textarea
+    // Don't intercept when the user types in a field or picks in a select/listbox. Cmd/Ctrl
+    // shortcuts (Copy, Paste, ...) still reach the score from a select, which has no use for them.
     const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+    if (isTypingTarget(target) || (isTextEntryTarget(target) && !(e.metaKey || e.ctrlKey))) return;
 
     // A held key repeats navigation only. Entry, edit and mode keys act once per physical press,
     // so a held note name, rest, Delete or N never commits or toggles again.
@@ -5361,8 +5468,8 @@ export function useNoteEditor(
       if (shouldUseNativeClipboardShortcut(target)) return;
       if (selectedNote || selectedNotes.length > 0) {
         e.preventDefault();
-        copySelectedRange();
-        deleteSelectedNote({ collapseToFirst: true });
+        // Only a successful copy may delete: a failed copy keeps the music and shows its error.
+        if (copySelectedRange()) deleteSelectedNote({ collapseToFirst: true });
       }
       return;
     }

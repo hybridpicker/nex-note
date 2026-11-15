@@ -12,10 +12,17 @@ export function projectOsmdLayoutXml(xml: string, document: ScoreDocumentModel, 
     const xmlPart = xmlParts.find(candidate => candidate.getAttribute('id') === part.sourcePartId);
     if (!xmlPart) continue;
     const canonical = part.staves.find(staff => staff.measures.length)?.measures ?? [];
+    // First <measure> per numeric `number` attribute (was a linear find per core measure). NaN keys
+    // are skipped because `NaN === x` never matched in the linear search either.
     const sourceMeasures = Array.from(xmlPart.getElementsByTagName('measure'));
+    const sourceMeasureByNumber = new Map<number, (typeof sourceMeasures)[number]>();
+    for (const candidate of sourceMeasures) {
+      const number = Number(candidate.getAttribute('number'));
+      if (!Number.isNaN(number) && !sourceMeasureByNumber.has(number)) sourceMeasureByNumber.set(number, candidate);
+    }
     for (const measure of canonical) {
       const plan = plans.get(measure.id);
-      const element = sourceMeasures.find(candidate => Number(candidate.getAttribute('number')) === (measure.sourceMeasureNumber ?? measure.measureNumber));
+      const element = sourceMeasureByNumber.get(measure.sourceMeasureNumber ?? measure.measureNumber);
       if (!plan || !element) continue;
       const prints = Array.from(element.childNodes).filter(node => node.nodeType === 1 && node.nodeName === 'print') as typeof element[];
       // Keep imported page/system margins and staff-layout fields. Only the

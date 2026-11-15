@@ -11,7 +11,11 @@ import type {
   TimedEvent,
   TupletSpan,
 } from '@/src/score-core/model/types';
-import { getEffectiveMeasureTiming } from '@/src/score-core/measure-timing';
+import {
+  findMeasureLocationById,
+  findStaffMeasureByNumber,
+  getIndexedEffectiveMeasureTiming,
+} from '@/src/score-core/document-index';
 
 export interface PointLike {
   x: number;
@@ -80,6 +84,11 @@ export interface GeometryProxyUpdateInput {
   coreDocument: ScoreDocumentModel | null | undefined;
   measureOverlays: RenderedMeasureLayoutOverlay[];
   renderedGhostGrid?: RenderedGhostGrid | null | undefined;
+  /**
+   * The staff geometry of this same drawing when the caller has already built it
+   * (`buildStaffDetailsByMeasure(osmd, container)`); built here otherwise.
+   */
+  staffDetailsByMeasure?: Map<number, StaffDetail[]> | null | undefined;
 }
 
 function readAbsolute(shape: any): PointLike | null {
@@ -406,14 +415,14 @@ function measureIdentityFor(
     for (const part of parts) {
       for (const staff of part.staves) {
         if (staff.staffIndex !== staffIndex) continue;
-        const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+        const measure = findStaffMeasureByNumber(coreDocument, staff, measureNumber);
         if (measure) return { measureId: measure.id };
       }
     }
   }
   for (const part of parts) {
     for (const staff of part.staves) {
-      const measure = staff.measures.find((entry) => entry.measureNumber === measureNumber);
+      const measure = findStaffMeasureByNumber(coreDocument, staff, measureNumber);
       if (measure) return { measureId: measure.id };
     }
   }
@@ -508,28 +517,17 @@ export function staffIndexForMeasureId(
   coreDocument: ScoreDocumentModel | null | undefined,
   measureId: string,
 ): number | null {
-  if (!coreDocument) return null;
-  for (const part of coreDocument.score.parts) {
-    for (const staff of part.staves) {
-      if (staff.measures.some((measure) => measure.id === measureId)) return staff.staffIndex;
-    }
-  }
-  return null;
+  // Indexed: the first staff in part/staff order that holds the measure id (was a linear scan).
+  return findMeasureLocationById(coreDocument, measureId)?.staff.staffIndex ?? null;
 }
 
 function staffIdentityForMeasureId(
   coreDocument: ScoreDocumentModel | null | undefined,
   measureId: string,
 ): { staffIndex: number; partId: string; sourcePartId: string } | null {
-  if (!coreDocument) return null;
-  for (const part of coreDocument.score.parts) {
-    for (const staff of part.staves) {
-      if (staff.measures.some((measure) => measure.id === measureId)) {
-        return { staffIndex: staff.staffIndex, partId: part.id, sourcePartId: part.sourcePartId };
-      }
-    }
-  }
-  return null;
+  const location = findMeasureLocationById(coreDocument, measureId);
+  if (!location) return null;
+  return { staffIndex: location.staff.staffIndex, partId: location.part.id, sourcePartId: location.part.sourcePartId };
 }
 
 function staffDetailMatchesPart(
@@ -786,7 +784,7 @@ function measureTimingForOverlay(
   coreDocument: ScoreDocumentModel | null | undefined,
   overlay: Pick<RenderedMeasureLayoutOverlay, 'measureId' | 'measureNumber'>,
 ) {
-  return getEffectiveMeasureTiming(coreDocument, {
+  return getIndexedEffectiveMeasureTiming(coreDocument, {
     measureId: overlay.measureId,
     measureNumber: overlay.measureNumber,
   });
@@ -818,7 +816,7 @@ export class GeometryProxy {
       return;
     }
 
-    const staffDetailsByMeasure = buildStaffDetailsByMeasure(osmd, container);
+    const staffDetailsByMeasure = input.staffDetailsByMeasure ?? buildStaffDetailsByMeasure(osmd, container);
     const tupletsByMeasureId = buildActiveTupletsByMeasureId(coreDocument);
     const graphicalMeasureRectsById = buildGraphicalMeasureRectsById(osmd, container, coreDocument);
     const virtualOverlays = buildVirtualOverlaysForEmptyBars(

@@ -8,15 +8,15 @@ Stand: 2026-11-11. Diese Liste dokumentiert die im Code tatsächlich verdrahtete
 | --- | --- | --- |
 | `Cmd/Ctrl+K` | Command Center öffnen | global |
 | `Cmd+Q` (macOS) / `Ctrl+Q` (Windows/Linux) | Nex Note beenden | Desktop-App, global |
-| `Cmd/Ctrl+N` | New-Score-Dialog öffnen | global |
+| `Cmd/Ctrl+N` | New-Score-Dialog öffnen | global, außer in Texteingabefeldern (Chat, Inspector) |
 | `Cmd/Ctrl+O` | Datei öffnen | global |
 | `Cmd/Ctrl+S` | aktuelle Partitur in der lokalen Library speichern | globale Partituransicht |
 | `Cmd/Ctrl+Shift+S` | Save As in der lokalen Library | globale Partituransicht |
-| `Cmd/Ctrl+W` | aktuelle Partitur schließen | globale Partituransicht |
+| `Cmd/Ctrl+W` | aktuelle Partitur schließen | globale Partituransicht, außer in Texteingabefeldern |
 | `Cmd/Ctrl+Z` | Undo; in der Noteneingabe springt der Cursor an die Stelle der rueckgaengig gemachten Eingabe | global |
 | `Cmd/Ctrl+Shift+Z` / `Cmd/Ctrl+Y` | Redo | global |
-| `Cmd/Ctrl+T` | Inspector öffnen und Staff-Text/Expression-Feld fokussieren | Partitur geöffnet |
-| `Cmd/Ctrl+M` | Inspector öffnen und Rehearsal-Mark-Feld fokussieren | Partitur geöffnet |
+| `Cmd/Ctrl+T` | Inspector öffnen und Staff-Text/Expression-Feld fokussieren | Partitur geöffnet, außer in Texteingabefeldern |
+| `Cmd/Ctrl+M` | Inspector öffnen und Rehearsal-Mark-Feld fokussieren | Partitur geöffnet, außer in Texteingabefeldern |
 | `Space` | Playback starten/pausieren; bei gestoppter Wiedergabe und aktiver Note ab dieser Note starten | global, außer Eingabefelder |
 | `Escape` | Noteneingabe verlassen und Auswahl löschen | Noteneditor |
 | `Cmd/Ctrl+Shift+E` | PDF exportieren (A4, Vektor) | Desktop-App, Partitur geöffnet |
@@ -81,8 +81,8 @@ Die Tasten sind in `lib/workspace-shortcuts.ts` definiert (Unit-Test: `test/work
 | `Cmd/Ctrl+A` | alle Noten der aktiven Stimme auswählen | Noteneditor |
 | `Cmd/Ctrl+D` | Auswahl duplizieren | Noteneditor |
 | `Alt/Option+.` / `Alt/Option+,` | Dynamik der gerade eingegebenen Note bzw. der Auswahl um eine Stufe lauter / leiser (`pp p mp mf f ff fff`); ohne Dynamik beginnt die Stufe bei `mf` (`.` ergibt `f`, `,` ergibt `mp`). Gilt nur im Part der Note | Noteneditor oder Noteneingabe |
-| `Cmd/Ctrl+X` | Auswahl ausschneiden | Noteneditor |
-| `Cmd/Ctrl+C` | Auswahl kopieren | Noteneditor |
+| `Cmd/Ctrl+X` | Auswahl ausschneiden; schlägt das Kopieren fehl (z. B. unvollständige Tuole), bleibt die Musik stehen und die Fehlermeldung erscheint | Noteneditor |
+| `Cmd/Ctrl+C` | Auswahl kopieren, auf dem gemeinsamen Raster (`<divisions>`) der kopierten Takte; andere Takte der Zeile spielen keine Rolle | Noteneditor |
 | `Cmd/Ctrl+V` | Clipboard an aktiver Auswahl einfügen; überschreibt die folgende Musik wie in MuseScore, unabhängig vom Insert/Overwrite-Modus | Noteneditor |
 | `Delete` / `Backspace` | Auswahl löschen; mit der Maus ausgewählte Takte werden geleert (Pausen bleiben stehen); bei Akkorden nur den gewählten Akkordton entfernen und verbleibenden Ton als Root erhalten. In der Noteneingabe nimmt `Backspace` die gerade eingegebene Note zurück: sie wird wieder zur Pause und der Cursor steht an ihrer Stelle (wie MuseScore), jeder weitere Druck geht eine Note weiter zurück | Noteneditor oder Noteneingabe |
 | `Shift+Delete` / `Shift+Backspace` | Ripple delete | Noteneditor oder Noteneingabe |
@@ -215,7 +215,7 @@ MuseScore hat für Tonart, Taktart, Schlüssel, Wiederholungen und Linien keinen
 | --- | --- | --- |
 | Klick | Außerhalb der Noteneingabe: auswählen. In der Noteneingabe (wie MuseScore): auf einer Pause die Note mit dem aktiven Wert schreiben; auf einer Note mit demselben Wert einen Akkordton hinzufügen; auf einer Note mit anderem Wert diese durch den aktiven Wert ersetzen. Ein Klick schiebt nie die folgende Musik nach hinten. Im Modus `Replace` ersetzt jeder Klick | Score |
 | `Shift+Click` | Außerhalb der Noteneingabe: Range-Auswahl. In der Noteneingabe: ersetzen, was am Einsatz steht (wie MuseScore) | Score |
-| `Cmd/Ctrl+Click` | additive Auswahl | Score |
+| `Cmd/Ctrl+Click` | additive Auswahl; Löschen, Transponieren und Artikulationen entfernen wirken nur auf die gewählten Noten, auch über Systeme und Stimmen hinweg, als ein Undo-Schritt | Score |
 | `Cmd/Ctrl+Shift+Click` | In der Noteneingabe: am Ghost-Ziel einfügen und die folgende Musik des Takts nach hinten schieben (wie `Cmd/Ctrl+Shift+A` … `G`) | Score, Noteneingabe |
 | `Alt/Option+Click` | Akkordton am Ghost-Ziel, unabhängig vom Notenwert | Score |
 

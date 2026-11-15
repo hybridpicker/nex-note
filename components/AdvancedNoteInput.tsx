@@ -55,8 +55,8 @@ export function AdvancedNoteInput({ xml, document, selected, selection, apply, m
     run([{ type: 'addTuplet', ...locator(), coreEntityId: first.coreEntityId, startTimestampNum: first.timestampNum, startTimestampDen: first.timestampDen, stopTimestampNum: last.timestampNum, stopTimestampDen: last.timestampDen, actualNotes: actual, normalNotes: normal, convertRange, bracket: true, showNumber: 'both' }]);
   };
   const control = 'rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800';
-  return <details className="border-b border-nex-border bg-white px-3 py-2 text-xs" data-testid="advanced-note-input">
-    <summary className="cursor-pointer font-semibold">Rhythm, tuplets and MIDI</summary>
+  return <details className="nex-advanced-input border-b border-nex-border bg-white px-3 py-1.5 text-xs" data-testid="advanced-note-input">
+    <summary className="nex-advanced-input-summary"><svg className="nex-advanced-input-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden><path d="M4 2.5 7.5 6 4 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>Rhythm, tuplets and MIDI</summary>
     <div className="flex flex-wrap items-start gap-5 py-3">
       <fieldset disabled={!selected} className="space-y-2 disabled:opacity-50">
         <legend className="font-semibold">Bounded rhythm edit</legend>

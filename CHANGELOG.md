@@ -85,9 +85,37 @@ All notable changes to nex-note are documented here.
 - `R` outside note input repeats the selection after itself, as in MuseScore (it used to insert a rest and push the bar's last note out).
 - Paste always overwrites the following music, as in MuseScore, Dorico and Finale.
 
+- Playback sound: every part has its own place in the stereo picture and a share of a common room reverb; loudness follows the written dynamics with a wider range and is about 19 dB louder overall without clipping. Long notes of sustaining instruments (strings, winds, organ) hold for their written length instead of stopping after about three seconds, and notes end with a short fade instead of a click. The sustain pedal is played. Percussion staves sound (a built-in drum kit for General MIDI notes 35 to 81); they were silent. The metronome click is a woodblock. See "Sound" in `docs/playback-sync.md`.
+- Parts get the instrument they name: 21 more instrument names and MIDI programs map to the bundled sounds, and a part without a sound of its own no longer falls back to the piano when the file names its program.
+- A note clicked in the score sounds at once and at its sounding pitch in transposing parts; it used to wait for the playback data to load.
+- When MuseScore is not installed, or on the iPad, the built-in playback renderer now plays accents, staccato, marcato, sforzato and dynamics like the MuseScore rendering does.
+- Entering a note with the mouse or pen draws the score once instead of twice, so large scores respond about twice as fast after a click (4,096 notes: about 2.3 s of blocked time instead of 4.9 s on the development server). Changing the note value and moving the pointer over a large score are faster as well.
+- The header stays on one line: below 1200 px (and on the iPad in portrait) the provider, language and keyboard-preset controls move into an overflow menu at the right end. The notation toolbar scrolls sideways instead of cutting buttons off. Every control shows a focus ring when reached with the keyboard, and buttons are at least 44 px high on touch screens.
+- Note input bar, on-score input overlay, welcome screen and upload area have larger text and stronger contrast; the colour of voice 2 is a clearer blue-violet.
+- `Cmd/Ctrl+T`, `M`, `N` and `W` no longer fire while typing in a text field.
+
+### Fixed
+
+- After a click or Undo the mouse preview could show, and a click could be placed on, the score as it was before the edit while the new score was still being drawn. The preview now waits for the new drawing, and a click in that moment is ignored instead of entering a note in the wrong place.
+- The played-note highlight is centred on the sound (about half a frame early or late) instead of trailing it by up to one frame.
+- An embedded score (iframe) could stay on its loading bar and never show the music.
+- `Esc` closes the command center even before its search field has focus; the provider menu no longer lays its entries out in a row.
+- Playback could fail when MuseScore crashed on exit although it had already written a complete MIDI file; the file is now used.
+- Transposing a range in a part with tablature left the tablature on the old frets.
+- Paste into a grand staff or several parts could put all lanes into one staff; each copied staff now lands on its own staff.
+- Copy over bars with different internal grids could change note lengths in the pasted music.
+- Cut removed the selection even when copying it had failed.
+- Transposing a selection that spans several staves or voices moved only part of it.
+- A tie could stay on a note whose partner was replaced by a rest; rests in 6/8 and other compound metres were split on the quarter-note grid.
+- A note could keep the written value of its old length after an edit (a quarter shown as a half).
+- A dotted half note on beat 1 of a 4/4 bar was split into two tied notes.
+- Inserted bars could share an internal id with an existing bar, which changed note lengths; rests beyond the end of the last bar were appended to it.
+- The saved MusicXML could carry a `<divisions>` value that no longer matched the bar's notes, so the file reopened with different lengths.
+
 ### Validation
 
 - 1,689 unit tests, including a seeded entry fuzzer over six synthetic scores; build; `e2e/notation-tools.spec.ts` (51) in Chromium; Electron package build and verify; `ipad:sync` and `ipad:doctor`. 14 tests of `e2e/app.spec.ts` already failed before these changes and are tracked in `docs/note-entry-mastery-ledger.md` (F15).
+- 2026-11-15 (sound, speed, core and interface pass): 2,132 unit tests; build; the complete `smoke` and `regression` end-to-end projects in Chromium: 298 passed, 3 failed, 6 skipped. The three failures: `e2e/notation-tools.spec.ts` "eight-bar keyboard replacement ..." (F55 in `docs/note-entry-mastery-ledger.md`, passed in the run before) and two playback probe scenarios over the playhead drift budget (`small` 5.5 against 5 ms/min, `start from a selected note` 30.8 over nine notes; see `docs/playback-sync.md`). `electron:refresh` with package verify, `ipad:sync` and `ipad:doctor` passed; nothing was tried on a physical iPad or on Linux.
 
 ## Unreleased - 2026-10-02
 

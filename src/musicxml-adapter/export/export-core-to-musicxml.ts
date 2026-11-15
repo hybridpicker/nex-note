@@ -827,9 +827,7 @@ function buildEventElement(
   if (event.notehead === 'slash') setOrCreateTextElement(doc, note, 'notehead', 'slash');
   if (event.stem) setOrCreateTextElement(doc, note, 'stem', event.stem);
   appendPreservedXmlFragments(doc, note, event.preservedXml?.afterType);
-  const beams = coreDocument.beams
-    .filter((beam) => beam.eventIds.includes(event.id))
-    .sort((a, b) => a.number - b.number);
+  const beams = writtenBeamsForEvent(coreDocument, event.id);
   beams.forEach((beam) => {
     const beamEl = doc.createElement('beam');
     beamEl.setAttribute('number', String(beam.number));
@@ -1609,6 +1607,125 @@ export function adoptExportedMeasureNumbers(coreDocument: ScoreDocumentModel) {
   return coreDocument;
 }
 
+type CoreBeam = ScoreDocumentModel['beams'][number];
+
+/** Built once per export (reset in `exportCoreToMusicXml`): beams can change in place between exports. */
+let writtenBeamIndex: { beams: CoreBeam[]; byEvent: Map<string, CoreBeam[]> } | null = null;
+
+/**
+ * The beams a note is written with. A note has one beam per level in MusicXML: where an edit left
+ * two groups of one level over the same note, the larger group is written (the other would start
+ * a second, never-ended beam on that note), and a group of one note is written only as a hook.
+ * Otherwise a reopened file groups the notes differently from the file that was saved.
+ */
+function writtenBeamsForEvent(coreDocument: ScoreDocumentModel, eventId: string): CoreBeam[] {
+  let byEvent = writtenBeamIndex?.beams === coreDocument.beams ? writtenBeamIndex.byEvent : null;
+  if (!byEvent) {
+    byEvent = new Map<string, CoreBeam[]>();
+    const claimed = new Set<string>();
+    const ordered = coreDocument.beams
+      .map((beam, order) => ({ beam, order }))
+      .filter(({ beam }) => beam.eventIds.length > 1 || Boolean(beam.hook))
+      .sort((left, right) => right.beam.eventIds.length - left.beam.eventIds.length || left.order - right.order);
+    for (const { beam } of ordered) {
+      if (beam.eventIds.some((id) => claimed.has(`${beam.number}:${id}`))) continue;
+      for (const id of beam.eventIds) {
+        claimed.add(`${beam.number}:${id}`);
+        byEvent.set(id, [...(byEvent.get(id) ?? []), beam]);
+      }
+    }
+    for (const beams of byEvent.values()) beams.sort((left, right) => left.number - right.number);
+    writtenBeamIndex = { beams: coreDocument.beams, byEvent };
+  }
+  return byEvent.get(eventId) ?? [];
+}
+
+/**
+ * The grid a reader applies to a bar's durations is the last <divisions> it has read. Durations
+ * are written on the core document's effective divisions of each bar, so the written
+ * <divisions> must agree with that grid in every bar: a value kept from the preserved source
+ * file (a bar that no longer states divisions in the model, a bar moved by an insert or delete)
+ * would make the file reopen with other note lengths. The same holds for a kept <time> that is
+ * not the bar's effective meter. Runs after the bar content is written, over the final bar order.
+ */
+function reconcileWrittenTiming(doc: XmlDocument, coreDocument: ScoreDocumentModel) {
+  const xmlParts = Array.from(doc.getElementsByTagName('part'));
+  for (const partNode of coreDocument.score.parts) {
+    const xmlPart = xmlParts.find((part) => part.getAttribute('id') === partNode.sourcePartId) as XmlEl | undefined;
+    if (!xmlPart) continue;
+    let readerDivisions: number | null = null;
+    let readerTime: string | null = null;
+    for (const measureRef of findCanonicalMeasures(partNode)) {
+      const xmlMeasure = getMeasureForCoreMeasure(xmlPart, measureRef) as XmlEl | null;
+      if (!xmlMeasure) continue;
+      // The same staff and lookup the bar's durations were written with (updateMeasureContent).
+      const timingStaff = partNode.staves.find((staff) => staff.measures.some((measure) => measure.id === measureRef.id)) ?? partNode.staves[0];
+      const timing = timingStaff
+        ? getEffectiveMeasureTimingFromStaff(timingStaff, { measureId: measureRef.id, measureNumber: measureRef.measureNumber })
+        : null;
+      const blocks: XmlEl[] = [];
+      for (let i = 0; i < xmlMeasure.childNodes.length; i++) {
+        const child = xmlMeasure.childNodes[i] as XmlEl;
+        if (child.nodeType === 1 && child.tagName === 'attributes') blocks.push(child);
+      }
+      const ensureAttributes = () => {
+        if (blocks[0]) return blocks[0];
+        const created = doc.createElement('attributes');
+        xmlMeasure.insertBefore(created, xmlMeasure.firstChild);
+        blocks.unshift(created);
+        return created;
+      };
+
+      const divisions = timing?.divisions;
+      const declaredDivisions = blocks.flatMap((block) => {
+        const found: XmlEl[] = [];
+        for (let i = 0; i < block.childNodes.length; i++) {
+          const child = block.childNodes[i] as XmlEl;
+          if (child.nodeType === 1 && child.tagName === 'divisions') found.push(child);
+        }
+        return found;
+      });
+      if (divisions && divisions > 0) {
+        // The model has no change of divisions inside a bar: one value, at the start of the bar.
+        declaredDivisions.slice(1).forEach((stale) => stale.parentNode?.removeChild(stale));
+        if (declaredDivisions[0]) {
+          declaredDivisions[0].textContent = String(divisions);
+        } else if (readerDivisions !== divisions) {
+          getOrCreateAttributesChild(doc, ensureAttributes(), 'divisions').textContent = String(divisions);
+        }
+        readerDivisions = divisions;
+      } else if (declaredDivisions[0]) {
+        readerDivisions = Number(declaredDivisions.at(-1)!.textContent) || readerDivisions;
+      }
+
+      const time = timing?.timeSignature;
+      if (time && time.beats > 0 && time.beatType > 0) {
+        const groups = time.beatGroups;
+        const beatsText = groups && groups.length > 1 && groups.every((group) => Number.isInteger(group) && group > 0)
+          && groups.reduce((sum, group) => sum + group, 0) === time.beats
+          ? groups.join('+')
+          : String(time.beats);
+        const wanted = `${time.beats}/${time.beatType}`;
+        const declaredTime = blocks.map((block) => getDirectChild(block, 'time')).find((entry): entry is XmlEl => Boolean(entry)) ?? null;
+        if (declaredTime) {
+          const beats = (getDirectChild(declaredTime, 'beats')?.textContent ?? '')
+            .split('+').reduce((sum, part) => sum + (Number(part) || 0), 0);
+          const beatType = Number(getDirectChild(declaredTime, 'beat-type')?.textContent ?? '');
+          if (`${beats}/${beatType}` !== wanted) {
+            setOrCreateTextElement(doc, declaredTime, 'beats', beatsText);
+            setOrCreateTextElement(doc, declaredTime, 'beat-type', String(time.beatType));
+          }
+        } else if (readerTime !== wanted) {
+          const created = getOrCreateAttributesChild(doc, ensureAttributes(), 'time');
+          setOrCreateTextElement(doc, created, 'beats', beatsText);
+          setOrCreateTextElement(doc, created, 'beat-type', String(time.beatType));
+        }
+        readerTime = wanted;
+      }
+    }
+  }
+}
+
 export function exportCoreToMusicXml(sourceXml: string, coreDocument: ScoreDocumentModel) {
   const cached = lastExport && lastExport.xml === sourceXml ? lastExport.doc : null;
   lastExport = null;
@@ -1627,7 +1744,10 @@ export function exportCoreToMusicXml(sourceXml: string, coreDocument: ScoreDocum
   updatePartList(doc, coreDocument);
   updateTranspose(doc, coreDocument);
   updateAttributes(doc, coreDocument);
+  writtenBeamIndex = null;
   updateMeasureContent(doc, coreDocument);
+  writtenBeamIndex = null;
+  reconcileWrittenTiming(doc, coreDocument);
   const xml = serialize(doc);
   lastExport = { xml, doc };
   return xml;

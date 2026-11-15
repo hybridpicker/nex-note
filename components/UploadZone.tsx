@@ -72,13 +72,13 @@ export default function UploadZone({ onFileSelected, onFilesSelected, loadingMes
           <p className="text-sm text-slate-500">{loadingMessage || 'Converting… (OMR may take up to 60s)'}</p>
         </div>
       ) : (
-        <div className="flex items-center justify-center gap-4">
-          <svg className="h-6 w-6 shrink-0 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+        <div className="flex flex-col items-center justify-center gap-2.5">
+          <svg className="h-7 w-7 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0 4 4m-4-4-4 4M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
           </svg>
-          <div className="text-left">
+          <div className="text-center">
             <p className="text-sm font-medium text-slate-600">Drop a score file here</p>
-            <p className="mt-0.5 text-xs text-slate-400">NXN · PDF · image · MXL · XML · MSCZ · MIDI · GP · click to select</p>
+            <p className="mt-1 text-xs text-slate-500">NXN · PDF · image · MXL · XML · MSCZ · MIDI · GP · click to select</p>
           </div>
         </div>
       )}

@@ -84,3 +84,42 @@ test('written pitches map to MIDI numbers', () => {
   assert.equal(selectedNoteMidi({ step: 'F', octave: 3, alter: 1 }), 54);
   assert.equal(selectedNoteMidi({ isRest: true, step: 'C', octave: 4 }), null);
 });
+
+test('drift leaves out the start onset, which is on screen from the moment Play is pressed', () => {
+  const samples = [
+    { at: 0, offset: -15, start: true },
+    ...Array.from({ length: 10 }, (_, index) => ({ at: (index + 1) * 1000, offset: 5 })),
+  ];
+  const stats = summarizeOffsets(samples);
+  assert.equal(stats.driftMsPerMinute, 0);
+  assert.equal(stats.count, 11);
+  assert.equal(stats.maxAbs, 15);
+});
+
+test('a playhead crossing at a barline on the same system is interpolated between frames', () => {
+  // Onsets at 0, 0.5 s (measure 1) and 1, 1.5 s (measure 2). The frame grid is 7 ms off the
+  // onsets, so a crossing credited to the next whole frame would read up to a frame late.
+  const recording = syntheticRecording(0);
+  const barlineX = 100 + 1 * 200;
+  recording.frames = recording.frames.map((frame) => {
+    const t = frame.t + 7;
+    const shownSeconds = Math.max(0, (t + FRAME - 1000) / 1000);
+    const x = 100 + shownSeconds * 200;
+    return {
+      ...frame,
+      t,
+      sampledAt: t + 4,
+      playhead: { x, y: 10, height: 40, measureNumber: x >= barlineX ? 2 : 1 },
+      clock: { ...frame.clock!, contextTime: (t - 1000) / 1000, performanceTime: t },
+    };
+  });
+  const remap = <T extends { measureNumber: number; positionWholes: number }>(entry: T): T => (
+    entry.positionWholes >= 0.5 ? { ...entry, measureNumber: 2, positionWholes: entry.positionWholes - 0.5 } : entry
+  );
+  recording.visual = recording.visual.map(remap);
+  recording.geometry = recording.geometry.map(remap);
+  const barlineExpected = expected.map(remap);
+  const report = analyzePlaybackSync(recording, barlineExpected);
+  const downbeat = report.perOnset.find((onset) => onset.measureNumber === 2 && onset.positionWholes === 0);
+  assert.ok(downbeat && Math.abs(downbeat.playheadOffsetMs ?? Infinity) <= 1, JSON.stringify(report.perOnset));
+});

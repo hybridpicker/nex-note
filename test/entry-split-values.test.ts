@@ -153,7 +153,8 @@ test('6/8: quarter inside the beat, dotted quarter crossing the barline', () => 
   const result = enter(oneBar(6, 8, 2), 'N 4 c 5 d 4 e 5 . f');
   assert.deepEqual(result.voices[0], [
     'm1@0 C5 eighth', 'm1@0.5 D5 quarter', 'm1@1.5 E5 eighth', 'm1@2 F5 quarter~',
-    'm2@0 F5 eighth', 'm2@0.5 r eighth', 'm2@1 r quarter', 'm2@2 r quarter',
+    // 6/8 beats in dotted quarters: the rest of beat 1 is a quarter, beat 2 a dotted-quarter rest.
+    'm2@0 F5 eighth', 'm2@0.5 r quarter', 'm2@1.5 r quarter.',
   ]);
 });
 

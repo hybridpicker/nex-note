@@ -44,7 +44,7 @@ const ACCIDENTALS: Array<{ value: Exclude<AccidentalChoice, null>; titleKey: Tra
 
 /** Voice colours, shared with the caret: the four MuseScore voice colours. */
 export const VOICE_COLOURS: Record<number, string> = {
-  1: '#2563eb',
+  1: '#4f46ff',
   2: '#16a34a',
   3: '#ea580c',
   4: '#9333ea',
@@ -86,9 +86,10 @@ function BarButton({
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       className={`flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md px-1 text-[11px] font-semibold transition-colors ${
-        active ? 'bg-nex-accent-muted text-nex-accent' : 'text-slate-500 hover:bg-nex-surface'
+        active ? 'bg-nex-accent-muted text-nex-accent' : 'text-slate-600 hover:bg-nex-surface'
       }`}
-      style={active && colour ? { color: colour, backgroundColor: `${colour}1f` } : undefined}
+      // Voice numbers: the active one is a solid voice-colour chip, the active duration stays a tinted tile.
+      style={active && colour ? { color: '#ffffff', backgroundColor: colour, borderRadius: 9999 } : undefined}
     >
       {children}
     </button>
@@ -109,7 +110,7 @@ export default function NoteInputBar({
       role="group"
       aria-label={t('noteInputBar.label')}
       data-testid="note-input-bar"
-      className="ml-1 flex shrink-0 items-center gap-0.5 rounded-lg border border-nex-border bg-white px-1 py-0.5"
+      className="nex-input-bar ml-1 flex shrink-0 items-center gap-3 rounded-xl border border-nex-border bg-white px-2 py-0.5 shadow-sm"
     >
       <div className="flex items-center" data-armed-field="value" data-armed-value={armedValue.name}>
         {!hasOwnButton && (
@@ -134,7 +135,7 @@ export default function NoteInputBar({
           <span className="text-base leading-none">•</span>
         </BarButton>
       </div>
-      <span aria-hidden className="mx-0.5 h-4 w-px bg-nex-border" />
+      <span aria-hidden className="h-5 w-px shrink-0 bg-nex-border" />
       <div className="flex items-center" data-armed-field="accidental" data-armed-value={selectedAccidental ?? 'none'}>
         {selectedAccidental && !ACCIDENTALS.some((entry) => entry.value === selectedAccidental) && (
           <BarButton title={selectedAccidental} active set={`accidental:${selectedAccidental}`} onClick={() => onAccidentalChange(null)}>
@@ -153,7 +154,7 @@ export default function NoteInputBar({
           </BarButton>
         ))}
       </div>
-      <span aria-hidden className="mx-0.5 h-4 w-px bg-nex-border" />
+      <span aria-hidden className="h-5 w-px shrink-0 bg-nex-border" />
       <div className="flex items-center" data-armed-field="voice" data-armed-value={String(selectedVoice)}>
         {([1, 2, 3, 4] as const).map((voice) => (
           <BarButton
@@ -168,7 +169,7 @@ export default function NoteInputBar({
           </BarButton>
         ))}
       </div>
-      <span aria-hidden className="mx-0.5 h-4 w-px bg-nex-border" />
+      <span aria-hidden className="h-5 w-px shrink-0 bg-nex-border" />
       <div className="flex items-center" data-armed-field="mode" data-armed-value={entryMode}>
         <BarButton
           title={`${t('noteInputBar.modeTitle')}: ${modeLabel} (I)`}
@@ -180,7 +181,7 @@ export default function NoteInputBar({
         </BarButton>
       </div>
       <div
-        className="flex items-center px-1 text-[11px] font-semibold text-slate-500"
+        className="flex items-center px-1 text-[11px] font-semibold text-slate-600"
         data-armed-field="tuplet"
         data-armed-value={tupletLabel ?? 'none'}
         title={tupletLabel ? `${t('noteInputBar.tuplet')} ${tupletLabel}` : t('noteInputBar.noTuplet')}

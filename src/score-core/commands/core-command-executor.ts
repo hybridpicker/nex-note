@@ -1,7 +1,7 @@
 import { midiNoteToPitch } from '@/src/score-input/midi-input';
 import { noteTypeToDivisions } from '@/lib/note-editor';
-import { getEffectiveMeasureTimingFromStaff } from '@/src/score-core/measure-timing';
-import { buildDurationCandidates, decomposeDurationDivisions, describeDuration, isRepresentableDuration } from '@/src/score-core/duration-utils';
+import { getEffectiveMeasureTimingFromStaff, type EffectiveTimeSignature } from '@/src/score-core/measure-timing';
+import { buildDurationCandidates, buildNotatableDurations, decomposeDurationDivisions, describeDuration, describeDurationStrict, isRepresentableDuration } from '@/src/score-core/duration-utils';
 import type { MeasureAttributes, ScoreDocumentModel, ScoreIndex, TimedEvent, VoiceNode } from '@/src/score-core/model/types';
 import {
   chooseDistinctGuitarFingeringsForPitches,
@@ -15,6 +15,8 @@ import {
 import { timestampsEqual } from '@/src/shared/music/timestamp-match';
 import type { ClipboardAbsoluteEvent, ClipboardTargetOffset, ClipboardTimedDirection, ScoreClipboardPayload } from '@/src/shared/schemas/clipboard';
 import { partTransposition, transposePitchByInterval } from '@/src/score-core/query/clipboard';
+import { inputVoiceOf, storedVoiceFor } from '@/src/score-input/voice-mapping';
+import { decomposeRestSpanDivisions } from '@/src/score-core/rest-spelling';
 import type { ValidatedScoreCommand } from '@/src/shared/schemas/score-command';
 import { applyRhythmSpellingToDocument, type RhythmSpellingTarget } from '@/src/layout/rhythm-speller';
 
@@ -287,7 +289,11 @@ function rebuildDefaultBeams(document: ScoreDocumentModel, baseline: ScoreDocume
             && rhythmKey(previousVoice.events) === rhythmKey(voice.events)
             && JSON.stringify(resolveMeasureTiming(previousStaff, previousMeasure).timeSignature) === JSON.stringify(timing.timeSignature)) {
             const ids = new Set(voice.events.map(e => e.id));
-            rebuilt.push(...baseline.beams.filter(beam => beam.eventIds.every(id => ids.has(id))));
+            // A beam without events matches every voice: kept, it would be copied once per voice
+            // on every edit and grow without bound (a stack overflow on a spread push).
+            for (const beam of baseline.beams) {
+              if (beam.eventIds.length > 0 && beam.eventIds.every(id => ids.has(id))) rebuilt.push(beam);
+            }
             return;
           }
           // Grace notes take no time and stand outside the beams of the main notes; among the main
@@ -415,10 +421,15 @@ function rebuildScoreIndex(document: ScoreDocumentModel): ScoreIndex {
 function cloneMeasureForInsertion(
   sourceMeasure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
   nextMeasureNumber: number,
+  /** Ids already used in the staff: a bar id must be unique (timing and selection look bars up by id). */
+  takenMeasureIds: ReadonlySet<string> = new Set(),
 ): ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number] {
+  const baseId = `${sourceMeasure.id}:insert:${nextMeasureNumber}`;
+  let id = baseId;
+  for (let suffix = 2; takenMeasureIds.has(id); suffix += 1) id = `${baseId}:${suffix}`;
   return {
     ...structuredClone(sourceMeasure),
-    id: `${sourceMeasure.id}:insert:${nextMeasureNumber}`,
+    id,
     measureNumber: nextMeasureNumber,
     sourceMeasureNumber: null,
     implicit: undefined,
@@ -468,7 +479,20 @@ function carryAttributesToFollowingBar(
   if (own.some((entry) => entry.time)) delete carried.time;
   carried.clefs = carried.clefs.filter((clef) => !own.some((entry) => entry.clefs.some((candidate) => candidate.staffIndex === clef.staffIndex)));
   if (carried.divisions == null && carried.keyFifths == null && !carried.time && !carried.clefs.length) return;
-  following.attributes = [carried, ...own];
+  const first = own[0];
+  if (!first) {
+    following.attributes = [carried];
+    return;
+  }
+  // One attributes block at the start of the bar: readers of `attributes[0]` (divisions)
+  // see the bar's own values and the carried ones together.
+  following.attributes = [{
+    ...first,
+    ...(carried.divisions != null ? { divisions: carried.divisions } : {}),
+    ...(carried.keyFifths != null ? { keyFifths: carried.keyFifths } : {}),
+    ...(carried.time ? { time: carried.time } : {}),
+    clefs: [...carried.clefs, ...first.clefs],
+  }, ...own.slice(1)];
 }
 
 /** Layout hints are keyed by measure number; shift those after an inserted or deleted bar. */
@@ -1754,44 +1778,6 @@ function buildRestEventFromSpan(
   };
 }
 
-function decomposeRestSpanDivisions(
-  durationDivisions: number,
-  divisions: number,
-  preferredChunkDivisions: number,
-  startOffset: number,
-) {
-  const chunks: number[] = [];
-  const candidates = buildDurationCandidates(divisions);
-  const preferred = preferredChunkDivisions > 0
-    ? candidates.find((candidate) => candidate.value === preferredChunkDivisions) ?? null
-    : null;
-  const beatDivisions = Math.max(divisions, 1);
-  const strongGroupDivisions = beatDivisions * 2;
-  let remaining = Math.max(0, durationDivisions);
-  let offset = Math.max(0, startOffset);
-
-  while (remaining > 0) {
-    const beatRemainder = offset % beatDivisions;
-    const beatBoundaryFill = beatRemainder > 0 ? beatDivisions - beatRemainder : 0;
-    const strongRemainder = strongGroupDivisions > beatDivisions ? offset % strongGroupDivisions : 0;
-    const strongBoundaryFill = strongRemainder > 0 ? strongGroupDivisions - strongRemainder : 0;
-    const limitedToBoundary = beatBoundaryFill > 0 && beatBoundaryFill < remaining
-      ? beatBoundaryFill
-      : strongBoundaryFill > 0 && strongBoundaryFill < remaining
-        ? strongBoundaryFill
-        : 0;
-    const target = limitedToBoundary > 0 ? limitedToBoundary : remaining;
-    const next = preferred && preferred.value <= target
-      ? preferred
-      : candidates.find((candidate) => candidate.value <= target) ?? { value: 1, type: '64th', dotted: false };
-    chunks.push(next.value);
-    remaining -= next.value;
-    offset += next.value;
-  }
-
-  return chunks;
-}
-
 function buildRestEventsForSpan(
   measure: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
   divisions: number,
@@ -1800,10 +1786,18 @@ function buildRestEventsForSpan(
   startOffset: number,
   durationDivisions: number,
   preferredChunkDivisions: number,
+  /** Meter of the bar; rests follow its beat grid (compound x/8 meters beat in dotted quarters). */
+  timeSignature?: EffectiveTimeSignature | null,
 ) {
   const rests: TimedEvent[] = [];
   let offset = startOffset;
-  const chunks = decomposeRestSpanDivisions(durationDivisions, divisions, Math.max(1, preferredChunkDivisions), startOffset);
+  const chunks = decomposeRestSpanDivisions(
+    durationDivisions,
+    divisions,
+    Math.max(1, preferredChunkDivisions),
+    startOffset,
+    timeSignature,
+  );
 
   for (const nextDuration of chunks) {
     rests.push(buildRestEventFromSpan(measure, divisions, staffIndex, voiceId, offset, nextDuration));
@@ -1852,6 +1846,7 @@ function deleteTimedEvent(document: ScoreDocumentModel, context: EventVoiceConte
     context.voice.events.splice(index, 1, ...buildRestEventsForSpan(
       context.measure, timing.divisions, event.staffIndex, event.voiceId,
       event.timestampNum, event.durationDivisions, event.durationDivisions,
+      timing.timeSignature,
     ));
   }
   removeDeletedEventReferences(document, new Set([event.id]));
@@ -2010,6 +2005,7 @@ function mirrorGuitarInsertionToPairedStaff(input: {
       pairedRest.timestampNum,
       leadingDuration,
       inserted.durationDivisions,
+      pairedTiming.timeSignature,
     ));
   }
   paired.voice.events.push(inserted);
@@ -2022,6 +2018,7 @@ function mirrorGuitarInsertionToPairedStaff(input: {
       trailingOffset,
       trailingDuration,
       inserted.durationDivisions,
+      pairedTiming.timeSignature,
     ));
   }
 
@@ -2031,6 +2028,8 @@ function mirrorGuitarInsertionToPairedStaff(input: {
     paired.staff.staffIndex,
     input.command.voiceId,
     paired.voice.events,
+    undefined,
+    pairedTiming.timeSignature,
   ).sort((a, b) => (
     a.timestampNum - b.timestampNum
     || Number(a.isChord) - Number(b.isChord)
@@ -2077,6 +2076,7 @@ type EventFragmentIdentityMap = Map<string, EventFragmentIdentity>;
 type ClipboardLaneMapping = {
   sourceStaffIndex: number;
   sourceVoiceId: number;
+  targetStaffIndex: number;
   targetVoiceId: number;
 };
 type ClipboardEventIdentity = {
@@ -2176,40 +2176,52 @@ function buildTargetAbsoluteOffset(
   );
 }
 
+/**
+ * Where each copied lane lands. Staves keep their distance from the first copied staff
+ * (a grand-staff bar pasted on the upper staff fills both staves); lanes below the last
+ * staff of the target part join that staff as further voices. A lane keeps its input voice (1-4) and is written in
+ * the voice numbering the target staff already uses (voice 5 on a MuseScore left hand), so
+ * a paste overwrites the destination voice instead of adding a parallel one.
+ */
 function resolveClipboardLaneMappings(
-  targetStaff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  document: ScoreDocumentModel,
+  targetPart: ScoreDocumentModel['score']['parts'][number],
+  targetStaffIndex: number,
   clipboardData: ScoreClipboardPayload,
 ) {
   const lanes = [...clipboardData.lanes].sort((left, right) => (
     left.sourceStaffIndex - right.sourceStaffIndex
     || left.sourceVoiceId - right.sourceVoiceId
   ));
-  if (lanes.length === 1) {
-    return [{
-      ...lanes[0]!,
-      targetVoiceId: lanes[0]!.sourceVoiceId,
-    }] satisfies ClipboardLaneMapping[];
+  if (lanes.length === 0) return [] satisfies ClipboardLaneMapping[];
+  const firstSourceStaffIndex = Math.min(...lanes.map((lane) => lane.sourceStaffIndex));
+  const lastTargetStaffIndex = Math.max(
+    targetStaffIndex,
+    ...targetPart.staves.map((staff) => staff.staffIndex),
+  );
+  const assigned = new Set<string>();
+  const mappings: ClipboardLaneMapping[] = [];
+
+  for (const lane of lanes) {
+    const offsetStaffIndex = targetStaffIndex + (lane.sourceStaffIndex - firstSourceStaffIndex);
+    // More copied staves than the target part has below the paste point (a piano bar on a
+    // flute): the remaining lanes become further voices of the last staff, never lost.
+    const laneTargetStaffIndex = Math.min(offsetStaffIndex, lastTargetStaffIndex);
+    if (!targetPart.staves.some((staff) => staff.staffIndex === laneTargetStaffIndex)) continue;
+    const location = { corePartId: targetPart.id, staffIndex: laneTargetStaffIndex };
+    const preferredInput = inputVoiceOf(lane.sourceVoiceId);
+    // Two copied lanes that share an input voice (voices 1 and 5 on one staff) take the
+    // next free input voice instead of merging into one.
+    const inputCandidates = [preferredInput, 1, 2, 3, 4].filter((voice, index, all) => all.indexOf(voice) === index);
+    const targetVoiceId = inputCandidates
+      .map((inputVoice) => storedVoiceFor(document, location, inputVoice))
+      .find((voiceId) => !assigned.has(`${laneTargetStaffIndex}:${voiceId}`));
+    if (targetVoiceId == null) continue;
+    assigned.add(`${laneTargetStaffIndex}:${targetVoiceId}`);
+    mappings.push({ ...lane, targetStaffIndex: laneTargetStaffIndex, targetVoiceId });
   }
 
-  const existingVoiceIds = new Set<number>(
-    targetStaff.measures.flatMap((measure) => measure.voices.map((voice) => voice.voiceId)),
-  );
-  const assignedVoiceIds = new Set<number>();
-  let nextVoiceId = Math.max(0, ...existingVoiceIds, ...lanes.map((lane) => lane.sourceVoiceId)) + 1;
-
-  return lanes.map((lane) => {
-    let targetVoiceId = lane.sourceVoiceId;
-    if (existingVoiceIds.has(targetVoiceId) || assignedVoiceIds.has(targetVoiceId)) {
-      while (existingVoiceIds.has(nextVoiceId) || assignedVoiceIds.has(nextVoiceId)) nextVoiceId += 1;
-      targetVoiceId = nextVoiceId;
-      nextVoiceId += 1;
-    }
-    assignedVoiceIds.add(targetVoiceId);
-    return {
-      ...lane,
-      targetVoiceId,
-    };
-  });
+  return mappings;
 }
 
 function cloneClipboardLaneEvents(
@@ -2499,6 +2511,7 @@ function pruneTrailingRestOnlyMeasuresForVoice(
         0,
         timing.durationDivisions,
         timing.durationDivisions,
+        timing.timeSignature,
       );
       continue;
     }
@@ -2621,7 +2634,7 @@ function buildAppendedBar(
   reference: ScoreDocumentModel['score']['parts'][number]['staves'][number]['measures'][number],
   measureNumber: number,
 ) {
-  const inserted = cloneMeasureForInsertion(reference, measureNumber);
+  const inserted = cloneMeasureForInsertion(reference, measureNumber, new Set(staff.measures.map((measure) => measure.id)));
   // The new bar is written in the state in force at the reference bar and says nothing about it
   // itself: a repeated time signature or clef is drawn again by other programs.
   inserted.attributes = [];
@@ -2640,6 +2653,7 @@ function buildAppendedBar(
       0,
       barDivisions,
       barDivisions,
+      timing.timeSignature,
     );
     inserted.voices = [firstVoice];
   }
@@ -2745,6 +2759,125 @@ function buildInsertedOverflowFragments(
 
 function buildTupletEventIdSet(document: ScoreDocumentModel) {
   return new Set(document.tuplets.flatMap((tuplet) => tuplet.eventIds));
+}
+
+/**
+ * A chord tone needs a note to join. `insertNoteAt` with `asChord` at an onset where the voice has
+ * no note (a rest, an empty voice) is an ordinary insert, and a chord tone takes the value of the
+ * note it joins: notes of one chord share one duration in MusicXML.
+ */
+function resolveChordToneInsert(document: ScoreDocumentModel, command: ValidatedScoreCommand): ValidatedScoreCommand {
+  if (command.type !== 'insertNoteAt' || !command.asChord) return command;
+  const found = findVoice(document, command.measureNumber, command.staffIndex, command.voiceId, command);
+  if (!found) return { ...command, asChord: false };
+  const timing = resolveMeasureTiming(found.staff, found.measure);
+  const offset = timestampToDivisionsOffset(timing.divisions, command.timestampNum, command.timestampDen);
+  const anchor = found.voice.events.find((event) => (
+    event.kind === 'note'
+    && !event.isChord
+    && event.durationDivisions > 0
+    && timestampToDivisionsOffset(timing.divisions, event.timestampNum, event.timestampDen) === offset
+  ));
+  if (!anchor) return { ...command, asChord: false };
+  if (
+    anchor.durationType
+    && (anchor.dotCount ?? 0) < 2
+    && notatedValueMatchesDuration(anchor, timing.divisions)
+    && (anchor.durationType !== command.durationType || Boolean(anchor.isDotted) !== Boolean(command.isDotted))
+  ) {
+    return { ...command, durationType: anchor.durationType, isDotted: Boolean(anchor.isDotted) };
+  }
+  return command;
+}
+
+function notatedValueMatchesDuration(event: TimedEvent, divisions: number) {
+  const dots = event.dotCount ?? (event.isDotted ? 1 : 0);
+  return buildNotatableDurations(divisions, { maxDots: 2 }).some((candidate) => (
+    candidate.type === event.durationType
+    && candidate.dotCount === dots
+    && candidate.value === event.durationDivisions
+  ));
+}
+
+/**
+ * Keeps the notated value of every event this batch created or changed in step with its stored
+ * duration. A command that shortens a note to the bar end or adds a chord tone can leave the
+ * requested type behind ("whole" lasting a quarter). One value gets its type and dots; a note
+ * that is not one value is handed to the rhythm speller, which ties single values, and such a
+ * rest is split on the meter's rest grid. Untouched events (imported spellings) are left alone.
+ */
+function syncNotatedValuesToDurations(
+  nextDocument: ScoreDocumentModel,
+  previousDocument: ScoreDocumentModel,
+  rhythmSpellingTargets: RhythmSpellingTarget[],
+) {
+  const previous = new Map<string, { event: TimedEvent; measureId: string }>();
+  for (const part of previousDocument.score.parts) for (const staff of part.staves) for (const measure of staff.measures) {
+    for (const voice of measure.voices) for (const event of voice.events) previous.set(event.id, { event, measureId: measure.id });
+  }
+  const skippedEventIds = new Set([
+    ...buildTupletEventIdSet(nextDocument),
+    ...(nextDocument.graceNotes ?? []).map((link) => link.eventId),
+  ]);
+  for (const part of nextDocument.score.parts) {
+    for (const staff of part.staves) {
+      for (const measure of staff.measures) {
+        let timing: ReturnType<typeof resolveMeasureTiming> | null = null;
+        for (const voice of measure.voices) {
+          let restsSplit = false;
+          const events = voice.events.flatMap((event) => {
+            if (event.durationDivisions <= 0 || !event.durationType || skippedEventIds.has(event.id)) return [event];
+            const before = previous.get(event.id);
+            const old = before?.measureId === measure.id ? before.event : null;
+            // An event that moved to another bar may now be read on another division grid.
+            if (
+              old
+              && old.durationDivisions === event.durationDivisions
+              && old.durationType === event.durationType
+              && Boolean(old.isDotted) === Boolean(event.isDotted)
+              && (old.dotCount ?? 0) === (event.dotCount ?? 0)
+            ) return [event];
+            timing ??= resolveMeasureTiming(staff, measure);
+            if (notatedValueMatchesDuration(event, timing.divisions)) return [event];
+            const single = describeDurationStrict(event.durationDivisions, timing.divisions);
+            if (single) {
+              event.durationType = single.type;
+              event.isDotted = single.dotted;
+              delete event.dotCount;
+              return [event];
+            }
+            if (event.kind === 'rest' && !event.isChord) {
+              restsSplit = true;
+              const offset = timestampToDivisionsOffset(timing.divisions, event.timestampNum, event.timestampDen);
+              const rests = buildRestEventsForSpan(
+                measure,
+                timing.divisions,
+                staff.staffIndex,
+                voice.voiceId,
+                offset,
+                event.durationDivisions,
+                event.durationDivisions,
+                timing.timeSignature,
+              );
+              // The first fragment keeps the identity of the rest (selection, references).
+              if (rests[0]) rests[0] = { ...rests[0], id: event.id };
+              return rests;
+            }
+            rhythmSpellingTargets.push({
+              partId: part.id,
+              measureNumber: measure.measureNumber,
+              staffIndex: staff.staffIndex,
+              voiceId: voice.voiceId,
+              timestampNum: event.timestampNum,
+              timestampDen: event.timestampDen,
+            });
+            return [event];
+          });
+          if (restsSplit) voice.events = events;
+        }
+      }
+    }
+  }
 }
 
 function buildTimelineFragmentsForEvent(
@@ -2968,41 +3101,111 @@ function tieContinuesAtNextCoreOnset(refs: TieContinuityEventRef[], current: Tie
     .some((ref) => sameTiePitch(current.event, ref.event));
 }
 
+type TimedTieContinuityEventRef = TieContinuityEventRef & {
+  absStart: number;
+  absEnd: number;
+  measureIndex: number;
+  measureEnd: number;
+};
+
+// Offsets come from rounded division arithmetic (tuplets), so anything closer
+// than one division counts as the same position.
+const TIE_CONTINUITY_TOLERANCE_DIVISIONS = 0.999;
+
+function isSoundingTieContinuityRef(ref: TimedTieContinuityEventRef) {
+  // Grace notes carry no duration, so `durationDivisions > 0` skips them.
+  return (ref.event.kind === 'note' || ref.event.kind === 'rest')
+    && ref.event.durationDivisions > 0;
+}
+
+/**
+ * A tie start survives only when the next sounding event of the voice (note
+ * or rest, grace notes skipped) is a note of the same pitch that begins where
+ * the tied note ends. Rests, gaps and inserted empty bars therefore break the
+ * tie, while chord ties and ties across a barline keep working.
+ */
+function tieContinuesAtNextSoundingEvent(
+  ordered: TimedTieContinuityEventRef[],
+  currentIndex: number,
+) {
+  const current = ordered[currentIndex]!;
+  if (current.event.kind !== 'note') return false;
+  let nextIndex = currentIndex + 1;
+  while (
+    nextIndex < ordered.length
+    && (
+      !isSoundingTieContinuityRef(ordered[nextIndex]!)
+      || ordered[nextIndex]!.absStart <= current.absStart + TIE_CONTINUITY_TOLERANCE_DIVISIONS / 2
+    )
+  ) {
+    nextIndex += 1;
+  }
+  const next = ordered[nextIndex];
+  if (!next) return false;
+  const startsAtTiedEnd = Math.abs(next.absStart - current.absEnd) < TIE_CONTINUITY_TOLERANCE_DIVISIONS
+    // An overfull bar still ties into the downbeat of the following bar.
+    || (
+      next.measureIndex === current.measureIndex + 1
+      && Math.abs(next.absStart - current.measureEnd) < TIE_CONTINUITY_TOLERANCE_DIVISIONS
+      && current.absEnd > current.measureEnd
+    );
+  if (!startsAtTiedEnd) return false;
+  for (let index = nextIndex; index < ordered.length; index += 1) {
+    const candidate = ordered[index]!;
+    if (Math.abs(candidate.absStart - next.absStart) >= TIE_CONTINUITY_TOLERANCE_DIVISIONS / 2) break;
+    if (isSoundingTieContinuityRef(candidate) && sameTiePitch(current.event, candidate.event)) return true;
+  }
+  return false;
+}
+
 function pruneDanglingTieStarts(document: ScoreDocumentModel) {
-  const byVoice = new Map<string, TieContinuityEventRef[]>();
+  const byVoice = new Map<string, TimedTieContinuityEventRef[]>();
 
   for (const part of document.score.parts) {
     for (const staff of part.staves) {
-      for (const measure of staff.measures) {
+      const timeline = buildStaffTimeline(staff);
+      timeline.forEach((entry, measureIndex) => {
+        const { measure } = entry;
         for (const voice of measure.voices) {
           const key = `${part.id}:${staff.staffIndex}:${voice.voiceId}`;
           const refs = byVoice.get(key) ?? [];
           for (const event of voice.events) {
+            const absStart = entry.startOffset
+              + (event.timestampNum / Math.max(event.timestampDen, 1)) * entry.divisions * 4;
             refs.push({
               event,
               measureNumber: measure.measureNumber,
               staffIndex: staff.staffIndex,
               voiceId: voice.voiceId,
               partId: part.id,
+              absStart,
+              absEnd: absStart + Math.max(0, event.durationDivisions),
+              measureIndex,
+              measureEnd: entry.startOffset + entry.durationDivisions,
             });
           }
           byVoice.set(key, refs);
         }
-      }
+      });
     }
   }
 
   for (const refs of byVoice.values()) {
-    const ordered = refs.sort(compareTieContinuityRefs);
-    for (const ref of ordered) {
+    const ordered = refs.sort((left, right) => (
+      left.absStart - right.absStart || compareTieContinuityRefs(left, right)
+    ));
+    ordered.forEach((ref, index) => {
       if (ref.event.kind !== 'note') {
         ref.event.tieStart = false;
-        continue;
+        return;
       }
-      if (ref.event.tieStart && !tieContinuesAtNextCoreOnset(ordered, ref)) {
-        ref.event.tieStart = false;
-      }
-    }
+      if (!ref.event.tieStart) return;
+      const continues = ref.event.durationDivisions > 0
+        ? tieContinuesAtNextSoundingEvent(ordered, index)
+        // Grace notes keep the previous rule: the next later note onset.
+        : tieContinuesAtNextCoreOnset(ordered, ref);
+      if (!continues) ref.event.tieStart = false;
+    });
   }
 }
 
@@ -3276,7 +3479,11 @@ function rewriteVoiceFromAbsoluteTimeline(
     if (existing) existing.events = [];
   }
 
+  const timelineEnd = timeline.reduce((sum, entry) => sum + entry.durationDivisions, 0);
   for (const absoluteEvent of absoluteEvents) {
+    // Silence pushed past the last bar is no music: it would otherwise be piled into the last
+    // bar beyond its end, and the file reopens without it.
+    if (absoluteEvent.event.kind === 'rest' && timeline.length > 0 && absoluteEvent.absStart >= timelineEnd) continue;
     const timelineEntry = getTimelineEntryForAbsoluteOffset(timeline, absoluteEvent.absStart);
     if (!timelineEntry) continue;
 
@@ -3615,6 +3822,7 @@ function fillVoiceTimelineGaps(
         0,
         timing.durationDivisions,
         timing.durationDivisions,
+        timing.timeSignature,
       );
       continue;
     }
@@ -3637,6 +3845,7 @@ function fillVoiceTimelineGaps(
           cursor,
           gapDuration,
           gapDuration,
+          timing.timeSignature,
         ));
       }
       rebuilt.push(event);
@@ -3666,6 +3875,7 @@ function fillVoiceTimelineGaps(
           cursor,
           gapDuration,
           gapDuration,
+          timing.timeSignature,
         ));
       }
     }
@@ -3690,6 +3900,8 @@ function coalesceAdjacentRestsInMeasure(
   events: TimedEvent[],
   /** Rests that keep their identity and value: tuplet units are not plain time to respell. */
   keepEventIds: ReadonlySet<string> = new Set(),
+  /** Meter of the bar, so merged rests follow its beat grid. */
+  timeSignature?: EffectiveTimeSignature | null,
 ) {
   const sorted = [...events].sort((a, b) => (
     a.timestampNum - b.timestampNum
@@ -3712,6 +3924,7 @@ function coalesceAdjacentRestsInMeasure(
         restSpanStart,
         duration,
         duration,
+        timeSignature,
       ));
     }
     restSpanStart = null;
@@ -3739,6 +3952,51 @@ function coalesceAdjacentRestsInMeasure(
   flushRestSpan();
 
   return rebuilt;
+}
+
+/**
+ * Respells the rest runs of one voice in a range of bars for each bar's meter. Copied rests keep
+ * the grouping of the bar they came from (a 6/8 dotted-quarter rest pasted into 4/4), and re-barred
+ * rests that of the old meter; afterwards they are what entry would have written, and an
+ * export -> import round trip does not change them. Tuplet units and rests that carry a fermata
+ * keep their identity and value; a bar whose rests are already spelled is left untouched.
+ */
+function respellRestRunsForMeter(
+  document: ScoreDocumentModel,
+  staff: ScoreDocumentModel['score']['parts'][number]['staves'][number],
+  voiceId: number,
+  firstMeasureNumber: number,
+  lastMeasureNumber: number,
+) {
+  const keepEventIds = new Set([...buildTupletEventIdSet(document), ...document.fermataEventIds]);
+  const byOnset = (a: TimedEvent, b: TimedEvent) => (
+    a.timestampNum - b.timestampNum
+    || Number(a.isChord) - Number(b.isChord)
+    || a.id.localeCompare(b.id)
+  );
+  for (const measure of staff.measures) {
+    if (measure.measureNumber < firstMeasureNumber || measure.measureNumber > lastMeasureNumber) continue;
+    const voice = measure.voices.find((entry) => entry.voiceId === voiceId);
+    if (!voice?.events.some((event) => event.kind === 'rest')) continue;
+    const timing = resolveMeasureTiming(staff, measure);
+    if (voice.events.some((event) => event.timestampDen !== Math.max(timing.divisions * 4, 1))) continue;
+    const current = [...voice.events].sort(byOnset);
+    const rebuilt = coalesceAdjacentRestsInMeasure(
+      measure,
+      timing.divisions,
+      staff.staffIndex,
+      voiceId,
+      current,
+      keepEventIds,
+      timing.timeSignature,
+    ).sort(byOnset);
+    const sameRhythm = rebuilt.length === current.length && rebuilt.every((event, index) => (
+      event.kind === current[index]!.kind
+      && event.timestampNum === current[index]!.timestampNum
+      && event.durationDivisions === current[index]!.durationDivisions
+    ));
+    if (!sameRhythm) voice.events = rebuilt;
+  }
 }
 
 /** Bounded time editing uses one integer grid and rejects conflicts before publishing. */
@@ -4003,6 +4261,8 @@ export function executeCoreCommands(
   registerStaffParts(nextDocument);
   let selectionRemap: SelectionRemap = {};
   const diagnostics: CoreCommandExecutionResult['diagnostics'] = [];
+  /** Notes a structural command re-barred; they are respelled for their new meter. */
+  const rebarredRhythmSpellingTargets: RhythmSpellingTarget[] = [];
   const batchTargetKeyFifths = [...commands]
     .reverse()
     .find((command) => command.type === 'setKey')?.fifths;
@@ -4011,7 +4271,8 @@ export function executeCoreCommands(
     return (keyFifths ?? 0) < 0;
   };
 
-  for (const command of commands) {
+  for (const rawCommand of commands) {
+    const command = resolveChordToneInsert(nextDocument, rawCommand);
     let commandSelectionRemap: SelectionRemap = {};
 
     switch (command.type) {
@@ -4124,7 +4385,32 @@ export function executeCoreCommands(
             beatGroups: command.beatGroups?.slice(),
           };
         });
-        if (snapshots.length > 0) rebarTimeSignatureSnapshots(nextDocument, snapshots);
+        if (snapshots.length > 0) {
+          rebarTimeSignatureSnapshots(nextDocument, snapshots);
+          // Re-barred notes keep their old beat grouping; spell them for the new meter
+          // (a half note on beat 2 of 6/8 crosses the dotted-quarter beat).
+          snapshots.forEach((snapshot) => {
+            const staff = findPartStaff(nextDocument, snapshot.partId, snapshot.staffIndex)?.staff;
+            const lastMeasureNumber = staff?.measures.at(-1)?.measureNumber ?? targetMeasure;
+            snapshot.voices.forEach(({ voiceId }) => {
+              if (staff) respellRestRunsForMeter(nextDocument, staff, voiceId, targetMeasure, lastMeasureNumber);
+            });
+            staff?.measures.forEach((measure) => {
+              if (measure.measureNumber < targetMeasure) return;
+              measure.voices.forEach((voice) => voice.events.forEach((event) => {
+                if (event.kind !== 'note' || event.isChord || event.durationDivisions <= 0) return;
+                rebarredRhythmSpellingTargets.push({
+                  partId: snapshot.partId,
+                  measureNumber: measure.measureNumber,
+                  staffIndex: staff.staffIndex,
+                  voiceId: voice.voiceId,
+                  timestampNum: event.timestampNum,
+                  timestampDen: event.timestampDen,
+                });
+              }));
+            });
+          });
+        }
         break;
       }
       case 'setClef': {
@@ -4796,6 +5082,7 @@ export function executeCoreCommands(
           0,
           timing.durationDivisions,
           timing.durationDivisions,
+          timing.timeSignature,
         );
         removeDeletedEventReferences(nextDocument, deletedEventIds);
         break;
@@ -4900,13 +5187,46 @@ export function executeCoreCommands(
         const range = command.target.range;
         if (!range) break;
         const targets = collectEventsInRange(nextDocument, range);
-        targets.forEach(({ voice, eventIndex }) => {
+        // Resolve every paired notation/TAB event before any pitch changes, so
+        // chord members are matched by their original pitch and each paired
+        // event is updated at most once (same sync as `transposeChromatic`).
+        const claimedPairedEventIds = new Set<string>();
+        const transposeTargets = targets.flatMap(({ part, voice, eventIndex }) => {
           const event = voice.events[eventIndex];
-          if (event?.kind === 'note') {
-            event.pitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
-            event.writtenAccidental = undefined;
-            event.accidentalCautionary = undefined;
-            event.accidentalEnclosure = undefined;
+          if (event?.kind !== 'note') return [];
+          const paired = findPairedTabNotationTimedEvent(
+            part,
+            event.staffIndex,
+            event.measureNumber,
+            event.voiceId,
+            event.timestampNum,
+            event.timestampDen,
+            event,
+          );
+          const pairedNote = paired?.event.kind === 'note' && !claimedPairedEventIds.has(paired.event.id)
+            ? paired
+            : null;
+          if (pairedNote) claimedPairedEventIds.add(pairedNote.event.id);
+          return [{ part, event, paired: pairedNote }];
+        });
+        transposeTargets.forEach(({ part, event, paired }) => {
+          const nextPitch = transposePitch(event.pitch.step, event.pitch.alter, event.pitch.octave, command.semitones, preferFlatsForMeasure(event.measureNumber, event.staffIndex));
+          event.pitch = nextPitch;
+          event.writtenAccidental = undefined;
+          event.accidentalCautionary = undefined;
+          event.accidentalEnclosure = undefined;
+          if (paired?.event.kind === 'note') {
+            const pairedPitch = pitchForPairedGuitarStaff(part, event.staffIndex, paired.isTab, nextPitch);
+            paired.event.pitch = { ...pairedPitch };
+            paired.event.writtenAccidental = undefined;
+            paired.event.accidentalCautionary = undefined;
+            paired.event.accidentalEnclosure = undefined;
+            if (paired.isTab) {
+              paired.event.guitar = resolveSyncedGuitarFingering({
+                pitch: pairedPitch,
+                existing: paired.event.guitar,
+              });
+            }
           }
         });
         break;
@@ -6022,15 +6342,27 @@ export function executeCoreCommands(
         const clipboardData = structuredClone(command.clipboardData);
         const target = findPartStaff(nextDocument, command.targetPartId, command.targetStaffIndex);
         if (!target || clipboardData.timeline.length === 0) break;
-        if (target.staff.measures.some(measure => measure.voices.some(voice => findPairedStaffVoice(target.part, target.staff.staffIndex, measure.measureNumber, voice.voiceId)))) {
+        // Lanes keep their staff distance and input voice (multi-staff and multi-voice paste).
+        const laneMappings = resolveClipboardLaneMappings(nextDocument, target.part, target.staff.staffIndex, clipboardData);
+        const targetStaves = target.part.staves
+          .filter((staff) => laneMappings.some((mapping) => mapping.targetStaffIndex === staff.staffIndex));
+        if (targetStaves.length === 0) break;
+        const staffForLane = (mapping: ClipboardLaneMapping) => (
+          targetStaves.find((staff) => staff.staffIndex === mapping.targetStaffIndex) ?? target.staff
+        );
+        if (targetStaves.some((targetStaff) => targetStaff.measures.some(measure => measure.voices.some(voice => findPairedStaffVoice(target.part, targetStaff.staffIndex, measure.measureNumber, voice.voiceId))))) {
           diagnostics.push({ level: 'warning', code: 'clipboard_command_rejected', message: 'Pasting into linked notation/TAB is not supported. Use linked note input to preserve both staves.' }); break;
         }
 
         if (clipboardData.sourceDivisions) {
           let grid = clipboardData.sourceDivisions;
-          for (const measure of target.staff.measures) grid = lcm(grid, resolveMeasureTiming(target.staff, measure).divisions);
+          for (const targetStaff of targetStaves) {
+            for (const measure of targetStaff.measures) grid = lcm(grid, resolveMeasureTiming(targetStaff, measure).divisions);
+          }
           if (!Number.isSafeInteger(grid) || grid > 1048576) { diagnostics.push({ level: 'warning', code: 'clipboard_command_rejected', message: 'Unsupported clipboard division grid.' }); break; }
-          for (const measure of target.staff.measures) setStaffDivisionsAtMeasure(target.staff, measure.measureNumber, grid);
+          for (const targetStaff of targetStaves) {
+            for (const measure of targetStaff.measures) setStaffDivisionsAtMeasure(targetStaff, measure.measureNumber, grid);
+          }
           const factor = grid / clipboardData.sourceDivisions;
           clipboardData.durationDivisions *= factor;
           clipboardData.timeline.forEach(entry => { entry.absStart *= factor; entry.event.timestampNum *= factor; entry.event.timestampDen *= factor; entry.event.durationDivisions *= factor; });
@@ -6068,31 +6400,40 @@ export function executeCoreCommands(
           requiredTimelineEnd,
         );
 
+        // Every staff of a part shares the bar layout; each target staff gets its own offset.
+        const targetAbsoluteOffsets = new Map(targetStaves.map((targetStaff) => [
+          targetStaff,
+          buildTargetAbsoluteOffset(targetStaff, command.targetOffset) ?? targetAbsoluteOffset,
+        ] as const));
+
         if (command.mode === 'insert') {
-          rewriteTimedDirectionsAfterAbsoluteInsert(
-            target.staff,
-            targetAbsoluteOffset,
-            clipboardData.durationDivisions,
-            0,
-          );
+          targetStaves.forEach((targetStaff) => {
+            rewriteTimedDirectionsAfterAbsoluteInsert(
+              targetStaff,
+              targetAbsoluteOffsets.get(targetStaff)!,
+              clipboardData.durationDivisions,
+              0,
+            );
+          });
         }
 
-        const laneMappings = resolveClipboardLaneMappings(target.staff, clipboardData);
         const pastedIdentityMap = new Map<string, ClipboardEventIdentity>();
         const deletedEventIds = new Set<string>();
 
         laneMappings.forEach((mapping) => {
-          const currentEvents = flattenVoiceEventsToAbsoluteTimeline(target.staff, mapping.targetVoiceId);
+          const laneStaff = staffForLane(mapping);
+          const laneAbsoluteOffset = targetAbsoluteOffsets.get(laneStaff) ?? targetAbsoluteOffset;
+          const currentEvents = flattenVoiceEventsToAbsoluteTimeline(laneStaff, mapping.targetVoiceId);
           const pastedLaneEvents = cloneClipboardLaneEvents(
             clipboardData.timeline,
             mapping,
-            target.staff.staffIndex,
-            targetAbsoluteOffset,
+            laneStaff.staffIndex,
+            laneAbsoluteOffset,
             pastedIdentityMap,
             nextDocument.revision + 1,
           );
           if (pastedLaneEvents.length === 0) return;
-          const timeline = buildStaffTimeline(target.staff);
+          const timeline = buildStaffTimeline(laneStaff);
           for (const tuplet of clipboardData.tuplets ?? []) {
             const mapped = tuplet.eventIds.map(id => pastedIdentityMap.get(id)?.selectionEventId);
             if (!mapped.every((id): id is string => Boolean(id))) continue;
@@ -6115,7 +6456,7 @@ export function executeCoreCommands(
             ? {
               events: transformAbsoluteInsertTimelineEvents(
                 currentEvents,
-                targetAbsoluteOffset,
+                laneAbsoluteOffset,
                 clipboardData.durationDivisions,
                 0,
               ),
@@ -6123,12 +6464,12 @@ export function executeCoreCommands(
             }
             : overwriteAbsoluteTimelineEvents(
               currentEvents,
-              targetAbsoluteOffset,
-              targetAbsoluteOffset + clipboardData.durationDivisions,
+              laneAbsoluteOffset,
+              laneAbsoluteOffset + clipboardData.durationDivisions,
             );
 
           rewriteVoiceFromAbsoluteTimeline(
-            target.staff,
+            laneStaff,
             mapping.targetVoiceId,
             sortAbsoluteVoiceEvents([
               ...transformed.events,
@@ -6137,25 +6478,25 @@ export function executeCoreCommands(
           );
           transformed.deletedEventIds.forEach((eventId) => deletedEventIds.add(eventId));
 
-          const refreshedTimeline = buildStaffTimeline(target.staff);
-          const refreshedEvents = flattenVoiceEventsToAbsoluteTimeline(target.staff, mapping.targetVoiceId);
+          const refreshedTimeline = buildStaffTimeline(laneStaff);
+          const refreshedEvents = flattenVoiceEventsToAbsoluteTimeline(laneStaff, mapping.targetVoiceId);
           const lastAbsoluteEnd = refreshedEvents.reduce(
             (max, entry) => Math.max(max, entry.absStart + entry.event.durationDivisions),
-            targetAbsoluteOffset + clipboardData.durationDivisions,
+            laneAbsoluteOffset + clipboardData.durationDivisions,
           );
-          const firstMeasureNumber = getTimelineEntryForAbsoluteOffset(refreshedTimeline, targetAbsoluteOffset)?.measure.measureNumber
+          const firstMeasureNumber = getTimelineEntryForAbsoluteOffset(refreshedTimeline, laneAbsoluteOffset)?.measure.measureNumber
             ?? command.targetOffset.measureNumber;
           const lastMeasureNumber = getTimelineEntryForAbsoluteOffset(
             refreshedTimeline,
-            Math.max(targetAbsoluteOffset, lastAbsoluteEnd - 1),
+            Math.max(laneAbsoluteOffset, lastAbsoluteEnd - 1),
           )?.measure.measureNumber ?? firstMeasureNumber;
 
-          const normalizeResult = normalizeVoiceTimelineAcrossMeasures(nextDocument, target.staff, mapping.targetVoiceId, {
+          const normalizeResult = normalizeVoiceTimelineAcrossMeasures(nextDocument, laneStaff, mapping.targetVoiceId, {
             startMeasureNumber: firstMeasureNumber,
             endMeasureNumber: lastMeasureNumber,
           });
 
-          fillVoiceTimelineGaps(target.staff, mapping.targetVoiceId, {
+          fillVoiceTimelineGaps(laneStaff, mapping.targetVoiceId, {
             startMeasureNumber: firstMeasureNumber,
             endMeasureNumber: lastMeasureNumber,
           });
@@ -6178,9 +6519,9 @@ export function executeCoreCommands(
             }
           });
 
-          const collapseRemap = collapseTiedFragmentsAcrossMeasures(nextDocument, target.staff, mapping.targetVoiceId, {}, {
-            startAbs: targetAbsoluteOffset,
-            endAbs: targetAbsoluteOffset + clipboardData.durationDivisions,
+          const collapseRemap = collapseTiedFragmentsAcrossMeasures(nextDocument, laneStaff, mapping.targetVoiceId, {}, {
+            startAbs: laneAbsoluteOffset,
+            endAbs: laneAbsoluteOffset + clipboardData.durationDivisions,
           });
           laneEventIds.forEach((eventId) => {
             const identity = pastedIdentityMap.get(eventId);
@@ -6189,15 +6530,32 @@ export function executeCoreCommands(
             identity.slurStartEventId = followSelectionRemap(collapseRemap, identity.slurStartEventId);
             identity.slurStopEventId = followSelectionRemap(collapseRemap, identity.slurStopEventId);
           });
+
+          respellRestRunsForMeter(nextDocument, laneStaff, mapping.targetVoiceId, firstMeasureNumber, lastMeasureNumber);
         });
 
         removeDeletedEventReferences(nextDocument, deletedEventIds);
-        pasteClipboardTimedDirections(
-          nextDocument,
-          target.staff,
-          targetAbsoluteOffset,
-          clipboardData.timedDirections,
-        );
+        // Directions follow their staff the same way the lanes do (clamped to the last staff);
+        // one without a matching staff stays on the staff the paste was aimed at.
+        const firstSourceStaffIndex = Math.min(...laneMappings.map((mapping) => mapping.sourceStaffIndex));
+        const lastTargetStaffIndex = Math.max(...target.part.staves.map((staff) => staff.staffIndex));
+        const directionsByStaff = new Map<typeof target.staff, ClipboardTimedDirection[]>();
+        clipboardData.timedDirections.forEach((entry) => {
+          const directionStaffIndex = Math.min(
+            lastTargetStaffIndex,
+            target.staff.staffIndex + (entry.sourceStaffIndex - firstSourceStaffIndex),
+          );
+          const directionStaff = target.part.staves.find((staff) => staff.staffIndex === directionStaffIndex) ?? target.staff;
+          directionsByStaff.set(directionStaff, [...(directionsByStaff.get(directionStaff) ?? []), entry]);
+        });
+        directionsByStaff.forEach((directions, directionStaff) => {
+          pasteClipboardTimedDirections(
+            nextDocument,
+            directionStaff,
+            buildTargetAbsoluteOffset(directionStaff, command.targetOffset) ?? targetAbsoluteOffset,
+            directions,
+          );
+        });
         pasteClipboardSlurs(nextDocument, clipboardData.noteSpanners, pastedIdentityMap);
 
         const knownEventIds = buildDocumentEventIdSet(nextDocument);
@@ -6226,6 +6584,7 @@ export function executeCoreCommands(
             0,
             timing.durationDivisions,
             requestedDurationDivisions(command.durationType, command.isDotted, timing.divisions),
+            timing.timeSignature,
           );
         }
         const targetTimestampNum = isAbsoluteInsert ? command.timestampNum : command.afterTimestampNum;
@@ -6389,6 +6748,7 @@ export function executeCoreCommands(
               spanningRest.timestampNum,
               leadingDuration,
               inserted.durationDivisions,
+              timing.timeSignature,
             ));
           }
           found.voice.events.push(inserted);
@@ -6401,6 +6761,7 @@ export function executeCoreCommands(
               trailingOffset,
               trailingDuration,
               inserted.durationDivisions,
+              timing.timeSignature,
             ));
           }
         } else if (!(command.type === 'insertNoteAt' && command.asChord)) {
@@ -6431,6 +6792,7 @@ export function executeCoreCommands(
               command.voiceId,
               found.voice.events,
               buildTupletEventIdSet(nextDocument),
+              timing.timeSignature,
             )
         ).sort((a, b) => a.timestampNum - b.timestampNum);
         if (!isAbsoluteInsert) {
@@ -6734,7 +7096,7 @@ export function executeCoreCommands(
     return { coreDocument: currentDocument, diagnostics, selectionRemap: {} };
   }
 
-  const rhythmSpellingTargets: RhythmSpellingTarget[] = [];
+  const rhythmSpellingTargets: RhythmSpellingTarget[] = [...rebarredRhythmSpellingTargets];
   const noteEntryBatch = commands.some((command) => (
     command.type === 'changeNotePitch'
     || command.type === 'insertNote'
@@ -6789,6 +7151,7 @@ export function executeCoreCommands(
       }
     }
   }
+  syncNotatedValuesToDurations(nextDocument, currentDocument, rhythmSpellingTargets);
   applyRhythmSpellingToDocument(nextDocument, rhythmSpellingTargets);
   rebuildDefaultBeams(nextDocument, currentDocument);
   // Graces first: a tie must not survive because it ran into a grace note that is removed here.

@@ -1,6 +1,10 @@
 import type { RenderedMeasureLayoutOverlay } from '@/src/render-bridge/osmd/layout-plan-bridge';
 import type { RenderedNote } from '@/src/render-bridge/osmd/note-selection';
-import { getEffectiveMeasureTiming } from '@/src/score-core/measure-timing';
+import {
+  findStaffMeasureById,
+  findStaffMeasureByNumber,
+  getIndexedEffectiveMeasureTiming,
+} from '@/src/score-core/document-index';
 import type { ScoreDocumentModel } from '@/src/score-core/model/types';
 import {
   fractionToNumber,
@@ -74,7 +78,7 @@ function measureHasOnlyRestEvents(
   if (!coreDocument) return false;
   for (const part of coreDocument.score.parts) {
     for (const staff of part.staves) {
-      const measure = staff.measures.find((entry) => entry.id === measureId);
+      const measure = findStaffMeasureById(coreDocument, staff, measureId);
       if (!measure) continue;
       const events = measure.voices.flatMap((voice) => voice.events);
       return events.length === 0 || events.every((event) => event.kind === 'rest');
@@ -233,7 +237,7 @@ function measureDurationFraction(
   measureId: string,
   measureNumber: number,
 ): Fraction | null {
-  const timing = getEffectiveMeasureTiming(coreDocument, { measureId, measureNumber });
+  const timing = getIndexedEffectiveMeasureTiming(coreDocument, { measureId, measureNumber });
   if (!timing) return null;
   if (timing.timeSignature) {
     return normalizeFraction(timing.timeSignature.beats, Math.max(timing.timeSignature.beatType, 1));
@@ -376,14 +380,14 @@ function resolveCoreMeasure(input: {
   for (const part of input.coreDocument.score.parts) {
     for (const staff of part.staves) {
       if (staff.staffIndex !== input.staffIndex) continue;
-      const measure = staff.measures.find((entry) => entry.id === input.measureId);
+      const measure = findStaffMeasureById(input.coreDocument, staff, input.measureId);
       if (measure) return measure;
     }
   }
   for (const part of input.coreDocument.score.parts) {
     for (const staff of part.staves) {
       if (staff.staffIndex !== input.staffIndex) continue;
-      const measure = staff.measures.find((entry) => entry.measureNumber === input.measureNumber);
+      const measure = findStaffMeasureByNumber(input.coreDocument, staff, input.measureNumber);
       if (measure) return measure;
     }
   }
@@ -404,7 +408,7 @@ function collectCoreRealRhythmicAnchors(input: {
   const byTimestamp = new Map(
     collectVoiceEventAnchors(voice).map((anchor) => [timestampKey(anchor.timestampNum, anchor.timestampDen), anchor] as const),
   );
-  const timing = getEffectiveMeasureTiming(input.coreDocument, {
+  const timing = getIndexedEffectiveMeasureTiming(input.coreDocument, {
     measureId: input.measureId,
     measureNumber: input.measureNumber,
     staffIndex: input.staffIndex,
@@ -468,7 +472,7 @@ function collectCoreSyntheticSlotAnchors(input: {
   if (!voice || voice.events.length === 0) {
     return buildRestMeasureSlotAnchors(input.measureDuration, input.slotDuration);
   }
-  const timing = getEffectiveMeasureTiming(input.coreDocument, {
+  const timing = getIndexedEffectiveMeasureTiming(input.coreDocument, {
     measureId: input.measureId,
     measureNumber: input.measureNumber,
     staffIndex: input.staffIndex,
