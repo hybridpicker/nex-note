@@ -217,7 +217,7 @@ test('rate limiter: sliding window, bounded memory, env configuration', () => {
 });
 
 test('client addresses are hashed, never kept raw', () => {
-  const headers = new Headers({ 'x-forwarded-for': '203.0.113.7, 10.0.0.1' });
+  const headers = new Headers({ 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '192.0.2.99, 203.0.113.7' });
   const address = clientAddressFromHeaders(headers);
   assert.equal(address, '203.0.113.7');
   const hashed = hashClientAddress(address);
@@ -231,4 +231,33 @@ test('client guess: public host is the Browser Preview; desktop, native and loca
   assert.equal(guessBrowserPreview({ hostname: 'localhost' }), false);
   assert.equal(guessBrowserPreview({ hostname: '127.0.0.1', hasDesktopBridge: true }), false);
   assert.equal(guessBrowserPreview({ hostname: '192.168.1.20', userAgent: 'x NexNoteNative/0.0.7' }), false);
+});
+
+// --- Spoofed proxy headers (nginx sets X-Real-IP; clients control Host, X-Forwarded-*, User-Agent) ---
+
+function proxiedRequest(headers: Record<string, string>) {
+  return new NextRequest('http://127.0.0.1:3031/api/chat', {
+    method: 'POST',
+    headers: { 'x-real-ip': '198.51.100.40', 'x-forwarded-for': '198.51.100.40', ...headers },
+  });
+}
+
+test('a client cannot claim localhost through X-Forwarded-Host or Host behind the proxy', () => {
+  assert.equal(isLocalAiRequest(proxiedRequest({ 'x-forwarded-host': 'localhost' })), false);
+  assert.equal(isLocalAiRequest(proxiedRequest({ host: 'localhost' })), false);
+  assert.equal(isAiEnabledForRequest(proxiedRequest({ 'x-forwarded-host': 'localhost', host: 'nex-note.com' })), false);
+  // Without the proxy, X-Forwarded-Host is ignored and only Host counts.
+  const direct = new NextRequest('https://nex-note.com/api/chat', { headers: { 'x-forwarded-host': 'localhost' } });
+  assert.equal(isLocalAiRequest(direct), false);
+});
+
+test('a native user agent is not trusted when the request came through the proxy', () => {
+  const ua = { 'user-agent': 'Mozilla/5.0 NexNoteNative/0.1.0' };
+  assert.equal(isNativeAiRequest(proxiedRequest(ua)), false);
+  assert.equal(isNativeAiRequest(new NextRequest('http://192.168.1.20:3000/api/chat', { headers: ua })), true);
+});
+
+test('the rate limit ignores a client-supplied first X-Forwarded-For entry', () => {
+  assert.equal(clientAddressFromHeaders(new Headers({ 'x-forwarded-for': '192.0.2.1, 198.51.100.40' })), '198.51.100.40');
+  assert.equal(clientAddressFromHeaders(new Headers()), 'unknown');
 });

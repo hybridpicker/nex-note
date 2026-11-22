@@ -5,8 +5,8 @@ import { createHash, randomBytes } from 'crypto';
  *
  * Client IPs are hashed with a per-process random salt before they are used as map keys, kept
  * only in memory, never logged, and dropped once their window has passed. A restart forgets
- * everything. Behind a reverse proxy the first `x-forwarded-for` entry is used, so the proxy must
- * overwrite that header (nginx `proxy_set_header X-Forwarded-For $remote_addr;`).
+ * everything. Behind the reverse proxy the client is identified by X-Real-IP (set by nginx), falling
+ * back to the last X-Forwarded-For entry, never the client-controlled first one.
  */
 
 export const DEFAULT_PUBLIC_AI_RATE_LIMIT = 20;
@@ -92,8 +92,12 @@ export function hashClientAddress(address: string) {
 }
 
 export function clientAddressFromHeaders(headers: Headers) {
-  const forwarded = headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-  return forwarded || headers.get('x-real-ip')?.trim() || 'unknown';
+  // nginx sets X-Real-IP to the connecting address. X-Forwarded-For's first entry is whatever the
+  // client sent (nginx appends with $proxy_add_x_forwarded_for), so only its last entry is used.
+  const realIp = headers.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
+  const forwarded = headers.get('x-forwarded-for')?.split(',').map((part) => part.trim()).filter(Boolean);
+  return forwarded?.at(-1) || 'unknown';
 }
 
 let sharedLimiter: { limiter: RateLimiter; limit: number; windowMs: number } | null = null;

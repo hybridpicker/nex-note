@@ -18,18 +18,29 @@ export const PUBLIC_AI_SESSION_KEY_REQUIRED_CODE = 'session_key_required';
 export const PUBLIC_AI_PROVIDER_UNAVAILABLE_CODE = 'provider_unavailable_in_browser_preview';
 export const PUBLIC_AI_RATE_LIMITED_CODE = 'rate_limited';
 
+// Client-supplied headers (Host, X-Forwarded-Host, User-Agent) can claim anything, so they never
+// make a request trusted on their own. nex-note.com runs behind nginx, which sets X-Real-IP to the
+// real client address on every request (`proxy_set_header X-Real-IP $remote_addr`); the desktop
+// app, `npm run dev` and the native shells talk to Next directly and send no X-Real-IP. A request
+// that came through the proxy is therefore never local or native, whatever it claims.
+export function isProxiedRequest(req: NextRequest) {
+  return Boolean(req.headers.get('x-real-ip')?.trim());
+}
+
 function requestHostname(req: NextRequest) {
-  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-  const host = forwardedHost || req.headers.get('host') || req.nextUrl.hostname || '';
+  // X-Forwarded-Host is ignored on purpose: a client could set it to "localhost".
+  const host = req.headers.get('host') || req.nextUrl.hostname || '';
   if (host.startsWith('[')) return host.slice(0, host.indexOf(']') + 1);
   return host.split(':')[0] ?? '';
 }
 
 export function isLocalAiRequest(req: NextRequest) {
+  if (isProxiedRequest(req)) return false;
   return LOCAL_AI_HOSTNAMES.has(requestHostname(req).toLowerCase());
 }
 
 export function isNativeAiRequest(req: NextRequest) {
+  if (isProxiedRequest(req)) return false;
   return isNativeAiUserAgent(req.headers.get('user-agent'));
 }
 
