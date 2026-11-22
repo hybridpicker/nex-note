@@ -9,6 +9,8 @@ import {
   mergeModelOptions,
   normalizeAiModelSettings,
 } from '@/lib/ai-model-settings';
+import { isSessionKeyProvider } from '@/lib/ai-access-surface';
+import { useI18n } from '@/lib/i18n';
 
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   ollama: 'Ollama',
@@ -24,13 +26,13 @@ interface Props {
   onOllamaModelChange: (model: string) => void;
   liveOllamaModels: AiModelOption[];
   openSignal?: number;
-}
-
-function maskedKeyLabel(apiKey: string) {
-  const trimmed = apiKey.trim();
-  if (!trimmed) return 'No key saved';
-  if (trimmed.length <= 8) return 'Key saved';
-  return `Saved: ${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+  /** Browser Preview: cloud providers only, keys for this session only. */
+  browserPreview?: boolean;
+  /** Desktop: the OS keychain store is available. */
+  secureKeysAvailable?: boolean;
+  savedKeyProviders?: ProviderName[];
+  onSaveKey?: (provider: ProviderName, key: string) => Promise<{ ok: boolean; error?: string }>;
+  onDeleteSavedKey?: (provider: ProviderName) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export default function AiModelSettingsPanel({
@@ -40,8 +42,26 @@ export default function AiModelSettingsPanel({
   onOllamaModelChange,
   liveOllamaModels,
   openSignal = 0,
+  browserPreview = false,
+  secureKeysAvailable = false,
+  savedKeyProviders = [],
+  onSaveKey,
+  onDeleteSavedKey,
 }: Props) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [keyMessages, setKeyMessages] = useState<Partial<Record<ProviderName, string>>>({});
+  const visibleProviders = browserPreview ? AI_PROVIDER_ORDER.filter(isSessionKeyProvider) : AI_PROVIDER_ORDER;
+
+  function keyStatusLabel(provider: ProviderName, apiKey: string) {
+    if (savedKeyProviders.includes(provider)) return t('aiKeys.savedInKeychain');
+    return apiKey.trim() ? t('aiKeys.sessionOnly') : t('aiKeys.noKey');
+  }
+
+  async function runKeyAction(provider: ProviderName, action: () => Promise<{ ok: boolean; error?: string }>) {
+    const result = await action();
+    setKeyMessages((current) => ({ ...current, [provider]: result.ok ? '' : (result.error ?? '') }));
+  }
   const [newModelInputs, setNewModelInputs] = useState<Record<ProviderName, string>>({
     ollama: '',
     openai: '',
@@ -131,7 +151,9 @@ export default function AiModelSettingsPanel({
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-nex-ink">AI models</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Configure local provider keys, defaults, and model availability.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {browserPreview ? t('aiKeys.browserPreviewSessionOnly') : 'Configure provider keys, defaults, and model availability.'}
+              </p>
             </div>
             <button
               type="button"
@@ -144,7 +166,7 @@ export default function AiModelSettingsPanel({
           </div>
 
           <div className="mt-4 grid gap-4">
-            {AI_PROVIDER_ORDER.map((provider) => {
+            {visibleProviders.map((provider) => {
               const config = normalizedSettings.providers[provider];
               return (
                 <section key={provider} className="rounded-lg border border-slate-200 p-3">
@@ -183,7 +205,32 @@ export default function AiModelSettingsPanel({
                         spellCheck={false}
                         className="mt-1 h-8 w-full rounded-md border border-nex-border px-2 text-xs text-slate-700 outline-none focus:border-nex-accent"
                       />
-                      <span className="mt-1 block text-[11px] font-normal text-slate-400">{maskedKeyLabel(config.apiKey)}</span>
+                      <span className="mt-1 block text-[11px] font-normal text-slate-400">{keyStatusLabel(provider, config.apiKey)}</span>
+                      {!browserPreview && secureKeysAvailable && (
+                        <span className="mt-1 flex flex-wrap gap-2 text-[11px] font-medium">
+                          {config.apiKey.trim() && onSaveKey && (
+                            <button
+                              type="button"
+                              onClick={() => { void runKeyAction(provider, () => onSaveKey(provider, config.apiKey.trim())); }}
+                              className="text-nex-accent hover:text-nex-ink"
+                            >
+                              {t('aiKeys.saveToKeychain')}
+                            </button>
+                          )}
+                          {savedKeyProviders.includes(provider) && onDeleteSavedKey && (
+                            <button
+                              type="button"
+                              onClick={() => { void runKeyAction(provider, () => onDeleteSavedKey(provider)); }}
+                              className="text-slate-500 hover:text-rose-600"
+                            >
+                              {t('aiKeys.removeSaved')}
+                            </button>
+                          )}
+                        </span>
+                      )}
+                      {keyMessages[provider] && (
+                        <span role="alert" className="mt-1 block text-[11px] font-normal text-rose-600">{keyMessages[provider]}</span>
+                      )}
                     </label>
 
                     <label className="block text-xs font-medium text-slate-500">

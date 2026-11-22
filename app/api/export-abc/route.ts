@@ -22,7 +22,16 @@ export async function POST(req: NextRequest) {
     // line used to hold the export for 60 s, and the spawn timeout alone does not end the wait when
     // the program leaves a child behind (F43 in docs/note-entry-mastery-ledger.md).
     const cliTimeoutMs = Math.max(500, Number(process.env.NEX_ABC_CLI_TIMEOUT_MS) || 10_000);
-    await new Promise<void>((resolve) => {
+    const museScoreCli = (() => {
+      try {
+        return resolveMuseScoreCli();
+      } catch (err) {
+        // No MuseScore on this machine: Nex Note's own exporter answers below.
+        museScoreError = err instanceof Error ? err.message : String(err);
+        return null;
+      }
+    })();
+    if (museScoreCli) await new Promise<void>((resolve) => {
       let settled = false;
       const finish = () => {
         if (settled) return;
@@ -30,7 +39,7 @@ export async function POST(req: NextRequest) {
         clearTimeout(timer);
         resolve();
       };
-      const proc = spawn(resolveMuseScoreCli(), [inputPath, '-o', outputAbc], {
+      const proc = spawn(museScoreCli, [inputPath, '-o', outputAbc], {
         env: museScoreSpawnEnv(),
         cwd: tmpDir,
       });

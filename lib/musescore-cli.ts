@@ -3,6 +3,7 @@ import { platform } from 'os';
 import { delimiter, join } from 'path';
 import { spawn } from 'child_process';
 import { cleanMuseScoreStderr } from './musescore-stderr';
+import { MissingExternalToolError } from './external-tools';
 
 const COMMON_MUSESCORE_BINARIES = ['mscore', 'musescore', 'musescore4'];
 const COMMON_MUSESCORE_PATHS = [
@@ -43,9 +44,9 @@ export function resolveMuseScoreCli(env: NodeJS.ProcessEnv = process.env) {
 
   const resolved = candidates.find(isExecutable);
   if (!resolved) {
-    throw new Error(
-      'MuseScore CLI not found. Set MUSESCORE_CLI to an executable mscore/musescore path.'
-    );
+    // Typed so routes can tell the user to install MuseScore 4 (developers can still point
+    // MUSESCORE_CLI at a custom mscore/musescore executable).
+    throw new MissingExternalToolError('musescore');
   }
   return resolved;
 }
@@ -107,7 +108,7 @@ export function formatMuseScoreConversionError(input: {
     ? ' Install libOpenGL.so.0 (for example the libopengl0 package) or point MUSESCORE_CLI at a working MuseScore install.'
     : '';
   if (!cleanedStderr && input.code === 40) {
-    return 'MuseScore could not convert this file. The file may be unsupported, damaged, or need manual import review. Try MusicXML/MXL when available, or submit this file as a founder compatibility case.';
+    return 'MuseScore could not convert this file. The file may be unsupported, damaged, or need manual import review. Try MusicXML/MXL when available, or report it as a compatibility issue on GitHub.';
   }
   return `MuseScore conversion failed: ${reason}${cleanedStderr ? `: ${cleanedStderr}` : ''}${hint}`;
 }

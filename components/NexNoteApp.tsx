@@ -10,6 +10,10 @@ import dynamic from 'next/dynamic';
 import { flushSync } from 'react-dom';
 import ProviderSelector from '@/components/ProviderSelector';
 import AiModelSettingsPanel from '@/components/AiModelSettings';
+import ConnectAiPanel from '@/components/ConnectAiPanel';
+import { useAiKeyStore } from '@/hooks/useAiKeyStore';
+import { SESSION_KEY_PROVIDERS, isSessionKeyProvider } from '@/lib/ai-access-surface';
+import { readMissingToolPayload } from '@/lib/external-tools';
 import type { BenchmarkResult, SuiteResult, OllamaSuiteRow } from '@/components/BenchmarkPanel';
 import type { DialogTab } from '@/components/NewScoreDialog';
 import type { EditPaletteSectionId } from '@/components/EditPalette';
@@ -707,6 +711,9 @@ export default function Home({ searchParams }: HomeProps) {
   const [aiModelSettingsHydrated, setAiModelSettingsHydrated] = useState(false);
   const [aiSettingsOpenSignal, setAiSettingsOpenSignal] = useState(0);
   const [ollamaConnectionState, setOllamaConnectionState] = useState<AiConnectionState>('checking');
+  const aiKeys = useAiKeyStore({ hydrated: aiModelSettingsHydrated, setAiModelSettings });
+  const { applySessionKey } = aiKeys;
+  const [connectAiDismissed, setConnectAiDismissed] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<'assistant' | 'library' | 'inspector'>('assistant');
   const initialLeftNotationSidebarCollapsed = embedConfig.enabled
     ? embedConfig.initialLeftToolsCollapsed ?? false
@@ -890,8 +897,21 @@ export default function Home({ searchParams }: HomeProps) {
   const aiProviderRequestSettings = useMemo(() => buildAiProviderRequestSettings(aiModelSettings), [aiModelSettings]);
   const providerOptions = useMemo<Array<ProviderName | 'benchmark'>>(() => {
     const enabled = AI_PROVIDER_ORDER.filter((providerId) => aiModelSettings.providers[providerId].enabled);
+    if (aiKeys.browserPreview) {
+      // Browser Preview: only cloud providers that hold a Session Key; no Ollama, no benchmark.
+      return enabled.filter((providerId) => isSessionKeyProvider(providerId) && aiModelSettings.providers[providerId].apiKey.trim());
+    }
     return [...(enabled.length ? enabled : ['ollama' as ProviderName]), 'benchmark'];
-  }, [aiModelSettings]);
+  }, [aiKeys.browserPreview, aiModelSettings]);
+  const activeAiProvider: ProviderName = provider === 'benchmark' ? 'ollama' : provider;
+  const activeAiProviderHasKey = Boolean(aiModelSettings.providers[activeAiProvider].apiKey.trim());
+  const aiUsable = aiKeys.browserPreview
+    ? isSessionKeyProvider(activeAiProvider) && activeAiProviderHasKey
+    : provider === 'benchmark' || activeAiProviderHasKey || (activeAiProvider === 'ollama' && ollamaConnectionState !== 'offline');
+  const handleUseSessionKey = useCallback((providerId: ProviderName, key: string) => {
+    applySessionKey(providerId, key);
+    setProvider(providerId);
+  }, [applySessionKey]);
 
   const handleAiModelSettingsChange = useCallback((nextSettings: AiModelSettings) => {
     setAiModelSettings(normalizeAiModelSettings(nextSettings));
@@ -948,11 +968,17 @@ export default function Home({ searchParams }: HomeProps) {
   }, [aiModelSettings, aiModelSettingsHydrated]);
 
   useEffect(() => {
+    if (aiKeys.browserPreview) {
+      if (provider !== 'benchmark' && isSessionKeyProvider(provider) && aiModelSettings.providers[provider].apiKey.trim()) return;
+      const withKey = SESSION_KEY_PROVIDERS.find((providerId) => aiModelSettings.providers[providerId].apiKey.trim());
+      if (withKey) setProvider(withKey);
+      return;
+    }
     if (provider === 'benchmark') return;
     if (aiModelSettings.providers[provider].enabled) return;
     const nextProvider = AI_PROVIDER_ORDER.find((providerId) => aiModelSettings.providers[providerId].enabled) ?? 'ollama';
     setProvider(nextProvider);
-  }, [aiModelSettings, provider]);
+  }, [aiKeys.browserPreview, aiModelSettings, provider]);
 
   useEffect(() => {
     if (!aiModelSettingsHydrated) return;
@@ -964,6 +990,8 @@ export default function Home({ searchParams }: HomeProps) {
     })
       .then((res) => res.json())
       .then((data) => {
+        // `aiEnabled: false` is the server saying this page is the Browser Preview.
+        aiKeys.noteServerAiAccess(data?.aiEnabled !== false);
         setOllamaConnectionState(
           data.source === 'live' || data.source === 'live+cloud' || data.source === 'cloud'
             ? 'connected'
@@ -985,7 +1013,7 @@ export default function Home({ searchParams }: HomeProps) {
         setOllamaConnectionState('offline');
         /* keep fallback model list */
       });
-  }, [aiModelSettings.providers.ollama.models, aiModelSettingsHydrated, aiProviderRequestSettings, handleOllamaModelChange, handleOllamaModelsChange, ollamaModel]);
+  }, [aiKeys.noteServerAiAccess, aiModelSettings.providers.ollama.models, aiModelSettingsHydrated, aiProviderRequestSettings, handleOllamaModelChange, handleOllamaModelsChange, ollamaModel]);
 
   useEffect(() => {
     if (!supportsNxnProjectDirectoryStorage()) return;
@@ -2087,6 +2115,10 @@ export default function Home({ searchParams }: HomeProps) {
           })()
         : {};
       if (!res.ok) {
+        const missingTool = readMissingToolPayload(data);
+        if (missingTool) {
+          throw new Error(t('import.missingTool', { tool: missingTool.toolName, url: missingTool.downloadUrl }));
+        }
         throw new Error(data.error ?? 'Upload failed');
       }
 
@@ -2214,7 +2246,7 @@ export default function Home({ searchParams }: HomeProps) {
     } finally {
       setImportStatus('');
     }
-  }, [aiProviderRequestSettings, getImportProjectDirectory, handleNxnFileLoaded, handleXmlFileLoaded, locale, ollamaModel, polishImportedScore, provider]);
+  }, [aiProviderRequestSettings, getImportProjectDirectory, handleNxnFileLoaded, handleXmlFileLoaded, locale, ollamaModel, polishImportedScore, provider, t]);
 
   const handleSelectedFile = useCallback(async (file: File) => {
     await handleSelectedFiles([file]);
@@ -5112,6 +5144,7 @@ export default function Home({ searchParams }: HomeProps) {
 
         <HeaderOverflowMenu label={t('app.settings')}>
         {/* Provider selector */}
+        {providerOptions.length > 0 && (
         <div data-testid="provider-selector">
           <ProviderSelector
             provider={provider}
@@ -5124,6 +5157,7 @@ export default function Home({ searchParams }: HomeProps) {
             compact
           />
         </div>
+        )}
         <AiModelSettingsPanel
           settings={aiModelSettings}
           onSettingsChange={handleAiModelSettingsChange}
@@ -5131,6 +5165,11 @@ export default function Home({ searchParams }: HomeProps) {
           onOllamaModelChange={handleOllamaModelChange}
           liveOllamaModels={ollamaModels}
           openSignal={aiSettingsOpenSignal}
+          browserPreview={aiKeys.browserPreview}
+          secureKeysAvailable={aiKeys.secureKeysAvailable}
+          savedKeyProviders={aiKeys.savedKeyProviders}
+          onSaveKey={aiKeys.saveKey}
+          onDeleteSavedKey={aiKeys.deleteSavedKey}
         />
         <KeyboardPresetSettings />
         <LanguageSettings />
@@ -5281,6 +5320,7 @@ export default function Home({ searchParams }: HomeProps) {
             ollamaModel={ollamaModel}
             ollamaConnectionState={ollamaConnectionState}
             onOpenAiSettings={() => setAiSettingsOpenSignal((signal) => signal + 1)}
+            browserPreview={aiKeys.browserPreview}
           />
         ) : (
           <div className="nex-editor-workspace flex-1 flex overflow-hidden">
@@ -5663,6 +5703,20 @@ export default function Home({ searchParams }: HomeProps) {
               <div className="flex-1 p-3 overflow-hidden">
                 {workspaceTab === 'assistant' && (
                   <div className="flex h-full flex-col overflow-hidden min-h-0">
+                  {aiModelSettingsHydrated && !aiUsable && (aiKeys.browserPreview || !connectAiDismissed) && (
+                    <ConnectAiPanel
+                      browserPreview={aiKeys.browserPreview}
+                      canSaveKeys={aiKeys.secureKeysAvailable}
+                      initialProvider={isSessionKeyProvider(activeAiProvider) ? activeAiProvider : undefined}
+                      onUseSessionKey={handleUseSessionKey}
+                      onSaveKey={aiKeys.browserPreview ? undefined : async (providerId, key) => {
+                        const result = await aiKeys.saveKey(providerId, key);
+                        if (result.ok) setProvider(providerId);
+                        return result;
+                      }}
+                      onDismiss={aiKeys.browserPreview ? undefined : () => setConnectAiDismissed(true)}
+                    />
+                  )}
                   <ChatPanel
                     xml={xml}
                     provider={provider === 'benchmark' ? 'ollama' : provider}

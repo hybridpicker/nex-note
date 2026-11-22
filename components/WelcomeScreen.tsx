@@ -25,6 +25,8 @@ type WelcomeScreenProps = {
   ollamaModel: string;
   ollamaConnectionState: AiConnectionState;
   onOpenAiSettings: () => void;
+  /** Browser Preview: cloud providers with a Session Key only; Ollama is not offered. */
+  browserPreview?: boolean;
 };
 
 const PROVIDER_LABELS: Record<ProviderName, string> = {
@@ -43,7 +45,7 @@ function providerReadyLabel(provider: ProviderName, settings: AiModelSettings, o
     if (ollamaConnectionState === 'checking') return 'Checking';
     return 'Setup needed';
   }
-  return config.apiKey.trim() ? 'Key saved' : 'Needs key';
+  return config.apiKey.trim() ? 'Key ready' : 'Needs key';
 }
 
 function ScoreMotif() {
@@ -90,10 +92,13 @@ export default function WelcomeScreen({
   ollamaModel,
   ollamaConnectionState,
   onOpenAiSettings,
+  browserPreview = false,
 }: WelcomeScreenProps) {
   const { t } = useI18n();
   const settings = normalizeAiModelSettings(aiModelSettings);
-  const activeProvider = aiProvider === 'benchmark' ? 'ollama' : aiProvider;
+  const requestedProvider = aiProvider === 'benchmark' ? 'ollama' : aiProvider;
+  const activeProvider: ProviderName = browserPreview && requestedProvider === 'ollama' ? 'claude' : requestedProvider;
+  const listedProviders = browserPreview ? AI_PROVIDER_ORDER.filter((name) => name !== 'ollama') : AI_PROVIDER_ORDER;
   const providerConfig = settings.providers[activeProvider];
 
   let aiStatusTitle = t('welcome.aiCheckingTitle');
@@ -206,7 +211,7 @@ export default function WelcomeScreen({
               <h2 className="mt-5 text-lg font-semibold tracking-tight">{aiStatusTitle}</h2>
               <p className="mt-2 text-xs leading-5 text-white/75">{aiStatusDescription}</p>
               <div className="mt-5 space-y-2 border-t border-white/10 pt-4">
-                {AI_PROVIDER_ORDER.map((providerName) => (
+                {listedProviders.map((providerName) => (
                   <div key={providerName} className="flex items-center justify-between text-xs">
                     <span className="text-white/75">{PROVIDER_LABELS[providerName]}</span>
                     <span className={settings.providers[providerName].enabled ? 'text-white' : 'text-white/60'}>

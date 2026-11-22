@@ -42,6 +42,7 @@ import {
 import { isSustainingSoundfont, prepareSoundfontBuffers, shouldLoopNote, type SampleLoopPoints } from '@/lib/sample-loop';
 import { SUSTAIN_PEDAL_CONTROLLER, applySustainPedal } from '@/lib/playback-midi-controllers';
 import { METRONOME_CLICK, drumVoicePeak, playDrumHit, renderMetronomeClick, type DrumHitHandle } from '@/lib/drum-synth';
+import { allowRemoteSoundfontFallback } from '@/lib/soundfont-source';
 
 const LOCAL_SOUNDFONT_OPTIONS = {
   soundfont: 'FluidR3_GM' as const,
@@ -1650,12 +1651,14 @@ export function usePlayback(options?: {
         });
         try {
           // Offline-first: samples fetched by `npm run soundfonts:fetch` are served from /soundfonts;
-          // only when they are missing does soundfont-player fall back to its remote default host.
+          // only when they are missing does soundfont-player fall back to its remote default host,
+          // and never in the desktop app (lib/soundfont-source.ts) — there the oscillator answers.
           const destination = musicDestination(ac);
           const loadInstrument = async () => {
             try {
               return await instrument(ac, soundfont as import('soundfont-player').InstrumentName, { ...LOCAL_SOUNDFONT_OPTIONS, destination });
-            } catch {
+            } catch (localError) {
+              if (!allowRemoteSoundfontFallback()) throw localError;
               return instrument(ac, soundfont as import('soundfont-player').InstrumentName, { destination });
             }
           };

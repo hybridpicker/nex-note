@@ -27,6 +27,37 @@ function isOpenFileBatchPayload(payload) {
     && payload.files.every(isOpenFilePayload);
 }
 
+// AI provider keys in the OS keychain (electron/secure-keys.cjs). One provider per call; the
+// renderer never receives every key at once.
+const secureKeyProviders = new Set(['ollama', 'openai', 'claude', 'gemini']);
+function secureKeyCall(channel, payload) {
+  return ipcRenderer.invoke(channel, payload).catch(() => ({ ok: false, error: 'Secure key storage is not available.' }));
+}
+function secureKeyProvider(provider) {
+  return secureKeyProviders.has(provider) ? provider : '';
+}
+
+contextBridge.exposeInMainWorld('nexNoteSecureKeys', {
+  isAvailable() {
+    return secureKeyCall('nex-note:secure-keys:available');
+  },
+  list() {
+    return secureKeyCall('nex-note:secure-keys:list');
+  },
+  get(provider) {
+    return secureKeyCall('nex-note:secure-keys:get', { provider: secureKeyProvider(provider) });
+  },
+  set(provider, key) {
+    return secureKeyCall('nex-note:secure-keys:set', {
+      provider: secureKeyProvider(provider),
+      key: typeof key === 'string' ? key : '',
+    });
+  },
+  delete(provider) {
+    return secureKeyCall('nex-note:secure-keys:delete', { provider: secureKeyProvider(provider) });
+  },
+});
+
 contextBridge.exposeInMainWorld('nexNoteElectron', {
   isElectron: true,
   onMenuCommand(callback) {

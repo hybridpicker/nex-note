@@ -105,6 +105,6 @@ test('formatMuseScoreConversionError gives an actionable import-review message w
 
   assert.equal(
     message,
-    'MuseScore could not convert this file. The file may be unsupported, damaged, or need manual import review. Try MusicXML/MXL when available, or submit this file as a founder compatibility case.',
+    'MuseScore could not convert this file. The file may be unsupported, damaged, or need manual import review. Try MusicXML/MXL when available, or report it as a compatibility issue on GitHub.',
   );
 });

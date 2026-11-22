@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 import type { ProviderName } from '@/lib/ai-provider-config';
 import type { AiProviderRequestSettings } from '@/lib/ai-model-settings';
+import { redactSecrets } from '@/lib/redact-secrets';
 
 export type { ProviderName } from '@/lib/ai-provider-config';
 
@@ -14,6 +15,15 @@ export interface AIResponse {
   error?: string;
 }
 
+/**
+ * A key from the server environment, unless the public AI gate forbade it for this request
+ * (`serverKeyFallback: false`): Browser Preview requests only ever use their Session Key.
+ */
+function serverEnvKey(settings: AiProviderRequestSettings | undefined, name: string) {
+  if (settings?.serverKeyFallback === false) return '';
+  return process.env[name]?.trim() || '';
+}
+
 function formatProviderError(providerLabel: string, err: unknown, timeoutMs?: number) {
   const message = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : '';
@@ -21,7 +31,8 @@ function formatProviderError(providerLabel: string, err: unknown, timeoutMs?: nu
     const seconds = timeoutMs ? Math.round(timeoutMs / 1000) : null;
     return `${providerLabel} did not respond${seconds ? ` within ${seconds}s` : ''}. Try a smaller/faster model, check the provider connection, or retry when the model is loaded.`;
   }
-  return String(err);
+  // SDK errors can echo request details; never let a key reach a log or a response.
+  return redactSecrets(String(err)).slice(0, 1000);
 }
 
 function formatOpenAiError(err: unknown, timeoutMs: number) {
@@ -58,7 +69,7 @@ const OPENAI_INTENT_SCHEMA = {
 } as const;
 
 function resolveOllamaConnection(settings?: AiProviderRequestSettings) {
-  const apiKey = settings?.apiKeys?.ollama?.trim() || process.env.OLLAMA_API_KEY || '';
+  const apiKey = settings?.apiKeys?.ollama?.trim() || serverEnvKey(settings, 'OLLAMA_API_KEY');
   const baseUrl = settings?.ollamaBaseUrl?.trim()
     || (apiKey ? 'https://ollama.com' : 'http://localhost:11434');
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -122,7 +133,7 @@ export async function askOllama(
 export async function askClaude(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
   const start = Date.now();
   const model = settings?.models?.claude || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-  const apiKey = settings?.apiKeys?.claude || process.env.ANTHROPIC_API_KEY || '';
+  const apiKey = settings?.apiKeys?.claude?.trim() || serverEnvKey(settings, 'ANTHROPIC_API_KEY');
   if (!apiKey) {
     return { provider: 'claude', model, text: '', latencyMs: 0, error: 'ANTHROPIC_API_KEY not set' };
   }
@@ -143,7 +154,7 @@ export async function askClaude(prompt: string, settings?: AiProviderRequestSett
 export async function askOpenAI(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
   const start = Date.now();
   const model = process.env.OPENAI_MODEL?.trim() || settings?.models?.openai?.trim() || 'gpt-5.6-sol';
-  const apiKey = settings?.apiKeys?.openai?.trim() || process.env.OPENAI_API_KEY?.trim() || '';
+  const apiKey = settings?.apiKeys?.openai?.trim() || serverEnvKey(settings, 'OPENAI_API_KEY');
   const timeoutMs = 120000;
   if (!apiKey) {
     return {
@@ -190,7 +201,7 @@ export async function askOpenAI(prompt: string, settings?: AiProviderRequestSett
 export async function askGemini(prompt: string, settings?: AiProviderRequestSettings): Promise<AIResponse> {
   const start = Date.now();
   const model = settings?.models?.gemini || 'gemini-2.5-flash';
-  const apiKey = settings?.apiKeys?.gemini || process.env.GEMINI_API_KEY || '';
+  const apiKey = settings?.apiKeys?.gemini?.trim() || serverEnvKey(settings, 'GEMINI_API_KEY');
   if (!apiKey) {
     return { provider: 'gemini', model, text: '', latencyMs: 0, error: 'GEMINI_API_KEY not set' };
   }

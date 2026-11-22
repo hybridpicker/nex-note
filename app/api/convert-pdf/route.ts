@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import { PDFDocument } from 'pdf-lib';
-import { writeFile, readFile, unlink, mkdir, rm, readdir } from 'fs/promises';
+import { writeFile, readFile, unlink, mkdir, rm, readdir, access } from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import { tmpdir } from 'os';
 import { basename, delimiter, dirname, extname, join } from 'path';
 import { extractXmlFromMxl } from '@/lib/mxl-utils';
@@ -17,6 +18,13 @@ import {
 import { analyzeMidiBuffer } from '@/src/nex-note/midi/analyze-midi';
 import { applyMidiImportLayout } from '@/src/nex-note/midi/apply-midi-import-layout';
 import { convertGuitarProBufferToTabbedMusicXml } from '@/lib/alphatab-guitar-pro-import';
+import {
+  MISSING_TOOL_HTTP_STATUS,
+  MissingExternalToolError,
+  isMissingExternalToolError,
+  missingToolPayload,
+  type ExternalToolId,
+} from '@/lib/external-tools';
 import { formatMuseScoreConversionError, museScoreSpawnEnv, readMuseScoreCliVersion, resolveMuseScoreCli } from '@/lib/musescore-cli';
 import {
   formatMsczVersionMismatchError,
@@ -33,6 +41,8 @@ import {
   stripTabParts,
 } from '@/lib/guitar-pro-import-contract';
 
+// PDF_TO_MUSESCORE_SCRIPT points at an OMR helper script. The `~/Coding/musescore` checkout is
+// only a developer fallback; released apps report a missing tool instead of naming this path.
 const PDF_TO_MUSESCORE_SCRIPT = process.env.PDF_TO_MUSESCORE_SCRIPT
   || `${process.env.HOME}/Coding/musescore/scripts/pdf-to-musescore.sh`;
 const AUDIVERIS_JAVA = process.env.AUDIVERIS_JAVA
@@ -177,12 +187,15 @@ export async function POST(req: NextRequest) {
     const xml = await runOmrConversion(inputPath, tmpDir, outputMxl);
     return NextResponse.json({ xml, filename: singleFile.name.replace(/\.[^.]+$/i, '.mxl') });
   } catch (err) {
+    if (isMissingExternalToolError(err)) {
+      // No file name or path: only which converter is absent.
+      console.warn('Score import needs a missing converter', { format: fmt, tool: err.tool });
+      return NextResponse.json(missingToolPayload(err), { status: MISSING_TOOL_HTTP_STATUS });
+    }
     const message = fmt === 'image' ? describeOmrFailure(err) : err instanceof Error ? err.message : String(err);
     console.warn('Score import conversion failed', {
-      filename: singleFile.name,
       format: fmt,
       size: singleFile.size,
-      message,
     });
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
@@ -231,12 +244,14 @@ async function convertImagePageBatch(files: File[], requestedBatchName: string) 
       ...(skipped ? { warnings: [skipped] } : {}),
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    if (isMissingExternalToolError(err)) {
+      console.warn('Multi-image score import needs a missing converter', { pageCount: sortedFiles.length, tool: err.tool });
+      return NextResponse.json(missingToolPayload(err), { status: MISSING_TOOL_HTTP_STATUS });
+    }
+    const message = describeOmrFailure(err);
     console.warn('Multi-image score import conversion failed', {
-      filename: batchBaseName,
       pageCount: sortedFiles.length,
       size: sortedFiles.reduce((sum, file) => sum + file.size, 0),
-      message,
     });
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
@@ -299,7 +314,7 @@ function runMscoreToMxl(inputPath: string, outputMxl: string, options: { preserv
 
     let stderr = '';
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
-    proc.on('error', reject);
+    proc.on('error', (error) => reject(asMissingToolError(error, 'musescore')));
 
     proc.on('close', async (code, signal) => {
       if (code !== 0) {
@@ -339,7 +354,7 @@ async function convertPdf(buffer: Buffer, inputPath: string, outDir: string, out
       if (skipped) warnings.push(skipped);
       return { xml, pageCount: preflight.pageCount, warnings };
     } catch (error) {
-      console.warn('Audiveris could not read every page; falling back to the first page.', error);
+      console.warn('Audiveris could not read every page; falling back to the first page.', isMissingExternalToolError(error) ? { tool: error.tool } : error);
       warnings.push(`Only page 1 of ${preflight.pageCount} was imported: ${describeOmrFailure(error)}`);
     }
   }
@@ -348,6 +363,7 @@ async function convertPdf(buffer: Buffer, inputPath: string, outDir: string, out
     const xml = await runOmrConversion(inputPath, outDir, outputMxl);
     return { xml, pageCount: preflight.pageCount, warnings };
   } catch (error) {
+    if (isMissingExternalToolError(error)) throw error;
     throw new Error(describeOmrFailure(error));
   }
 }
@@ -362,6 +378,8 @@ async function runOmrConversion(
     return (await runOmrAllSheets(inputPath, outDir, outputMxl)).xml;
   }
 
+  await assertToolPath(PDF_TO_MUSESCORE_SCRIPT, 'audiveris', fsConstants.R_OK);
+
   return new Promise((resolve, reject) => {
     const proc = spawn('bash', [PDF_TO_MUSESCORE_SCRIPT, inputPath, outDir], {
       timeout: 120000,
@@ -370,7 +388,7 @@ async function runOmrConversion(
 
     let stderr = '';
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
-    proc.on('error', reject);
+    proc.on('error', (error) => reject(asMissingToolError(error, 'audiveris')));
 
     proc.on('close', async (code) => {
       if (code !== 0) {
@@ -417,6 +435,7 @@ async function runOmrAllSheets(
 }
 
 async function resolveAudiverisJavaArgs() {
+  await assertToolPath(AUDIVERIS_JAVA, 'audiveris', fsConstants.X_OK);
   const [classpath, tesseractPrefix] = await Promise.all([
     resolveAudiverisClasspath(),
     resolveTesseractPrefix(),
@@ -474,14 +493,16 @@ async function runAudiverisAllSheets(inputPath: string, outDir: string) {
 }
 
 async function resolveAudiverisClasspath() {
-  const entries = await readdir(AUDIVERIS_APP_DIR);
+  const entries = await readdir(AUDIVERIS_APP_DIR).catch((error) => {
+    throw asMissingToolError(error, 'audiveris');
+  });
   const jars = entries
     .filter((name) => name.toLowerCase().endsWith('.jar'))
     .sort()
     .map((name) => join(AUDIVERIS_APP_DIR, name));
 
   if (jars.length === 0) {
-    throw new Error(`No Audiveris jars were found in ${AUDIVERIS_APP_DIR}`);
+    throw new MissingExternalToolError('audiveris');
   }
   return jars.join(delimiter);
 }
@@ -499,7 +520,8 @@ async function resolveTesseractPrefix() {
     }
   }
 
-  throw new Error('Could not resolve Tesseract for Audiveris. Set AUDIVERIS_TESSERACT_PREFIX or install Homebrew tesseract.');
+  // Developers can set AUDIVERIS_TESSERACT_PREFIX; users get the generic install hint.
+  throw new MissingExternalToolError('tesseract');
 }
 
 function readCommandStdout(command: string, args: string[]) {
@@ -518,6 +540,22 @@ function readCommandStdout(command: string, args: string[]) {
       resolve(stdout.trim());
     });
   });
+}
+
+/** Throws a typed missing-tool error when a configured converter path is absent. */
+async function assertToolPath(path: string, tool: ExternalToolId, mode: number) {
+  try {
+    await access(path, mode);
+  } catch {
+    throw new MissingExternalToolError(tool);
+  }
+}
+
+/** A spawn/readdir ENOENT means the converter is not installed; anything else stays as is. */
+function asMissingToolError(error: unknown, tool: ExternalToolId) {
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (code === 'ENOENT' || code === 'EACCES') return new MissingExternalToolError(tool);
+  return error;
 }
 
 /** Full console output a failed `runProcess` call carried, or the error text. */
@@ -544,7 +582,7 @@ function runProcess(
     let stderr = '';
     proc.stdout.on('data', (data) => { stdout += data.toString(); });
     proc.stderr.on('data', (data) => { stderr += data.toString(); });
-    proc.on('error', reject);
+    proc.on('error', (error) => reject(asMissingToolError(error, 'audiveris')));
     proc.on('close', (code, signal) => {
       if (code !== 0) {
         const error = new Error(`${options.errorPrefix} (exit ${code}, signal ${signal ?? 'none'}): ${formatProcessOutput(stdout, stderr)}`);
