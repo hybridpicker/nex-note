@@ -78,6 +78,26 @@ for 45 s). That test also fails intermittently on 16.2.11: 1 of 8 runs there, 2 
 treated as an existing flake, not a regression of the upgrade, but the sample is small. The sharp, postcss,
 nanoid and Electron alerts are still open. The image-optimisation endpoint was not exercised.
 
+## Update 2026-11-22: before the Public Beta
+
+Done on `devel` before the first Release:
+
+- `npm audit fix` (no `--force`): `@capacitor/ios`, `@xmldom/xmldom`, `next`, `js-yaml`, `nanoid`, `undici`,
+  `source-map-js` and `baseline-browser-mapping` moved to patched versions within their ranges.
+- The `sharp` override was raised from 0.35.0 to 0.35.5 (GHSA-rgj7-g3m4-5g8c, GHSA-wq5f-xc86-pv6w) and the
+  `postcss` override from 8.5.18 to 8.5.33 (GHSA-fxqj-rqcc-2cmp). Releases load `@img/sharp-wasm32` 0.35.5.
+
+`npm audit --omit=dev` now reports 0. `npm audit` still reports 7, all development scope:
+
+- `electron` 41.10.7 (high). The 41.x line gets no more fixes; the HID/USB permission and the other open
+  advisories are fixed only from 42.11.16 on. Moving to Electron 42 is a separate change with its own
+  Electron, Linux and Release smoke tests.
+- `electron-builder` and its `app-builder-lib`, `dmg-builder`, `@electron/universal` and `minimatch` chain
+  (moderate, packaging time only). npm's only offer is a downgrade to 25.1.0, which is not taken.
+- `@tailwindcss/postcss` (moderate, build time only), reported through its `postcss` range.
+
+Checked: `npm test` (2,192), `npm run build`, `electron:refresh`, `ipad:sync`, `ipad:doctor`.
+
 ## Not done
 
 No other dependency, override or workflow was changed. No alert was dismissed. Reachability of the
