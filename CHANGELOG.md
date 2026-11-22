@@ -6,6 +6,10 @@ All notable changes to nex-note are documented here.
 
 ### Added
 
+- Public Beta distribution. Releases come from `main` as a universal, Developer ID–signed and notarized macOS DMG and a Linux AppImage (plus the Omarchy/Arch package `nex-note-bin`), published on GitHub Releases by `npm run ship`; `npm run release:setup` guides through the one-time signing setup. See `docs/release.md`.
+- Update Check for Releases: the app asks once whether to look for updates, then offers each new Release before downloading and installing it. No usage data is sent.
+- The Developer App is now "Nex Note Dev" (own bundle id, settings and Linux launcher `nex-note-dev`), so it runs beside the Public Beta. It fast-forwards a clean `devel` checkout from origin at start and hourly, then rebuilds itself. Its first start copies the previous "Nex Note" settings and library.
+- New website for nex-note.com in English and German: download buttons for the visitor's system, "Try in browser", formats, privacy and AI, FAQ, Impressum and privacy policy. See `docs/website.md`.
 - Keyboard presets for people who come from Sibelius or Finale: the selector beside the language menu offers `Nex Note / MuseScore`, `Sibelius (keypad)`, `Sibelius (laptop)` and `Finale (Simple Entry)`. A preset changes the note-entry keys only (values, accidentals, rest, tie, intervals, voices); see `docs/keyboard-shortcuts.md`.
 - The AI panel has arranger quick actions above the input: four-part setting, jazz voicing, figured bass, reharmonize, piano accompaniment, chord symbols and a range check. A click sends the request, `Alt/Option`+click puts it into the input to edit. Requests such as "zweite Stimme", "counter-melody" or "SATB" now go to the arrangement workflow.
 - More files open: uncompressed MuseScore (`.mscx`), Capella (`.cap`, `.capx`), Power Tab (`.ptb`), MEI, Overture, Guitar Pro 3 (`.gp3`, `.gtp`) and MIDI karaoke (`.kar`). Sibelius, Finale and Dorico files are answered with the export step that makes them openable.

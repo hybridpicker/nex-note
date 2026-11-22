@@ -97,6 +97,8 @@ To build and open the macOS desktop app, run `npm run app`. On Linux (Omarchy/Hy
 - [Linux (Omarchy) roadmap](./docs/linux-pro-roadmap.md)
 - [Architecture blueprint](./docs/architecture-blueprint.md)
 - [Multi-app development flow](./docs/multi-app-development-flow.md)
+- [Public website](./docs/website.md): landing page, Impressum, privacy policy, download links
+- [Releases](./docs/release.md): Public Beta builds, signing, `npm run ship`, Release vs. Developer App
 - [Documentation index](./docs/README.md)
 
 ## Contributing
