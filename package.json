@@ -1,6 +1,6 @@
 {
   "name": "nex-note",
-  "version": "0.0.7",
+  "version": "0.1.0-dev",
   "description": "Downloadable music app for private scores, tabs, AI editing, and embeds.",
   "private": true,
   "license": "AGPL-3.0-or-later",
@@ -15,7 +15,7 @@
     "build": "next build --webpack",
     "postbuild": "node scripts/sync-standalone-assets.mjs",
     "electron:dev": "node scripts/electron-dev.mjs",
-    "electron:prep": "node scripts/prepare-electron-package.mjs",
+    "electron:prep": "node scripts/prepare-electron-package.mjs && node scripts/bundle-electron-vendor.mjs",
     "electron:build": "npm run build && npm run electron:prep && electron-builder --mac && npm run electron:verify",
     "electron:build:linux": "npm run build && npm run electron:prep && electron-builder --linux dir --publish never -c.directories.output=dist/linux",
     "electron:build:linux:appimage": "npm run build && npm run electron:prep && electron-builder --linux AppImage --publish never -c.directories.output=dist/linux-appimage",
@@ -52,7 +52,10 @@
     "harness:assistant-catalog": "node --import tsx scripts/run-assistant-task-catalog.tsx",
     "smoke:musescore-roundtrip": "tsx scripts/musescore-roundtrip-smoke.ts",
     "benchmark": "node --env-file=.env.local scripts/benchmark-ollama.mjs",
-    "benchmark:quick": "node --env-file=.env.local scripts/benchmark-ollama.mjs --quick"
+    "benchmark:quick": "node --env-file=.env.local scripts/benchmark-ollama.mjs --quick",
+    "release:setup": "bash scripts/setup-release-signing.sh",
+    "ship": "node scripts/ship-release.mjs",
+    "release:build": "node scripts/ship-release.mjs --build-only"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
@@ -62,6 +65,7 @@
     "@google/generative-ai": "^0.24.1",
     "@tonejs/midi": "^2.0.28",
     "@xmldom/xmldom": "^0.9.10",
+    "electron-updater": "^6.8.11",
     "jszip": "^3.10.1",
     "next": "^16.4.5",
     "openai": "^6.49.0",
@@ -80,6 +84,7 @@
     "@types/react-dom": "^19",
     "electron": "^41.4.0",
     "electron-builder": "^26.8.1",
+    "esbuild": "0.28.1",
     "react-test-renderer": "^19.2.4",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
@@ -91,8 +96,8 @@
     "sharp": "0.35.0"
   },
   "build": {
-    "appId": "app.nex-note.desktop",
-    "productName": "Nex Note",
+    "appId": "app.nex-note.desktop.dev",
+    "productName": "Nex Note Dev",
     "asar": false,
     "npmRebuild": false,
     "files": [
@@ -117,10 +122,10 @@
     "linux": {
       "category": "AudioVideo;Audio;Music",
       "icon": "assets/app-icon.png",
-      "executableName": "nex-note",
+      "executableName": "nex-note-dev",
       "desktop": {
         "entry": {
-          "StartupWMClass": "nex-note"
+          "StartupWMClass": "nex-note-dev"
         }
       },
       "target": [

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const appBundle = path.join(root, 'dist', 'macos', 'mac-arm64', 'Nex Note.app');
+const appBundle = path.join(root, 'dist', 'macos', 'mac-arm64', 'Nex Note Dev.app');
 
 function run(command, args, options = {}) {
   console.log(`$ ${[command, ...args].join(' ')}`);
@@ -36,18 +36,18 @@ function ensureCleanWorktree() {
 function quitRunningMacApp() {
   if (process.platform !== 'darwin') return;
 
-  spawnSync('osascript', ['-e', 'tell application "Nex Note" to quit'], {
+  spawnSync('osascript', ['-e', 'tell application "Nex Note Dev" to quit'], {
     stdio: 'ignore',
   });
 
   const startedAt = Date.now();
   while (Date.now() - startedAt < 10000) {
-    const result = spawnSync('pgrep', ['-x', 'Nex Note'], { stdio: 'ignore' });
+    const result = spawnSync('pgrep', ['-x', 'Nex Note Dev'], { stdio: 'ignore' });
     if (result.status !== 0) return;
     spawnSync('sleep', ['0.5'], { stdio: 'ignore' });
   }
 
-  console.error('Nex Note is still running after quit request; refusing to open a second copy.');
+  console.error('Nex Note Dev is still running after quit request; refusing to open a second copy.');
   process.exit(1);
 }
 

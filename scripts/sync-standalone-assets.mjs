@@ -41,12 +41,18 @@ function git(args) {
   }
 }
 
+// Releases are stamped by the release pipeline (scripts/ship-release.mjs); every other build is the
+// Developer App, which records its checkout so a Linux install outside the repo can still find it.
+const channel = process.env.NEX_NOTE_RELEASE_CHANNEL === 'release' ? 'release' : 'developer';
 const localBuildState = getLocalBuildState(root);
 const buildInfo = {
   app: 'nex-note',
+  channel,
   buildTime: new Date().toISOString(),
   ...localBuildState,
-  originDevelCommit: git(['rev-parse', 'origin/devel']),
+  ...(channel === 'developer'
+    ? { originDevelCommit: git(['rev-parse', 'origin/devel']), sourceRepo: root }
+    : {}),
 };
 
 writeFileSync(

@@ -5,6 +5,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { injectIpadServerUrl } from './ipad-dev-helpers.mjs';
 
+// CFBundleShortVersionString must be numeric; devel's "0.1.0-dev" becomes "0.1.0".
+function marketingVersion(version) {
+  return String(version).replace(/-.*$/, '');
+}
+
 const root = process.cwd();
 const infoPlistPath = path.join(root, 'ios', 'App', 'App', 'Info.plist');
 const projectPath = path.join(root, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj');
@@ -59,7 +64,7 @@ async function main() {
   const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
   const configuredProject = originalProject
     .replace(/TARGETED_DEVICE_FAMILY = "?1,2"?;/g, 'TARGETED_DEVICE_FAMILY = 2;')
-    .replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${packageJson.version};`);
+    .replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${marketingVersion(packageJson.version)};`);
   if (configuredProject !== originalProject) {
     await writeFile(projectPath, configuredProject);
   }

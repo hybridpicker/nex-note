@@ -197,7 +197,7 @@ async function buildCommit({ ref, commit, keep, keepWorktree }) {
     const builtDir = path.join(buildRoot, 'dist', 'macos');
     const appDir = readdirSync(builtDir).find((name) => name.startsWith('mac'));
     const buildInfoPath = path.join(
-      builtDir, appDir ?? 'mac', 'Nex Note.app', 'Contents', 'Resources', 'app',
+      builtDir, appDir ?? 'mac', 'Nex Note Dev.app', 'Contents', 'Resources', 'app',
       '.next', 'standalone', 'nex-note-build.json',
     );
     const buildInfo = JSON.parse(readFileSync(buildInfoPath, 'utf8'));

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell, utilityProcess } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const http = require('node:http');
@@ -15,8 +15,37 @@ const {
   resolveExecutable,
 } = require('./launch-helpers.cjs');
 const { describeBuildState, getLocalBuildState } = require('./build-state.cjs');
+const {
+  DEVELOPER_CHANNEL,
+  RELEASE_CHANNEL,
+  appNameForChannel,
+  migrateDeveloperUserData,
+  readBuildInfoSync,
+  resolveChannel,
+} = require('./channel.cjs');
+const { createReleaseUpdateController } = require('./release-updates.cjs');
+const { registerSecureKeyIpc } = require('./secure-keys.cjs');
+const {
+  DEVELOPER_SYNC_INTERVAL_MS,
+  developerRefreshCommand,
+  syncDeveloperCheckout,
+} = require('./developer-sync.cjs');
 
-const APP_NAME = 'Nex Note';
+// A Release is the Public Beta "Nex Note"; everything else is the Developer App "Nex Note Dev".
+// The name decides the user-data folder, so both apps can be installed side by side.
+const STARTUP_BUILD_INFO = readBuildInfoSync(app.getAppPath());
+const APP_CHANNEL = resolveChannel({ isPackaged: app.isPackaged, buildInfo: STARTUP_BUILD_INFO });
+const APP_NAME = appNameForChannel(APP_CHANNEL);
+const IS_RELEASE = APP_CHANNEL === RELEASE_CHANNEL;
+
+if (APP_CHANNEL === DEVELOPER_CHANNEL && app.isPackaged) {
+  try {
+    const migration = migrateDeveloperUserData({ appDataPath: app.getPath('appData'), channel: APP_CHANNEL });
+    if (migration.migrated) console.log('[electron] Copied the previous Nex Note user data into Nex Note Dev.');
+  } catch (error) {
+    console.error('[electron] Could not copy the previous user data:', error?.message || error);
+  }
+}
 
 const IS_LINUX = process.platform === 'linux';
 // Omarchy/Hyprland is a tiling Wayland compositor: the window manager owns the
@@ -30,8 +59,10 @@ if (IS_LINUX) {
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
   app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,UseOzonePlatform');
   app.commandLine.appendSwitch('enable-wayland-ime');
-  app.setDesktopName('nex-note.desktop');
+  app.setDesktopName(IS_RELEASE ? 'nex-note.desktop' : 'nex-note-dev.desktop');
 }
+
+let releaseUpdates = null;
 
 let mainWindow = null;
 let nextProcess = null;
@@ -485,11 +516,26 @@ function buildApplicationMenuTemplate() {
     ],
   };
 
+  const updateLabels = releaseUpdates?.menuLabels();
+  const updateMenuItems = releaseUpdates
+    ? [
+        { label: updateLabels.check, click: () => { void releaseUpdates.checkNow(); } },
+        ...(releaseUpdates.support === 'in-app'
+          ? [{
+              label: updateLabels.automatic,
+              type: 'checkbox',
+              checked: releaseUpdates.automaticChecks,
+              click: (item) => { void releaseUpdates.setAutomaticChecks(item.checked); },
+            }]
+          : []),
+      ]
+    : [];
+
   const helpMenu = {
     label: 'Help',
     submenu: [
       menuCommand('help:commandCenter', { label: 'Search Commands', accelerator: 'CommandOrControl+K' }),
-      ...(isMac ? [] : [{ type: 'separator' }, { role: 'about', label: `About ${APP_NAME}` }]),
+      ...(isMac ? [] : [{ type: 'separator' }, ...updateMenuItems, { role: 'about', label: `About ${APP_NAME}` }]),
     ],
   };
 
@@ -499,6 +545,7 @@ function buildApplicationMenuTemplate() {
           label: APP_NAME,
           submenu: [
             { role: 'about', label: `About ${APP_NAME}` },
+            ...updateMenuItems,
             { type: 'separator' },
             { role: 'services', label: 'Services' },
             { type: 'separator' },
@@ -530,8 +577,22 @@ function getRootDir() {
   return isElectronDevRuntime() ? path.resolve(__dirname, '..') : app.getAppPath();
 }
 
+async function isNexNoteRepo(directory) {
+  if (!await pathExists(path.join(directory, '.git'))) return false;
+  try {
+    const packageJson = JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8'));
+    return packageJson?.name === 'nex-note';
+  } catch {
+    return false;
+  }
+}
+
 async function findRepoRootForPackagedApp() {
-  if (isElectronDevRuntime()) return null;
+  if (isElectronDevRuntime() || IS_RELEASE) return null;
+
+  // Linux installs copy the app out of the checkout; the Developer App build records where it came from.
+  const recordedRepo = typeof STARTUP_BUILD_INFO?.sourceRepo === 'string' ? STARTUP_BUILD_INFO.sourceRepo : null;
+  if (recordedRepo && await isNexNoteRepo(recordedRepo)) return recordedRepo;
 
   let current = app.getAppPath();
   for (let depth = 0; depth < 10; depth += 1) {
@@ -610,11 +671,15 @@ function createLocalRefreshWindow(buildInfo, localBuildState) {
 }
 
 async function ensurePackagedBuildMatchesLocalDevel() {
-  if (localRefreshStarted || isElectronDevRuntime()) return false;
+  if (localRefreshStarted || isElectronDevRuntime() || IS_RELEASE) return false;
 
   try {
     const repoRoot = await findRepoRootForPackagedApp();
     if (!repoRoot) return false;
+
+    const sync = await syncDeveloperCheckout(repoRoot);
+    if (sync.changed) console.log(`[electron] Fast-forwarded devel by ${sync.commits} commit(s) from origin.`);
+    else if (sync.reason !== 'up-to-date') console.log(`[electron] devel sync skipped: ${sync.reason}.`);
 
     const [buildInfo, localBuildState] = await Promise.all([
       readBuildInfo(),
@@ -634,11 +699,12 @@ async function ensurePackagedBuildMatchesLocalDevel() {
     if (freshness.action === 'run') return false;
 
     const updaterEnv = buildChildProcessEnv({ NEX_NOTE_STARTUP_LOCAL_REFRESH: '1' });
-    const npmCommand = await resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm', updaterEnv);
-    if (!npmCommand) {
+    const refresh = developerRefreshCommand(process.platform);
+    const refreshExecutable = await resolveExecutable(refresh.command, updaterEnv);
+    if (!refreshExecutable) {
       dialog.showErrorBox(
-        'Nex Note could not refresh',
-        'npm was not found. Run npm run app from the nex-note repository.',
+        `${APP_NAME} could not refresh`,
+        `${refresh.command} was not found. Run npm run app from the nex-note repository.`,
       );
       return false;
     }
@@ -649,7 +715,7 @@ async function ensurePackagedBuildMatchesLocalDevel() {
     const logHandle = await fs.open(logPath, 'a');
     localRefreshStarted = true;
     createLocalRefreshWindow(buildInfo, localBuildState);
-    const updater = spawn(npmCommand, ['run', 'electron:refresh'], {
+    const updater = spawn(refreshExecutable, refresh.args, {
       cwd: repoRoot,
       stdio: ['ignore', logHandle.fd, logHandle.fd],
       env: updaterEnv,
@@ -692,6 +758,35 @@ async function ensurePackagedBuildMatchesLocalDevel() {
     console.error('[electron] Could not compare the packaged app with local devel:', error);
     return false;
   }
+}
+
+// While the Developer App runs, pick up new devel commits every hour and offer the rebuild; the
+// next start then rebuilds through ensurePackagedBuildMatchesLocalDevel().
+function startDeveloperSyncTimer() {
+  if (IS_RELEASE || isElectronDevRuntime()) return;
+  const timer = setInterval(async () => {
+    if (localRefreshStarted) return;
+    const repoRoot = await findRepoRootForPackagedApp();
+    if (!repoRoot) return;
+    const sync = await syncDeveloperCheckout(repoRoot);
+    if (!sync.changed) return;
+    const options = {
+      type: 'info',
+      message: `devel moved ahead by ${sync.commits} commit(s)`,
+      detail: `${APP_NAME} fast-forwarded the local checkout. Restart to rebuild the Developer App now?`,
+      buttons: ['Restart and rebuild', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    };
+    const { response } = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+    if (response === 0) {
+      app.relaunch();
+      app.quit();
+    }
+  }, DEVELOPER_SYNC_INTERVAL_MS);
+  timer.unref?.();
 }
 
 function getAssetPath(...segments) {
@@ -990,6 +1085,9 @@ ipcMain.on('nex-note:open-file-ready', (event) => {
   void flushPendingOpenFiles();
 });
 
+// Saved AI provider keys live in the OS keychain (safeStorage), never in localStorage.
+registerSecureKeyIpc(ipcMain, { app, safeStorage });
+
 ipcMain.handle('nex-note:open-file-dialog', async () => {
   await openFilesWithNativeDialog();
 });
@@ -1066,9 +1164,25 @@ if (!singleInstanceLock) {
       app.dock.setIcon(getAssetPath('app-icon.png'));
     }
     if (await ensurePackagedBuildMatchesLocalDevel()) return;
+    if (IS_RELEASE && app.isPackaged) {
+      releaseUpdates = createReleaseUpdateController({
+        app,
+        dialog,
+        getWindow: () => mainWindow,
+        loadUpdater: () => require('./vendor/electron-updater.cjs'),
+      });
+      releaseUpdates.onPreferencesChanged(() => createApplicationMenu());
+    }
     createApplicationMenu();
     queueCommandLineFiles(process.argv.slice(1));
     await ensureMainWindow();
+    if (releaseUpdates) {
+      void releaseUpdates.start().catch((error) => {
+        console.error('[electron] Update Check could not start:', error?.message || error);
+      });
+    } else {
+      startDeveloperSyncTimer();
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

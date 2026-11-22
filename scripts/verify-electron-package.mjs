@@ -12,7 +12,7 @@ const buildInfoPath = path.join(
   'dist',
   'macos',
   'mac-arm64',
-  'Nex Note.app',
+  'Nex Note Dev.app',
   'Contents',
   'Resources',
   'app',

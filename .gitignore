@@ -64,3 +64,6 @@ next-env.d.ts
 
 # Offline playback samples (npm run soundfonts:fetch)
 /public/soundfonts/
+
+# bundled Electron main-process dependencies (npm run electron:prep)
+/electron/vendor/

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const APP_NAME = 'Nex Note';
+const APP_NAME = 'Nex Note Dev';
 const APP_BUNDLE_ID = 'app.nex-note.desktop.dev';
 const ELECTRON_EXECUTABLE_NAME = 'Electron';
 

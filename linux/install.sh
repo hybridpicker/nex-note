@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Build Nex Note for Linux (Omarchy/Hyprland) and install it as a desktop app. No root needed.
+# Build the Developer App "Nex Note Dev" from this checkout (Omarchy/Hyprland) and install it as a
+# desktop app. No root needed. It lives beside the Public Beta (AUR package nex-note-bin, /opt).
 #   ./linux/install.sh              build + install
 #   ./linux/install.sh --no-build   reinstall the existing dist/linux build
 #   ./linux/install.sh --uninstall  remove app, launcher, icons and MIME entries
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$HOME/.local/opt/nex-note"
-BIN="$HOME/.local/bin/nex-note"
+DEST="$HOME/.local/opt/nex-note-dev"
+BIN="$HOME/.local/bin/nex-note-dev"
 APPS="$HOME/.local/share/applications"
 MIME="$HOME/.local/share/mime"
 ICONS="$HOME/.local/share/icons/hicolor"
@@ -17,8 +18,17 @@ refresh_caches() {
   gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null || true
 }
 
+# Before the Developer App had its own name, this script installed it as "Nex Note" under these paths.
+remove_legacy_install() {
+  if [ -d "$HOME/.local/opt/nex-note" ] || [ -f "$APPS/nex-note.desktop" ]; then
+    rm -rf "$HOME/.local/opt/nex-note" "$HOME/.local/bin/nex-note" "$APPS/nex-note.desktop" "$ICONS/512x512/apps/nex-note.png"
+    echo "Removed the previous developer install (~/.local/opt/nex-note); it is now Nex Note Dev."
+  fi
+}
+
 if [ "${1:-}" = "--uninstall" ]; then
-  rm -rf "$DEST" "$BIN" "$APPS/nex-note.desktop" "$MIME/packages/nex-note.xml" "$ICONS/512x512/apps/nex-note.png"
+  rm -rf "$DEST" "$BIN" "$APPS/nex-note-dev.desktop" "$ICONS/512x512/apps/nex-note-dev.png"
+  remove_legacy_install
   refresh_caches
   echo "Nex Note removed."
   exit 0
@@ -33,38 +43,40 @@ if [ "${1:-}" != "--no-build" ]; then
 fi
 
 SRC="$REPO/dist/linux/linux-unpacked"
-[ -x "$SRC/nex-note" ] || SRC="$(dirname "$(find "$REPO/dist/linux" -maxdepth 2 -type f -name 'nex-note' | head -1)")"
-[ -x "$SRC/nex-note" ] || { echo "No Linux build found in dist/linux." >&2; exit 1; }
+[ -x "$SRC/nex-note-dev" ] || SRC="$(dirname "$(find "$REPO/dist/linux" -maxdepth 2 -type f -name 'nex-note-dev' | head -1)")"
+[ -x "$SRC/nex-note-dev" ] || { echo "No Linux build found in dist/linux." >&2; exit 1; }
+
+remove_legacy_install
 
 rm -rf "$DEST"; mkdir -p "$DEST"; cp -r "$SRC/." "$DEST/"
 cp "$REPO/assets/app-icon.png" "$DEST/icon.png"
 
 mkdir -p "$(dirname "$BIN")" "$ICONS/512x512/apps" "$MIME/packages" "$APPS"
-cp "$REPO/assets/app-icon.png" "$ICONS/512x512/apps/nex-note.png"
+cp "$REPO/assets/app-icon.png" "$ICONS/512x512/apps/nex-note-dev.png"
 cp "$REPO/linux/nex-note.xml" "$MIME/packages/nex-note.xml"
 
-# Launcher on PATH: `nex-note score.mxl` opens the file in the running instance.
+# Launcher on PATH: `nex-note-dev score.mxl` opens the file in the running instance.
 cat > "$BIN" <<LAUNCHER
 #!/usr/bin/env bash
-exec "$DEST/nex-note" "\$@"
+exec "$DEST/nex-note-dev" "\$@"
 LAUNCHER
 chmod +x "$BIN"
 
-cat > "$APPS/nex-note.desktop" <<DESKTOP
+cat > "$APPS/nex-note-dev.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=Nex Note
+Name=Nex Note Dev
 GenericName=Music Notation Editor
 Comment=Professional note entry, tabs and AI-assisted score editing
-Exec=$DEST/nex-note %F
-Icon=nex-note
+Exec=$DEST/nex-note-dev %F
+Icon=nex-note-dev
 Terminal=false
 Categories=AudioVideo;Audio;Music;Midi;
 Keywords=notation;score;musicxml;midi;tab;sheet music;noten;
 MimeType=application/vnd.recordare.musicxml+xml;application/vnd.recordare.musicxml;application/x-nex-note-project;application/x-musescore;application/x-guitar-pro;audio/midi;audio/x-midi;
-StartupWMClass=nex-note
+StartupWMClass=nex-note-dev
 StartupNotify=true
 DESKTOP
 
 refresh_caches
-echo "Installed. Launch 'Nex Note' from the launcher (Super+Space) or run: nex-note [file]"
+echo "Installed. Launch 'Nex Note Dev' from the launcher (Super+Space) or run: nex-note-dev [file]"

@@ -46,9 +46,12 @@ Before handoff:
 1. Run focused tests while iterating.
 2. For shared runtime changes, run `npm test` and `npm run build`.
 3. For Electron/macOS behavior or packaging changes, run the relevant Electron
-   tests and `npm run electron:refresh`; use `npm run electron:build` for
-   release artifacts. `npm run dmg:latest` builds a DMG of the latest commit
-   outside the working tree and is safe while another session is working.
+   tests and `npm run electron:refresh` (the Developer App "Nex Note Dev").
+   `npm run dmg:latest` builds a Developer DMG of the latest commit outside
+   the working tree and is safe while another session is working. Public
+   Releases are built only by `npm run release:build` / `npm run ship`
+   (`electron-builder.release.cjs`); keep it in step with `package.json`'s
+   `build`.
 4. For shared user-visible, native-access, dependency, or iPad changes, run
    `npm run ipad:sync` and `npm run ipad:doctor`. When a paired iPad is
    available, launch it and smoke-test the affected flow on the physical device.
@@ -68,6 +71,9 @@ but an affected surface must never be omitted without explanation.
 - Cross-app workflow: `docs/multi-app-development-flow.md`
 - Electron/macOS workflow: `README.md` under “macOS Desktop App”
 - Native iPad workflow: `docs/ipad-private-testing.md`
+- Public Beta Releases (signing, `npm run ship`, Release vs. Developer App):
+  `docs/release.md`; vocabulary in `GLOSSARY.md`, decisions in `docs/adr/`
+- Public website (nex-note.com): `docs/website.md`
 - Planned Xcode macOS implementation:
   `docs/macos-xcode-private-testing-prompt.md`
 

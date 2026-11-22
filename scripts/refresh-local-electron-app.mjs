@@ -8,7 +8,7 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { describeBuildState, getLocalBuildState } = require('../electron/build-state.cjs');
 const root = process.cwd();
-const appBundle = path.join(root, 'dist', 'macos', 'mac-arm64', 'Nex Note.app');
+const appBundle = path.join(root, 'dist', 'macos', 'mac-arm64', 'Nex Note Dev.app');
 const packageJsonPath = path.join(root, 'package.json');
 const args = new Set(process.argv.slice(2));
 const shouldLaunch = !args.has('--no-launch');
@@ -31,7 +31,7 @@ function fail(message) {
 
 function findPackagedAppPids() {
   if (process.platform !== 'darwin') return [];
-  const executable = path.join(appBundle, 'Contents', 'MacOS', 'Nex Note');
+  const executable = path.join(appBundle, 'Contents', 'MacOS', 'Nex Note Dev');
   const result = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' });
   if (result.status !== 0) return [];
 

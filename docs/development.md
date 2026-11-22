@@ -82,7 +82,7 @@ Build, verify, and open the local macOS app from the current `devel` worktree:
 npm run app
 ```
 
-This is the normal packaged-app test workflow. It runs the test suite, creates a production Next.js build, refreshes only the `.app` bundle at `dist/macos/mac-arm64/Nex Note.app`, verifies that the embedded source fingerprint matches the current local worktree, and opens that exact bundle. Committed, staged, unstaged, and untracked local source changes are included. If the source changes while the tests or build are running, the refresh fails instead of stamping a mixed build as current.
+This is the normal packaged-app test workflow. It runs the test suite, creates a production Next.js build, refreshes only the Developer App bundle at `dist/macos/mac-arm64/Nex Note Dev.app`, verifies that the embedded source fingerprint matches the current local worktree, and opens that exact bundle. Committed, staged, unstaged, and untracked local source changes are included. If the source changes while the tests or build are running, the refresh fails instead of stamping a mixed build as current.
 
 Opening the repo-local `.app` from Finder performs the same fingerprint check before the product window opens. A stale or legacy bundle shows a refresh window, runs the guarded local workflow, and restarts into the verified build. The refresh log is stored at `.nex/electron-local-refresh.log`.
 
@@ -115,7 +115,7 @@ Output in `dist/dmg/`:
 
 The command does nothing when the newest image already contains the commit (`--force` rebuilds). `--ref <commit|branch>` builds something other than `HEAD`. `--background` detaches the build and writes to `build.log`. Only one build runs at a time; a build that finishes re-reads the ref and builds again when new commits arrived in the meantime.
 
-The tracked `post-commit` hook (`npm run hooks:install`) starts `npm run dmg:latest -- --background` after every commit on macOS, so `dist/dmg/Nex Note-latest.dmg` follows the branch without blocking the commit. Set `NEX_NOTE_SKIP_POST_COMMIT_BUILD=1` to skip it. The image is unsigned like every local build: on another Mac, open it with right-click → Open the first time.
+The tracked `post-commit` hook (`npm run hooks:install`) starts `npm run dmg:latest -- --background` after every commit on macOS, so `dist/dmg/Nex Note-latest.dmg` follows the branch without blocking the commit. Set `NEX_NOTE_SKIP_POST_COMMIT_BUILD=1` to skip it. This Developer DMG is unsigned like every local build (on another Mac, open it with right-click → Open the first time) and is never offered on the website; public downloads are Releases (`docs/release.md`).
 
 ### Packaged Launch Guardrails
 
@@ -129,7 +129,7 @@ Those helpers own:
 
 `electron/main.cjs` owns the packaged server lifecycle. It uses `utilityProcess.fork`, forwards server output into the Electron log, restarts the server after an unexpected exit, and terminates it when the app quits. Do not replace this with a second `process.execPath` launch in Node mode: macOS may register that executable as a separate generic `exec` application.
 
-Local `devel` is the authority for the repo-local app; startup never fetches or merges a remote branch. The fingerprint includes `HEAD`, tracked changes, untracked files, and local environment files without storing environment-file contents in the bundle. If automated refresh fails, Nex Note reports the log path and opens the last packaged build so a test or compiler failure does not make the app unusable.
+Local `devel` is the authority for the Developer App ("Nex Note Dev"). At startup and hourly it fetches `origin/devel` and fast-forwards only a clean `devel` checkout (never a dirty, diverged or other branch), then the fingerprint check below rebuilds it. The fingerprint includes `HEAD`, tracked changes, untracked files, and local environment files without storing environment-file contents in the bundle. If automated refresh fails, Nex Note reports the log path and opens the last packaged build so a test or compiler failure does not make the app unusable.
 
 Do not move these rules back into untested inline startup code. Update `test/electron-launch-helpers.test.ts` when changing packaged launch, server lifecycle, updater, or macOS PATH behavior.
 
@@ -144,10 +144,10 @@ The Electron app also runs as a native Linux app, tuned for tiling Wayland deskt
 ./linux/install.sh --no-build   # reinstall the existing dist/linux build
 ./linux/install.sh --uninstall  # remove app, launcher, icons and MIME entries
 ./linux/update.sh               # git pull, rebuild, reinstall
-nex-note score.mxl              # open a file in the running instance
+nex-note-dev score.mxl          # open a file in the running instance
 ```
 
-- **Window:** native Wayland (`--ozone-platform-hint=auto`), frameless and tiled; Wayland `app_id`/window class is `nex-note` for Hyprland rules (`hyprctl clients`). Set `NEX_NOTE_LINUX_FRAME=1` for a window frame. The minimum window size is 640x480 so tiles fit; in narrow windows the header stays on one line and moves provider, language and keyboard-preset controls into an overflow menu.
+- **Window:** native Wayland (`--ozone-platform-hint=auto`), frameless and tiled; Wayland `app_id`/window class is `nex-note-dev` for the Developer App (`nex-note` for the Public Beta) for Hyprland rules (`hyprctl clients`). Set `NEX_NOTE_LINUX_FRAME=1` for a window frame. The minimum window size is 640x480 so tiles fit; in narrow windows the header stays on one line and moves provider, language and keyboard-preset controls into an overflow menu.
 - **Menus and shortcuts:** the native menu bar is hidden, so the in-app File/Edit/View menus stay visible and the main process handles the file, zoom, find and command-center shortcuts itself (editing keys stay with the page). Shortcut labels show Ctrl/Alt.
 - **Files:** the installer registers MIME types for `.nxn`, `.mscz`, `.mxl` and Guitar Pro; files opened from the file manager or the command line are delivered once the renderer is ready.
 - **Playback samples:** `npm run soundfonts:fetch` (run by the installer) downloads the FluidR3_GM instruments (MIT, about 53 MB) into `public/soundfonts`; playback uses them first, then the remote host, then oscillator tones.
@@ -218,14 +218,13 @@ npm run app
 ## Branch And Version Workflow
 
 - `devel` is the active development branch for local app work, Electron/macOS packaging, and alpha hardening.
-- `main` is the live website/web-alpha deployment branch for `https://nex-note.com`.
+- `main` is the live website and Browser Preview for `https://nex-note.com`, and every Release is cut from it.
 - The website deployment follows `main` automatically after each push.
-- Versions use the `0.0.x` alpha series.
-- The first public alpha is `0.0.1`.
-- After a finished development cycle is merged from `devel` into `main`, bump to the next patch version, for example `0.0.2`.
+- The Public Beta starts at `0.1.0`. `devel` carries the next version with a `-dev` suffix (`0.1.0-dev`).
+- `npm run ship` merges `devel` into `main`, drops the suffix, tags and publishes the Release, then moves `devel` to the next `-dev` patch (see `docs/release.md`).
 - Keep version bumps in `package.json` and `package-lock.json` together.
 
-Typical website deployment flow:
+Website-only deployment without a new Release (the download buttons keep pointing at the latest Release):
 
 ```bash
 git switch devel
@@ -238,7 +237,7 @@ git push origin main
 git switch devel
 ```
 
-Pushing `main` updates the website/web alpha after the next deployment run. macOS app artifacts are still built and distributed separately.
+Pushing `main` updates the website and Browser Preview after the next deployment run. Desktop downloads change only with `npm run ship`.
 
 ## Note Input Sources
 
@@ -285,7 +284,7 @@ For desktop artifacts, also run:
 npm run electron:build
 ```
 
-`npm test` includes `node --check` for `electron/main.cjs` and `electron/launch-helpers.cjs`, plus regression coverage for packaged launch freshness decisions, the invisible utility-process server, and Finder-style macOS `PATH` handling. For macOS app launch changes, also verify a normal `open dist/macos/mac-arm64/Nex\ Note.app` starts one visible Nex Note application, does not register a separate `exec` application, and starts a packaged Next server on `127.0.0.1`.
+`npm test` includes `node --check` for `electron/main.cjs` and `electron/launch-helpers.cjs`, plus regression coverage for packaged launch freshness decisions, the invisible utility-process server, and Finder-style macOS `PATH` handling. For macOS app launch changes, also verify a normal `open dist/macos/mac-arm64/Nex\ Note\ Dev.app` starts one visible Nex Note Dev application, does not register a separate `exec` application, and starts a packaged Next server on `127.0.0.1`.
 
 Current validation snapshot:
 
@@ -307,4 +306,19 @@ Before publishing a tagged release or distributing desktop artifacts, verify:
 - Manual smoke covers import, note input, playback, AI preview/apply, `.mxl` export, and a MuseScore round-trip.
 - Local-only debug/developer routes are removed, gated, or clearly documented.
 
-Known final-release blockers: notarization, signing identity selection, final icon validation, public binary packaging, and stronger hardening around local debug endpoints.
+Signing, notarization and public binary packaging are handled by the Release pipeline (`docs/release.md`). Remaining before a final (non-beta) release: final icon validation and stronger hardening around local debug endpoints.
+
+## AI keys
+
+Terms follow `GLOSSARY.md`; the relay decision is `docs/adr/0003-session-keys-relayed-by-server.md`.
+
+- **Where keys live.** No surface writes an AI provider key to localStorage, sessionStorage or IndexedDB. A key the user chooses "Use for this session" for is a Session Key: it lives only in React state and is gone after a reload. The desktop app can additionally "Save" a key: `electron/secure-keys.cjs` encrypts it with Electron `safeStorage` (macOS Keychain, libsecret/kwallet on Linux) and writes only the encrypted bytes to `<userData>/ai-provider-keys.json` (mode 0600). Without OS encryption it refuses to save and the UI offers the session only. The preload exposes `window.nexNoteSecureKeys` (`isAvailable`, `list`, `get`, `set`, `delete`, one provider per call); the handlers answer only the app's own local page.
+- **Migration.** On start, `migrateStoredAiKeys` (`lib/ai-model-settings.ts`) moves keys an older version left in localStorage into the keychain and removes each one from localStorage only after its keychain write succeeded. Without a keychain (Browser Preview, plain browsers, the iPad shell) stored keys are dropped.
+- **Public AI gate.** `resolveChatAiAccess` in `lib/public-ai-access.ts` keeps trusted access (localhost, `NexNoteNative/x.y` user agent, `NEX_NOTE_ENABLE_PUBLIC_AI=true`) unchanged. On a public host `/api/chat` runs only with a Session Key for Anthropic, OpenAI or Gemini: Ollama is refused, other providers' keys are dropped, and `serverKeyFallback: false` stops `lib/ai-providers.ts` from using `.env` keys.
+- **Rate limit.** Public Session Key requests are limited per client in memory (`lib/public-ai-rate-limit.ts`): `NEX_NOTE_PUBLIC_AI_RATE_LIMIT` requests (default 20) per `NEX_NOTE_PUBLIC_AI_RATE_WINDOW_MS` (default 600000). Client addresses are salted-hashed, never logged, and forgotten on restart. The first `X-Forwarded-For` entry is used, so the reverse proxy must overwrite that header.
+- **Logging.** `/api/chat` never logs the key, the score or the message text, and redacts keys (`lib/redact-secrets.ts`) from provider errors; an unhandled error answers only with its type.
+- **Browser Preview UI.** The server's `aiEnabled: false` from `/api/ollama-models` marks the page as the Browser Preview: the Ollama selector and defaults are hidden, and the assistant shows the Connect AI panel until a Session Key is set.
+
+Missing converters: MSCZ/MuseScore-CLI imports and PDF/photo/scan import answer a typed `missing_tool` error (HTTP 424, `lib/external-tools.ts`) naming MuseScore 4, Audiveris or Tesseract with the official download page. `PDF_TO_MUSESCORE_SCRIPT` still defaults to the developer checkout `~/Coding/musescore/scripts/pdf-to-musescore.sh`, but user-facing messages never mention it. Import logs carry format, size and page count, never file names.
+
+Playback samples: the desktop app never fetches the remote soundfont fallback (`lib/soundfont-source.ts`); without bundled `public/soundfonts/FluidR3_GM` it plays the built-in oscillator. The Browser Preview keeps `soundfont-player`'s remote fallback (MusyngKite from `gleitz.github.io`).
