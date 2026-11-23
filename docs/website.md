@@ -3,6 +3,10 @@
 The public website at nex-note.com is part of the Next.js app. It offers the
 Public Beta downloads, links to the Browser Preview, and carries the legal pages.
 
+Live since 2026-11-23, before the first Release: until GitHub reports a
+published Release, the site shows "Public Beta – coming soon" and leads to the
+Browser Preview (see "Release availability").
+
 ## Routes
 
 | Route | Purpose | Notes |
@@ -11,12 +15,19 @@ Public Beta downloads, links to the Browser Preview, and carries the legal pages
 | `/impressum` | Impressum / Legal notice | Renders on every host. |
 | `/datenschutz` | Datenschutzerklärung / Privacy policy | Renders on every host. |
 | `/nex-note-app` | Browser Preview | Shows a dismissible banner on public hosts only. |
+| `/de`, `/en` | Short language paths | Redirect (307) to `/?locale=de` and `/?locale=en`. |
 
 ## Structure
 
 - `app/page.tsx`, `app/impressum/page.tsx`, `app/datenschutz/page.tsx`: thin
-  server routes. They resolve the locale, set metadata (title, description,
-  `hreflang` alternates) and render a view.
+  server routes. They resolve the locale and the release availability
+  (`getReleaseAvailability()`), set metadata (title, description, `hreflang`
+  alternates) and render a view. All three views take the `release` prop,
+  because the footer and the Impressum link into the repository only once it
+  is public.
+- `lib/site/release-availability.ts` (pure, tested) and
+  `lib/site/release-availability.server.ts` (the cached server call): see
+  "Release availability".
 - `components/site/LandingView.tsx`: landing sections in order: hero with
   download, screenshots, features, formats, privacy / Bring your own AI,
   who it is for, FAQ, footer.
@@ -147,7 +158,7 @@ staff lines to a hairline at the page's width. The smaller images stay full
 editor views. Image sizes other than 2880×1800 are given in
 `lib/site/landing-copy.ts`.
 
-## Open items before launch
+## Keep in step
 
 - `SERVER_LOG_RETENTION` in `lib/site/legal-copy.ts` says 30 days, matching
   `/etc/logrotate.d/nginx` on the web host (`daily`, `rotate 30`; checked
@@ -155,6 +166,42 @@ editor views. Image sizes other than 2880×1800 are given in
 - `LEGAL_CONTACT_EMAIL` in `lib/site/legal-contact.ts` is set. Should it ever
   be emptied, the Impressum and privacy policy show a visible red placeholder,
   and `test/site-pages.test.ts` fails.
+- The asset names in `lib/site/release-links.ts` and the upload list in
+  `docs/release.md`.
+
+## Deploying and checking
+
+A website change goes live with the website-only deployment in
+`docs/development.md` (fast-forward `main` to `devel`, push `main`); the web
+host deploys `main` by itself. Every commit on `devel` since the last deploy
+goes live with it.
+
+Before pushing `main`, check the production build locally. The landing page
+redirects to the editor on localhost, so use a `*.localhost` name, which
+browsers resolve to the loopback address:
+
+```sh
+npm run build
+cd .next/standalone && PORT=3106 HOSTNAME=127.0.0.1 node server.js
+```
+
+Then open `http://nex-note.localhost:3106/`, `/?locale=de`, `/impressum` and
+`/datenschutz` at desktop and phone width, in light and dark mode: no
+horizontal scrolling, no console errors, no request to another host. For
+`curl`, add `--resolve nex-note.localhost:3106:127.0.0.1`.
+
+After the deploy, check from outside (status codes only):
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' https://nex-note.com/
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://nex-note.com/de
+curl -s -o /dev/null -w '%{http_code}\n' https://nex-note.com/impressum
+curl -s -o /dev/null -w '%{http_code}\n' https://nex-note.com/nex-note-app
+```
+
+To see when a deploy has landed, poll a file or path only the new build has.
+A request to `/api/ollama-models` with a forged `X-Forwarded-Host: localhost`
+must not return a model list.
 
 ## Tests
 

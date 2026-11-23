@@ -237,7 +237,7 @@ git push origin main
 git switch devel
 ```
 
-Pushing `main` updates the website and Browser Preview after the next deployment run. Desktop downloads change only with `npm run ship`.
+Pushing `main` updates the website and Browser Preview after the next deployment run. Desktop downloads change only with `npm run ship`. How to check the build locally and the live site afterwards: `docs/website.md`, "Deploying and checking".
 
 ## Note Input Sources
 
