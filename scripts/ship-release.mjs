@@ -396,10 +396,23 @@ if (options.buildOnly || options.dryRun) {
   process.exit(0);
 }
 
+// The build takes about an hour. If main or devel moved on origin meanwhile, main could not be
+// fast-forwarded to the Release commit after the Release is already public, so stop here instead.
+function assertBranchesStillFastForward(releaseCommit) {
+  git(['fetch', '--quiet', 'origin', 'main', 'devel']);
+  for (const branch of ['main', 'devel']) {
+    if (tryGit(['merge-base', '--is-ancestor', `origin/${branch}`, releaseCommit]) === null) {
+      fail(`origin/${branch} moved while the Release was built; nothing was published. Run npm run ship again.`);
+    }
+  }
+}
+
+assertBranchesStillFastForward(releaseCommit);
 if (!await confirm(`Publish ${tag}: push the tag, create the GitHub Release, move main (deploys nex-note.com) and bump devel?`)) {
   console.log('Stopped before publishing. Run npm run ship again to start over.');
   process.exit(0);
 }
+assertBranchesStillFastForward(releaseCommit);
 publish({ version, tag, releaseCommit, assets });
 startNextDevelVersion({ version, releaseCommit });
 publishAur(version);
