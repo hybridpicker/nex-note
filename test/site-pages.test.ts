@@ -9,7 +9,7 @@ import DownloadButtons from '../components/site/DownloadButtons.tsx';
 import { ImpressumView, PrivacyView } from '../components/site/LegalViews.tsx';
 import { LANDING_COPY } from '../lib/site/landing-copy.ts';
 import { SERVER_LOG_RETENTION } from '../lib/site/legal-copy.ts';
-import { parseAcceptLanguage, resolveSiteLocale, siteHref } from '../lib/site/locale.ts';
+import { parseAcceptLanguage, resolveSiteLocale, siteHref, siteLocalePathRedirects } from '../lib/site/locale.ts';
 import { RELEASE_DMG_URL, LINUX_APPIMAGE_URL, RELEASE_LINKS } from '../lib/site/release-links.ts';
 import { COMING_SOON, resolveReleaseAvailability, type ReleaseAvailability } from '../lib/site/release-availability.ts';
 import { LEGAL_CONTACT_EMAIL } from '../lib/site/legal-contact.ts';
@@ -235,3 +235,12 @@ function readIcoSizes(file: string) {
   const count = data.readUInt16LE(4);
   return Array.from({ length: count }, (_, i) => data.readUInt8(6 + 16 * i) || 256);
 }
+
+test('/de and /en lead to the landing page in that language', async () => {
+  assert.deepEqual(siteLocalePathRedirects(), [
+    { source: '/en', destination: '/?locale=en', permanent: false },
+    { source: '/de', destination: '/?locale=de', permanent: false },
+  ]);
+  const { default: nextConfig } = await import('../next.config.ts');
+  assert.deepEqual(await nextConfig.redirects?.(), siteLocalePathRedirects());
+});

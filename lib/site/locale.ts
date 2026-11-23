@@ -7,6 +7,19 @@ export const SITE_LOCALES = ['en', 'de'] as const;
 export type SiteLocale = typeof SITE_LOCALES[number];
 export const DEFAULT_SITE_LOCALE: SiteLocale = 'en';
 
+/**
+ * Short language paths (`/de`, `/en`) for people who type or share them. The
+ * site itself keeps `?locale=`; these are temporary redirects so a real `/de`
+ * route could replace them later.
+ */
+export function siteLocalePathRedirects() {
+  return SITE_LOCALES.map((locale) => ({
+    source: `/${locale}`,
+    destination: `/?locale=${locale}`,
+    permanent: false,
+  }));
+}
+
 export function normalizeSiteLocale(value: string | null | undefined): SiteLocale | null {
   if (!value) return null;
   const base = value.trim().toLowerCase().replace('_', '-').split('-')[0];

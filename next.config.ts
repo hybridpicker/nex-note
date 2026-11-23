@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { execSync } from "node:child_process";
+import { siteLocalePathRedirects } from "./lib/site/locale";
 
 function resolveGitBranch() {
   try {
@@ -30,6 +31,9 @@ const nextConfig: NextConfig = {
   ],
   env: {
     NEXT_PUBLIC_NEX_NOTE_GIT_BRANCH: process.env.NEXT_PUBLIC_NEX_NOTE_GIT_BRANCH ?? resolveGitBranch(),
+  },
+  async redirects() {
+    return siteLocalePathRedirects();
   },
   outputFileTracingExcludes: {
     '/api/midi': ['next.config.ts'],

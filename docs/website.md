@@ -51,6 +51,10 @@ English (default) and German. The website uses the editor's mechanism, the
 2. Otherwise the first English or German entry in `Accept-Language`.
 3. Otherwise English.
 
+`/de` and `/en` redirect (307) to `/?locale=de` and `/?locale=en`
+(`siteLocalePathRedirects()` in `lib/site/locale.ts`, wired in
+`next.config.ts`).
+
 The language switcher and all internal links always carry `?locale=`, so a
 chosen language sticks. The "Try in browser" link passes the same locale to
 `/nex-note-app`. The root layout keeps `<html lang="en">`; each page sets
