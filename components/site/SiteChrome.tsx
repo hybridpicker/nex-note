@@ -59,12 +59,14 @@ export function LanguageSwitcher({ locale, path, hash }: { locale: SiteLocale; p
 export function SiteLogo({ locale }: { locale: SiteLocale }) {
   return (
     <a href={siteHref('/', locale)} className={`flex items-center gap-2.5 rounded-md ${focusRing}`}>
+      {/* The app icon as the Dock shows it (built from assets/app-icon.png by
+          scripts/build-web-icons.mjs); the shadow follows its rounded tile. */}
       <img
-        src="/brand/nex-note-app-icon.svg"
+        src="/brand/nex-note-app-icon.png"
         alt=""
-        width={32}
-        height={32}
-        className="h-8 w-8 rounded-lg shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+        width={36}
+        height={36}
+        className="h-9 w-9 drop-shadow-[0_1px_1.5px_rgba(11,15,20,0.22)]"
       />
       <span className="text-lg font-semibold tracking-tight">Nex Note</span>
     </a>

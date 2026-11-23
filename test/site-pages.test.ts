@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 
 import LandingView from '../components/site/LandingView.tsx';
 import DownloadButtons from '../components/site/DownloadButtons.tsx';
@@ -202,3 +203,35 @@ test('browser preview banner shows only on public web hosts', () => {
   assert.equal(shouldShowBrowserPreviewBanner({ hostname: 'nex-note.com', search: '?embed=1&entry=abc' }), false);
   assert.equal(shouldShowBrowserPreviewBanner({ hostname: 'nex-note.com', search: '?locale=de' }), true);
 });
+
+test('the website uses the app icon itself in the header and the browser', async () => {
+  const html = landing('en', COMING_SOON);
+  assert.ok(html.includes('src="/brand/nex-note-app-icon.png"'));
+  assert.ok(!html.includes('nex-note-app-icon.svg'));
+  const layout = readFileSync(new URL('../app/layout.tsx', import.meta.url), 'utf8');
+  assert.ok(layout.includes('/brand/nex-note-app-icon-192.png'));
+  assert.ok(layout.includes('/brand/apple-touch-icon.png'));
+  assert.ok(!layout.includes('/brand/nex-note-icon.png'), 'the cropped wordmark is no browser icon');
+});
+
+test('generated web icons match assets/app-icon.png', async () => {
+  const { default: sharp } = await import('sharp');
+  const asset = (p: string) => new URL(`../${p}`, import.meta.url).pathname;
+  const pixels = async (file: string, size: number) =>
+    (await sharp(file).resize(size, size).ensureAlpha().raw().toBuffer());
+  const meanDiff = (a: Buffer, b: Buffer) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0) / a.length;
+  const source = await pixels(asset('assets/app-icon.png'), 64);
+  for (const file of ['public/brand/nex-note-app-icon.png', 'public/brand/nex-note-app-icon-192.png']) {
+    assert.ok(meanDiff(source, await pixels(asset(file), 64)) < 2, file);
+  }
+  const touch = await sharp(asset('public/brand/apple-touch-icon.png')).metadata();
+  assert.deepEqual([touch.width, touch.height, touch.hasAlpha], [180, 180, false]);
+  const ico = readIcoSizes(asset('app/favicon.ico'));
+  assert.deepEqual(ico, [16, 32, 48, 256]);
+});
+
+function readIcoSizes(file: string) {
+  const data = readFileSync(file);
+  const count = data.readUInt16LE(4);
+  return Array.from({ length: count }, (_, i) => data.readUInt8(6 + 16 * i) || 256);
+}

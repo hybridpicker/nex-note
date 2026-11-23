@@ -115,6 +115,24 @@ about ten minutes without another deploy. To check the state from outside:
 curl -s -o /dev/null -w '%{http_code}\n' https://api.github.com/repos/hybridpicker/nex-note/releases/latest
 ```
 
+## Icons
+
+Every icon the website shows is the app icon itself, built from
+`assets/app-icon.png` (the same image as the `.icns` and the iPad AppIcon) by
+`node scripts/build-web-icons.mjs`:
+
+| File | Use |
+| --- | --- |
+| `public/brand/nex-note-app-icon.png` (512 px) | Header logo, shown at 36 px with a shadow that follows the rounded tile |
+| `public/brand/nex-note-app-icon-192.png` | `<link rel="icon">` |
+| `public/brand/apple-touch-icon.png` (180 px) | Home-screen icon: the tile alone, opaque, since iOS rounds the corners itself |
+| `app/favicon.ico` (16, 32, 48, 256 px) | Browser tab |
+
+When the app icon changes, run the script and commit its output;
+`test/site-pages.test.ts` fails while the website icons differ from it. The
+editor's own header (`components/NexNoteBrand.tsx`) keeps the separate
+wordmark in `public/brand/nex-note-icon.png` and `nex-note-logo.png`.
+
 ## Screenshots
 
 `scripts/capture-readme-screenshots.mjs` writes `docs/screenshots/` from the

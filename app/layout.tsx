@@ -7,11 +7,10 @@ export const metadata: Metadata = {
   title: "nex-note",
   description: "Downloadable music app for private scores, tabs, AI editing, and embeds.",
   icons: {
-    icon: [
-      { url: "/brand/nex-note-icon.png", type: "image/png" },
-      { url: "/favicon.ico", sizes: "any" },
-    ],
-    apple: "/brand/nex-note-icon.png",
+    // Built from the app icon by scripts/build-web-icons.mjs; Next adds
+    // app/favicon.ico on its own.
+    icon: [{ url: "/brand/nex-note-app-icon-192.png", type: "image/png", sizes: "192x192" }],
+    apple: { url: "/brand/apple-touch-icon.png", sizes: "180x180" },
   },
 };
 
