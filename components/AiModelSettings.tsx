@@ -12,6 +12,20 @@ import {
 import { isSessionKeyProvider } from '@/lib/ai-access-surface';
 import { useI18n } from '@/lib/i18n';
 
+const AI_SETTINGS_PANEL_WIDTH = 520;
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * Left offset of the popover relative to its trigger: right-aligned with the trigger when that
+ * fits, otherwise moved just far enough to stay inside the window (with a small margin).
+ */
+export function popoverOffset(trigger: { left: number; right: number }, panelWidth: number, viewportWidth: number) {
+  const preferredLeft = trigger.right - panelWidth;
+  const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - VIEWPORT_MARGIN - panelWidth);
+  const left = Math.min(Math.max(preferredLeft, VIEWPORT_MARGIN), maxLeft);
+  return Math.round(left - trigger.left);
+}
+
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI',
@@ -69,6 +83,10 @@ export default function AiModelSettingsPanel({
     gemini: '',
   });
   const panelRef = useRef<HTMLDivElement>(null);
+  // The trigger can sit near either window edge (beside the logo on the web, in a toolbar on the
+  // desktop), so the popover is placed to stay inside the window.
+  const [panelOffset, setPanelOffset] = useState<number | null>(null);
+  const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
 
   const normalizedSettings = normalizeAiModelSettings(settings);
   const enabledProviderCount = AI_PROVIDER_ORDER.filter((provider) => normalizedSettings.providers[provider].enabled).length;
@@ -136,7 +154,14 @@ export default function AiModelSettingsPanel({
     <div className="relative" ref={panelRef}>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const panelWidth = Math.min(window.innerWidth * 0.92, AI_SETTINGS_PANEL_WIDTH);
+          setPanelOffset(popoverOffset(rect, panelWidth, window.innerWidth));
+          // Below the trigger (mt-2 = 8 px) down to a margin above the window's bottom edge.
+          setPanelMaxHeight(Math.max(160, Math.floor(window.innerHeight - rect.bottom - 8 - VIEWPORT_MARGIN)));
+          setOpen((value) => !value);
+        }}
         title="AI model settings"
         aria-label="AI model settings"
         className="flex h-8 w-8 items-center justify-center rounded-md border border-nex-border bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-nex-ink"
@@ -147,7 +172,14 @@ export default function AiModelSettingsPanel({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(92vw,520px)] rounded-lg border border-nex-border bg-white p-4 shadow-xl">
+        <div
+          data-testid="ai-model-settings-panel"
+          style={{
+            ...(panelOffset === null ? {} : { left: panelOffset }),
+            ...(panelMaxHeight === null ? {} : { maxHeight: panelMaxHeight }),
+          }}
+          className={`absolute ${panelOffset === null ? 'right-0' : ''} top-full z-50 mt-2 max-h-[calc(100dvh-6rem)] w-[min(92vw,520px)] overflow-y-auto overscroll-contain rounded-lg border border-nex-border bg-white p-4 shadow-xl`}
+        >
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-nex-ink">AI models</h2>
