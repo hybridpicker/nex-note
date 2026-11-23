@@ -12,6 +12,20 @@ const BASE = 'https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM';
 
 const source = await readFile(path.join(root, 'lib', 'midi-instruments.ts'), 'utf8');
 const names = [...new Set([...source.matchAll(/soundfont:\s*'([a-z0-9_]+)'/g)].map((match) => match[1]))].sort();
+// A Release build needs every instrument, so a dropped connection is retried before it counts as failed.
+async function fetchWithRetry(url, attempts = 4) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
 await mkdir(outDir, { recursive: true });
 
 let downloaded = 0;
@@ -20,9 +34,7 @@ for (const name of names) {
   const target = path.join(outDir, `${name}-mp3.js`);
   if (!force && await stat(target).then((info) => info.size > 0, () => false)) continue;
   try {
-    const response = await fetch(`${BASE}/${name}-mp3.js`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    await writeFile(target, Buffer.from(await response.arrayBuffer()));
+    await writeFile(target, await fetchWithRetry(`${BASE}/${name}-mp3.js`));
     downloaded += 1;
   } catch (error) {
     failed += 1;
