@@ -13,6 +13,7 @@ import {
   renderChecksums,
   renderPkgbuild,
   renderReleaseNotes,
+  replaceUpdateFileEntry,
   renderSrcinfo,
   tagForVersion,
 } from '../scripts/release-helpers.mjs';
@@ -180,4 +181,26 @@ test('devel sync runs fetch, then fast-forwards and reports the commit count', a
     throw new Error('network down');
   };
   assert.deepEqual(await developerSync.syncDeveloperCheckout('/repo', offline), { changed: false, reason: 'git-failed' });
+});
+
+test('stapling the DMG updates only its entry in latest-mac.yml', () => {
+  const yaml = [
+    'version: 0.1.0',
+    'files:',
+    '  - url: Nex-Note-mac-universal.zip',
+    '    sha512: ZIPHASH',
+    '    size: 100',
+    '  - url: Nex-Note-mac-universal.dmg',
+    '    sha512: OLDDMG',
+    '    size: 200',
+    'path: Nex-Note-mac-universal.zip',
+    'sha512: ZIPHASH',
+    "releaseDate: '2026-11-23T06:42:29.394Z'",
+    '',
+  ].join('\n');
+  const updated = replaceUpdateFileEntry(yaml, 'Nex-Note-mac-universal.dmg', { sha512: 'NEWDMG', size: 210 });
+  assert.match(updated, /- url: Nex-Note-mac-universal\.dmg\n {4}sha512: NEWDMG\n {4}size: 210\n/);
+  assert.equal(updated.match(/ZIPHASH/g)?.length, 2, 'the ZIP entries stay untouched');
+  assert.match(updated, /size: 100\n/);
+  assert.throws(() => replaceUpdateFileEntry(yaml, 'missing.dmg', { sha512: 'x', size: 1 }), /not listed/);
 });

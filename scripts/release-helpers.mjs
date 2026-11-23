@@ -179,3 +179,20 @@ export function renderSrcinfo({ version, tarballSha256, iconSha256, mimeSha256 }
   ];
   return lines.join('\n');
 }
+
+// Stapling the notarization ticket changes the DMG after electron-builder wrote latest-mac.yml, so
+// the DMG's entry under `files:` gets the new sha512 and size. The top-level `path`/`sha512` name
+// the ZIP, which the macOS Update Check downloads, and stay as they are.
+export function replaceUpdateFileEntry(yamlText, fileName, { sha512, size }) {
+  const lines = yamlText.split('\n');
+  const start = lines.findIndex((line) => line.trim() === `- url: ${fileName}`);
+  if (start === -1) throw new Error(`${fileName} is not listed in the update metadata`);
+  let replaced = 0;
+  for (let index = start + 1; index < lines.length && /^\s{4}\S/.test(lines[index]); index += 1) {
+    const indent = lines[index].match(/^\s*/)[0];
+    if (lines[index].trim().startsWith('sha512:')) { lines[index] = `${indent}sha512: ${sha512}`; replaced += 1; }
+    if (lines[index].trim().startsWith('size:')) { lines[index] = `${indent}size: ${size}`; replaced += 1; }
+  }
+  if (replaced !== 2) throw new Error(`the ${fileName} entry has no sha512 and size to update`);
+  return lines.join('\n');
+}

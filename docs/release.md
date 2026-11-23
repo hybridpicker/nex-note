@@ -58,9 +58,11 @@ ancestor, a public repository and the signing setup. It then:
 1. checks out `devel` HEAD in `~/Library/Caches/nex-note/release-build` (no `.env*` copied),
    commits the Release version there;
 2. runs `npm ci`, `soundfonts:fetch` (required), `npm test`, the Release-channel build;
-3. builds the universal macOS DMG + zip (signed, notarized, stapled) and the Linux
-   AppImage + tarball;
-4. verifies `codesign`, Gatekeeper (`spctl`), the stapled ticket, the build stamp, the
+3. builds the universal macOS app, DMG and zip and the Linux AppImage + tarball. electron-builder
+   signs, notarizes and staples the app; the script then signs, notarizes and staples the DMG
+   itself (electron-builder leaves the DMG unsigned) and updates the DMG's sha512 and size in
+   `latest-mac.yml`. The macOS Update Check downloads the zip, whose entry stays as built;
+4. verifies `codesign`, Gatekeeper (`spctl`) for the app and the DMG, both stapled tickets, the build stamp, the
    bundled soundfonts and the absence of environment files;
 5. collects artifacts, `latest-*.yml`, blockmaps, `SHA256SUMS`, release notes and the AUR
    `PKGBUILD`/`.SRCINFO` in `dist/release/`;

@@ -18,7 +18,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
@@ -37,6 +37,7 @@ import {
   renderPkgbuild,
   renderReleaseNotes,
   renderSrcinfo,
+  replaceUpdateFileEntry,
   tagForVersion,
 } from './release-helpers.mjs';
 
@@ -83,14 +84,18 @@ function commandOk(command, args) {
   return spawnSync(command, args, { stdio: 'ignore' }).status === 0;
 }
 
-function sha256(filePath) {
+function fileHash(filePath, algorithm, encoding) {
   return new Promise((resolve, reject) => {
-    const hash = createHash('sha256');
+    const hash = createHash(algorithm);
     createReadStream(filePath)
       .on('data', (chunk) => hash.update(chunk))
       .on('error', reject)
-      .on('end', () => resolve(hash.digest('hex')));
+      .on('end', () => resolve(hash.digest(encoding)));
   });
+}
+
+function sha256(filePath) {
+  return fileHash(filePath, 'sha256', 'hex');
 }
 
 async function confirm(question) {
@@ -192,7 +197,7 @@ function soundfontCount(directory) {
   return existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('-mp3.js')).length : 0;
 }
 
-function buildRelease(version) {
+async function buildRelease(version) {
   const env = buildEnv();
   log('Installing dependencies');
   run('npm', ['ci'], { env });
@@ -210,10 +215,54 @@ function buildRelease(version) {
   const versionOverride = options.buildOnly ? [`-c.extraMetadata.version=${version}`] : [];
   log('Building, signing and notarizing the universal macOS app (Apple notarization takes a few minutes)');
   run('npx', ['electron-builder', '--config', 'electron-builder.release.cjs', '--mac', '--publish', 'never', ...versionOverride], { env });
+  await notarizeMacDmg();
   if (!options.skipLinux) {
     log('Building the Linux AppImage and tarball');
     run('npx', ['electron-builder', '--config', 'electron-builder.release.cjs', '--linux', '--publish', 'never', ...versionOverride], { env });
   }
+}
+
+function developerIdIdentity() {
+  const line = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' })
+    .split('\n')
+    .find((entry) => entry.includes('"Developer ID Application:'));
+  const hash = line?.trim().split(/\s+/)[1];
+  if (!hash) fail('no "Developer ID Application" certificate in the keychain; run npm run release:setup');
+  return hash;
+}
+
+// electron-builder signs, notarizes and staples the app inside the DMG, but not the DMG itself.
+// A Release DMG is signed, notarized and stapled too, so Gatekeeper accepts it offline on first open.
+async function notarizeMacDmg() {
+  const dmgPath = path.join(releaseOutput, RELEASE_ARTIFACTS.macDmg);
+  log('Signing, notarizing and stapling the DMG (Apple notarization takes a few minutes)');
+  const identity = developerIdIdentity();
+  // Apple's timestamp server occasionally answers without a timestamp; sign again until it has one.
+  let stamped = false;
+  for (let attempt = 1; attempt <= 3 && !stamped; attempt += 1) {
+    if (attempt > 1) console.log(`Timestamp missing, signing again (attempt ${attempt} of 3)`);
+    spawnSync('codesign', ['--force', '--sign', identity, '--timestamp', dmgPath], { stdio: 'inherit' });
+    const details = spawnSync('codesign', ['-dvv', dmgPath], { encoding: 'utf8' });
+    stamped = details.status === 0 && /^Timestamp=/m.test(details.stderr);
+  }
+  if (!stamped) fail('the DMG could not be signed with a secure timestamp');
+
+  console.log(`$ xcrun notarytool submit ${dmgPath} --keychain-profile ${NOTARY_PROFILE} --wait`);
+  const submission = spawnSync('xcrun', ['notarytool', 'submit', dmgPath, '--keychain-profile', NOTARY_PROFILE,
+    '--wait', '--output-format', 'json'], { encoding: 'utf8', cwd: buildRoot });
+  let result = {};
+  try { result = JSON.parse(submission.stdout); } catch { /* reported below */ }
+  if (result.status !== 'Accepted') {
+    fail(`Apple did not accept the DMG (status ${result.status || 'unknown'}); run xcrun notarytool log ${result.id || '<id>'} --keychain-profile ${NOTARY_PROFILE}`);
+  }
+  run('xcrun', ['stapler', 'staple', dmgPath]);
+
+  const metadataPath = path.join(releaseOutput, 'latest-mac.yml');
+  const sha512 = await fileHash(dmgPath, 'sha512', 'base64');
+  writeFileSync(metadataPath, replaceUpdateFileEntry(readFileSync(metadataPath, 'utf8'), RELEASE_ARTIFACTS.macDmg,
+    { sha512, size: statSync(dmgPath).size }));
+  // The DMG's blockmap describes the unstapled file; the Update Check downloads the ZIP, not the DMG.
+  rmSync(`${dmgPath}.blockmap`, { force: true });
 }
 
 function verifyMacRelease(expectedCommit) {
@@ -222,7 +271,11 @@ function verifyMacRelease(expectedCommit) {
   if (!existsSync(appPath)) fail(`expected app bundle is missing: ${appPath}`);
   run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);
   run('spctl', ['--assess', '--type', 'execute', '--verbose=2', appPath]);
-  run('xcrun', ['stapler', 'validate', path.join(releaseOutput, RELEASE_ARTIFACTS.macDmg)]);
+  run('xcrun', ['stapler', 'validate', appPath]);
+  const dmgPath = path.join(releaseOutput, RELEASE_ARTIFACTS.macDmg);
+  run('codesign', ['--verify', '--strict', '--verbose=2', dmgPath]);
+  run('xcrun', ['stapler', 'validate', dmgPath]);
+  run('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmgPath]);
 
   const stampPath = path.join(appPath, 'Contents', 'Resources', 'app', '.next', 'standalone', 'nex-note-build.json');
   const stamp = JSON.parse(readFileSync(stampPath, 'utf8'));
@@ -331,7 +384,7 @@ console.log(`\nRelease ${version} from devel@${develHead.slice(0, 8)}${options.b
 
 prepareCheckout(develHead);
 const releaseCommit = options.buildOnly ? develHead : createReleaseCommit(version);
-buildRelease(version);
+await buildRelease(version);
 verifyMacRelease(releaseCommit);
 const assets = await collectArtifacts(version);
 
