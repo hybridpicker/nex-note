@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   ALL_RELEASES_URL,
@@ -115,4 +116,14 @@ test('release dates are written per language in UTC', () => {
   assert.equal(formatReleaseDate('2026-12-01T09:30:00Z', 'en'), 'Dec 1, 2026');
   assert.equal(formatReleaseDate('2026-12-01T09:30:00Z', 'de'), '1. Dez. 2026');
   assert.equal(formatReleaseDate('2026-12-31T23:30:00Z', 'de'), '31. Dez. 2026');
+});
+
+test('the desktop server never asks GitHub for the latest Release', async () => {
+  const { DESKTOP_APP_RELEASE, isDesktopServer } = await import('../lib/site/release-availability.ts');
+  assert.equal(isDesktopServer({ NEX_NOTE_DESKTOP_SERVER: '1' }), true);
+  assert.equal(isDesktopServer({}), false);
+  assert.equal(isDesktopServer({ NEX_NOTE_DESKTOP_SERVER: 'true' }), false);
+  assert.deepEqual(DESKTOP_APP_RELEASE, { status: 'available', version: null, publishedAt: null, mac: true, linux: true });
+  const main = readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
+  assert.match(main, /NEX_NOTE_DESKTOP_SERVER: '1'/, 'electron/main.cjs marks its packaged server');
 });

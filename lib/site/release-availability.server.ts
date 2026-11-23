@@ -1,7 +1,9 @@
 import { unstable_cache } from 'next/cache';
 import {
+  DESKTOP_APP_RELEASE,
   RELEASE_CHECK_REVALIDATE_SECONDS,
   fetchLatestRelease,
+  isDesktopServer,
   resolveReleaseAvailability,
   type ReleaseAvailability,
 } from './release-availability';
@@ -15,5 +17,6 @@ const cachedLatestRelease = unstable_cache(() => fetchLatestRelease(), ['site-la
 });
 
 export function getReleaseAvailability(): Promise<ReleaseAvailability> {
+  if (isDesktopServer()) return Promise.resolve(DESKTOP_APP_RELEASE);
   return resolveReleaseAvailability(cachedLatestRelease);
 }

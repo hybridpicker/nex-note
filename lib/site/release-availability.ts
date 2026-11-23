@@ -24,6 +24,22 @@ export type ReleaseAvailability =
 
 export const COMING_SOON: ReleaseAvailability = Object.freeze({ status: 'coming-soon' as const });
 
+// The desktop apps serve the same pages from a local server (electron/main.cjs sets
+// NEX_NOTE_DESKTOP_SERVER=1). That server never asks GitHub: the app is itself a Release, it must
+// not contact a third party unasked, and Next's cache would be written into the read-only (on macOS
+// signed) app bundle.
+export const DESKTOP_APP_RELEASE: ReleaseAvailability = Object.freeze({
+  status: 'available' as const,
+  version: null,
+  publishedAt: null,
+  mac: true,
+  linux: true,
+});
+
+export function isDesktopServer(env: Record<string, string | undefined> = process.env) {
+  return env.NEX_NOTE_DESKTOP_SERVER === '1';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

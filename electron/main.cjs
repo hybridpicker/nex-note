@@ -891,6 +891,8 @@ async function launchPackagedServer(port) {
       HOSTNAME: '127.0.0.1',
       PORT: String(port),
       NODE_ENV: 'production',
+      // Website-only behaviour (the GitHub Release check) stays off in the desktop app.
+      NEX_NOTE_DESKTOP_SERVER: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     serviceName: 'Nex Note Server',
