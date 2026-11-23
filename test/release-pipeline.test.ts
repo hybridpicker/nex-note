@@ -33,8 +33,10 @@ test('devel versions carry -dev and Releases drop it', () => {
   assert.throws(() => nextDevelVersion('0.1.0-dev'), /no suffix/);
 });
 
-test('the devel package version is a -dev version', () => {
-  assert.match(packageJson.version, /^\d+\.\d+\.\d+-dev$/);
+// devel always carries a -dev version; the Release commit that ship builds carries the plain one.
+test('the package version is a -dev version on devel and a plain one in a Release build', () => {
+  const expected = process.env.NEX_NOTE_RELEASE_CHANNEL === 'release' ? /^\d+\.\d+\.\d+$/ : /^\d+\.\d+\.\d+-dev$/;
+  assert.match(packageJson.version, expected);
 });
 
 test('ship options reject unknown and conflicting flags', () => {
