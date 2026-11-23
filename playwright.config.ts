@@ -1,10 +1,14 @@
 import { defineConfig } from '@playwright/test';
+import fs from 'node:fs';
 
 const PORT = Number(process.env.NEX_E2E_PORT ?? 3101);
 const HOST = process.env.NEX_E2E_HOST ?? 'localhost';
 const REUSE_EXISTING = process.env.NEX_E2E_REUSE === '1';
 const NO_ARTIFACTS = process.env.NEX_E2E_NO_ARTIFACTS === '1';
-const chromePath = process.env.NEX_E2E_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const macChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const executablePath = process.env.NEX_E2E_CHROME
+  ?? process.env.NEX_E2E_BROWSER_PATH
+  ?? (fs.existsSync(macChromePath) ? macChromePath : undefined);
 
 export default defineConfig({
   testDir: './e2e',
@@ -23,7 +27,7 @@ export default defineConfig({
     screenshot: NO_ARTIFACTS ? 'off' : 'only-on-failure',
     video: NO_ARTIFACTS ? 'off' : 'retain-on-failure',
     launchOptions: {
-      executablePath: chromePath,
+      executablePath,
       args: ['--no-sandbox'],
     },
   },

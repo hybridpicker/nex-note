@@ -75,6 +75,73 @@ test('generic iframe embed fetches MusicXML and renders without MIDI startup @sm
   expect(startupWarnings, 'normal iframe startup should not warn about zero-sized render layout').toEqual([]);
 });
 
+test('iframe embed waits for a hidden host layout before rendering the score @smoke', async ({ page, baseURL }) => {
+  const startupWarnings: string[] = [];
+  let scoreDataRequested = false;
+
+  page.on('console', (message) => {
+    if (message.type() !== 'warning' && message.type() !== 'error') return;
+    const text = message.text();
+    if (/(width|height).*0|0.*(width|height)|render container/i.test(text)) {
+      startupWarnings.push(text);
+    }
+  });
+
+  await page.route('**/api/nex-note/score-data?entry=hidden-layout-fixture', async (route: Route) => {
+    scoreDataRequested = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        xml: fixtureXml,
+        filename: 'hidden-layout-fixture.musicxml',
+      }),
+    });
+  });
+
+  await page.route('**/api/ollama-models', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ models: [{ id: 'gemma4:31b', label: 'Gemma 4 31B' }] }),
+    });
+  });
+
+  await page.route('**/hidden-layout-embed-host', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: `
+        <!doctype html>
+        <html>
+          <body style="margin:0">
+            <div id="embed-tab" style="display:none">
+              <iframe
+                title="nex-note delayed-layout embed"
+                src="/?embed=1&chrome=0&entry=hidden-layout-fixture"
+                style="display:block;width:920px;height:680px;border:0"
+              ></iframe>
+            </div>
+          </body>
+        </html>
+      `,
+    });
+  });
+
+  await page.goto(new URL('/hidden-layout-embed-host', baseURL ?? 'http://localhost:3101').href, { waitUntil: 'domcontentloaded' });
+  await expect.poll(() => scoreDataRequested, { message: 'hidden iframe should request its score data' }).toBe(true);
+
+  // The previous implementation turned this temporary 0x0 layout into a permanent embed error after seven seconds.
+  await page.waitForTimeout(8_000);
+  await page.locator('#embed-tab').evaluate((element) => { element.style.display = 'block'; });
+
+  const embedFrame = page.frameLocator('iframe[title="nex-note delayed-layout embed"]');
+  await expect(embedFrame.locator('[data-testid="score-canvas"] .vf-notehead').first()).toBeVisible({ timeout: 20_000 });
+  await expect(embedFrame.getByTestId('embed-error')).toHaveCount(0);
+  expect(startupWarnings, 'delayed iframe layout should not be reported as a score render failure').toEqual([]);
+});
+
 test('iframe embed can start with full chrome and collapsed workspace rails @smoke', async ({ page, baseURL }) => {
   const startupWarnings: string[] = [];
   const midiRequests: string[] = [];
