@@ -87,16 +87,32 @@ Done on `devel` before the first Release:
 - The `sharp` override was raised from 0.35.0 to 0.35.5 (GHSA-rgj7-g3m4-5g8c, GHSA-wq5f-xc86-pv6w) and the
   `postcss` override from 8.5.18 to 8.5.33 (GHSA-fxqj-rqcc-2cmp). Releases load `@img/sharp-wasm32` 0.35.5.
 
-`npm audit --omit=dev` now reports 0. `npm audit` still reports 7, all development scope:
+`npm audit --omit=dev` now reports 0. `npm audit` still reports 6, all moderate and development scope:
 
-- `electron` 41.10.7 (high). The 41.x line gets no more fixes; the HID/USB permission and the other open
-  advisories are fixed only from 42.11.16 on. Moving to Electron 42 is a separate change with its own
-  Electron, Linux and Release smoke tests.
 - `electron-builder` and its `app-builder-lib`, `dmg-builder`, `@electron/universal` and `minimatch` chain
   (moderate, packaging time only). npm's only offer is a downgrade to 25.1.0, which is not taken.
 - `@tailwindcss/postcss` (moderate, build time only), reported through its `postcss` range.
 
 Checked: `npm test` (2,192), `npm run build`, `electron:refresh`, `ipad:sync`, `ipad:doctor`.
+
+**Electron 41.10.7 to 45.4.1**, same day. 41.x and 42.x get no more fixes (Electron supports the three
+newest majors: 43, 44, 45), so 42 would have been out of support at once. What the 43 to 45 breaking changes
+meant here:
+
+- macOS 13 is the minimum from Electron 44 on: `electron-builder.release.cjs` sets `minimumSystemVersion`
+  13.0, and the website and release notes say "macOS 13 Ventura".
+- Electron 45 deprecates the synchronous `safeStorage` calls (removal in 46). `electron/secure-keys.cjs` uses
+  `isAsyncEncryptionAvailable`, `encryptStringAsync` and `decryptStringAsync` when present and re-encrypts a
+  key when Electron reports `shouldReEncrypt`; data from `encryptString` stays readable.
+- Since Electron 42 the npm package downloads its binary on first use, not on install.
+  `scripts/electron-dev.mjs` resolves the package before copying `dist/Electron.app`.
+- Not affected: the preload uses only `contextBridge` and `ipcRenderer` (no `Buffer`, timers or `once`), the
+  windows are sandboxed, no page relies on `window.open` returning a window, and no renderer uses `clipboard`.
+
+Checked on 45.4.1: `npm test` (2,194), `npm run build`, `electron:refresh`, an unsigned universal Release
+(`LSMinimumSystemVersion` 13.0) started on arm64 and under Rosetta (x86_64) with an empty profile, local
+pages answer 200, and the Linux AppImage and tarball build. Not checked: the keychain on a real Electron 45
+run (the Developer App was not started with the owner's profile), Linux at runtime, a signed build.
 
 ## Not done
 

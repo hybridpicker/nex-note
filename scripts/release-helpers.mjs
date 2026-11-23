@@ -66,7 +66,7 @@ export function renderChecksums(entries) {
 export function renderReleaseNotes({ version, checksums }) {
   return `Nex Note ${version} — Public Beta
 
-Free download for macOS (Apple Silicon and Intel, macOS 12 or later) and Linux (x86_64).
+Free download for macOS (Apple Silicon and Intel, macOS 13 or later) and Linux (x86_64).
 
 - **macOS:** \`${RELEASE_ARTIFACTS.macDmg}\` (signed with Developer ID and notarized by Apple)
 - **Linux:** \`${RELEASE_ARTIFACTS.linuxAppImage}\` (make it executable, then run it)

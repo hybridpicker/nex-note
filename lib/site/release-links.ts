@@ -21,7 +21,7 @@ export const CHANGELOG_URL = `${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`;
 export const LICENSE_URL = `${GITHUB_REPO_URL}/blob/main/LICENSE`;
 export const NEW_ISSUE_URL = `${GITHUB_REPO_URL}/issues/new/choose`;
 
-export const MACOS_MINIMUM = 'macOS 12 Monterey';
+export const MACOS_MINIMUM = 'macOS 13 Ventura';
 
 export type ReleaseLinks = {
   version: string;

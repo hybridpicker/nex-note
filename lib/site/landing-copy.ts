@@ -67,7 +67,7 @@ const en: LandingCopy = {
   },
   download: {
     macLabel: 'Download for macOS',
-    macDetail: 'Universal: Apple Silicon and Intel. macOS 12 Monterey or later.',
+    macDetail: 'Universal: Apple Silicon and Intel. macOS 13 Ventura or later.',
     linuxLabel: 'Download for Linux',
     linuxDetail: 'AppImage for x86_64.',
     omarchyHint: 'Omarchy / Arch:',
@@ -164,7 +164,7 @@ const en: LandingCopy = {
     items: [
       {
         q: 'What are the system requirements?',
-        a: 'macOS 12 Monterey or later on Apple Silicon or Intel (one universal download), or a 64-bit x86 Linux system for the AppImage. Importing MuseScore files, PDFs or photos needs MuseScore 4 and Audiveris installed separately.',
+        a: 'macOS 13 Ventura or later on Apple Silicon or Intel (one universal download), or a 64-bit x86 Linux system for the AppImage. Importing MuseScore files, PDFs or photos needs MuseScore 4 and Audiveris installed separately.',
       },
       {
         q: 'Is Nex Note free?',
@@ -214,7 +214,7 @@ const de: LandingCopy = {
   },
   download: {
     macLabel: 'Für macOS laden',
-    macDetail: 'Universal: Apple Silicon und Intel. Ab macOS 12 Monterey.',
+    macDetail: 'Universal: Apple Silicon und Intel. Ab macOS 13 Ventura.',
     linuxLabel: 'Für Linux laden',
     linuxDetail: 'AppImage für x86_64.',
     omarchyHint: 'Omarchy / Arch:',
@@ -311,7 +311,7 @@ const de: LandingCopy = {
     items: [
       {
         q: 'Was sind die Systemvoraussetzungen?',
-        a: 'macOS 12 Monterey oder neuer auf Apple Silicon oder Intel (ein gemeinsamer Download) oder ein 64-Bit-x86-Linux für das AppImage. Für den Import von MuseScore-Dateien, PDFs oder Fotos müssen MuseScore 4 und Audiveris separat installiert sein.',
+        a: 'macOS 13 Ventura oder neuer auf Apple Silicon oder Intel (ein gemeinsamer Download) oder ein 64-Bit-x86-Linux für das AppImage. Für den Import von MuseScore-Dateien, PDFs oder Fotos müssen MuseScore 4 und Audiveris separat installiert sein.',
       },
       {
         q: 'Ist Nex Note kostenlos?',

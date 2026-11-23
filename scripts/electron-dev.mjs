@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -29,7 +30,14 @@ async function setPlistString(plistPath, key, value) {
   }
 }
 
+// Since Electron 42 the npm package no longer downloads its binary on install; resolving the
+// package path downloads it on first use.
+function ensureElectronBinary() {
+  createRequire(import.meta.url)('electron');
+}
+
 async function prepareMacDevElectronApp() {
+  ensureElectronBinary();
   const sourceApp = path.resolve('node_modules/electron/dist/Electron.app');
   const targetRoot = path.resolve('.nex/electron-dev');
   const targetApp = path.join(targetRoot, `${APP_NAME}.app`);

@@ -47,9 +47,18 @@ function createSecureKeyStore({ app, safeStorage, fsImpl = fs, platform = proces
     return run;
   }
 
-  function encryptionAvailable() {
+  // Electron 45 deprecates the synchronous safeStorage calls (removed in 46). Use the async
+  // ones when present; data written by the sync encryptString stays readable by decryptStringAsync.
+  const hasAsync = typeof safeStorage.isAsyncEncryptionAvailable === 'function'
+    && typeof safeStorage.encryptStringAsync === 'function'
+    && typeof safeStorage.decryptStringAsync === 'function';
+
+  async function encryptionAvailable() {
     try {
-      if (!safeStorage.isEncryptionAvailable()) return false;
+      const available = hasAsync
+        ? await safeStorage.isAsyncEncryptionAvailable()
+        : safeStorage.isEncryptionAvailable();
+      if (!available) return false;
       // On Linux without a secret service, safeStorage falls back to a hard-coded password
       // ("basic_text"); that is not keychain protection, so refuse it.
       if (platform === 'linux' && typeof safeStorage.getSelectedStorageBackend === 'function'
@@ -58,6 +67,17 @@ function createSecureKeyStore({ app, safeStorage, fsImpl = fs, platform = proces
     } catch {
       return false;
     }
+  }
+
+  async function encrypt(value) {
+    return Buffer.from(hasAsync ? await safeStorage.encryptStringAsync(value) : safeStorage.encryptString(value));
+  }
+
+  // Returns { key, shouldReEncrypt }.
+  async function decrypt(buffer) {
+    if (!hasAsync) return { key: safeStorage.decryptString(buffer), shouldReEncrypt: false };
+    const decrypted = await safeStorage.decryptStringAsync(buffer);
+    return { key: decrypted.result, shouldReEncrypt: Boolean(decrypted.shouldReEncrypt) };
   }
 
   async function readEntries() {
@@ -89,10 +109,10 @@ function createSecureKeyStore({ app, safeStorage, fsImpl = fs, platform = proces
     await fsImpl.rename(temp, target);
   }
 
-  return {
+  const store = {
     filePath,
     async available() {
-      return { ok: true, available: encryptionAvailable() };
+      return { ok: true, available: await encryptionAvailable() };
     },
     async list() {
       try {
@@ -104,15 +124,20 @@ function createSecureKeyStore({ app, safeStorage, fsImpl = fs, platform = proces
     },
     async get(provider) {
       if (!isProvider(provider)) return { ok: false, error: 'Unknown AI provider.' };
-      if (!encryptionAvailable()) return { ok: false, error: ENCRYPTION_UNAVAILABLE_ERROR };
+      if (!(await encryptionAvailable())) return { ok: false, error: ENCRYPTION_UNAVAILABLE_ERROR };
+      let key;
       try {
         const entries = await readEntries();
         if (!entries[provider]) return { ok: true };
-        const key = safeStorage.decryptString(Buffer.from(entries[provider], 'base64'));
-        return { ok: true, key };
+        const decrypted = await decrypt(Buffer.from(entries[provider], 'base64'));
+        key = decrypted.key;
+        if (!decrypted.shouldReEncrypt) return { ok: true, key };
       } catch {
         return { ok: false, error: 'The saved key could not be decrypted. Save it again.' };
       }
+      // The OS key was rotated: store the key again under the new one. A failure here keeps the old entry.
+      await store.set(provider, key).catch(() => {});
+      return { ok: true, key };
     },
     set(provider, key) {
       return exclusive(async () => {
@@ -120,11 +145,11 @@ function createSecureKeyStore({ app, safeStorage, fsImpl = fs, platform = proces
         const value = typeof key === 'string' ? key.trim() : '';
         if (!value) return { ok: false, error: 'The key is empty.' };
         if (value.length > MAX_KEY_LENGTH) return { ok: false, error: 'The key is too long.' };
-        if (!encryptionAvailable()) return { ok: false, error: ENCRYPTION_UNAVAILABLE_ERROR };
+        if (!(await encryptionAvailable())) return { ok: false, error: ENCRYPTION_UNAVAILABLE_ERROR };
         try {
-          const encrypted = safeStorage.encryptString(value);
+          const encrypted = await encrypt(value);
           const entries = await readEntries();
-          entries[provider] = Buffer.from(encrypted).toString('base64');
+          entries[provider] = encrypted.toString('base64');
           await writeEntries(entries);
           return { ok: true };
         } catch {
@@ -147,6 +172,7 @@ function createSecureKeyStore({ app, safeStorage, fsImpl = fs, platform = proces
       });
     },
   };
+  return store;
 }
 
 const TRUSTED_SENDER_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);

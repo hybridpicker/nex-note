@@ -130,3 +130,57 @@ test('secure keys: the Linux basic_text fallback does not count as a keychain', 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/** Electron 45+ safeStorage: async calls only; the deprecated sync ones throw if touched. */
+function fakeAsyncSafeStorage({ rotateOnFirstRead = false } = {}) {
+  const sync = fakeSafeStorage(true);
+  let rotated = !rotateOnFirstRead;
+  const calls: string[] = [];
+  return {
+    calls,
+    isEncryptionAvailable: () => { throw new Error('sync API used'); },
+    encryptString: () => { throw new Error('sync API used'); },
+    decryptString: () => { throw new Error('sync API used'); },
+    isAsyncEncryptionAvailable: async () => true,
+    encryptStringAsync: async (value: string) => { calls.push('encrypt'); return sync.encryptString(value); },
+    decryptStringAsync: async (buffer: Buffer) => {
+      calls.push('decrypt');
+      const shouldReEncrypt = !rotated;
+      rotated = true;
+      return { shouldReEncrypt, result: sync.decryptString(buffer) };
+    },
+  };
+}
+
+test('secure keys: use the async safeStorage API when Electron offers it', async () => {
+  const { createSecureKeyStore } = require('../electron/secure-keys.cjs');
+  const dir = mkdtempSync(join(tmpdir(), 'nex-note-secure-keys-'));
+  try {
+    const safeStorage = fakeAsyncSafeStorage();
+    const store = createSecureKeyStore({ app: { getPath: () => dir }, safeStorage, platform: 'darwin' });
+    assert.deepEqual(await store.available(), { ok: true, available: true });
+    assert.deepEqual(await store.set('openai', KEY), { ok: true });
+    assert.deepEqual(await store.get('openai'), { ok: true, key: KEY });
+    assert.deepEqual(safeStorage.calls, ['encrypt', 'decrypt']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('secure keys: keys saved with the sync API stay readable and are re-encrypted when asked', async () => {
+  const { createSecureKeyStore } = require('../electron/secure-keys.cjs');
+  const dir = mkdtempSync(join(tmpdir(), 'nex-note-secure-keys-'));
+  try {
+    const legacy = createSecureKeyStore({ app: { getPath: () => dir }, safeStorage: fakeSafeStorage(true), platform: 'darwin' });
+    assert.deepEqual(await legacy.set('claude', KEY), { ok: true });
+
+    const safeStorage = fakeAsyncSafeStorage({ rotateOnFirstRead: true });
+    const store = createSecureKeyStore({ app: { getPath: () => dir }, safeStorage, platform: 'darwin' });
+    assert.deepEqual(await store.get('claude'), { ok: true, key: KEY });
+    assert.deepEqual(safeStorage.calls, ['decrypt', 'encrypt'], 're-encrypted after shouldReEncrypt');
+    assert.deepEqual(await store.get('claude'), { ok: true, key: KEY });
+    assert.doesNotMatch(readFileSync(join(dir, SECURE_KEYS_FILENAME), 'utf8'), /sk-test-desktop/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

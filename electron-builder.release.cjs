@@ -34,7 +34,7 @@ module.exports = {
     entitlementsInherit: 'packaging/macos/entitlements.mac.plist',
     // Credentials come from a notarytool keychain profile (APPLE_KEYCHAIN_PROFILE), never from files.
     notarize: true,
-    minimumSystemVersion: '12.0',
+    minimumSystemVersion: '13.0',
     target: [
       { target: 'dmg', arch: ['universal'] },
       { target: 'zip', arch: ['universal'] },
