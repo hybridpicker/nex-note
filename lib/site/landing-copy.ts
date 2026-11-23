@@ -189,7 +189,7 @@ const en: LandingCopy = {
       },
       {
         q: 'Does it run on Linux and Omarchy?',
-        a: 'Yes. Download the x86_64 AppImage, or on Omarchy and Arch install the package with “yay -S nex-note-bin” and let your package manager handle updates.',
+        a: 'Yes. Download the x86_64 AppImage, which keeps itself up to date, or on Omarchy and Arch install the package with the command shown under the download button.',
         aComingSoon: 'Linux arrives with the Public Beta: an x86_64 AppImage, and on Omarchy and Arch a package your package manager keeps up to date. Until then you can try the Browser Preview.',
       },
       {
@@ -342,7 +342,7 @@ const de: LandingCopy = {
       },
       {
         q: 'Läuft es unter Linux und Omarchy?',
-        a: 'Ja. Lade das x86_64-AppImage, oder installiere unter Omarchy und Arch das Paket mit „yay -S nex-note-bin“; Updates übernimmt dann dein Paketmanager.',
+        a: 'Ja. Lade das x86_64-AppImage, das sich selbst aktuell hält, oder installiere unter Omarchy und Arch das Paket mit dem Befehl unter dem Download-Button.',
         aComingSoon: 'Linux kommt mit der Public Beta: ein x86_64-AppImage und unter Omarchy und Arch ein Paket, das dein Paketmanager aktuell hält. Bis dahin kannst du die Browser Preview ausprobieren.',
       },
       {

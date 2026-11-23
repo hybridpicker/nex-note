@@ -55,7 +55,9 @@ test('checksums are sorted and use the sha256sum format', () => {
   );
   const notes = renderReleaseNotes({ version: '0.1.0', checksums: 'aa  a.dmg\n' });
   assert.match(notes, /Public Beta/);
-  assert.match(notes, /yay -S nex-note-bin/);
+  assert.match(notes, /makepkg -si/, 'without the AUR package the notes point at the attached PKGBUILD');
+  assert.doesNotMatch(notes, /yay -S/);
+  assert.match(renderReleaseNotes({ version: '0.1.0', checksums: 'aa  a.dmg\n', aurPublished: true }), /yay -S nex-note-bin/);
   assert.match(notes, /blob\/v0\.1\.0\/CHANGELOG\.md/);
 });
 

@@ -10,7 +10,10 @@ import { ImpressumView, PrivacyView } from '../components/site/LegalViews.tsx';
 import { LANDING_COPY } from '../lib/site/landing-copy.ts';
 import { SERVER_LOG_RETENTION } from '../lib/site/legal-copy.ts';
 import { parseAcceptLanguage, resolveSiteLocale, siteHref, siteLocalePathRedirects } from '../lib/site/locale.ts';
-import { RELEASE_DMG_URL, LINUX_APPIMAGE_URL, RELEASE_LINKS } from '../lib/site/release-links.ts';
+import { RELEASE_DMG_URL, LINUX_APPIMAGE_URL, RELEASE_LINKS, OMARCHY_INSTALL_COMMAND as OMARCHY_COMMAND } from '../lib/site/release-links.ts';
+
+// React escapes "&&" in the markup.
+const OMARCHY_INSTALL_COMMAND = OMARCHY_COMMAND.replaceAll('&', '&amp;');
 import { COMING_SOON, resolveReleaseAvailability, type ReleaseAvailability } from '../lib/site/release-availability.ts';
 import { LEGAL_CONTACT_EMAIL } from '../lib/site/legal-contact.ts';
 import { shouldShowBrowserPreviewBanner } from '../lib/site/browser-preview-banner.ts';
@@ -46,7 +49,7 @@ test('with a Release the landing page offers both downloads, its version and the
   assert.ok(html.includes(LINUX_APPIMAGE_URL));
   assert.ok(html.includes('href="/nex-note-app?locale=en"'));
   assert.ok(html.includes('https://github.com/hybridpicker/nex-note/releases/latest"'));
-  assert.ok(html.includes('yay -S nex-note-bin'));
+  assert.ok(html.includes(OMARCHY_INSTALL_COMMAND));
   assert.ok(html.includes('data-os="unknown"'));
   assert.ok(html.includes('Version 0.1.0 · Dec 1, 2026'));
   assert.ok(html.includes('Public Beta 0.1.0'));
@@ -71,7 +74,7 @@ test('without a Release the landing page says coming soon and leads to the Brows
     assert.ok(!html.includes(RELEASE_DMG_URL), locale);
     assert.ok(!html.includes(LINUX_APPIMAGE_URL), locale);
     assert.ok(!html.includes('github.com'), `${locale}: no link into the private repository`);
-    assert.ok(!html.includes('yay -S nex-note-bin'), locale);
+    assert.ok(!html.includes(OMARCHY_INSTALL_COMMAND), locale);
     assert.ok(!html.includes('data-testid="download-mac"'), locale);
     assert.doesNotMatch(html, /Version \d|Public Beta \d|-dev\b/, locale);
   }
@@ -124,7 +127,7 @@ test('download buttons narrow to the detected OS', () => {
   const linux = render(React.createElement(DownloadButtons, { ...props, initialOs: 'linux' }));
   assert.ok(linux.includes(LINUX_APPIMAGE_URL));
   assert.ok(!linux.includes(RELEASE_DMG_URL));
-  assert.ok(linux.includes('yay -S nex-note-bin'));
+  assert.ok(linux.includes(OMARCHY_INSTALL_COMMAND));
   const other = render(React.createElement(DownloadButtons, { ...props, initialOs: 'other' }));
   assert.ok(other.includes(RELEASE_DMG_URL) && other.includes(LINUX_APPIMAGE_URL));
   assert.ok(other.includes('Windows is not available yet'));
@@ -136,7 +139,7 @@ test('download buttons offer only the attached assets', () => {
   const unknown = render(React.createElement(DownloadButtons, props));
   assert.ok(unknown.includes(RELEASE_DMG_URL));
   assert.ok(!unknown.includes(LINUX_APPIMAGE_URL));
-  assert.ok(!unknown.includes('yay -S'));
+  assert.ok(!unknown.includes(OMARCHY_INSTALL_COMMAND));
   // A Linux visitor still gets the one download that exists rather than none.
   const linux = render(React.createElement(DownloadButtons, { ...props, initialOs: 'linux' }));
   assert.ok(linux.includes(RELEASE_DMG_URL));

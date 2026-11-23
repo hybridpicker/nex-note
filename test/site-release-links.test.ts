@@ -20,7 +20,9 @@ test('download links use the stable GitHub latest-release redirects', () => {
   assert.equal(RELEASE_DMG_URL, 'https://github.com/hybridpicker/nex-note/releases/latest/download/Nex-Note-mac-universal.dmg');
   assert.equal(LINUX_APPIMAGE_URL, 'https://github.com/hybridpicker/nex-note/releases/latest/download/Nex-Note-linux-x86_64.AppImage');
   assert.equal(ALL_RELEASES_URL, 'https://github.com/hybridpicker/nex-note/releases/latest');
-  assert.equal(OMARCHY_INSTALL_COMMAND, 'yay -S nex-note-bin');
+  // Until nex-note-bin is on the AUR, the command builds the package from the Release's PKGBUILD.
+  assert.equal(OMARCHY_INSTALL_COMMAND,
+    'curl -LO https://github.com/hybridpicker/nex-note/releases/latest/download/PKGBUILD && makepkg -si');
 });
 
 const releaseBody = (overrides: Record<string, unknown> = {}) => ({

@@ -314,7 +314,8 @@ async function collectArtifacts(version) {
   }
   const checksumText = renderChecksums(checksums);
   writeFileSync(path.join(collectedDir, 'SHA256SUMS'), checksumText);
-  writeFileSync(path.join(collectedDir, 'RELEASE_NOTES.md'), renderReleaseNotes({ version, checksums: checksumText }));
+  writeFileSync(path.join(collectedDir, 'RELEASE_NOTES.md'),
+    renderReleaseNotes({ version, checksums: checksumText, aurPublished: Boolean(process.env.NEX_NOTE_AUR_CLONE) }));
 
   if (!options.skipLinux) {
     const aur = {
@@ -327,8 +328,10 @@ async function collectArtifacts(version) {
     mkdirSync(aurDir, { recursive: true });
     writeFileSync(path.join(aurDir, 'PKGBUILD'), renderPkgbuild(aur));
     writeFileSync(path.join(aurDir, '.SRCINFO'), renderSrcinfo(aur));
+    // Attached to the Release, so Omarchy and Arch users can build the package without the AUR.
+    execFileSync('cp', [path.join(aurDir, 'PKGBUILD'), path.join(collectedDir, 'PKGBUILD')]);
   }
-  return [...wanted, ...metadata, ...blockmaps, 'SHA256SUMS'];
+  return [...wanted, ...metadata, ...blockmaps, 'SHA256SUMS', ...(options.skipLinux ? [] : ['PKGBUILD'])];
 }
 
 // ── Publish ───────────────────────────────────────────────────────────────

@@ -14,7 +14,13 @@ export const LINUX_APPIMAGE_URL = `${GITHUB_REPO_URL}/releases/latest/download/$
 export const ALL_RELEASES_URL = `${GITHUB_REPO_URL}/releases/latest`;
 
 export const OMARCHY_PACKAGE = 'nex-note-bin';
-export const OMARCHY_INSTALL_COMMAND = `yay -S ${OMARCHY_PACKAGE}`;
+// Set to true once nex-note-bin is on the AUR (packaging/aur/README.md). Until then Omarchy and Arch
+// users build the package from the PKGBUILD attached to every Release.
+export const AUR_PUBLISHED = false;
+export const OMARCHY_PKGBUILD_URL = `${GITHUB_REPO_URL}/releases/latest/download/PKGBUILD`;
+export const OMARCHY_INSTALL_COMMAND = AUR_PUBLISHED
+  ? `yay -S ${OMARCHY_PACKAGE}`
+  : `curl -LO ${OMARCHY_PKGBUILD_URL} && makepkg -si`;
 
 export const CHANGELOG_URL = `${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`;
 export const LICENSE_URL = `${GITHUB_REPO_URL}/blob/main/LICENSE`;

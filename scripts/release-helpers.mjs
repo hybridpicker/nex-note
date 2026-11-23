@@ -63,14 +63,17 @@ export function renderChecksums(entries) {
     .join('\n')}\n`;
 }
 
-export function renderReleaseNotes({ version, checksums }) {
+export function renderReleaseNotes({ version, checksums, aurPublished = false }) {
+  const omarchy = aurPublished
+    ? `\`yay -S ${AUR_PACKAGE}\``
+    : `download \`PKGBUILD\` from this Release, then \`makepkg -si\` (${AUR_PACKAGE} moves to the AUR later)`;
   return `Nex Note ${version} — Public Beta
 
 Free download for macOS (Apple Silicon and Intel, macOS 13 or later) and Linux (x86_64).
 
 - **macOS:** \`${RELEASE_ARTIFACTS.macDmg}\` (signed with Developer ID and notarized by Apple)
 - **Linux:** \`${RELEASE_ARTIFACTS.linuxAppImage}\` (make it executable, then run it)
-- **Omarchy / Arch:** \`yay -S ${AUR_PACKAGE}\`
+- **Omarchy / Arch:** ${omarchy}
 
 Installed apps ask before they look for updates and send no usage data.
 Changes: [CHANGELOG.md](https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/${tagForVersion(version)}/CHANGELOG.md)
