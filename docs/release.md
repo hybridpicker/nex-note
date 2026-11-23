@@ -53,7 +53,9 @@ npm run ship                   # the real thing
 ```
 
 `npm run ship` requires a clean `devel` equal to `origin/devel`, `origin/main` as its
-ancestor, a public repository and the signing setup. It then:
+ancestor, a public repository and the signing setup. A full run takes about an hour on the
+owner's Mac (merging the universal app alone takes 20–25 minutes, then two notarizations and
+the upload of about 860 MB). It then:
 
 1. checks out `devel` HEAD in `~/Library/Caches/nex-note/release-build` (no `.env*` copied),
    commits the Release version there;
@@ -65,8 +67,10 @@ ancestor, a public repository and the signing setup. It then:
 4. verifies `codesign`, Gatekeeper (`spctl`) for the app and the DMG, both stapled tickets, the build stamp, the
    bundled soundfonts and the absence of environment files;
 5. collects artifacts, `latest-*.yml`, blockmaps, `SHA256SUMS`, release notes and the AUR
-   `PKGBUILD`/`.SRCINFO` in `dist/release/`;
-6. asks for confirmation, then pushes the tag, creates the GitHub Release (draft → upload →
+   `PKGBUILD`/`.SRCINFO` in `dist/release/` (the `PKGBUILD` is also a Release asset);
+6. fetches `origin` again and stops while nothing is public if `main` or `devel` moved during
+   the build (the Release commit could no longer fast-forward them); then asks for
+   confirmation, checks once more, pushes the tag, creates the GitHub Release (draft → upload →
    publish), **pushes `main` (this deploys nex-note.com)**, fast-forwards `devel` and commits
    the next `-dev` version, and updates the AUR clone if `NEX_NOTE_AUR_CLONE` is set.
 
@@ -76,6 +80,27 @@ If it stops before step 6, nothing public changed; run it again. If it stops dur
 finish the remaining sub-steps by hand in the order above (the tag and the Release must exist
 before `main` moves, because the website links to `releases/latest`).
 
+### When publishing stops halfway (what happened with 0.1.0)
+
+- **Upload timeout.** GitHub cancels a slow asset upload with `HTTP 408: Upload body timed out
+  due to inactivity`. The Release stays a draft. Upload the missing files one at a time, compare
+  their sizes with `dist/release/`, then publish:
+
+  ```sh
+  gh release upload v<version> --repo hybridpicker/nex-note --clobber dist/release/<file>
+  gh release view v<version> --repo hybridpicker/nex-note --json assets
+  gh release edit v<version> --repo hybridpicker/nex-note --draft=false --latest
+  ```
+
+- **`main` moved during the build** (0.1.0: a docs commit landed while ship was building, before
+  the check in step 6 existed). Merge the tagged Release commit into `devel`, push that merge to
+  `main` and `devel`, then commit the next `-dev` version on `devel` (`0.1.1-dev` after 0.1.0).
+- **Pre-commit e2e failures on such a merge** come from a busy machine (a long Claude session or
+  an upload in progress); different timing tests failed on each attempt. Retry when the machine
+  is idle; never skip the hook.
+- **Omarchy Package.** If `NEX_NOTE_AUR_CLONE` is not set, nothing is pushed to the AUR; the
+  `PKGBUILD` attached to the Release is the install path (see `packaging/aur/README.md`).
+
 ## Artifacts
 
 | File | Used by |
@@ -84,6 +109,7 @@ before `main` moves, because the website links to `releases/latest`).
 | `Nex-Note-mac-universal.zip`, `latest-mac.yml` | macOS Update Check (Squirrel) |
 | `Nex-Note-linux-x86_64.AppImage`, `latest-linux.yml` | website download (Linux), AppImage Update Check |
 | `Nex-Note-linux-x86_64.tar.gz` | Omarchy Package |
+| `PKGBUILD` | Omarchy/Arch install without the AUR (`curl -LO …/PKGBUILD && makepkg -si`) |
 | `SHA256SUMS` | manual verification |
 
 The website (`lib/site/release-links.ts`) links to `releases/latest/download/<file>`, so the

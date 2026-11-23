@@ -2,11 +2,21 @@
 
 All notable changes to nex-note are documented here.
 
-## Unreleased - 2026-11-10
+## Unreleased - 2026-11-23
+
+### Changed
+
+- The desktop apps no longer ask GitHub for the latest Release when Impressum or the privacy policy are opened. The answer was cached inside the installed app, which is read-only on Linux (`/opt/nex-note`) and signed on macOS; found by a Linux test of the Omarchy package.
+- The AI settings popover stays inside the window: it opened to the left of its button beside the logo and ran off the screen on the website, and it now scrolls when it is taller than the space below.
+- Omarchy and Arch: every Release carries its `PKGBUILD`, and the website and release notes show `curl -LO …/PKGBUILD && makepkg -si` until `nex-note-bin` is on the AUR (registration there is paused).
+- `npm run ship` stops before publishing if `main` or `devel` moved during the build, signs, notarizes and staples the DMG itself, and retries soundfont downloads.
+- nex-note.com serves the playback instruments itself; the Browser Preview no longer loads them from gleitz.github.io.
+
+## 0.1.0 - 2026-11-23 (Public Beta)
 
 ### Added
 
-- Public Beta distribution. Releases come from `main` as a universal, Developer ID–signed and notarized macOS DMG and a Linux AppImage (plus the Omarchy/Arch package `nex-note-bin`), published on GitHub Releases by `npm run ship`; `npm run release:setup` guides through the one-time signing setup. See `docs/release.md`.
+- Public Beta distribution. Releases come from `main` as a universal, Developer ID–signed and notarized macOS DMG and a Linux AppImage (plus the Omarchy/Arch package `nex-note-bin`, for now installed from the `PKGBUILD` attached to each Release), published on GitHub Releases by `npm run ship`; `npm run release:setup` guides through the one-time signing setup. See `docs/release.md`.
 - Update Check for Releases: the app asks once whether to look for updates, then offers each new Release before downloading and installing it. No usage data is sent.
 - The Developer App is now "Nex Note Dev" (own bundle id, settings and Linux launcher `nex-note-dev`), so it runs beside the Public Beta. It fast-forwards a clean `devel` checkout from origin at start and hourly, then rebuilds itself. Its first start copies the previous "Nex Note" settings and library.
 - New website for nex-note.com in English and German: download buttons for the visitor's system, "Try in browser", formats, privacy and AI, FAQ, Impressum and privacy policy. Until the first Release is published it says "Public Beta – coming soon" and leads to the Browser Preview; the downloads appear on their own within about ten minutes of `npm run ship`. `/de` and `/en` open the page in that language, and the logo, tab and home-screen icons are the app icon. See `docs/website.md`.
@@ -122,7 +132,7 @@ All notable changes to nex-note are documented here.
 - 1,689 unit tests, including a seeded entry fuzzer over six synthetic scores; build; `e2e/notation-tools.spec.ts` (51) in Chromium; Electron package build and verify; `ipad:sync` and `ipad:doctor`. 14 tests of `e2e/app.spec.ts` already failed before these changes and are tracked in `docs/note-entry-mastery-ledger.md` (F15).
 - 2026-11-15 (sound, speed, core and interface pass): 2,132 unit tests; build; the complete `smoke` and `regression` end-to-end projects in Chromium: 298 passed, 3 failed, 6 skipped. The three failures: `e2e/notation-tools.spec.ts` "eight-bar keyboard replacement ..." (F55 in `docs/note-entry-mastery-ledger.md`, passed in the run before) and two playback probe scenarios over the playhead drift budget (`small` 5.5 against 5 ms/min, `start from a selected note` 30.8 over nine notes; see `docs/playback-sync.md`). `electron:refresh` with package verify, `ipad:sync` and `ipad:doctor` passed; nothing was tried on a physical iPad or on Linux.
 
-## Unreleased - 2026-10-02
+## 0.1.0, earlier changes (collected since 2026-10-02)
 
 ### Added
 

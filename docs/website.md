@@ -89,6 +89,11 @@ use GitHub's `releases/latest/download/<asset>` redirects and only change if
 the asset names change (`Nex-Note-mac-universal.dmg`,
 `Nex-Note-linux-x86_64.AppImage`).
 
+The Omarchy line under the Linux button shows `OMARCHY_INSTALL_COMMAND`. While
+`AUR_PUBLISHED` is `false` that is `curl -LO …/releases/latest/download/PKGBUILD
+&& makepkg -si`; set it to `true` once `nex-note-bin` is on the AUR and the
+line becomes `yay -S nex-note-bin` (`packaging/aur/README.md`).
+
 ## Release availability
 
 The website can go live before the first Release. The landing page, the
@@ -123,8 +128,14 @@ link into the repository (footer, Impressum) are hidden, the footer says
 "Public Beta – coming soon", and the formats lead and two FAQ answers use
 their `leadComingSoon` / `aComingSoon` wording from `lib/site/landing-copy.ts`.
 
-When `npm run ship` publishes the first Release, the downloads appear within
-about ten minutes without another deploy. To check the state from outside:
+The desktop apps serve the same pages from their local server, which runs
+with `NEX_NOTE_DESKTOP_SERVER=1` (`electron/main.cjs`). There the check is
+skipped: the app never contacts GitHub for it, and Next's cache would
+otherwise be written into the installed app (read-only `/opt/nex-note` on
+Linux, the signed bundle on macOS).
+
+0.1.0 was published on 2026-11-23; the downloads appeared on their own as
+described. To check the state from outside:
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' https://api.github.com/repos/hybridpicker/nex-note/releases/latest
@@ -176,6 +187,14 @@ A website change goes live with the website-only deployment in
 host deploys `main` by itself. Every commit on `devel` since the last deploy
 goes live with it.
 
+On the web host a cron job runs every 10 minutes
+(`watch-production-branches.sh`, maintained in the jarvis-agent repository):
+`git pull --ff-only`, `npm ci`, `npm run soundfonts:fetch`, `npm run build`,
+`pm2 restart nex-note-web`. The fetch step (added 2026-11-23) bundles the
+playback instruments under `public/soundfonts/`, so the Browser Preview plays
+from nex-note.com and contacts `gleitz.github.io` only if a file is missing.
+Changes to that script are server work (a session on the host).
+
 Before pushing `main`, check the production build locally. The landing page
 redirects to the editor on localhost, so use a `*.localhost` name, which
 browsers resolve to the loopback address:
@@ -202,6 +221,11 @@ curl -s -o /dev/null -w '%{http_code}\n' https://nex-note.com/nex-note-app
 To see when a deploy has landed, poll a file or path only the new build has.
 A request to `/api/ollama-models` with a forged `X-Forwarded-Host: localhost`
 must not return a model list.
+The instruments must come from the site itself:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' https://nex-note.com/soundfonts/FluidR3_GM/acoustic_grand_piano-mp3.js
+```
 
 ## Tests
 
