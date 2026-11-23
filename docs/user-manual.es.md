@@ -132,6 +132,8 @@ La paleta izquierda se puede expandir, plegar o usar como rail de iconos. Incluy
 
 La reproduccion incluye play/pause (`Space`), stop, tempo, metronomo, salto con barra de progreso y cursor en la partitura. Si hay una nota seleccionada y la reproduccion esta detenida, Play empieza desde esa nota. El primer cargado de MIDI/soundfont puede tardar un momento.
 
+Sonido: cada parte tiene su lugar en la imagen estereo y una parte de una reverberacion de sala comun. El volumen sigue las dinamicas escritas; se tocan acento, staccato, marcato y sforzato, y tambien el pedal de resonancia. Las notas largas de cuerdas, vientos y organo duran su valor escrito. Los pentagramas de percusion suenan con una bateria incorporada (notas General MIDI 35 a 81) y el clic del metronomo es un bloque de madera. Una nota pulsada suena de inmediato, a altura real en las partes transpositoras. Hay 22 sonidos de instrumento; un instrumento sin sonido propio recibe el mas cercano.
+
 ## Asistente AI
 
 La pestana AI abre el chat para trabajar sobre la partitura en lenguaje natural. Puedes describir cambios directamente o usar workflows slash como `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair` y solicitudes de limpieza MIDI/import. Si hay una nota, rango, compas o parte seleccionada, el asistente recibe ese contexto y puede limitar la propuesta a la musica actual.

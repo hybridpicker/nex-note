@@ -216,6 +216,8 @@ Selection and tie/slur palette actions now expose the same shortcut hints on hov
 
 Playback includes play/pause (`Space`), stop, tempo slider, metronome, progress-bar seeking, and a score cursor. If playback is stopped and a note is selected, Play starts from that note. MIDI and soundfont loading can take a short moment the first time.
 
+Sound: every part has its own place in the stereo picture and a share of a common room reverb. Loudness follows the written dynamics; accent, staccato, marcato and sforzato are played, and so is the sustain pedal. Long notes of strings, winds and organ hold for their written length. Percussion staves sound with a built-in drum kit (General MIDI notes 35 to 81), and the metronome click is a woodblock. A clicked note sounds at once, at sounding pitch in transposing parts. There are 22 instrument sounds; an instrument without a sound of its own gets the closest relative.
+
 ## AI Assistant
 
 The AI tab opens the chat panel for natural-language score work. You can describe edits directly or use slash workflows such as `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair`, and MIDI/import cleanup prompts. When a note, range, measure, or part is selected, the assistant receives that context and can scope its proposal to the current music.

@@ -278,6 +278,8 @@ Die Playback-Leiste bietet:
 
 MIDI- und Soundfont-Ladevorgaenge koennen beim ersten Start kurz dauern.
 
+Klang: Jede Stimme hat ihren eigenen Platz im Stereobild und einen Anteil an einem gemeinsamen Raumhall. Die Lautstaerke folgt den notierten Dynamikzeichen; Akzent, Staccato, Marcato und Sforzato werden gespielt, ebenso das Haltepedal. Lange Toene von Streichern, Blaesern und Orgel klingen ueber ihre notierte Laenge. Schlagzeugsysteme klingen mit einem eingebauten Drumset (General-MIDI-Noten 35 bis 81), der Metronomklick ist ein Holzblock. Eine angeklickte Note klingt sofort, in transponierenden Stimmen in klingender Tonhoehe. Es gibt 22 Instrumentenklaenge; ein Instrument ohne eigenen Klang bekommt den naechstverwandten.
+
 ## AI Assistant
 
 Der AI-Tab oeffnet den Chat fuer natuerliche Score-Arbeit. Du kannst Aenderungen frei beschreiben oder Slash-Workflows wie `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair` und MIDI-/Import-Cleanup-Prompts verwenden. Wenn eine Note, ein Bereich, ein Takt oder eine Stimme ausgewaehlt ist, bekommt der Assistant diesen Kontext und kann den Vorschlag auf die aktuelle Musik begrenzen.

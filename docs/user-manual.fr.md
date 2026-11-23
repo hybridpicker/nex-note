@@ -134,6 +134,8 @@ La palette peut etre etendue, repliee ou affichee en rail d'icones. Elle contien
 
 La lecture fournit play/pause (`Space`), stop, tempo, metronome, recherche via barre de progression et curseur dans la partition. Si une note est selectionnee et que la lecture est arretee, Play commence a cette note. Le premier chargement MIDI/soundfont peut prendre un moment.
 
+Son : chaque partie a sa place dans l'image stereo et une part d'une reverberation de salle commune. Le volume suit les nuances ecrites ; accent, staccato, marcato et sforzato sont joues, ainsi que la pedale forte. Les notes longues des cordes, des vents et de l'orgue tiennent leur duree ecrite. Les portees de percussion sonnent avec une batterie integree (notes General MIDI 35 a 81) et le clic du metronome est un wood-block. Une note cliquee sonne aussitot, en hauteur reelle dans les parties transpositrices. Il y a 22 sons d'instrument ; un instrument sans son propre recoit le plus proche.
+
 ## Assistant AI
 
 L'onglet AI ouvre le chat pour travailler sur la partition en langage naturel. Vous pouvez decrire une modification directement ou utiliser des workflows slash comme `/arrange`, `/analyze`, `/practice`, `/layout`, `/repair` et les demandes de nettoyage MIDI/import. Si une note, une plage, une mesure ou une partie est selectionnee, l'assistant recoit ce contexte et peut limiter sa proposition a la musique courante.

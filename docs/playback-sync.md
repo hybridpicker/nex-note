@@ -185,3 +185,24 @@ Known limit: under a deliberately busy main thread (45 ms tasks), frames are mis
 highlight can show up to about three frames late. A compositor-driven (WAAPI) playhead could
 keep the line moving during such stalls, but the probe cannot observe compositor frames, so
 that is left for later.
+
+### Update 2026-11-15
+
+The highlight onset is now read half a frame ahead of the playhead (`playbackHighlightLeadMs`,
+1.5 frame intervals against 1), so its error is centred on the sound instead of lying between
+0 and +1 frame. Highlight median / p95 in ms, same machine, headless Chrome, before → after:
+small 9.8 / 10 → 4.3 / 4.6, dense 7.5 / 15 → −0.3 / 8.5, structure 10.8 / 15.4 → 1.8 / 8.8,
+long 4.8 / 13 → −1.9 / 6.6, from selection 11.4 / 11.4 → −8.1 / 8.1, busy 7.6 / 25.9 → −1.5 / 23.8.
+The probe itself changed on the same day (drift without the start onset, interpolated barline
+crossings; see "Measuring"), so these numbers are not comparable with the table above.
+
+Over budget in the full end-to-end runs of that day, budgets unchanged:
+
+- Playhead drift of short runs: small 5.4 to 5.5 ms/min in two of four runs, from selection
+  14.1 and 30.8 ms/min over nine onsets. A regression line over a few seconds of music is
+  sensitive to single frames; whether this is measurement noise or a real slope is not settled.
+- Structure: highlight drift 5.9 ms/min in one run.
+- Busy main thread: highlight p95 23.8 to 25.9 ms (the known limit above).
+
+The new sound engine (bus, reverb, loops, drum kit) did not change these numbers: skipped,
+late-shifted and missing notes stay at 0, press to first sound is 34 to 43 ms.

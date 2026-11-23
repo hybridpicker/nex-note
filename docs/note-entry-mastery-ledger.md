@@ -409,6 +409,18 @@ Follow-up on the same day (full `smoke` + `regression` run on the combined tree:
   probe scenarios remain over budget (structure highlight drift, busy highlight p95, playhead drift
   of short runs).
 
+Open after this session, each with a reproduction outside the repository at the time of writing
+(to be turned into failing unit tests when picked up):
+
+- An event moved into a bar with a different `divisions` grid keeps its duration number instead of
+  being rescaled, so its length changes.
+- `changeNoteDuration` on a note next to a tuplet can leave overlapping events in one voice.
+- A fermata on the very first note halves the first tempo of the fallback MIDI renderer, and the
+  tempo slider scales from that value.
+- Call sites of `describeDuration` outside the rhythm speller still use the lenient variant.
+- `e2e/notation-tools.spec.ts` "eight-bar keyboard replacement ..." (F55) failed in one of four full
+  runs of the day and passed in the pre-commit run; still unexplained.
+
 ## Reference sources read
 
 - MuseScore Studio handbook, fetched 2026-11-10: entering-notes-and-rests, editing-notes-and-rests,
