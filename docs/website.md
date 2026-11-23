@@ -24,7 +24,9 @@ Public Beta downloads, links to the Browser Preview, and carries the legal pages
 - `components/site/SiteChrome.tsx`: header, language switcher, footer, shared
   colour and focus classes (light and dark follow the system setting).
 - `components/site/DownloadButtons.tsx`: the only client component on the
-  landing page. The server renders both downloads; after hydration it reads
+  landing page. Without an available Release (see below) it shows
+  "Public Beta – coming soon" and makes "Try in browser" the primary button.
+  With one, the server renders both downloads; after hydration it reads
   `navigator` (`lib/site/os-detection.ts`) and narrows to the Release DMG on
   macOS or the AppImage plus Omarchy Package hint on Linux. Other systems keep
   both buttons and a short note that Windows is not available. The detection
@@ -67,19 +69,70 @@ Omarchy Package, Browser Preview, Session Key, Update Check).
 
 ## Release links
 
-`lib/site/release-links.ts` is the single place for the version and the
-download URLs. The version is read from `package.json` at build time, so a
-Release only needs the usual version bump. The URLs use GitHub's
-`releases/latest/download/<asset>` redirects and only change if the asset
-names change (`Nex-Note-mac-universal.dmg`, `Nex-Note-linux-x86_64.AppImage`).
+`lib/site/release-links.ts` is the single place for the download URLs. They
+use GitHub's `releases/latest/download/<asset>` redirects and only change if
+the asset names change (`Nex-Note-mac-universal.dmg`,
+`Nex-Note-linux-x86_64.AppImage`).
+
+## Release availability
+
+The website can go live before the first Release. The landing page, the
+Impressum and the privacy policy ask GitHub on the server whether a Release
+can be downloaded (`lib/site/release-availability.ts`, cached in
+`lib/site/release-availability.server.ts`):
+
+- One anonymous request to
+  `https://api.github.com/repos/hybridpicker/nex-note/releases/latest`:
+  no token, no cookies, no visitor headers, a fixed `User-Agent:
+  nex-note-website`, 3 s timeout. Browsers never contact GitHub for this.
+- The answer is cached for 600 s per server with `unstable_cache`, shared by
+  all visitors and pages (about six requests an hour, well inside GitHub's
+  anonymous limit). Next's own `fetch` cache is not used because it keeps
+  only 200 responses, so "no Release yet" would hit GitHub on every visit.
+- **Available**: HTTP 200, not a draft or prerelease, and at least one of the
+  two download assets attached. Each button appears only when its asset is
+  attached. The version (`X.Y.Z` from the tag) and the publication date come
+  from the Release, never from `package.json`, which carries a `-dev` version
+  on `devel` and after a website-only deploy. An unexpected tag hides the
+  version line but keeps the buttons.
+- **Coming soon**: HTTP 404 (no Release yet; also what a private repository
+  answers) is cached like any answer. Every other failure (timeout, 403/429
+  rate limit, 5xx, invalid JSON) throws inside the cache, so the last good
+  answer stays in place; only a server that has never had an answer shows
+  coming soon.
+
+Coming soon changes more than the buttons, because the repository only
+becomes public with the first Release (`docs/adr/0001-source-public-at-public-beta.md`):
+the Omarchy hint, "All downloads and checksums", the version line and every
+link into the repository (footer, Impressum) are hidden, the footer says
+"Public Beta – coming soon", and the formats lead and two FAQ answers use
+their `leadComingSoon` / `aComingSoon` wording from `lib/site/landing-copy.ts`.
+
+When `npm run ship` publishes the first Release, the downloads appear within
+about ten minutes without another deploy. To check the state from outside:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' https://api.github.com/repos/hybridpicker/nex-note/releases/latest
+```
+
+## Screenshots
+
+`scripts/capture-readme-screenshots.mjs` writes `docs/screenshots/` from the
+synthetic fixtures; copy the files the website uses into
+`public/screenshots/`. The landing page leads with `score-closeup.png`, the
+score alone at 160 % editor zoom, because a full editor window shrinks the
+staff lines to a hairline at the page's width. The smaller images stay full
+editor views. Image sizes other than 2880×1800 are given in
+`lib/site/landing-copy.ts`.
 
 ## Open items before launch
 
 - `SERVER_LOG_RETENTION` in `lib/site/legal-copy.ts` says 30 days, matching
   `/etc/logrotate.d/nginx` on the web host (`daily`, `rotate 30`; checked
   2026-11-22). Change both together.
-- `LEGAL_CONTACT_EMAIL` in `lib/site/legal-contact.ts` is empty. While it is
-  empty, the Impressum and privacy policy show a visible red placeholder.
+- `LEGAL_CONTACT_EMAIL` in `lib/site/legal-contact.ts` is set. Should it ever
+  be emptied, the Impressum and privacy policy show a visible red placeholder,
+  and `test/site-pages.test.ts` fails.
 
 ## Tests
 

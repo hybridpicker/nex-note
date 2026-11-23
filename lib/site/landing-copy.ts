@@ -13,11 +13,18 @@ export type DownloadCopy = {
   tryInBrowser: string;
   allDownloads: string;
   versionLabel: string;
+  /** Shown instead of the download buttons while no Release can be downloaded. */
+  comingSoon: string;
+  comingSoonDetail: string;
+  tryInBrowserDetail: string;
 };
 
 type Card = { title: string; text: string };
-type Shot = { src: string; title: string; text: string; alt: string };
-type Faq = { q: string; a: string };
+/** Pixel size of the image file; most screenshots are 1440×900 editor windows at 2×. */
+type Shot = { src: string; title: string; text: string; alt: string; width?: number; height?: number };
+const SCORE_CLOSEUP = { src: '/screenshots/score-closeup.png', width: 2646, height: 2142 } as const;
+/** `aComingSoon` replaces the answer while no Release can be downloaded. */
+type Faq = { q: string; a: string; aComingSoon?: string };
 
 export type LandingCopy = {
   metaTitle: string;
@@ -33,6 +40,7 @@ export type LandingCopy = {
     eyebrow: string;
     title: string;
     lead: string;
+    leadComingSoon: string;
     supportedTitle: string;
     supported: string[];
     experimentalTitle: string;
@@ -75,6 +83,9 @@ const en: LandingCopy = {
     tryInBrowser: 'Try in browser',
     allDownloads: 'All downloads and checksums',
     versionLabel: 'Version',
+    comingSoon: 'Public Beta – coming soon',
+    comingSoonDetail: 'The desktop app for macOS and Linux is on its way. Until then, try the editor in your browser.',
+    tryInBrowserDetail: 'Runs in your browser, with no install and no account.',
   },
   screenshots: {
     eyebrow: 'See it',
@@ -82,10 +93,10 @@ const en: LandingCopy = {
     lead: 'These screenshots show the app as it ships, with original demo scores.',
     items: [
       {
-        src: '/screenshots/editor-piano.png',
+        ...SCORE_CLOSEUP,
         title: 'Score editor',
         text: 'Keyboard-first note input with dynamics, slurs, hairpins and multiple voices.',
-        alt: 'Nex Note editor showing a two-staff piano score with dynamics, slurs and hairpins',
+        alt: 'Close-up of a two-staff piano score drawn by Nex Note, with dynamics, slurs and hairpins',
       },
       {
         src: '/screenshots/guitar-tab.png',
@@ -123,6 +134,7 @@ const en: LandingCopy = {
     eyebrow: 'Formats',
     title: 'Honest about what works today.',
     lead: 'Nex Note is a Public Beta. Some paths are solid, others need extra software or a careful look at the result.',
+    leadComingSoon: 'Nex Note is heading for its Public Beta. Some paths are solid, others need extra software or a careful look at the result.',
     supportedTitle: 'Supported',
     supported: ['MusicXML (.musicxml, .xml)', 'Compressed MusicXML (.mxl)', 'Nex Note projects (.nxn)', 'MIDI export and playback', 'PDF export'],
     experimentalTitle: 'Experimental or needs extra software',
@@ -169,6 +181,7 @@ const en: LandingCopy = {
       {
         q: 'Is Nex Note free?',
         a: 'Yes. The Public Beta is free to download and use, with no account and no sign-up. The source code is open under the AGPL-3.0.',
+        aComingSoon: 'Yes. The Public Beta will be free to download and use, with no account and no sign-up. The source code will be published under the AGPL-3.0 with the Public Beta.',
       },
       {
         q: 'How do updates work?',
@@ -177,6 +190,7 @@ const en: LandingCopy = {
       {
         q: 'Does it run on Linux and Omarchy?',
         a: 'Yes. Download the x86_64 AppImage, or on Omarchy and Arch install the package with “yay -S nex-note-bin” and let your package manager handle updates.',
+        aComingSoon: 'Linux arrives with the Public Beta: an x86_64 AppImage, and on Omarchy and Arch a package your package manager keeps up to date. Until then you can try the Browser Preview.',
       },
       {
         q: 'Is there a Windows version?',
@@ -222,6 +236,9 @@ const de: LandingCopy = {
     tryInBrowser: 'Im Browser ausprobieren',
     allDownloads: 'Alle Downloads und Prüfsummen',
     versionLabel: 'Version',
+    comingSoon: 'Public Beta – bald verfügbar',
+    comingSoonDetail: 'Die Desktop-App für macOS und Linux ist unterwegs. Bis dahin kannst du den Editor im Browser ausprobieren.',
+    tryInBrowserDetail: 'Läuft im Browser, ohne Installation und ohne Konto.',
   },
   screenshots: {
     eyebrow: 'Ansehen',
@@ -229,10 +246,10 @@ const de: LandingCopy = {
     lead: 'Die Screenshots zeigen die App so, wie sie ausgeliefert wird, mit eigenen Demo-Partituren.',
     items: [
       {
-        src: '/screenshots/editor-piano.png',
+        ...SCORE_CLOSEUP,
         title: 'Noteneditor',
         text: 'Noteneingabe per Tastatur, mit Dynamik, Bögen, Gabeln und mehreren Stimmen.',
-        alt: 'Nex Note Editor mit einer zweizeiligen Klavierpartitur mit Dynamik, Bögen und Gabeln',
+        alt: 'Nahaufnahme einer zweizeiligen Klavierpartitur aus Nex Note, mit Dynamik, Bögen und Gabeln',
       },
       {
         src: '/screenshots/guitar-tab.png',
@@ -270,6 +287,7 @@ const de: LandingCopy = {
     eyebrow: 'Formate',
     title: 'Ehrlich, was heute funktioniert.',
     lead: 'Nex Note ist eine Public Beta. Manche Wege sind stabil, andere brauchen Zusatzsoftware oder einen genauen Blick auf das Ergebnis.',
+    leadComingSoon: 'Nex Note ist auf dem Weg zur Public Beta. Manche Wege sind stabil, andere brauchen Zusatzsoftware oder einen genauen Blick auf das Ergebnis.',
     supportedTitle: 'Unterstützt',
     supported: ['MusicXML (.musicxml, .xml)', 'Komprimiertes MusicXML (.mxl)', 'Nex-Note-Projekte (.nxn)', 'MIDI-Export und Wiedergabe', 'PDF-Export'],
     experimentalTitle: 'Experimentell oder mit Zusatzsoftware',
@@ -316,6 +334,7 @@ const de: LandingCopy = {
       {
         q: 'Ist Nex Note kostenlos?',
         a: 'Ja. Die Public Beta ist kostenlos, ohne Konto und ohne Anmeldung. Der Quellcode ist offen unter der AGPL-3.0.',
+        aComingSoon: 'Ja. Die Public Beta wird kostenlos sein, ohne Konto und ohne Anmeldung. Der Quellcode wird mit der Public Beta unter der AGPL-3.0 veröffentlicht.',
       },
       {
         q: 'Wie funktionieren Updates?',
@@ -324,6 +343,7 @@ const de: LandingCopy = {
       {
         q: 'Läuft es unter Linux und Omarchy?',
         a: 'Ja. Lade das x86_64-AppImage, oder installiere unter Omarchy und Arch das Paket mit „yay -S nex-note-bin“; Updates übernimmt dann dein Paketmanager.',
+        aComingSoon: 'Linux kommt mit der Public Beta: ein x86_64-AppImage und unter Omarchy und Arch ein Paket, das dein Paketmanager aktuell hält. Bis dahin kannst du die Browser Preview ausprobieren.',
       },
       {
         q: 'Gibt es eine Windows-Version?',

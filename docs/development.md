@@ -224,7 +224,7 @@ npm run app
 - `npm run ship` merges `devel` into `main`, drops the suffix, tags and publishes the Release, then moves `devel` to the next `-dev` patch (see `docs/release.md`).
 - Keep version bumps in `package.json` and `package-lock.json` together.
 
-Website-only deployment without a new Release (the download buttons keep pointing at the latest Release):
+Website-only deployment without a new Release (the download buttons keep pointing at the latest Release; before the first Release the website shows "Public Beta – coming soon" instead):
 
 ```bash
 git switch devel

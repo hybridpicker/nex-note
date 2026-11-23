@@ -37,8 +37,8 @@ async function readFixture(name) {
   return fs.readFile(path.join(FIXTURE_DIR, name), 'utf8');
 }
 
-async function newPage(browser) {
-  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, locale: 'en-US' });
+async function newPage(browser, viewport = VIEWPORT) {
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 2, locale: 'en-US' });
   const page = await context.newPage();
   await page.route('**/api/ollama-models', (route) => route.fulfill({
     status: 200,
@@ -82,12 +82,26 @@ async function openAiPanel(page) {
   await page.getByPlaceholder('Describe your edit…').waitFor({ timeout: 15_000 });
 }
 
-async function save(page, name) {
+async function save(page, name, target) {
   const file = path.join(OUT_DIR, name);
   await page.mouse.move(0, 0);
   const jpeg = name.endsWith('.jpg');
-  await page.screenshot({ path: file, type: jpeg ? 'jpeg' : 'png', quality: jpeg ? 82 : undefined });
+  const options = { path: file, type: jpeg ? 'jpeg' : 'png', quality: jpeg ? 82 : undefined };
+  await (target ? target.screenshot(options) : page.screenshot(options));
   console.log(`wrote ${path.relative(process.cwd(), file)}`);
+}
+
+// The landing page shows the first screenshot at roughly 1150 px wide. A full
+// editor window shrinks the staff lines to a hairline there, so the lead image
+// is a close-up of the score alone, drawn at a larger editor zoom.
+const CLOSEUP_ZOOM_PERCENT = '160';
+
+async function zoomScore(page, percent) {
+  const input = page.getByLabel('Zoom percent');
+  await input.fill(percent);
+  await input.blur();
+  await page.waitForTimeout(1200);
+  await page.locator('[data-testid="score-canvas"] .vf-notehead').first().waitFor({ timeout: 30_000 });
 }
 
 const SHOTS = [
@@ -103,6 +117,16 @@ const SHOTS = [
     name: 'editor-piano.png',
     async run(page) {
       await bootWithScore(page, 'morning-etude.musicxml', await readFixture('readme-piano-etude.musicxml'));
+    },
+  },
+  {
+    name: 'score-closeup.png',
+    // Tall enough that both systems and the editor's bottom bar do not overlap.
+    viewport: { width: 1440, height: 1500 },
+    async run(page) {
+      await bootWithScore(page, 'morning-etude.musicxml', await readFixture('readme-piano-etude.musicxml'));
+      await zoomScore(page, CLOSEUP_ZOOM_PERCENT);
+      return page.locator('[data-testid="score-canvas"]');
     },
   },
   {
@@ -141,10 +165,10 @@ const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: t
 try {
   for (const shot of SHOTS) {
     if (only.size && !only.has(shot.name)) continue;
-    const page = await newPage(browser);
+    const page = await newPage(browser, shot.viewport);
     try {
-      await shot.run(page);
-      await save(page, shot.name);
+      const target = await shot.run(page);
+      await save(page, shot.name, target);
     } finally {
       await page.context().close();
     }

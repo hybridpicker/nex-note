@@ -9,9 +9,11 @@ import {
 } from '@/lib/site/legal-copy';
 import { GITHUB_REPO_URL } from '@/lib/site/release-links';
 import type { SiteLocale } from '@/lib/site/locale';
+import type { ReleaseAvailability } from '@/lib/site/release-availability';
 
-function LegalShell({ locale, path, title, lead, children }: {
+function LegalShell({ locale, release, path, title, lead, children }: {
   locale: SiteLocale;
+  release: ReleaseAvailability;
   path: string;
   title: string;
   lead: string;
@@ -26,7 +28,7 @@ function LegalShell({ locale, path, title, lead, children }: {
         <p className={`mt-4 text-base leading-7 ${siteText.muted}`}>{lead}</p>
         <div className="mt-10 grid gap-10 text-base leading-7">{children}</div>
       </main>
-      <SiteFooter locale={locale} />
+      <SiteFooter locale={locale} release={release} />
     </div>
   );
 }
@@ -55,10 +57,10 @@ function ControllerAddress({ locale, emailLabel }: { locale: SiteLocale; emailLa
   );
 }
 
-export function ImpressumView({ locale }: { locale: SiteLocale }) {
+export function ImpressumView({ locale, release }: { locale: SiteLocale; release: ReleaseAvailability }) {
   const copy = IMPRESSUM_COPY[locale];
   return (
-    <LegalShell locale={locale} path="/impressum" title={copy.title} lead={copy.lead}>
+    <LegalShell locale={locale} release={release} path="/impressum" title={copy.title} lead={copy.lead}>
       <section aria-labelledby="owner">
         <h2 id="owner" className="text-xl font-semibold">{copy.ownerHeading}</h2>
         <div className="mt-3">
@@ -72,18 +74,23 @@ export function ImpressumView({ locale }: { locale: SiteLocale }) {
       <section aria-labelledby="source">
         <h2 id="source" className="text-xl font-semibold">{copy.sourceHeading}</h2>
         <p className={`mt-3 ${siteText.muted}`}>
-          {copy.source}{' '}
-          <a href={GITHUB_REPO_URL} className={`rounded ${siteText.link} ${focusRing}`}>GitHub</a>
+          {copy.source}
+          {release.status === 'available' ? (
+            <>
+              {' '}
+              <a href={GITHUB_REPO_URL} className={`rounded ${siteText.link} ${focusRing}`}>GitHub</a>
+            </>
+          ) : null}
         </p>
       </section>
     </LegalShell>
   );
 }
 
-export function PrivacyView({ locale }: { locale: SiteLocale }) {
+export function PrivacyView({ locale, release }: { locale: SiteLocale; release: ReleaseAvailability }) {
   const copy = PRIVACY_COPY[locale];
   return (
-    <LegalShell locale={locale} path="/datenschutz" title={copy.title} lead={copy.lead}>
+    <LegalShell locale={locale} release={release} path="/datenschutz" title={copy.title} lead={copy.lead}>
       <section aria-labelledby="controller">
         <h2 id="controller" className="text-xl font-semibold">{copy.controllerHeading}</h2>
         <div className="mt-3">

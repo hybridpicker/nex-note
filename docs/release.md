@@ -87,7 +87,9 @@ before `main` moves, because the website links to `releases/latest`).
 | `SHA256SUMS` | manual verification |
 
 The website (`lib/site/release-links.ts`) links to `releases/latest/download/<file>`, so the
-names must not change without updating it.
+names must not change without updating it. It shows those buttons only once GitHub reports a
+published Release with the files attached (checked on the server, cached for ten minutes; see
+`docs/website.md`, "Release availability"); until then it says "Public Beta – coming soon".
 
 ## Privacy
 

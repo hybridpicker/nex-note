@@ -2,14 +2,16 @@ import DownloadButtons from './DownloadButtons';
 import { Eyebrow, SiteFooter, SiteHeader, SkipLink, focusRing, siteText } from './SiteChrome';
 import { LANDING_COPY } from '@/lib/site/landing-copy';
 import type { SiteLocale } from '@/lib/site/locale';
+import type { ReleaseAvailability } from '@/lib/site/release-availability';
 import { RELEASE_LINKS } from '@/lib/site/release-links';
 
 export function browserPreviewHref(locale: SiteLocale) {
   return `/nex-note-app?locale=${locale}`;
 }
 
-export default function LandingView({ locale }: { locale: SiteLocale }) {
+export default function LandingView({ locale, release }: { locale: SiteLocale; release: ReleaseAvailability }) {
   const copy = LANDING_COPY[locale];
+  const released = release.status === 'available';
   const navLink = `hidden rounded text-sm font-medium md:inline ${siteText.muted} hover:text-[#0b0f14] dark:hover:text-white ${focusRing}`;
   const [leadShot, ...moreShots] = copy.screenshots.items;
 
@@ -46,6 +48,8 @@ export default function LandingView({ locale }: { locale: SiteLocale }) {
               <DownloadButtons
                 copy={copy.download}
                 links={RELEASE_LINKS}
+                release={release}
+                locale={locale}
                 browserPreviewHref={browserPreviewHref(locale)}
               />
             </div>
@@ -61,7 +65,7 @@ export default function LandingView({ locale }: { locale: SiteLocale }) {
             <p className={`mt-4 text-base leading-7 ${siteText.muted}`}>{copy.screenshots.lead}</p>
           </div>
           <figure className={`mt-8 overflow-hidden rounded-xl border ${siteText.border} ${siteText.surface} shadow-[0_30px_90px_-50px_rgba(79,70,255,0.6)]`}>
-            <img src={leadShot.src} alt={leadShot.alt} width={2880} height={1800} className="block h-auto w-full" />
+            <img src={leadShot.src} alt={leadShot.alt} width={leadShot.width ?? 2880} height={leadShot.height ?? 1800} className="block h-auto w-full" />
             <figcaption className={`border-t ${siteText.border} px-4 py-3 text-sm`}>
               <strong className="font-semibold">{leadShot.title}.</strong>{' '}
               <span className={siteText.muted}>{leadShot.text}</span>
@@ -70,7 +74,7 @@ export default function LandingView({ locale }: { locale: SiteLocale }) {
           <div className="mt-6 grid gap-6 md:grid-cols-3">
             {moreShots.map((shot) => (
               <figure key={shot.src} className={`overflow-hidden rounded-xl border ${siteText.border} ${siteText.surface}`}>
-                <img src={shot.src} alt={shot.alt} width={2880} height={1800} loading="lazy" className="block h-auto w-full" />
+                <img src={shot.src} alt={shot.alt} width={shot.width ?? 2880} height={shot.height ?? 1800} loading="lazy" className="block h-auto w-full" />
                 <figcaption className="px-4 py-3 text-sm">
                   <strong className="block font-semibold">{shot.title}</strong>
                   <span className={`mt-1 block leading-6 ${siteText.muted}`}>{shot.text}</span>
@@ -103,7 +107,9 @@ export default function LandingView({ locale }: { locale: SiteLocale }) {
             <h2 id="formats-title" className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
               {copy.formats.title}
             </h2>
-            <p className={`mt-4 text-base leading-7 ${siteText.muted}`}>{copy.formats.lead}</p>
+            <p className={`mt-4 text-base leading-7 ${siteText.muted}`}>
+              {released ? copy.formats.lead : copy.formats.leadComingSoon}
+            </p>
           </div>
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             <article className={`rounded-xl border ${siteText.border} ${siteText.surface} p-6`}>
@@ -189,7 +195,9 @@ export default function LandingView({ locale }: { locale: SiteLocale }) {
                     <h3>{item.q}</h3>
                     <span aria-hidden="true" className={`text-xl leading-none transition group-open:rotate-45 ${siteText.accent}`}>+</span>
                   </summary>
-                  <p className={`mt-3 text-sm leading-6 ${siteText.muted}`}>{item.a}</p>
+                  <p className={`mt-3 text-sm leading-6 ${siteText.muted}`}>
+                    {!released && item.aComingSoon ? item.aComingSoon : item.a}
+                  </p>
                 </details>
               ))}
             </div>
@@ -197,7 +205,7 @@ export default function LandingView({ locale }: { locale: SiteLocale }) {
         </section>
       </main>
 
-      <SiteFooter locale={locale} />
+      <SiteFooter locale={locale} release={release} />
     </div>
   );
 }

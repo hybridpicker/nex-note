@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import LandingView from "@/components/site/LandingView";
 import { LANDING_COPY } from "@/lib/site/landing-copy";
 import { readPageLocale, siteAlternates, type SiteSearchParams } from "@/lib/site/page-locale";
+import { getReleaseAvailability } from "@/lib/site/release-availability.server";
 
 type PageProps = { searchParams?: Promise<SiteSearchParams> };
 
@@ -49,5 +50,6 @@ export default async function LandingPage({ searchParams }: PageProps) {
     redirect(buildLocalAppHref((await searchParams) ?? {}));
   }
 
-  return <LandingView locale={await readPageLocale(searchParams)} />;
+  const [locale, release] = await Promise.all([readPageLocale(searchParams), getReleaseAvailability()]);
+  return <LandingView locale={locale} release={release} />;
 }

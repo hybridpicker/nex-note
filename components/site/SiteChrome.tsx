@@ -1,12 +1,8 @@
 import type { ReactNode } from 'react';
 import { LANDING_COPY } from '@/lib/site/landing-copy';
 import { SITE_LOCALES, siteHref, type SiteLocale } from '@/lib/site/locale';
-import {
-  CHANGELOG_URL,
-  GITHUB_REPO_URL,
-  NEW_ISSUE_URL,
-  RELEASE_VERSION,
-} from '@/lib/site/release-links';
+import type { ReleaseAvailability } from '@/lib/site/release-availability';
+import { CHANGELOG_URL, GITHUB_REPO_URL, NEW_ISSUE_URL } from '@/lib/site/release-links';
 
 export const focusRing =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4f46ff] dark:focus-visible:outline-[#a5a1ff]';
@@ -108,8 +104,14 @@ export function SiteHeader({
   );
 }
 
-export function SiteFooter({ locale }: { locale: SiteLocale }) {
+export function SiteFooter({ locale, release }: { locale: SiteLocale; release: ReleaseAvailability }) {
   const copy = LANDING_COPY[locale].footer;
+  // The repository only becomes public with the first Release, so its links
+  // follow the same signal as the download buttons.
+  const released = release.status === 'available';
+  const stage = released
+    ? `Public Beta${release.version ? ` ${release.version}` : ''}`
+    : LANDING_COPY[locale].download.comingSoon;
   const linkClass = `rounded ${siteText.muted} hover:text-[#0b0f14] dark:hover:text-white ${focusRing}`;
   return (
     <footer className={`border-t ${siteText.border} ${siteText.surface}`}>
@@ -118,14 +120,18 @@ export function SiteFooter({ locale }: { locale: SiteLocale }) {
           <SiteLogo locale={locale} />
           <p className={`mt-3 text-sm ${siteText.muted}`}>{copy.tagline}</p>
           <p className={`mt-1 text-xs ${siteText.muted}`}>
-            Public Beta {RELEASE_VERSION} · {copy.licenseNote}
+            {stage} · {copy.licenseNote}
           </p>
         </div>
         <nav aria-label="Footer">
           <ul className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-            <li><a className={linkClass} href={CHANGELOG_URL}>{copy.changelog}</a></li>
-            <li><a className={linkClass} href={GITHUB_REPO_URL}>{copy.openSource}</a></li>
-            <li><a className={linkClass} href={NEW_ISSUE_URL}>{copy.reportBug}</a></li>
+            {released ? (
+              <>
+                <li><a className={linkClass} href={CHANGELOG_URL}>{copy.changelog}</a></li>
+                <li><a className={linkClass} href={GITHUB_REPO_URL}>{copy.openSource}</a></li>
+                <li><a className={linkClass} href={NEW_ISSUE_URL}>{copy.reportBug}</a></li>
+              </>
+            ) : null}
             <li><a className={linkClass} href={siteHref('/impressum', locale)}>{copy.impressum}</a></li>
             <li><a className={linkClass} href={siteHref('/datenschutz', locale)}>{copy.privacy}</a></li>
           </ul>

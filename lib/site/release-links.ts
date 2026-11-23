@@ -1,9 +1,8 @@
-// Single source of truth for the public website's download links and version.
-// The release script bumps `version` in package.json; the URLs use GitHub's
-// stable "latest" redirects, so they only change if the asset names change.
-import packageJson from '../../package.json';
-
-export const RELEASE_VERSION: string = packageJson.version;
+// Single source of truth for the public website's download links. The URLs
+// use GitHub's stable "latest" redirects, so they only change if the asset
+// names change. The version shown on the website comes from the Release
+// itself (`release-availability.ts`), not from package.json, which carries a
+// `-dev` version on devel and after a website-only deploy.
 
 export const GITHUB_REPO_URL = 'https://github.com/hybridpicker/nex-note';
 
@@ -24,7 +23,6 @@ export const NEW_ISSUE_URL = `${GITHUB_REPO_URL}/issues/new/choose`;
 export const MACOS_MINIMUM = 'macOS 13 Ventura';
 
 export type ReleaseLinks = {
-  version: string;
   macDmgUrl: string;
   linuxAppImageUrl: string;
   allReleasesUrl: string;
@@ -32,7 +30,6 @@ export type ReleaseLinks = {
 };
 
 export const RELEASE_LINKS: ReleaseLinks = {
-  version: RELEASE_VERSION,
   macDmgUrl: RELEASE_DMG_URL,
   linuxAppImageUrl: LINUX_APPIMAGE_URL,
   allReleasesUrl: ALL_RELEASES_URL,
